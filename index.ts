@@ -17,13 +17,6 @@ import { analyzeSystemPrompt, type MeasuredComponent } from "./measure.ts";
 
 const PROBE_TEXT = "pi-context-inspect probe";
 
-/** True for the synthetic user message this extension sends to trigger the probe turn. */
-function isProbeMessage(message: ContextEvent["messages"][number]): boolean {
-	if (message.role !== "user") return false;
-	if (typeof message.content === "string") return message.content === PROBE_TEXT;
-	return message.content.some((block) => block.type === "text" && block.text === PROBE_TEXT);
-}
-
 /** Everything captured during the probe turn. */
 interface Capture {
 	/** Fully chained system prompt as seen at our position in the handler chain. */
@@ -32,27 +25,6 @@ interface Capture {
 	systemPromptOptions: BuildSystemPromptOptions;
 	/** Messages present in the LLM context at the probe turn (excluding the probe itself). */
 	contextMessages: ContextEvent["messages"];
-}
-
-/** Measure all captured injections: system prompt components + injected messages. */
-function measureCapture(capture: Capture): MeasuredComponent[] {
-	const components = analyzeSystemPrompt(capture.systemPrompt, capture.systemPromptOptions);
-	for (const message of capture.contextMessages) {
-		const label =
-			message.role === "custom"
-				? `extension message: ${message.customType}`
-				: `startup message (role: ${message.role})`;
-		const content = "content" in message ? message.content : undefined;
-		const text = typeof content === "string" ? content : JSON.stringify(content ?? message);
-		components.push({
-			label,
-			group: "extensions",
-			chars: text.length,
-			tokens: estimateTokens(message),
-			text,
-		});
-	}
-	return components;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -109,4 +81,32 @@ export default function (pi: ExtensionAPI) {
 		// exits on its own.
 		ctx.shutdown();
 	});
+}
+
+/** True for the synthetic user message this extension sends to trigger the probe turn. */
+function isProbeMessage(message: ContextEvent["messages"][number]): boolean {
+	if (message.role !== "user") return false;
+	if (typeof message.content === "string") return message.content === PROBE_TEXT;
+	return message.content.some((block) => block.type === "text" && block.text === PROBE_TEXT);
+}
+
+/** Measure all captured injections: system prompt components + injected messages. */
+function measureCapture(capture: Capture): MeasuredComponent[] {
+	const components = analyzeSystemPrompt(capture.systemPrompt, capture.systemPromptOptions);
+	for (const message of capture.contextMessages) {
+		const label =
+			message.role === "custom"
+				? `extension message: ${message.customType}`
+				: `startup message (role: ${message.role})`;
+		const content = "content" in message ? message.content : undefined;
+		const text = typeof content === "string" ? content : JSON.stringify(content ?? message);
+		components.push({
+			label,
+			group: "extensions",
+			chars: text.length,
+			tokens: estimateTokens(message),
+			text,
+		});
+	}
+	return components;
 }

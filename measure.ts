@@ -30,59 +30,6 @@ export interface PromptOptionsSlice {
 	skills?: Array<{ name: string }>;
 }
 
-/** Same chars/4 heuristic pi's estimateTokens uses for text content. */
-export function textTokens(text: string): number {
-	return Math.ceil(text.length / 4);
-}
-
-function component(label: string, group: "pi" | "extensions", text: string): MeasuredComponent {
-	return { label, group, chars: text.length, tokens: textTokens(text), text };
-}
-
-/**
- * Locate the end of pi's base system prompt: the exact two-line
- * "Current date/Current working directory" suffix buildSystemPrompt emits last.
- * Returns the index just past that line, or -1 when not found.
- */
-export function findBasePromptEnd(systemPrompt: string, cwd: string): number {
-	const now = new Date();
-	const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-	const promptCwd = cwd.replace(/\\/g, "/");
-	// First occurrence: a context file or extension text duplicating the exact
-	// marker (with today's date and this cwd) is far less likely than an
-	// extension appending arbitrary text after it.
-	const marker = `\nCurrent date: ${date}\nCurrent working directory: ${promptCwd}`;
-	const index = systemPrompt.indexOf(marker);
-	return index === -1 ? -1 : index + marker.length;
-}
-
-interface Span {
-	start: number;
-	end: number;
-}
-
-/** Find `<project_instructions path="...">...</project_instructions>` for one file. */
-function findContextFileSpan(systemPrompt: string, filePath: string): Span | undefined {
-	const open = `<project_instructions path="${filePath}">`;
-	const close = "</project_instructions>";
-	const start = systemPrompt.indexOf(open);
-	if (start === -1) return undefined;
-	const end = systemPrompt.indexOf(close, start);
-	if (end === -1) return undefined;
-	return { start, end: end + close.length };
-}
-
-/** Find the skills section (intro sentence through `</available_skills>`). */
-function findSkillsSpan(systemPrompt: string): Span | undefined {
-	const open = "The following skills provide specialized instructions";
-	const close = "</available_skills>";
-	const start = systemPrompt.indexOf(open);
-	if (start === -1) return undefined;
-	const end = systemPrompt.indexOf(close, start);
-	if (end === -1) return undefined;
-	return { start, end: end + close.length };
-}
-
 /**
  * Split the captured system prompt into measured components:
  * pi base prompt, --append-system-prompt, each context file, skills block,
@@ -138,4 +85,57 @@ export function analyzeSystemPrompt(systemPrompt: string, options: PromptOptions
 	}
 
 	return components;
+}
+
+/**
+ * Locate the end of pi's base system prompt: the exact two-line
+ * "Current date/Current working directory" suffix buildSystemPrompt emits last.
+ * Returns the index just past that line, or -1 when not found.
+ */
+export function findBasePromptEnd(systemPrompt: string, cwd: string): number {
+	const now = new Date();
+	const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+	const promptCwd = cwd.replace(/\\/g, "/");
+	// First occurrence: a context file or extension text duplicating the exact
+	// marker (with today's date and this cwd) is far less likely than an
+	// extension appending arbitrary text after it.
+	const marker = `\nCurrent date: ${date}\nCurrent working directory: ${promptCwd}`;
+	const index = systemPrompt.indexOf(marker);
+	return index === -1 ? -1 : index + marker.length;
+}
+
+/** Same chars/4 heuristic pi's estimateTokens uses for text content. */
+export function textTokens(text: string): number {
+	return Math.ceil(text.length / 4);
+}
+
+function component(label: string, group: "pi" | "extensions", text: string): MeasuredComponent {
+	return { label, group, chars: text.length, tokens: textTokens(text), text };
+}
+
+interface Span {
+	start: number;
+	end: number;
+}
+
+/** Find `<project_instructions path="...">...</project_instructions>` for one file. */
+function findContextFileSpan(systemPrompt: string, filePath: string): Span | undefined {
+	const open = `<project_instructions path="${filePath}">`;
+	const close = "</project_instructions>";
+	const start = systemPrompt.indexOf(open);
+	if (start === -1) return undefined;
+	const end = systemPrompt.indexOf(close, start);
+	if (end === -1) return undefined;
+	return { start, end: end + close.length };
+}
+
+/** Find the skills section (intro sentence through `</available_skills>`). */
+function findSkillsSpan(systemPrompt: string): Span | undefined {
+	const open = "The following skills provide specialized instructions";
+	const close = "</available_skills>";
+	const start = systemPrompt.indexOf(open);
+	if (start === -1) return undefined;
+	const end = systemPrompt.indexOf(close, start);
+	if (end === -1) return undefined;
+	return { start, end: end + close.length };
 }
