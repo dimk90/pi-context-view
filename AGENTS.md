@@ -30,26 +30,26 @@ Hard-won constraints (do not regress):
 
 ## Layout
 
-- `index.ts` — extension factory, event wiring (entry point via `package.json`
-  `pi.extensions`).
-- Pure logic (measurement, formatting) goes to helper modules with no `pi`
-  access, unit-testable.
+- `src/index.ts` — extension factory, event wiring (entry point via
+  `package.json` `pi.extensions`).
+- `src/measure.ts`, `src/report.ts` — pure logic (measurement, formatting),
+  no `pi` access, unit-testable.
 - `PLAN.md` — full development plan, PoC findings, step checkboxes. Keep the
   checkboxes current.
-- `poc.ts`, `poc-b.ts`, `marker.ts` — throwaway PoC spikes, reference only;
-  `marker.ts` doubles as a test helper that simulates an injecting extension.
+- `poc/` — throwaway PoC spikes, reference only; `poc/marker.ts` doubles as a
+  test helper that simulates an injecting extension.
 
 ## Testing
 
 ```bash
 # print mode (fastest check)
-pi -e ./marker.ts -e ./index.ts --context-inspect --no-session
+pi -e ./poc/marker.ts -e ./src/index.ts --context-inspect --no-session
 
 # TUI mode (run under `script` when no tty; pi must exit by itself in ~2s)
-script -qec "pi -e ./marker.ts -e ./index.ts --context-inspect --no-session" /tmp/tui.log
+script -qec "pi -e ./poc/marker.ts -e ./src/index.ts --context-inspect --no-session" /tmp/tui.log
 
 # no-op check: without the flag the extension must do nothing
-pi -e ./index.ts --no-session -p "say hi"
+pi -e ./src/index.ts --no-session -p "say hi"
 ```
 
 Verify after changes: no provider call during inspection (add a temporary

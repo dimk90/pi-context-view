@@ -17,7 +17,7 @@
 		"node": ">=22.19.0"
 	},
 	"files": [
-		"index.ts",
+		"src",
 		"README.md"
 	],
 	"scripts": {
@@ -25,7 +25,7 @@
 	},
 	"pi": {
 		"extensions": [
-			"./index.ts"
+			"./src/index.ts"
 		]
 	},
 	"peerDependencies": {

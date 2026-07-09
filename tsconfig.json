@@ -9,5 +9,5 @@
 		"allowImportingTsExtensions": true,
 		"verbatimModuleSyntax": true
 	},
-	"include": ["*.ts"]
+	"include": ["src/*.ts", "poc/*.ts"]
 }
