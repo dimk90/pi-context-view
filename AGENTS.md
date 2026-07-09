@@ -55,6 +55,15 @@ pi -e ./index.ts --no-session -p "say hi"
 Verify after changes: no provider call during inspection (add a temporary
 `after_provider_response` sentinel if in doubt), clean self-exit in both modes.
 
+## Dependencies
+
+`@earendil-works/pi-coding-agent` is declared twice on purpose:
+
+- `peerDependencies: "*"` — published compatibility contract (pi docs convention).
+- `devDependencies: <exact>` — local types snapshot; MUST match the installed
+  pi version. When touching this project, compare `pi --version` with the pin
+  and, on mismatch, update the pin and re-run `npm install`.
+
 ## Code style
 
 Follow the `code-style` and `typescript-code` skills (tabs, double quotes,

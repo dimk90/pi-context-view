@@ -153,7 +153,7 @@ no project setup.
 
 Starts fresh from project initialization; PoC code is reference material only.
 
-- [ ] 1. **Project initialization** — init `pi-context-inspect/` directory:
+- [x] 1. **Project initialization** — init `pi-context-inspect/` directory:
   - `package.json` (name, version `0.0.1`, `"pi": { "extensions": ["./index.ts"] }`,
   deps if any);
   - `tsconfig.json` if needed;

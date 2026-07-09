@@ -1,10 +1,35 @@
 {
 	"name": "pi-context-inspect",
-	"version": "0.0.1",
-	"description": "Pi extension: report initial context injections (source and token size) via --context-inspect",
+	"version": "0.1.0",
+	"description": "Pi extension: report initial context injections via --context-inspect",
 	"type": "module",
 	"license": "MIT",
+	"author": "Dmitry Makarov",
+	"keywords": [
+		"pi",
+		"pi-extension",
+		"coding-agent",
+		"context",
+		"tokens",
+		"cli"
+	],
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"files": [
+		"index.ts",
+		"README.md"
+	],
+	"scripts": {
+		"check": "tsc --noEmit"
+	},
 	"pi": {
 		"extensions": ["./index.ts"]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "0.80.3"
 	}
 }
