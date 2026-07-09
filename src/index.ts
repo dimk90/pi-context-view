@@ -37,6 +37,7 @@ export default function (pi: ExtensionAPI) {
 
 	let inspecting = false;
 	let capture: Capture | undefined;
+	let shutdownRetry: NodeJS.Timeout | undefined;
 
 	pi.on("session_start", async (_event, _ctx) => {
 		if (pi.getFlag("context-inspect") !== true) return;
@@ -74,9 +75,29 @@ export default function (pi: ExtensionAPI) {
 		} else {
 			console.log(renderReport(measureCapture(capture)));
 		}
-		// Shutdown is honored right after agent_end in TUI mode; print mode
-		// exits on its own.
+		// The probe turn can finish BEFORE the TUI subscribes to agent events
+		// (extensions bind first), so a single deferred shutdown request would
+		// never be honored — the TUI checks the flag only when it sees agent_end.
+		// Retry until the request lands: ctx.shutdown() executes immediately when
+		// pi is idle. The ctx goes stale once shutdown proceeds (or in print mode
+		// once the process is exiting), so stop retrying on any error and on
+		// session_shutdown.
 		ctx.shutdown();
+		shutdownRetry = setInterval(() => {
+			try {
+				if (ctx.isIdle()) ctx.shutdown();
+			} catch {
+				clearInterval(shutdownRetry);
+				shutdownRetry = undefined;
+			}
+		}, 100);
+	});
+
+	pi.on("session_shutdown", async () => {
+		if (shutdownRetry !== undefined) {
+			clearInterval(shutdownRetry);
+			shutdownRetry = undefined;
+		}
 	});
 }
 
