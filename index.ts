@@ -11,7 +11,9 @@
  * other extensions, the turn is aborted at turn_start before any provider
  * request, and the report prints at agent_end.
  */
-import type { BuildSystemPromptOptions, ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type BuildSystemPromptOptions, type ContextEvent, type ExtensionAPI, estimateTokens } from "@earendil-works/pi-coding-agent";
+
+import { analyzeSystemPrompt, type MeasuredComponent } from "./measure.ts";
 
 const PROBE_TEXT = "pi-context-inspect probe";
 
@@ -30,6 +32,27 @@ interface Capture {
 	systemPromptOptions: BuildSystemPromptOptions;
 	/** Messages present in the LLM context at the probe turn (excluding the probe itself). */
 	contextMessages: ContextEvent["messages"];
+}
+
+/** Measure all captured injections: system prompt components + injected messages. */
+function measureCapture(capture: Capture): MeasuredComponent[] {
+	const components = analyzeSystemPrompt(capture.systemPrompt, capture.systemPromptOptions);
+	for (const message of capture.contextMessages) {
+		const label =
+			message.role === "custom"
+				? `extension message: ${message.customType}`
+				: `startup message (role: ${message.role})`;
+		const content = "content" in message ? message.content : undefined;
+		const text = typeof content === "string" ? content : JSON.stringify(content ?? message);
+		components.push({
+			label,
+			group: "extensions",
+			chars: text.length,
+			tokens: estimateTokens(message),
+			text,
+		});
+	}
+	return components;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -76,13 +99,11 @@ export default function (pi: ExtensionAPI) {
 		if (capture === undefined) {
 			console.error("pi-context-inspect: capture failed (before_agent_start did not fire)");
 		} else {
-			// TODO(step 3-4): measure components and render the report.
-			const options = capture.systemPromptOptions;
-			console.log("pi-context-inspect capture summary (report rendering TODO):");
-			console.log(`  systemPrompt: ${capture.systemPrompt.length} chars`);
-			console.log(`  contextFiles: ${options.contextFiles?.length ?? 0}`);
-			console.log(`  skills: ${options.skills?.length ?? 0}`);
-			console.log(`  contextMessages: ${capture.contextMessages.length}`);
+			const components = measureCapture(capture);
+			// TODO(step 4): render a proper aligned table.
+			for (const item of components) {
+				console.log(`${item.label}: ${item.tokens} tokens (${item.chars} chars)`);
+			}
 		}
 		// Shutdown is honored right after agent_end in TUI mode; print mode
 		// exits on its own.

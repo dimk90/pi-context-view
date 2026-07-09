@@ -167,8 +167,15 @@ Starts fresh from project initialization; PoC code is reference material only.
   Also captures extension-injected startup messages via the `context` event
   (resolves the open question: they ARE visible there, with `customType`),
   filtering out the probe message itself.
-- [ ] 3. **Component measurement** — per-component token estimation; pure
+- [x] 3. **Component measurement** — per-component token estimation; pure
   functions in helper module (unit-testable, no `pi` access).
+  Implemented in `measure.ts` by carving the captured system prompt on
+  structural markers emitted by pi's `buildSystemPrompt()` (the function
+  itself is not importable — blocked by the package `exports` map):
+  `<project_instructions path>` spans, skills block, `appendSystemPrompt`
+  substring, and the trailing `Current date/cwd` line as the base-prompt end
+  marker; everything after it is the extensions aggregate. Context messages
+  measured with pi's `estimateTokens`.
 - [ ] 4. **Report rendering** — aligned plain-text table, total row, sorting by size
   descending within groups (pi first, extensions second).
 - [ ] 5. **Edge-case handling** — mode guards, missing options, zero extensions.
