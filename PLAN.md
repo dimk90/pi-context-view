@@ -187,13 +187,27 @@ Starts fresh from project initialization; PoC code is reference material only.
   reload/resume/fork), watchdog timeout (15 s, unref'd) when the probe turn
   never completes, `reportDone` idempotency, distinct label for
   `--system-prompt` custom prompts.
-- [ ] 6. **Manual test matrix**
-  - `pi -e ./pi-context-inspect/index.ts --context-inspect` (no other extensions)
-  - with another injecting extension loaded (e.g. plan-mode example)
-  - with project `AGENTS.md` present/absent
-  - with `--append-system-prompt "text"`
-  - with `--no-context-files`, `--no-skills`
-  - normal run without the flag → extension must be a no-op
+- [x] 6. **Manual test matrix** — all pass (print + TUI via real pty):
+  - solo `-ne -e ./src/index.ts --context-inspect` ✓ (exposed a print-mode
+    race: pi can exit before agent_end when startup is fast; fixed by a
+    session_shutdown fallback that prints the already-captured report)
+  - marker.ts ✓ (aggregate + custom message); plan-mode example ✓ (no-op
+    without `--plan`; with `--plan`: `extension message: plan-mode-context`)
+  - project `AGENTS.md` absent (empty dir) ✓ / present ✓
+  - `--append-system-prompt` ✓; `--no-context-files --no-skills` ✓
+  - no-op without flag ✓ (print replies, TUI stays open)
+  - `after_provider_response` sentinel: 0 provider calls during inspection ✓
+  - Post-matrix fixes from user testing:
+    - TUI: report printed from `session_shutdown` (after the TUI stops) — no
+      more table interleaved with UI frames; print/json unchanged (agent_end).
+    - Extension tools now visible: probe moved from `session_start` to
+      `resources_discover` (fires after all extensions' startup work incl.
+      async tool registration, e.g. pi-web-providers). Per-tool rows
+      `extension tool: <name> (<source>)` measure snippet + guidelines carved
+      from the prompt plus description + parameter schema (payload side);
+      built-in tools aggregate into `pi: tool definitions (built-in, N)`.
+    - Shutdown grace period (500 ms) in `session_shutdown` so other
+      extensions' in-flight async startup work doesn't hit stale ctx errors.
 - [ ] 7. **Docs** — README with usage, the "load last for accurate aggregate" note,
   and the `alias pi-context='pi --context-inspect --no-session'` tip.
 - [ ] 8. **Install locally** — add the directory to discovery

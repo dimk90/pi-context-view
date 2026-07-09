@@ -31,17 +31,69 @@ export interface PromptOptionsSlice {
 	skills?: Array<{ name: string }>;
 }
 
+/** One active tool as it contributes to the initial context. */
+export interface ToolSlice {
+	name: string;
+	/** Sent to the provider with every request. */
+	description: string;
+	/** JSON-serialized parameter schema; sent to the provider with every request. */
+	parametersJson: string;
+	/** One-line snippet rendered into the prompt's Available tools list. */
+	snippet?: string;
+	/** Guideline bullets rendered into the prompt's Guidelines section. */
+	guidelines: string[];
+	/** Provenance, e.g. "builtin" or "npm:pi-web-providers". */
+	source: string;
+}
+
 /**
  * Split the captured system prompt into measured components:
  * pi base prompt, --append-system-prompt, each context file, skills block,
- * and the aggregate appended by extensions.
+ * per-extension-tool contributions (prompt text + payload definition),
+ * built-in tool definitions, and the aggregate appended by extensions.
  */
-export function analyzeSystemPrompt(systemPrompt: string, options: PromptOptionsSlice): MeasuredComponent[] {
+export function analyzeSystemPrompt(
+	systemPrompt: string,
+	options: PromptOptionsSlice,
+	tools: ToolSlice[] = [],
+): MeasuredComponent[] {
 	const components: MeasuredComponent[] = [];
 	const carvedSpans: Span[] = [];
 
 	const baseEnd = findBasePromptEnd(systemPrompt, options.cwd);
 	const base = baseEnd === -1 ? systemPrompt : systemPrompt.slice(0, baseEnd);
+
+	// Tools: built-in definitions aggregate under pi; extension tools get one
+	// row each — prompt text (snippet line + guideline bullets, carved out of
+	// the base prompt) plus the payload definition (description + schema).
+	let builtinDefinitions = "";
+	for (const tool of tools) {
+		const definition = `${tool.name}: ${tool.description}\n${tool.parametersJson}`;
+		if (tool.source === "builtin") {
+			builtinDefinitions += `${definition}\n`;
+			continue;
+		}
+		let promptText = "";
+		if (tool.snippet !== undefined) {
+			const span = findExactSpan(base, `\n- ${tool.name}: ${tool.snippet}`);
+			if (span !== undefined) {
+				promptText += base.slice(span.start, span.end);
+				carvedSpans.push(span);
+			}
+		}
+		for (const guideline of tool.guidelines) {
+			const span = findExactSpan(base, `\n- ${guideline.trim()}`);
+			if (span !== undefined) {
+				promptText += base.slice(span.start, span.end);
+				carvedSpans.push(span);
+			}
+		}
+		components.push(component(`extension tool: ${tool.name} (${tool.source})`, "extensions", promptText + definition));
+	}
+	if (builtinDefinitions.length > 0) {
+		const builtinCount = tools.filter((tool) => tool.source === "builtin").length;
+		components.push(component(`pi: tool definitions (built-in, ${builtinCount})`, "pi", builtinDefinitions));
+	}
 
 	for (const file of options.contextFiles ?? []) {
 		const span = findContextFileSpan(base, file.path);
@@ -121,6 +173,12 @@ function component(label: string, group: "pi" | "extensions", text: string): Mea
 interface Span {
 	start: number;
 	end: number;
+}
+
+/** Find the span of an exact substring, or undefined when absent. */
+function findExactSpan(haystack: string, needle: string): Span | undefined {
+	const start = haystack.indexOf(needle);
+	return start === -1 ? undefined : { start, end: start + needle.length };
 }
 
 /** Find `<project_instructions path="...">...</project_instructions>` for one file. */

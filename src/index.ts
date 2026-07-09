@@ -13,13 +13,20 @@
  */
 import { type BuildSystemPromptOptions, type ContextEvent, type ExtensionAPI, estimateTokens } from "@earendil-works/pi-coding-agent";
 
-import { analyzeSystemPrompt, type MeasuredComponent } from "./measure.ts";
+import { analyzeSystemPrompt, type MeasuredComponent, type ToolSlice } from "./measure.ts";
 import { renderReport } from "./report.ts";
 
 const PROBE_TEXT = "pi-context-inspect probe";
 
 /** How long to wait for the probe turn before giving up (ms). */
 const WATCHDOG_TIMEOUT_MS = 15_000;
+
+/**
+ * Grace period before requesting shutdown (ms). Other extensions may still be
+ * running async startup work (config loads, tool refreshes); shutting down
+ * immediately makes their in-flight calls hit a stale ctx and spam stderr.
+ */
+const SHUTDOWN_GRACE_MS = 500;
 
 /** Everything captured during the probe turn. */
 interface Capture {
@@ -29,6 +36,8 @@ interface Capture {
 	systemPromptOptions: BuildSystemPromptOptions;
 	/** Messages present in the LLM context at the probe turn (excluding the probe itself). */
 	contextMessages: ContextEvent["messages"];
+	/** Active tools with provenance, prompt text, and payload definitions. */
+	tools: ToolSlice[];
 }
 
 export default function (pi: ExtensionAPI) {
@@ -66,17 +75,36 @@ export default function (pi: ExtensionAPI) {
 			}
 		}, WATCHDOG_TIMEOUT_MS);
 		watchdog.unref();
-		// sendUserMessage (unlike sendMessage + triggerTurn) starts a turn even
-		// in print mode without -p.
+	});
+
+	// The probe is sent from resources_discover, not session_start: it fires
+	// after every extension's session_start work — including late async tool
+	// registrations (e.g. pi-web-providers) — so the probe turn sees the
+	// complete tool set. sendUserMessage (unlike sendMessage + triggerTurn)
+	// starts a turn even in print mode without -p.
+	pi.on("resources_discover", async () => {
+		if (!inspecting) return;
 		pi.sendUserMessage(PROBE_TEXT);
 	});
 
 	pi.on("before_agent_start", async (event, _ctx) => {
 		if (!inspecting) return;
+		const active = new Set(pi.getActiveTools());
 		capture = {
 			systemPrompt: event.systemPrompt,
 			systemPromptOptions: event.systemPromptOptions,
 			contextMessages: [],
+			tools: pi
+				.getAllTools()
+				.filter((tool) => active.has(tool.name))
+				.map((tool) => ({
+					name: tool.name,
+					description: tool.description,
+					parametersJson: JSON.stringify(tool.parameters ?? {}),
+					snippet: event.systemPromptOptions.toolSnippets?.[tool.name],
+					guidelines: normalizeGuidelines(tool.promptGuidelines),
+					source: tool.sourceInfo.source,
+				})),
 		};
 	});
 
@@ -94,11 +122,11 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!inspecting || reportDone) return;
-		reportDone = true;
-		if (capture === undefined) {
-			console.error("pi-context-inspect: capture failed (before_agent_start did not fire)");
-		} else {
-			console.log(renderReport(measureCapture(capture)));
+		// TUI mode: don't print into the running TUI — the table would interleave
+		// with UI frames. session_shutdown fires after the TUI is stopped, so the
+		// report lands on a clean terminal instead.
+		if (ctx.mode !== "tui") {
+			printReport();
 		}
 		// The probe turn can finish BEFORE the TUI subscribes to agent events
 		// (extensions bind first), so a single deferred shutdown request would
@@ -123,7 +151,29 @@ export default function (pi: ExtensionAPI) {
 			clearInterval(shutdownRetry);
 			shutdownRetry = undefined;
 		}
+		// Grace period: in print mode pi exits as soon as the (aborted) probe
+		// turn drains, which can cut off other extensions' in-flight async
+		// startup work and spam "stale ctx" errors. session_shutdown handlers
+		// are awaited, so waiting here lets that work finish first.
+		if (inspecting) {
+			await new Promise((resolve) => setTimeout(resolve, SHUTDOWN_GRACE_MS));
+		}
+		// TUI mode prints here (terminal is clean once the TUI stopped). Also the
+		// fallback for print mode when pi exits before the probe turn reaches
+		// agent_end — capture happens earlier (before_agent_start) either way.
+		if (inspecting && !reportDone) {
+			printReport();
+		}
 	});
+
+	function printReport(): void {
+		reportDone = true;
+		if (capture === undefined) {
+			console.error("pi-context-inspect: capture failed (before_agent_start did not fire)");
+		} else {
+			console.log(renderReport(measureCapture(capture)));
+		}
+	}
 }
 
 /** True for the synthetic user message this extension sends to trigger the probe turn. */
@@ -133,9 +183,15 @@ function isProbeMessage(message: ContextEvent["messages"][number]): boolean {
 	return message.content.some((block) => block.type === "text" && block.text === PROBE_TEXT);
 }
 
+/** Normalize promptGuidelines (string | string[] | undefined) to a string array. */
+function normalizeGuidelines(guidelines: string | string[] | undefined): string[] {
+	if (guidelines === undefined) return [];
+	return Array.isArray(guidelines) ? guidelines : [guidelines];
+}
+
 /** Measure all captured injections: system prompt components + injected messages. */
 function measureCapture(capture: Capture): MeasuredComponent[] {
-	const components = analyzeSystemPrompt(capture.systemPrompt, capture.systemPromptOptions);
+	const components = analyzeSystemPrompt(capture.systemPrompt, capture.systemPromptOptions, capture.tools);
 	for (const message of capture.contextMessages) {
 		const label =
 			message.role === "custom"
