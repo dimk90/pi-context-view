@@ -1,0 +1,10 @@
+{
+	"name": "pi-context-inspect",
+	"version": "0.0.1",
+	"description": "Pi extension: report initial context injections (source and token size) via --context-inspect",
+	"type": "module",
+	"license": "MIT",
+	"pi": {
+		"extensions": ["./index.ts"]
+	}
+}
