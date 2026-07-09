@@ -176,8 +176,11 @@ Starts fresh from project initialization; PoC code is reference material only.
   substring, and the trailing `Current date/cwd` line as the base-prompt end
   marker; everything after it is the extensions aggregate. Context messages
   measured with pi's `estimateTokens`.
-- [ ] 4. **Report rendering** — aligned plain-text table, total row, sorting by size
+- [x] 4. **Report rendering** — aligned plain-text table, total row, sorting by size
   descending within groups (pi first, extensions second).
+  Implemented in `report.ts` (pure module): dynamic column widths,
+  `TOKENS (est.)` header, thousands separators, `renderReport()` called from
+  `agent_end`.
 - [ ] 5. **Edge-case handling** — mode guards, missing options, zero extensions.
 - [ ] 6. **Manual test matrix**
   - `pi -e ./pi-context-inspect/index.ts --context-inspect` (no other extensions)

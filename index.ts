@@ -14,6 +14,7 @@
 import { type BuildSystemPromptOptions, type ContextEvent, type ExtensionAPI, estimateTokens } from "@earendil-works/pi-coding-agent";
 
 import { analyzeSystemPrompt, type MeasuredComponent } from "./measure.ts";
+import { renderReport } from "./report.ts";
 
 const PROBE_TEXT = "pi-context-inspect probe";
 
@@ -71,11 +72,7 @@ export default function (pi: ExtensionAPI) {
 		if (capture === undefined) {
 			console.error("pi-context-inspect: capture failed (before_agent_start did not fire)");
 		} else {
-			const components = measureCapture(capture);
-			// TODO(step 4): render a proper aligned table.
-			for (const item of components) {
-				console.log(`${item.label}: ${item.tokens} tokens (${item.chars} chars)`);
-			}
+			console.log(renderReport(measureCapture(capture)));
 		}
 		// Shutdown is honored right after agent_end in TUI mode; print mode
 		// exits on its own.
