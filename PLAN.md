@@ -181,7 +181,12 @@ Starts fresh from project initialization; PoC code is reference material only.
   Implemented in `report.ts` (pure module): dynamic column widths,
   `TOKENS (est.)` header, thousands separators, `renderReport()` called from
   `agent_end`.
-- [ ] 5. **Edge-case handling** — mode guards, missing options, zero extensions.
+- [x] 5. **Edge-case handling** — mode guards, missing options, zero extensions.
+  Added: JSON-mode refusal (stderr + shutdown, keeps stream clean),
+  `session_start.reason === "startup"` guard (no re-probe on
+  reload/resume/fork), watchdog timeout (15 s, unref'd) when the probe turn
+  never completes, `reportDone` idempotency, distinct label for
+  `--system-prompt` custom prompts.
 - [ ] 6. **Manual test matrix**
   - `pi -e ./pi-context-inspect/index.ts --context-inspect` (no other extensions)
   - with another injecting extension loaded (e.g. plan-mode example)

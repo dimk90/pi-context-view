@@ -18,6 +18,9 @@ import { renderReport } from "./report.ts";
 
 const PROBE_TEXT = "pi-context-inspect probe";
 
+/** How long to wait for the probe turn before giving up (ms). */
+const WATCHDOG_TIMEOUT_MS = 15_000;
+
 /** Everything captured during the probe turn. */
 interface Capture {
 	/** Fully chained system prompt as seen at our position in the handler chain. */
@@ -36,12 +39,33 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	let inspecting = false;
+	let reportDone = false;
 	let capture: Capture | undefined;
 	let shutdownRetry: NodeJS.Timeout | undefined;
 
-	pi.on("session_start", async (_event, _ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		if (pi.getFlag("context-inspect") !== true) return;
+		// Only inspect the initial startup; a /reload, /resume, or /fork with the
+		// flag still set must not re-trigger the probe.
+		if (event.reason !== "startup") return;
+		// JSON mode: a raw text report would corrupt the machine-readable stream.
+		if (ctx.mode === "json") {
+			console.error("pi-context-inspect: --context-inspect is not supported in --mode json");
+			ctx.shutdown();
+			return;
+		}
 		inspecting = true;
+		// Watchdog: if the probe turn never reaches agent_end (pi internals
+		// changed, provider refused to start a turn, ...), report and bail out
+		// instead of leaving pi sitting open. unref() keeps print mode free to
+		// exit earlier on its own.
+		const watchdog = setTimeout(() => {
+			if (!reportDone) {
+				console.error("pi-context-inspect: probe turn did not complete; no report. Try without other extensions.");
+				ctx.shutdown();
+			}
+		}, WATCHDOG_TIMEOUT_MS);
+		watchdog.unref();
 		// sendUserMessage (unlike sendMessage + triggerTurn) starts a turn even
 		// in print mode without -p.
 		pi.sendUserMessage(PROBE_TEXT);
@@ -69,7 +93,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
-		if (!inspecting) return;
+		if (!inspecting || reportDone) return;
+		reportDone = true;
 		if (capture === undefined) {
 			console.error("pi-context-inspect: capture failed (before_agent_start did not fire)");
 		} else {

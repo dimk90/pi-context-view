@@ -25,6 +25,7 @@ export interface MeasuredComponent {
 /** Minimal slice of BuildSystemPromptOptions that measurement needs. */
 export interface PromptOptionsSlice {
 	cwd: string;
+	customPrompt?: string;
 	appendSystemPrompt?: string;
 	contextFiles?: Array<{ path: string; content: string }>;
 	skills?: Array<{ name: string }>;
@@ -75,7 +76,11 @@ export function analyzeSystemPrompt(systemPrompt: string, options: PromptOptions
 		cursor = Math.max(cursor, span.end);
 	}
 	remainder += base.slice(cursor);
-	components.unshift(component("pi: base system prompt", "pi", remainder));
+	const baseLabel =
+		options.customPrompt !== undefined && options.customPrompt.length > 0
+			? "pi: custom system prompt (--system-prompt)"
+			: "pi: base system prompt";
+	components.unshift(component(baseLabel, "pi", remainder));
 
 	if (baseEnd !== -1 && baseEnd < systemPrompt.length) {
 		const added = systemPrompt.slice(baseEnd);
