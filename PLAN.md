@@ -162,8 +162,11 @@ Starts fresh from project initialization; PoC code is reference material only.
   - Empty `index.ts` with factory skeleton;
   - Init `AGENTS.md`, move to it relevant parts of `PLAN.md`.
   - Verify `pi -e ./pi-context-inspect/index.ts` loads.
-- [ ] 2. **Capture implementation** — implement the chosen strategy (A or B)
+- [x] 2. **Capture implementation** — implement the chosen strategy (A or B)
   properly: flag no-op guard, feature detection, clean shutdown.
+  Also captures extension-injected startup messages via the `context` event
+  (resolves the open question: they ARE visible there, with `customType`),
+  filtering out the probe message itself.
 - [ ] 3. **Component measurement** — per-component token estimation; pure
   functions in helper module (unit-testable, no `pi` access).
 - [ ] 4. **Report rendering** — aligned plain-text table, total row, sorting by size
@@ -206,9 +209,9 @@ Starts fresh from project initialization; PoC code is reference material only.
 - ~~Exact `estimateTokens` input shape~~ **Resolved (PoC):**
   `estimateTokens(message: AgentMessage)`; wrapping text as
   `{ role: "user", content: text }` works.
-- How to capture startup **messages** injected by other extensions
-  (`sendMessage` at `session_start`)? Not visible in `getBranch()` at
-  `before_agent_start` — try the `context` event during the probe turn.
+- ~~How to capture startup **messages** injected by other extensions?~~
+  **Resolved (step 2):** visible in the `context` event during the probe turn
+  as `role: "custom"` messages with `customType`; probe message filtered out.
 - Can the TUI probe flash ("probe" + "Request was aborted.") be suppressed or
   is it acceptable for v1? (v1: accept.)
 - Should the report also print the injected **text** (the earlier idea) behind

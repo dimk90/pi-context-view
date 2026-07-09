@@ -24,12 +24,15 @@
 		"check": "tsc --noEmit"
 	},
 	"pi": {
-		"extensions": ["./index.ts"]
+		"extensions": [
+			"./index.ts"
+		]
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-coding-agent": "0.80.3"
+		"@earendil-works/pi-coding-agent": "0.80.3",
+		"typescript": "^7.0.2"
 	}
 }
