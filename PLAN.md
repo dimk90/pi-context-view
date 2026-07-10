@@ -239,7 +239,7 @@ overlay.
 
 ## Development steps
 
-- [ ] 1. **Remove v1 CLI lifecycle and establish passive capture.**
+- [x] 1. **Remove v1 CLI lifecycle and establish passive capture.**
   - Delete `registerFlag`, automatic probe, abort/report/shutdown path,
     watchdog, retry timer, shutdown grace period, JSON refusal, print fallback,
     and `-p` hint from `src/index.ts`.

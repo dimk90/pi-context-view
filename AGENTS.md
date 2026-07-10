@@ -7,8 +7,9 @@ to an interactive `/context` command. The command opens a TUI context browser:
 - **Statistics** tab: on-demand estimated context composition.
 - Enter previews raw injection text; no raw content is logged or persisted.
 
-`src/` still contains the v1 CLI implementation until PLAN.md step 1 is
-completed. Do not preserve CLI compatibility during the migration.
+The v1 CLI lifecycle has been removed (PLAN.md step 1); `src/index.ts` now
+does passive capture-once only. The `/context` command and dialog are not yet
+implemented. Do not preserve CLI compatibility during the migration.
 
 ## Target architecture
 
