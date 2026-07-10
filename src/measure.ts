@@ -119,6 +119,11 @@ export function textTokens(text: string): number {
 	return Math.ceil(text.length / 4);
 }
 
+/**
+ * Measure active tool contributions: per-tool definition payloads plus the
+ * prompt snippet/guideline lines carved out of the base prompt. Built-in
+ * tools collapse into one aggregate pi-native item.
+ */
 function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], carvedSpans: Span[]): void {
 	let builtinDefinitions = "";
 	let builtinCount = 0;
@@ -160,6 +165,7 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 	}
 }
 
+/** Carve each <project_instructions> block out of the base prompt as its own item. */
 function measureContextFiles(
 	base: string,
 	options: PromptOptionsSlice,
@@ -182,6 +188,7 @@ function measureContextFiles(
 	}
 }
 
+/** Carve the skills block out of the base prompt as one aggregate item. */
 function measureSkills(base: string, options: PromptOptionsSlice, items: InjectionItem[], carvedSpans: Span[]): void {
 	const skillCount = options.skills?.length ?? 0;
 	if (skillCount === 0) return;
@@ -191,6 +198,7 @@ function measureSkills(base: string, options: PromptOptionsSlice, items: Injecti
 	carvedSpans.push(span);
 }
 
+/** Carve the --append-system-prompt text out of the base prompt when present. */
 function measureAppendedPrompt(
 	base: string,
 	options: PromptOptionsSlice,
@@ -205,6 +213,7 @@ function measureAppendedPrompt(
 	carvedSpans.push({ start, end: start + append.length });
 }
 
+/** Build an initial-phase InjectionItem with derived char/token sizes. */
 function createItem(
 	id: string,
 	kind: InjectionKind,
@@ -224,10 +233,12 @@ function createItem(
 	};
 }
 
+/** Injection source for a non-builtin tool provenance string. */
 function extensionSource(source: string): InjectionSource {
 	return { id: `tool-source:${source}`, label: source, native: false };
 }
 
+/** Remove the given spans from text, tolerating overlaps, and return the remainder. */
 function carve(text: string, spans: Span[]): string {
 	spans.sort((a, b) => a.start - b.start);
 	let remainder = "";
@@ -239,16 +250,19 @@ function carve(text: string, spans: Span[]): string {
 	return remainder + text.slice(cursor);
 }
 
+/** Half-open [start, end) character range within the base prompt. */
 interface Span {
 	start: number;
 	end: number;
 }
 
+/** Span of the first exact occurrence of needle, or undefined. */
 function findExactSpan(haystack: string, needle: string): Span | undefined {
 	const start = haystack.indexOf(needle);
 	return start === -1 ? undefined : { start, end: start + needle.length };
 }
 
+/** Span of one <project_instructions path="...">...</project_instructions> block. */
 function findContextFileSpan(systemPrompt: string, filePath: string): Span | undefined {
 	const open = `<project_instructions path="${filePath}">`;
 	const close = "</project_instructions>";
@@ -259,6 +273,7 @@ function findContextFileSpan(systemPrompt: string, filePath: string): Span | und
 	return { start, end: end + close.length };
 }
 
+/** Span of the skills intro sentence through </available_skills>. */
 function findSkillsSpan(systemPrompt: string): Span | undefined {
 	const open = "The following skills provide specialized instructions";
 	const close = "</available_skills>";

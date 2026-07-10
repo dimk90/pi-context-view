@@ -28,14 +28,17 @@ export function renderReport(items: readonly InjectionItem[]): string {
 	return lines.join("\n");
 }
 
+/** "source: label" row label, with pi-native sources shown as "pi". */
 function formatLabel(item: InjectionItem): string {
 	return item.source.native ? `pi: ${item.label}` : `${item.source.label}: ${item.label}`;
 }
 
+/** Copy of items ordered by estimated tokens, largest first. */
 function sortBySizeDescending(items: readonly InjectionItem[]): InjectionItem[] {
 	return [...items].sort((a, b) => b.tokens - a.tokens);
 }
 
+/** Thousands-separated token count for table display. */
 function formatTokens(tokens: number): string {
 	return tokens.toLocaleString("en-US");
 }

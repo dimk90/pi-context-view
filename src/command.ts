@@ -1,3 +1,7 @@
+/**
+ * `/context` command grammar, capture resolution, and the temporary
+ * capture-confirmation overlay shown until the focused views land.
+ */
 import {
 	DynamicBorder,
 	type ExtensionAPI,
@@ -26,6 +30,7 @@ const ARGUMENT_OPTIONS = [
 	{ value: "runtime off", label: "runtime off", description: "Disable runtime injection logging" },
 ] satisfies AutocompleteItem[];
 
+/** The focused view a `/context` invocation requests. */
 export type ContextView = "usage" | "injections";
 
 /** Parsed `/context` argument grammar. */
@@ -147,6 +152,7 @@ export function reportCommandMessage(
 	process.stderr.write(`${message}\n`);
 }
 
+/** Explain why a silent probe cannot run now, or undefined when it can. */
 function getProbeUnavailableReason(context: ExtensionCommandContext): string | undefined {
 	if (context.model === undefined) return "Silent probe unavailable: no model is selected.";
 	if (!context.modelRegistry.hasConfiguredAuth(context.model)) {
@@ -155,6 +161,7 @@ function getProbeUnavailableReason(context: ExtensionCommandContext): string | u
 	return undefined;
 }
 
+/** Build a degraded pi-native snapshot when passive capture and probing both failed. */
 function createFallback(
 	pi: ExtensionAPI,
 	context: ExtensionCommandContext,
@@ -171,6 +178,7 @@ function createFallback(
 	};
 }
 
+/** Assemble the bordered overlay content for one render pass. */
 function createPlaceholderContainer(
 	theme: Theme,
 	view: ContextView,
@@ -198,6 +206,7 @@ function createPlaceholderContainer(
 	return container;
 }
 
+/** Human-readable capture provenance shown in the overlay. */
 function formatCaptureOrigin(capture: CapturePlaceholder): string {
 	if (capture.degradedReason !== undefined) return "pi-native fallback";
 	return capture.snapshot.origin === "real-turn" ? "first real turn" : "silent probe";

@@ -14,10 +14,12 @@ import {
 	SilentProbeState,
 } from "../src/capture.ts";
 
+/** Minimal custom-role message fixture. */
 function customMessage(customType: string, content: string, timestamp: number): ContextEvent["messages"][number] {
 	return { role: "custom", customType, content, display: false, timestamp };
 }
 
+/** ToolInfo fixture with the given provenance source and one guideline. */
 function tool(name: string, source: string): ToolInfo {
 	return {
 		name,

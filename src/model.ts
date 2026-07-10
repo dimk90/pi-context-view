@@ -103,16 +103,19 @@ export function buildSnapshot(
 	};
 }
 
+/** Internal accumulator for groupInjections before freezing into InjectionGroup. */
 interface MutableGroup {
 	source: InjectionSource;
 	items: InjectionItem[];
 	totalTokens: number;
 }
 
+/** Owned copy of an item, including its nested source. */
 function copyItem(item: InjectionItem): InjectionItem {
 	return { ...item, source: { ...item.source } };
 }
 
+/** Order groups: pi-native first, then extensions by size, aggregate last. */
 function compareGroups(a: InjectionGroup, b: InjectionGroup): number {
 	if (a.source.native !== b.source.native) return a.source.native ? -1 : 1;
 	const aAggregate = a.source.id === AGGREGATE_SOURCE_ID;

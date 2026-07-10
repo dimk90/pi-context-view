@@ -58,6 +58,7 @@ export interface SyntheticMessageIdentity {
 	readonly timestamp: number;
 }
 
+/** Lifecycle of the single probe attempt; only "running"/"timed-out" count as the current run. */
 type ProbePhase = "idle" | "waiting" | "running" | "timed-out" | "failed" | "settled";
 
 /**
@@ -69,15 +70,21 @@ export class InitialCaptureState {
 	private pendingOptions: BuildSystemPromptOptions | undefined;
 	private initialSnapshot: InitialSnapshot | undefined;
 
+	/** The frozen Initial snapshot, or undefined until `finalize()` succeeds. */
 	public get snapshot(): InitialSnapshot | undefined {
 		return this.initialSnapshot;
 	}
 
+	/** Stash the structured prompt options from `before_agent_start`; no-op once frozen. */
 	public prepare(options: BuildSystemPromptOptions): void {
 		if (this.initialSnapshot !== undefined) return;
 		this.pendingOptions = options;
 	}
 
+	/**
+	 * Freeze the Initial snapshot from the first context event. Returns the
+	 * existing snapshot on repeat calls, or undefined when `prepare()` never ran.
+	 */
 	public finalize(input: CaptureFinalization): InitialSnapshot | undefined {
 		if (this.initialSnapshot !== undefined) return this.initialSnapshot;
 		if (this.pendingOptions === undefined) return undefined;
@@ -107,14 +114,20 @@ export class SilentProbeState {
 	private outcome: ProbeOutcome | undefined;
 	private timeout: NodeJS.Timeout | undefined;
 
+	/** True while the probe owns the in-flight agent run (including after a timeout). */
 	public get isCurrentRun(): boolean {
 		return this.phase === "running" || this.phase === "timed-out";
 	}
 
+	/** Defensive copies of the recorded probe message identities. */
 	public get syntheticMessages(): readonly SyntheticMessageIdentity[] {
 		return [...this.identities.values()].map((identity) => ({ ...identity }));
 	}
 
+	/**
+	 * Begin the one allowed probe attempt with a failure timeout. Repeat calls
+	 * return the original attempt's completion with `started: false`.
+	 */
 	public start(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): ProbeAttempt {
 		if (this.completion !== undefined) {
 			return { started: false, completion: this.completion };
@@ -198,6 +211,7 @@ export class SilentProbeState {
 		this.resolve({ status: "failed", reason });
 	}
 
+	/** Settle the completion promise exactly once and clear the timeout. */
 	private resolve(outcome: ProbeOutcome): void {
 		if (this.outcome !== undefined) return;
 		if (this.timeout !== undefined) clearTimeout(this.timeout);
@@ -271,14 +285,17 @@ export function measureInjectedMessages(messages: ContextEvent["messages"]): Inj
 	return items;
 }
 
+/** Map key uniquely identifying one probe message by role and timestamp. */
 function identityKey(identity: SyntheticMessageIdentity): string {
 	return `${identity.role}:${identity.timestamp}`;
 }
 
+/** Attribute a custom-role message to its customType; the actual injector is unknowable. */
 function messageSource(customType: string): InjectionSource {
 	return { id: `message-type:${customType}`, label: customType, native: false };
 }
 
+/** Normalize the string-or-array promptGuidelines field to an owned array. */
 function normalizeGuidelines(guidelines: string | string[] | undefined): string[] {
 	if (guidelines === undefined) return [];
 	return Array.isArray(guidelines) ? [...guidelines] : [guidelines];

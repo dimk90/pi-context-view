@@ -5,6 +5,7 @@ import { analyzeSystemPrompt, type PromptOptionsSlice, type ToolSlice } from "..
 
 const CWD = "/tmp/context-project";
 
+/** Today's date formatted like pi's base-prompt "Current date:" line. */
 function currentDate(): string {
 	const now = new Date();
 	return [

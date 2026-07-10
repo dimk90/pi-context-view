@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { buildSnapshot, groupInjections, type InjectionItem } from "../src/model.ts";
 
+/** InjectionItem fixture with sizes derived from the token count. */
 function item(
 	id: string,
 	sourceId: string,
