@@ -309,7 +309,7 @@ custom views rather than hiding or clipping them.
   - Verify no provider call, no transcript artifacts, no model-context
     pollution, exact filtering of only synthetic entries, repeated command
     idempotency, and genuine user abort rendering.
-- [ ] 4. **Build the Injections/Initial view.**
+- [x] 4. **Build the Injections/Initial view.**
   - Hierarchical groups/items, totals, capture-origin metadata, navigation,
     scrolling, narrow-terminal fallback, themed colors, and bold text.
   - Set it as temporary default for `/context`.
@@ -345,6 +345,9 @@ custom views rather than hiding or clipping them.
   - README with all `/context` forms, Usage as the default, injection preview
     and privacy notes, runtime logging overhead/bounds, estimate disclaimer,
     and screenshots/asciicast.
+      - Check if there best practice/recommendation for pi extension doc.
+      - The doc should explicitly mention: what injected into context, slash commands, cli commands.
+      - It should contain images for output examples and thumbnail for extension itself (need resolution best practice).
   - Remove obsolete v1 renderer/PoC files if no longer useful.
   - Add repository/homepage/bugs metadata; decide release version, then tag and
     verify `pi install` + `pi list`.

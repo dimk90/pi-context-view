@@ -23,6 +23,8 @@ import {
 import type { InitialSnapshot } from "./model.ts";
 
 const COMMAND_USAGE = "Usage: /context [usage|injections|runtime on|runtime off]";
+/** Temporary until the Usage view exists (PLAN.md step 6); then "usage". */
+const DEFAULT_VIEW: ContextView = "injections";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
 	{ value: "injections", label: "injections", description: "Explore initial and runtime injections" },
@@ -48,7 +50,10 @@ export interface CapturePlaceholder {
 /** Parse the complete, intentionally small `/context` argument grammar. */
 export function parseContextCommand(argumentsText: string): ContextCommand {
 	const words = argumentsText.trim().toLowerCase().split(/\s+/).filter(Boolean);
-	if (words.length === 0 || (words.length === 1 && words[0] === "usage")) {
+	if (words.length === 0) {
+		return { type: "view", view: DEFAULT_VIEW };
+	}
+	if (words.length === 1 && words[0] === "usage") {
 		return { type: "view", view: "usage" };
 	}
 	if (words.length === 1 && words[0] === "injections") {

@@ -14,11 +14,18 @@ import {
 	showCapturePlaceholder,
 } from "./command.ts";
 import { InitialCaptureState, SilentProbeState } from "./capture.ts";
+import { showInjectionsView } from "./ui/injections-view.ts";
 
 export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
 	const probe = new SilentProbeState();
 	let runtimeEnabled = false;
+	const runtime = {
+		isEnabled: () => runtimeEnabled,
+		setEnabled: (enabled: boolean) => {
+			runtimeEnabled = enabled;
+		},
+	};
 
 	pi.on("input", (event) => {
 		probe.observeInput(event.source, event.text);
@@ -78,13 +85,21 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			if (command.type === "runtime") {
-				runtimeEnabled = command.enabled;
-				const state = runtimeEnabled ? "enabled" : "disabled";
+				runtime.setEnabled(command.enabled);
+				const state = command.enabled ? "enabled" : "disabled";
 				reportCommandMessage(ctx, `Runtime injection logging ${state}.`, "info");
 				return;
 			}
 
 			const placeholder = await resolveInitialCapture(pi, capture, probe, ctx);
+			if (command.view === "injections") {
+				await showInjectionsView(ctx, {
+					snapshot: placeholder.snapshot,
+					degradedReason: placeholder.degradedReason,
+					runtime,
+				});
+				return;
+			}
 			await showCapturePlaceholder(ctx, command.view, placeholder);
 		},
 	});
