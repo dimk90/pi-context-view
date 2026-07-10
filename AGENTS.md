@@ -1,15 +1,18 @@
 # pi-context-inspect
 
 Pi extension in migration from the superseded `--context-inspect` CLI workflow
-to an interactive `/context` command. The command opens a TUI context browser:
+to focused `/context` TUI views:
 
-- **Injections** tab: frozen Initial snapshot + optional bounded Runtime log.
-- **Statistics** tab: on-demand estimated context composition.
-- Enter previews raw injection text; no raw content is logged or persisted.
+- `/context` or `/context usage` — on-demand estimated context composition.
+- `/context injections` — frozen Initial snapshot + optional bounded Runtime
+  log; Enter previews raw injection text.
+- `/context runtime on|off` — toggle future logging without a view or probe.
+
+There are no tabs. No raw injection content is logged or persisted.
 
 The v1 CLI lifecycle has been removed (PLAN.md step 1); `src/index.ts` now
-does passive capture-once only. The `/context` command and dialog are not yet
-implemented. Do not preserve CLI compatibility during the migration.
+does passive capture-once only. The `/context` command and focused views are
+not yet implemented. Do not preserve CLI compatibility during the migration.
 
 ## Target architecture
 
@@ -28,7 +31,8 @@ the active tool set in our own `before_agent_start` handler — later-loaded
 handlers may still edit the prompt or call `pi.setActiveTools()`. Freeze
 owned copies only; shared references can be mutated by other extensions.
 
-If `/context` runs before a real turn, use one on-demand silent probe:
+If Usage or Injections is requested before a real turn, use one on-demand
+silent probe. Runtime toggle subcommands never probe:
 
 ```text
 /context           → wait idle, hide working row, sendUserMessage("")
@@ -36,16 +40,16 @@ before_agent_start → prepare Initial
 turn_start         → abort before provider
 context            → finalize Initial; filter synthetic user message
 message_end        → sanitize only synthetic aborted assistant
-agent_settled      → restore UI, resolve command, open dialog
+agent_settled      → restore UI, resolve command, open requested view
 ```
 
 The probe entries remain in the session tree. Track their exact role+timestamp
-and filter them from later model context, Runtime logging, and Statistics.
+and filter them from later model context, Runtime logging, and Usage.
 Other extensions still observe probe lifecycle events; never probe
 automatically or more than once per extension runtime.
 
 Runtime injection logging is disabled by default, memory-only, and bounded
-(initial target: 200 entries / 1 MiB). Statistics are computed on demand from
+(initial target: 200 entries / 1 MiB). Usage is computed on demand from
 `ctx.sessionManager.buildSessionContext().messages`; use
 `ctx.getContextUsage()` separately for pi’s overall usage/window values.
 
@@ -66,7 +70,7 @@ Runtime injection logging is disabled by default, memory-only, and bounded
 - Extensions can inject non-custom-role messages from `context` handlers;
   role-based detection alone misses them (needs session-branch diffing).
 - `buildContextEntries()` includes non-context metadata. Use
-  `buildSessionContext().messages` for Statistics.
+  `buildSessionContext().messages` for Usage.
 - `ctx.ui.custom()` is TUI-only. Guard with `ctx.mode === "tui"`.
 
 ## Layout
@@ -74,12 +78,13 @@ Runtime injection logging is disabled by default, memory-only, and bounded
 Target modules (created incrementally per PLAN.md):
 
 - `src/index.ts` — factory and event/command wiring only.
-- `src/model.ts` — semantic snapshot/injection/statistics types and grouping.
+- `src/model.ts` — semantic snapshot/injection/usage types and grouping.
 - `src/capture.ts` — capture-once state; silent-probe state machine is step 3.
 - `src/runtime.ts` — bounded optional Runtime log.
 - `src/measure.ts` — pure prompt/tool measurement.
-- `src/statistics.ts` — pure context classification.
-- `src/ui/context-dialog.ts` — tabbed dialog and preview state machine.
+- `src/usage.ts` — pure context classification and totals.
+- `src/ui/usage-view.ts` — focused Usage overlay.
+- `src/ui/injections-view.ts` — injection explorer and preview state machine.
 - `src/report.ts` — temporary v1 renderer; remove when no longer needed.
 - `PLAN.md` — current decisions and step checkboxes; keep them current.
 - `HISTORY.md` — superseded v1 findings; reference only.
@@ -112,7 +117,7 @@ Test marker load order in both directions and use an
 - no provider request during a probe;
 - no visible probe/abort transcript artifacts;
 - genuine user aborts remain visible;
-- synthetic entries never reach later model contexts or Statistics;
+- synthetic entries never reach later model contexts or Usage;
 - Initial freezes once per extension runtime;
 - Runtime is off and bounded by default;
 - no raw injection content is printed, logged, or persisted;

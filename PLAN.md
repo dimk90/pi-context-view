@@ -2,20 +2,20 @@
 
 ## Goal
 
-Add a `/context` slash command to pi. It opens an interactive TUI dialog for
-understanding what occupies the model context.
+Add a `/context` slash command to pi with focused subcommands rather than one
+tabbed dialog:
 
-The dialog has two tabs:
-
-1. **Injections**
-   - **Initial** — the first observable provider-bound context in the current
-     extension runtime: pi prompt components, active tool definitions,
-     extension prompt additions, and injected messages.
-   - **Runtime** — an optional, bounded log of context injections observed
-     after the initial snapshot. Logging is disabled by default.
-2. **Statistics** — an estimated map of current context usage by data type:
-   system instructions, tool schemas, user/assistant messages, thinking,
-   tool calls/results, summaries, and extension messages.
+- `/context` or `/context usage` — open an estimated map of current context
+  usage by data type: system instructions, tool schemas, user/assistant
+  messages, thinking, tool calls/results, summaries, and extension messages.
+- `/context injections` — open the injection explorer:
+  - **Initial** — the first observable provider-bound context in the current
+    extension runtime: pi prompt components, active tool definitions,
+    extension prompt additions, and injected messages.
+  - **Runtime** — an optional, bounded log of context injections observed
+    after the initial snapshot. Logging is disabled by default.
+- `/context runtime on|off` — control future Runtime logging without opening a
+  view or triggering a probe.
 
 The old `--context-inspect` print-and-exit workflow is superseded. See
 [HISTORY.md](HISTORY.md).
@@ -24,27 +24,52 @@ The old `--context-inspect` print-and-exit workflow is superseded. See
 
 - `/context` is TUI-only in v2. Non-TUI invocation reports that TUI mode is
   required; it does not preserve the old plain-table workflow.
+- `/context` defaults to `/context usage`. Usage and Injections are separate,
+  focused overlays with no tabs or tab-switching keybindings.
+- Unknown arguments show concise command usage; argument completions offer
+  `usage`, `injections`, and `runtime on|off`.
 - Initial means the first context observable by this extension instance. It
-  comes from the first real turn, or from one on-demand silent probe if
-  `/context` is invoked before any real turn.
+  comes from the first real turn, or from one on-demand silent probe if a
+  Usage/Injections view is requested before any real turn.
 - Initial is frozen once captured. Later changes appear only in Runtime when
   runtime logging is enabled.
 - Runtime logging is opt-in, in-memory, bounded, and session-runtime scoped.
   It is never injected into model context or persisted in session entries.
-- Statistics are computed on demand. Category totals are estimates and may
-  differ from pi/provider token accounting.
+- Usage is computed on demand. Category totals are estimates and may differ
+  from pi/provider token accounting.
 - Per-extension attribution of chained prompt edits is unavailable through the
   public API. Prompt additions remain one aggregate extension contribution.
 - Tool ownership uses `ToolInfo.sourceInfo`. Injected messages are identified
   by `customType` when present; `customType` is not guaranteed to be a package
   or extension name.
 
-## UI sketch
+## UI sketches
+
+Default — `/context` or `/context usage`:
 
 ```text
-┌ Context ────────────────────────────────────────────────┐
-│ [Injections]  Statistics                                │
+┌ Context usage ──────────────────────────────────────────┐
+│ estimated current/next-request composition              │
 │                                                        │
+│ system prompt                                  3,126   │
+│ active tool schemas                            2,146   │
+│ user messages                                  1,805   │
+│ assistant text                                 8,491   │
+│ thinking                                       3,102   │
+│ tool calls/results                             4,384   │
+│ summaries                                      1,227   │
+│                                                        │
+│ estimated total                              24,281   │
+│ pi usage                         24,958 / 200,000  12% │
+│                                                        │
+│ r refresh · Esc close                                  │
+└────────────────────────────────────────────────────────┘
+```
+
+`/context injections`:
+
+```text
+┌ Context injections ─────────────────────────────────────┐
 │ INITIAL                      captured: synthetic probe  │
 │  pi                                             3,126  │
 │    base system prompt                             652  │
@@ -61,8 +86,7 @@ The old `--context-inspect` print-and-exit workflow is superseded. See
 │ RUNTIME                         logging: off            │
 │  Press r to start logging future injections.            │
 │                                                        │
-│ ↑/↓ select · Enter preview · Tab switch · r logging    │
-│ Esc close                                              │
+│ ↑/↓ select · Enter preview · r logging · Esc close     │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -101,9 +125,11 @@ logging is enabled.
 
 ### On-demand silent probe
 
-`/context` needs a complete Initial snapshot even before the first real prompt.
-The public API has no direct way to invoke the `before_agent_start` chain, so
-one synthetic run is necessary.
+Both `/context usage` (including bare `/context`) and
+`/context injections` need a complete Initial snapshot even before the first
+real prompt. The public API has no direct way to invoke the
+`before_agent_start` chain, so one synthetic run is necessary. Runtime toggle
+subcommands never trigger a probe.
 
 Important API constraint: `pi.sendMessage(..., { triggerTurn: true })` starts
 the low-level agent directly and does **not** run `before_agent_start`. It
@@ -111,7 +137,8 @@ cannot be used for this probe.
 
 Probe state machine:
 
-1. If Initial already exists, open the dialog immediately.
+1. If Initial already exists, open the requested Usage or Injections view
+   immediately.
 2. Otherwise wait for idle and enter `probing` state.
 3. Hide the normal working row and call `pi.sendUserMessage("")`.
 4. Capture through the normal `before_agent_start` → `context` path.
@@ -121,11 +148,11 @@ Probe state machine:
    assistant message with `stopReason: "stop"`; this suppresses pi’s
    “Operation aborted” transcript row without affecting genuine user aborts.
 8. At `agent_settled`, restore UI state, resolve the pending command, and open
-   the dialog.
+   the requested view.
 
 The empty synthetic user and assistant entries remain in the session tree.
 They must be filtered by exact role+timestamp from every later `context`
-event, the Statistics tab, and Runtime logging. They are hidden from the
+event, the Usage view, and Runtime logging. They are hidden from the
 transcript and model, but the probe is not side-effect-free: other extensions
 still observe its lifecycle events. Run it only on demand and at most once per
 extension runtime.
@@ -149,7 +176,7 @@ changes relative to the previous observable state:
 - observable context-only or custom message additions/removals.
 
 Normal conversation growth—assistant replies and tool results—is not a runtime
-injection; it belongs in Statistics.
+injection; it belongs in Usage.
 
 Each entry stores request index, kind, label/source, estimated token delta, and
 bounded preview text. Use a ring buffer with both entry and byte limits
@@ -158,8 +185,8 @@ entries are dropped.
 
 Toggle from either surface:
 
-- `r` in the Injections tab;
-- `/context runtime on|off`.
+- `r` in the Injections view;
+- `/context runtime on|off` (no view and no probe).
 
 The UI records “enabled at request N,” so it does not imply that earlier
 runtime injections were captured. Tree navigation clears the log and resets
@@ -167,10 +194,10 @@ its comparison baseline while retaining the enabled/disabled setting.
 Reload/new/resume/fork creates a fresh extension runtime and clears all
 in-memory logging state.
 
-### Context statistics
+### Context usage
 
-Statistics are computed when the tab opens or refreshes; there is no continuous
-statistics collector.
+Usage is computed when `/context` or `/context usage` opens, and again when the
+user presses `r`; there is no continuous usage collector.
 
 Use `ctx.sessionManager.buildSessionContext().messages`, not
 `buildContextEntries()`: the latter preserves non-context metadata entries.
@@ -205,12 +232,12 @@ for example:
   preview text, optional request index.
 - `InjectionGroup` — source/category plus child items and totals.
 - `RuntimeInjection` — change kind and signed token delta.
-- `ContextStatistics` / `StatisticCategory` — category totals and overall
-  usage metadata.
+- `ContextUsageSnapshot` / `UsageCategory` — category totals and overall usage
+  metadata.
 
 Raw preview text can contain sensitive project instructions or message
 content. Keep it process-local, never log it, never persist it, and reveal it
-only after explicit Enter selection in the dialog.
+only after explicit Enter selection in the Injections view.
 
 ### Source layout target
 
@@ -219,27 +246,37 @@ only after explicit Enter selection in the dialog.
 - `src/capture.ts` — initial snapshot and silent-probe state machine.
 - `src/runtime.ts` — bounded runtime diff log.
 - `src/measure.ts` — pure prompt/tool measurement.
-- `src/statistics.ts` — pure message classification and totals.
-- `src/ui/context-dialog.ts` — overlay state machine and rendering.
-- `src/report.ts` — temporary v1 debug renderer; remove once the dialog and
+- `src/usage.ts` — pure message classification and usage totals.
+- `src/ui/usage-view.ts` — focused Usage overlay.
+- `src/ui/injections-view.ts` — Initial/Runtime explorer and preview state.
+- `src/report.ts` — temporary v1 debug renderer; remove once the views and
   tests no longer use it.
 
-### Dialog behavior
+### Command and view behavior
 
-Use one component state machine rather than nesting disposable components:
+One command handler parses a small explicit grammar:
 
-- `tab`: `injections | statistics`;
-- `view`: `list | preview`;
-- selected row and scroll offset per tab.
+```text
+/context                 → usage
+/context usage           → usage
+/context injections      → injections
+/context runtime on|off  → toggle only
+```
 
-Tab/Shift+Tab or Left/Right switches tabs. Up/Down and j/k navigate. Enter
-opens a scrollable preview. Escape returns from preview to list, then closes
-the dialog. Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width
-helpers, render caching, and proper theme invalidation.
+Provide argument completion for this grammar. Unknown or incomplete arguments
+show concise usage rather than silently choosing a view.
 
-Use an overlay on sufficiently large terminals. On narrow terminals, open the
-same component as a regular full custom view rather than hiding or clipping the
-overlay.
+The views are independent; there is no tab state or tab-switching keybinding.
+The Usage view is read-only: `r` recomputes usage and Escape closes it. The
+Injections view has a small state machine (`list | preview`), selected row, and
+scroll offsets. Up/Down and j/k navigate; Enter opens a scrollable preview;
+Escape returns from preview to list, then closes the view. In that view, `r`
+toggles Runtime logging.
+
+Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width helpers,
+render caching, and proper theme invalidation. Use overlays on sufficiently
+large terminals. On narrow terminals, open the same components as regular full
+custom views rather than hiding or clipping them.
 
 ## Development steps
 
@@ -263,41 +300,47 @@ overlay.
 - [ ] 3. **Implement the silent probe and `/context` command shell.**
   - Add the guarded state machine described above; verify the partial PoC
     findings in production wiring.
-  - Register `/context` and `/context runtime on|off` argument handling.
-  - Before first real turn: probe once, await `agent_settled`, then show a
-    minimal custom dialog confirming capture; on failure show degraded data.
+  - Register the explicit command grammar and argument completions:
+    `/context` → usage, `/context usage`, `/context injections`, and
+    `/context runtime on|off`.
+  - Usage/Injections before the first real turn: probe once, await
+    `agent_settled`, then show a minimal placeholder for the requested view;
+    Runtime toggles never probe. On failure show degraded data.
   - Verify no provider call, no transcript artifacts, no model-context
     pollution, exact filtering of only synthetic entries, repeated command
     idempotency, and genuine user abort rendering.
-- [ ] 4. **Build the Injections/Initial dialog.**
-  - Tab bar with Statistics placeholder.
+- [ ] 4. **Build the Usage view (the default).**
+  - Implement `buildSessionContext().messages` classification and synthetic
+    filtering in `usage.ts`.
+  - Render category totals, proportions, pi usage/context-window metadata,
+    unknown-after-compaction state, and `r` refresh behavior.
+  - Add narrow-terminal fallback, themed colors, and bold text.
+- [ ] 5. **Build the Injections/Initial view.**
   - Hierarchical groups/items, totals, capture-origin metadata, navigation,
-    scrolling, narrow-terminal fallback, themed colors and bold text.
-- [ ] 5. **Add injection preview mode.**
+    scrolling, narrow-terminal fallback, themed colors, and bold text.
+- [ ] 6. **Add injection preview mode.**
   - Enter opens `InjectionItem.text`; scrolling via arrows/j/k/PgUp/PgDn;
     Escape returns to the same selected list row.
-  - Wrap ANSI-aware text and avoid exposing raw content outside the dialog.
-- [ ] 6. **Add bounded opt-in Runtime logging.**
+  - Wrap ANSI-aware text and avoid exposing raw content outside the view.
+- [ ] 7. **Add bounded opt-in Runtime logging.**
   - Implement prompt/tool/message diffing, request indexing, ring-buffer
     limits, eviction count, both toggle surfaces, and Runtime section UI.
-  - Verify disabled overhead is only guarded event dispatch/state checks.
-- [ ] 7. **Add the Statistics tab.**
-  - Implement `buildSessionContext().messages` classification and synthetic
-    filtering in `statistics.ts`.
-  - Render category totals, proportions, pi usage/context-window metadata,
-    unknown-after-compaction state, and refresh behavior.
+  - Verify disabled overhead is only guarded event dispatch/state checks and
+    `/context runtime on|off` never probes or opens a view.
 - [ ] 8. **Polish lifecycle and edge cases.**
   - Streaming command invocation, probe timeout/no model/no auth, zero other
     extensions, compaction, tree navigation, reload/new/resume/fork, dynamic
     tools, images, and conditional prompt additions.
 - [ ] 9. **Complete automated and real-TTY testing.**
-  - Pure measurement/grouping/runtime/statistics tests.
+  - Pure measurement/grouping/runtime/usage tests.
   - Real pty tests at 60/80/120 columns; theme invalidation; overlay/full-view
-    behavior; marker before/after inspector; no provider-call sentinel.
+    behavior; both focused views; marker before/after inspector;
+    no-provider-call sentinel.
   - Use `script` or Python `pty`; tmux is unavailable in this environment.
 - [ ] 10. **Documentation and release.**
-  - README with `/context`, tabs, preview/privacy notes, runtime logging
-    overhead/bounds, estimate disclaimer, and screenshots/asciicast.
+  - README with all `/context` forms, Usage as the default, injection preview
+    and privacy notes, runtime logging overhead/bounds, estimate disclaimer,
+    and screenshots/asciicast.
   - Remove obsolete v1 renderer/PoC files if no longer useful.
   - Add repository/homepage/bugs metadata; decide release version, then tag and
     verify `pi install` + `pi list`.
@@ -325,7 +368,7 @@ overlay.
 - Initial freezes once per extension runtime.
 - Final prompt capture is independent of inspector/injector load order.
 - Probe suppression never hides a genuine user abort.
-- Synthetic probe messages never reach later provider contexts or statistics.
+- Synthetic probe messages never reach later provider contexts or Usage.
 - Runtime storage is bounded and disabled by default.
 - No raw injection content is printed, logged, or persisted.
 - Every rendered TUI line stays within the supplied width.
