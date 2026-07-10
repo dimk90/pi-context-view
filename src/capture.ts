@@ -7,6 +7,7 @@ import {
 	type BuildSystemPromptOptions,
 	type ContextEvent,
 	estimateTokens,
+	type InputSource,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
@@ -19,6 +20,8 @@ import {
 	type InjectionSource,
 } from "./model.ts";
 
+const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+
 /** Everything available when the first context event finalizes a snapshot. */
 export interface CaptureFinalization {
 	systemPrompt: string;
@@ -28,6 +31,34 @@ export interface CaptureFinalization {
 	origin: CaptureOrigin;
 	capturedAt?: Date;
 }
+
+/** Inputs available for a degraded pi-native snapshot when probing cannot run. */
+export interface NativeFallbackInput {
+	systemPrompt: string;
+	options: BuildSystemPromptOptions;
+	allTools: readonly ToolInfo[];
+	activeToolNames: readonly string[];
+	capturedAt?: Date;
+}
+
+/** Result of the one allowed silent-probe attempt. */
+export type ProbeOutcome =
+	| { readonly status: "captured" }
+	| { readonly status: "failed"; readonly reason: string };
+
+/** A probe start request; concurrent callers share `completion`. */
+export interface ProbeAttempt {
+	readonly started: boolean;
+	readonly completion: Promise<ProbeOutcome>;
+}
+
+/** Exact identity used to remove only synthetic probe messages. */
+export interface SyntheticMessageIdentity {
+	readonly role: "user" | "assistant";
+	readonly timestamp: number;
+}
+
+type ProbePhase = "idle" | "waiting" | "running" | "timed-out" | "failed" | "settled";
 
 /**
  * Capture-once state machine. `prepare()` refreshes the structured options on
@@ -61,6 +92,129 @@ export class InitialCaptureState {
 		this.pendingOptions = undefined;
 		return this.initialSnapshot;
 	}
+}
+
+/**
+ * State for one on-demand silent probe. It owns the timeout and exact synthetic
+ * message identities, but leaves pi API calls and UI restoration to index.ts.
+ */
+export class SilentProbeState {
+	private phase: ProbePhase = "idle";
+	private inputObserved = false;
+	private readonly identities = new Map<string, SyntheticMessageIdentity>();
+	private completion: Promise<ProbeOutcome> | undefined;
+	private resolveCompletion: ((outcome: ProbeOutcome) => void) | undefined;
+	private outcome: ProbeOutcome | undefined;
+	private timeout: NodeJS.Timeout | undefined;
+
+	public get isCurrentRun(): boolean {
+		return this.phase === "running" || this.phase === "timed-out";
+	}
+
+	public get syntheticMessages(): readonly SyntheticMessageIdentity[] {
+		return [...this.identities.values()].map((identity) => ({ ...identity }));
+	}
+
+	public start(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): ProbeAttempt {
+		if (this.completion !== undefined) {
+			return { started: false, completion: this.completion };
+		}
+
+		this.phase = "waiting";
+		this.completion = new Promise<ProbeOutcome>((resolve) => {
+			this.resolveCompletion = resolve;
+		});
+		this.timeout = setTimeout(() => {
+			this.phase = this.phase === "running" ? "timed-out" : "failed";
+			this.resolve({ status: "failed", reason: "Silent probe timed out." });
+		}, timeoutMs);
+		return { started: true, completion: this.completion };
+	}
+
+	/** Mark the exact extension-originated empty input that starts the probe. */
+	public observeInput(source: InputSource, text: string): void {
+		if (this.phase === "waiting" && source === "extension" && text === "") {
+			this.inputObserved = true;
+		}
+	}
+
+	/** Associate the next matching lifecycle with the probe, not a real turn. */
+	public beginRun(prompt: string): boolean {
+		if (this.phase !== "waiting" || !this.inputObserved || prompt !== "") return false;
+		this.phase = "running";
+		return true;
+	}
+
+	/** Record probe user/assistant identities as their message events arrive. */
+	public recordMessage(message: ContextEvent["messages"][number]): void {
+		if (!this.isCurrentRun || (message.role !== "user" && message.role !== "assistant")) return;
+		const identity = { role: message.role, timestamp: message.timestamp } satisfies SyntheticMessageIdentity;
+		this.identities.set(identityKey(identity), identity);
+	}
+
+	/**
+	 * Replace only the probe's aborted assistant with an empty successful message
+	 * so pi does not render an "Operation aborted" transcript row.
+	 */
+	public sanitizeAssistant(
+		message: ContextEvent["messages"][number],
+	): ContextEvent["messages"][number] | undefined {
+		if (!this.isCurrentRun || message.role !== "assistant" || message.stopReason !== "aborted") {
+			return undefined;
+		}
+		this.recordMessage(message);
+		const identity = { role: "assistant", timestamp: message.timestamp } satisfies SyntheticMessageIdentity;
+		if (!this.identities.has(identityKey(identity))) return undefined;
+		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };
+	}
+
+	/** Remove only messages whose exact role+timestamp identity belongs to the probe. */
+	public filterMessages(messages: ContextEvent["messages"]): ContextEvent["messages"] {
+		if (this.identities.size === 0) return messages;
+		return messages.filter((message) => {
+			if (message.role !== "user" && message.role !== "assistant") return true;
+			return !this.identities.has(identityKey(message));
+		});
+	}
+
+	/** Resolve a running attempt from `agent_settled`. */
+	public settle(captured: boolean): boolean {
+		if (!this.isCurrentRun) return false;
+		this.phase = "settled";
+		if (this.outcome === undefined) {
+			this.resolve(
+				captured
+					? { status: "captured" }
+					: { status: "failed", reason: "Silent probe settled without a context snapshot." },
+			);
+		}
+		return true;
+	}
+
+	/** End a pending attempt during shutdown or a synchronous startup failure. */
+	public fail(reason: string): void {
+		if (this.completion === undefined || this.outcome !== undefined) return;
+		this.phase = "failed";
+		this.resolve({ status: "failed", reason });
+	}
+
+	private resolve(outcome: ProbeOutcome): void {
+		if (this.outcome !== undefined) return;
+		if (this.timeout !== undefined) clearTimeout(this.timeout);
+		this.timeout = undefined;
+		this.outcome = outcome;
+		const resolve = this.resolveCompletion;
+		this.resolveCompletion = undefined;
+		resolve?.(outcome);
+	}
+}
+
+/** Build a view-local pi-native snapshot without freezing the main capture state. */
+export function buildNativeFallbackSnapshot(input: NativeFallbackInput): InitialSnapshot {
+	const options = copyPromptOptions(input.options);
+	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options);
+	const items = analyzeSystemPrompt(input.systemPrompt, options, tools);
+	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
 }
 
 /** Copy the prompt-options slice used by measurement, without shared nested references. */
@@ -115,6 +269,10 @@ export function measureInjectedMessages(messages: ContextEvent["messages"]): Inj
 		});
 	}
 	return items;
+}
+
+function identityKey(identity: SyntheticMessageIdentity): string {
+	return `${identity.role}:${identity.timestamp}`;
 }
 
 function messageSource(customType: string): InjectionSource {

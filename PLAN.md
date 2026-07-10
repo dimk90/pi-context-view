@@ -297,7 +297,7 @@ custom views rather than hiding or clipping them.
   - Add `model.ts` and `capture.ts`; keep `index.ts` registration-only.
   - Replace label-parsing assumptions with typed item/group/source fields.
   - Add pure tests for grouping, totals, stable ids, and final snapshot freeze.
-- [ ] 3. **Implement the silent probe and `/context` command shell.**
+- [x] 3. **Implement the silent probe and `/context` command shell.**
   - Add the guarded state machine described above; verify the partial PoC
     findings in production wiring.
   - Register the explicit command grammar and argument completions:
@@ -309,35 +309,39 @@ custom views rather than hiding or clipping them.
   - Verify no provider call, no transcript artifacts, no model-context
     pollution, exact filtering of only synthetic entries, repeated command
     idempotency, and genuine user abort rendering.
-- [ ] 4. **Build the Usage view (the default).**
+- [ ] 4. **Build the Injections/Initial view.**
+  - Hierarchical groups/items, totals, capture-origin metadata, navigation,
+    scrolling, narrow-terminal fallback, themed colors, and bold text.
+  - Set it as temporary default for `/context`.
+- [ ] 5. **Add injection preview mode.**
+  - Enter opens `InjectionItem.text`; scrolling via arrows/j/k/PgUp/PgDn;
+    Escape returns to the same selected list row.
+  - Wrap ANSI-aware text and avoid exposing raw content outside the view.
+- [ ] 6. **Build the Usage view (the default).**
   - Implement `buildSessionContext().messages` classification and synthetic
     filtering in `usage.ts`.
   - Render category totals, proportions, pi usage/context-window metadata,
     unknown-after-compaction state, and `r` refresh behavior.
   - Add narrow-terminal fallback, themed colors, and bold text.
-- [ ] 5. **Build the Injections/Initial view.**
-  - Hierarchical groups/items, totals, capture-origin metadata, navigation,
-    scrolling, narrow-terminal fallback, themed colors, and bold text.
-- [ ] 6. **Add injection preview mode.**
-  - Enter opens `InjectionItem.text`; scrolling via arrows/j/k/PgUp/PgDn;
-    Escape returns to the same selected list row.
-  - Wrap ANSI-aware text and avoid exposing raw content outside the view.
-- [ ] 7. **Add bounded opt-in Runtime logging.**
+  - Set as default for `/context`.
+- [ ] 7. **Add map/graph for context usage visualization.**
+  - Use Claude Code like context visualization -> ask me for template/example.
+- [ ] 8. **Add bounded opt-in Runtime logging.**
   - Implement prompt/tool/message diffing, request indexing, ring-buffer
     limits, eviction count, both toggle surfaces, and Runtime section UI.
   - Verify disabled overhead is only guarded event dispatch/state checks and
     `/context runtime on|off` never probes or opens a view.
-- [ ] 8. **Polish lifecycle and edge cases.**
+- [ ] 9. **Polish lifecycle and edge cases.**
   - Streaming command invocation, probe timeout/no model/no auth, zero other
     extensions, compaction, tree navigation, reload/new/resume/fork, dynamic
     tools, images, and conditional prompt additions.
-- [ ] 9. **Complete automated and real-TTY testing.**
+- [ ] 10. **Complete automated and real-TTY testing.**
   - Pure measurement/grouping/runtime/usage tests.
   - Real pty tests at 60/80/120 columns; theme invalidation; overlay/full-view
     behavior; both focused views; marker before/after inspector;
     no-provider-call sentinel.
   - Use `script` or Python `pty`; tmux is unavailable in this environment.
-- [ ] 10. **Documentation and release.**
+- [ ] 11. **Documentation and release.**
   - README with all `/context` forms, Usage as the default, injection preview
     and privacy notes, runtime logging overhead/bounds, estimate disclaimer,
     and screenshots/asciicast.

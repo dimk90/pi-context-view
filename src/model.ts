@@ -56,7 +56,7 @@ export interface InjectionGroup {
 	readonly totalTokens: number;
 }
 
-/** The frozen Initial snapshot presented by the Injections tab. */
+/** The frozen Initial snapshot presented by the Injections view. */
 export interface InitialSnapshot {
 	readonly origin: CaptureOrigin;
 	readonly capturedAt: Date;

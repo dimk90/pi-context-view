@@ -10,9 +10,10 @@ to focused `/context` TUI views:
 
 There are no tabs. No raw injection content is logged or persisted.
 
-The v1 CLI lifecycle has been removed (PLAN.md step 1); `src/index.ts` now
-does passive capture-once only. The `/context` command and focused views are
-not yet implemented. Do not preserve CLI compatibility during the migration.
+The v1 CLI lifecycle has been removed. Passive capture, the one-shot silent
+probe, command grammar, and temporary capture-confirmation overlays are
+implemented (PLAN.md steps 1–3). The full focused views are not yet built. Do
+not preserve CLI compatibility during the migration.
 
 ## Target architecture
 
@@ -79,7 +80,8 @@ Target modules (created incrementally per PLAN.md):
 
 - `src/index.ts` — factory and event/command wiring only.
 - `src/model.ts` — semantic snapshot/injection/usage types and grouping.
-- `src/capture.ts` — capture-once state; silent-probe state machine is step 3.
+- `src/capture.ts` — capture-once and silent-probe state machines.
+- `src/command.ts` — command parsing/completions and temporary placeholder UI.
 - `src/runtime.ts` — bounded optional Runtime log.
 - `src/measure.ts` — pure prompt/tool measurement.
 - `src/usage.ts` — pure context classification and totals.
@@ -104,7 +106,7 @@ pi --model anthropic/claude-haiku-4-5 -e ./src/index.ts --no-session \
   -p "Say one word: ok"
 
 # interactive testing without tmux
-script -qec "pi -e ./src/index.ts --no-session" /tmp/context-tui.log
+script -qec "pi --no-extensions -e ./src/index.ts --no-session" /tmp/context-tui.log
 ```
 
 Use `script` or a Python `pty` harness; tmux is unavailable. Avoid provider
@@ -130,6 +132,9 @@ Test marker load order in both directions and use an
 - `peerDependencies: "*"` — published compatibility contract.
 - exact `devDependencies` pin — local type snapshot. It MUST match
   `pi --version`; update the pin and run `npm install` on mismatch.
+
+`@earendil-works/pi-tui` is also pinned exactly in `devDependencies` for local
+TUI types; pi supplies it to extensions at runtime.
 
 ## Code style
 

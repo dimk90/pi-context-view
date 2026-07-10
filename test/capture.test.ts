@@ -11,6 +11,7 @@ import {
 	captureActiveTools,
 	InitialCaptureState,
 	measureInjectedMessages,
+	SilentProbeState,
 } from "../src/capture.ts";
 
 function customMessage(customType: string, content: string, timestamp: number): ContextEvent["messages"][number] {
@@ -104,4 +105,65 @@ test("InitialCaptureState does not finalize before prepare", () => {
 		}),
 		undefined,
 	);
+});
+
+test("SilentProbeState sanitizes and filters only exact probe identities", async () => {
+	const state = new SilentProbeState();
+	const attempt = state.start(1_000);
+	const concurrentAttempt = state.start();
+	assert.equal(concurrentAttempt.started, false);
+	assert.strictEqual(concurrentAttempt.completion, attempt.completion);
+	state.observeInput("extension", "");
+	assert.equal(state.beginRun(""), true);
+
+	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
+	const realUser = { role: "user", content: [], timestamp: 11 } satisfies ContextEvent["messages"][number];
+	const probeAssistant = {
+		role: "assistant",
+		content: [],
+		api: "anthropic-messages",
+		provider: "anthropic",
+		model: "test",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "aborted",
+		timestamp: 12,
+	} satisfies ContextEvent["messages"][number];
+
+	state.recordMessage(probeUser);
+	state.recordMessage(probeAssistant);
+	const sanitized = state.sanitizeAssistant(probeAssistant);
+	assert.equal(sanitized?.role, "assistant");
+	if (sanitized?.role === "assistant") {
+		assert.equal(sanitized.stopReason, "stop");
+		assert.deepEqual(sanitized.content, []);
+	}
+	assert.deepEqual(state.filterMessages([probeUser, realUser, probeAssistant]), [realUser]);
+	assert.deepEqual(state.syntheticMessages, [
+		{ role: "user", timestamp: 10 },
+		{ role: "assistant", timestamp: 12 },
+	]);
+
+	assert.equal(state.settle(true), true);
+	assert.deepEqual(await attempt.completion, { status: "captured" });
+	assert.equal(state.start().started, false);
+	assert.equal(state.sanitizeAssistant(probeAssistant), undefined);
+});
+
+test("SilentProbeState keeps a timed-out running probe abortable until settlement", async () => {
+	const state = new SilentProbeState();
+	const attempt = state.start(1);
+	state.observeInput("extension", "");
+	assert.equal(state.beginRun(""), true);
+
+	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
+	assert.equal(state.isCurrentRun, true);
+	assert.equal(state.settle(false), true);
+	assert.equal(state.isCurrentRun, false);
 });
