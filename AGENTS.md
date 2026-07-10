@@ -1,71 +1,124 @@
 # pi-context-inspect
 
-Pi extension: adds a `--context-inspect` CLI flag that prints a report of
-**initial context injections** — source (pi native or extension) and size in
-estimated tokens — then exits. Startup injections only; no per-turn tracking,
-no slash command.
+Pi extension in migration from the superseded `--context-inspect` CLI workflow
+to an interactive `/context` command. The command opens a TUI context browser:
 
-## Architecture
+- **Injections** tab: frozen Initial snapshot + optional bounded Runtime log.
+- **Statistics** tab: on-demand estimated context composition.
+- Enter previews raw injection text; no raw content is logged or persisted.
 
-Capture strategy — "Option B revised", validated by PoC against pi 0.80.3
-(shutdown moved to `agent_settled` on 0.80.6):
+`src/` still contains the v1 CLI implementation until PLAN.md step 1 is
+completed. Do not preserve CLI compatibility during the migration.
 
+## Target architecture
+
+Initial capture is prepared once in `before_agent_start` and finalized once in
+the first `context` event:
+
+```text
+before_agent_start → save structured prompt options + tool metadata
+context            → read final ctx.getSystemPrompt(), messages; freeze Initial
 ```
-session_start      → pi.sendUserMessage("probe")     // always triggers a turn
-before_agent_start → capture event.systemPrompt + event.systemPromptOptions
-turn_start         → ctx.abort()                     // provider call prevented
-agent_settled      → print report, ctx.shutdown()    // run truly done (pi >= 0.80.4)
+
+`ctx.getSystemPrompt()` in `context` is the completed prompt chain, including
+injectors loaded after this extension. Do not freeze `event.systemPrompt` in
+our own `before_agent_start` handler.
+
+If `/context` runs before a real turn, use one on-demand silent probe:
+
+```text
+/context           → wait idle, hide working row, sendUserMessage("")
+before_agent_start → prepare Initial
+turn_start         → abort before provider
+context            → finalize Initial; filter synthetic user message
+message_end        → sanitize only synthetic aborted assistant
+agent_settled      → restore UI, resolve command, open dialog
 ```
 
-Hard-won constraints (do not regress):
+The probe entries remain in the session tree. Track their exact role+timestamp
+and filter them from later model context, Runtime logging, and Statistics.
+Other extensions still observe probe lifecycle events; never probe
+automatically or more than once per extension runtime.
 
-- `ctx.getSystemPromptOptions` is unavailable on `session_start` event ctx;
-  extension system-prompt additions are only observable inside a turn.
-- `pi.sendMessage(..., { triggerTurn: true })` does NOT start a turn in print
-  mode without `-p`; `pi.sendUserMessage()` does.
-- `before_provider_request` never fires with custom providers whose transport
-  skips `onPayload` (e.g. pi-anthropic-oauth) — never rely on it.
-- `ctx.abort()` must happen at `turn_start`; later is too late.
-- Per-extension attribution of chained system-prompt edits is impossible via
-  the API; report extension prompt additions as one aggregate line.
+Runtime injection logging is disabled by default, memory-only, and bounded
+(initial target: 200 entries / 1 MiB). Statistics are computed on demand from
+`ctx.sessionManager.buildSessionContext().messages`; use
+`ctx.getContextUsage()` separately for pi’s overall usage/window values.
+
+## API constraints
+
+- `ctx.getSystemPromptOptions()` is command-context-only; it is unavailable on
+  `session_start` event ctx.
+- Extension prompt additions are observable only inside an agent run.
+- `pi.sendMessage(..., { triggerTurn: true })` bypasses
+  `before_agent_start`; it cannot drive the capture probe.
+- Abort probes at `turn_start`; later hooks may allow a provider call.
+- `before_provider_request` is unreliable with custom transports that skip
+  `onPayload` (e.g. pi-anthropic-oauth); never depend on it.
+- Per-extension attribution of chained prompt edits is impossible through the
+  public API; use one aggregate contribution.
+- `context` message mutations remain chain-position dependent: later handlers
+  are not observable. Tool ownership must come from `ToolInfo.sourceInfo`.
+- `buildContextEntries()` includes non-context metadata. Use
+  `buildSessionContext().messages` for Statistics.
+- `ctx.ui.custom()` is TUI-only. Guard with `ctx.mode === "tui"`.
 
 ## Layout
 
-- `src/index.ts` — extension factory, event wiring (entry point via
-  `package.json` `pi.extensions`).
-- `src/measure.ts`, `src/report.ts` — pure logic (measurement, formatting),
-  no `pi` access, unit-testable.
-- `PLAN.md` — full development plan, PoC findings, step checkboxes. Keep the
-  checkboxes current.
-- `poc/` — throwaway PoC spikes, reference only; `poc/marker.ts` doubles as a
-  test helper that simulates an injecting extension.
+Target modules (created incrementally per PLAN.md):
 
-## Testing
+- `src/index.ts` — factory and event/command wiring only.
+- `src/model.ts` — semantic snapshot/injection/statistics types.
+- `src/capture.ts` — capture-once and silent-probe state machine.
+- `src/runtime.ts` — bounded optional Runtime log.
+- `src/measure.ts` — pure prompt/tool measurement.
+- `src/statistics.ts` — pure context classification.
+- `src/ui/context-dialog.ts` — tabbed dialog and preview state machine.
+- `src/report.ts` — temporary v1 renderer; remove when no longer needed.
+- `PLAN.md` — current decisions and step checkboxes; keep them current.
+- `HISTORY.md` — superseded v1 findings; reference only.
+- `poc/` — throwaway/reference spikes; `marker.ts` is also a test injector.
+
+Keep hierarchy in typed model fields. Never parse labels in UI code to recover
+source, kind, or parent/child relationships.
+
+## Verification
 
 ```bash
-# print mode (fastest check)
-pi -e ./poc/marker.ts -e ./src/index.ts --context-inspect --no-session
+npx tsc --noEmit
 
-# TUI mode (run under `script` when no tty; pi must exit by itself in ~2s)
-script -qec "pi -e ./poc/marker.ts -e ./src/index.ts --context-inspect --no-session" /tmp/tui.log
-
-# no-op check: without the flag the extension must do nothing
+# normal-turn no-op: inspection must not alter the response
 pi -e ./src/index.ts --no-session -p "say hi"
+
+# interactive testing without tmux
+script -qec "pi -e ./src/index.ts --no-session" /tmp/context-tui.log
 ```
 
-Verify after changes: no provider call during inspection (add a temporary
-`after_provider_response` sentinel if in doubt), clean self-exit in both modes.
+Use `script` or a Python `pty` harness; tmux is unavailable. Test marker load
+order in both directions and use an `after_provider_response` sentinel for the
+silent probe. Required invariants:
+
+- no provider request during a probe;
+- no visible probe/abort transcript artifacts;
+- genuine user aborts remain visible;
+- synthetic entries never reach later model contexts or Statistics;
+- Initial freezes once per extension runtime;
+- Runtime is off and bounded by default;
+- no raw injection content is printed, logged, or persisted;
+- all TUI lines respect the supplied width.
 
 ## Dependencies
 
 `@earendil-works/pi-coding-agent` is declared twice on purpose:
 
-- `peerDependencies: "*"` — published compatibility contract (pi docs convention).
-- `devDependencies: <exact>` — local types snapshot; MUST match the installed
-  pi version. When touching this project, compare `pi --version` with the pin
-  and, on mismatch, update the pin and re-run `npm install`.
+- `peerDependencies: "*"` — published compatibility contract.
+- exact `devDependencies` pin — local type snapshot. It MUST match
+  `pi --version`; update the pin and run `npm install` on mismatch.
 
 ## Code style
 
-Follow the `code-style` and `typescript-code` skills (tabs, double quotes,
-ESM, named exports for helpers, no `any`, `undefined` over `null`).
+Follow the `code-style`, `typescript-code`, and `pi-extension` skills. Use tabs,
+double quotes, ESM, named exports for helpers, no `any`, and `undefined` over
+`null`. Follow newspaper layout: public entry points and primary types first,
+implementation details later. Keep `index.ts` registration-only and move pure
+logic/UI classes into focused modules.

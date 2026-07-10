@@ -1,268 +1,334 @@
 # pi-context-inspect — Development Plan
 
-Pi extension that adds a `--context-inspect` CLI flag. When set, pi prints a
-report of **initial context injections** — source (pi native or extension name)
-and size in tokens — then exits. No slash command, no per-turn tracking.
+## Goal
 
+Add a `/context` slash command to pi. It opens an interactive TUI dialog for
+understanding what occupies the model context.
+
+The dialog has two tabs:
+
+1. **Injections**
+   - **Initial** — the first observable provider-bound context in the current
+     extension runtime: pi prompt components, active tool definitions,
+     extension prompt additions, and injected messages.
+   - **Runtime** — an optional, bounded log of context injections observed
+     after the initial snapshot. Logging is disabled by default.
+2. **Statistics** — an estimated map of current context usage by data type:
+   system instructions, tool schemas, user/assistant messages, thinking,
+   tool calls/results, summaries, and extension messages.
+
+The old `--context-inspect` print-and-exit workflow is superseded. See
+[HISTORY.md](HISTORY.md).
+
+## Product decisions
+
+- `/context` is TUI-only in v2. Non-TUI invocation reports that TUI mode is
+  required; it does not preserve the old plain-table workflow.
+- Initial means the first context observable by this extension instance. It
+  comes from the first real turn, or from one on-demand silent probe if
+  `/context` is invoked before any real turn.
+- Initial is frozen once captured. Later changes appear only in Runtime when
+  runtime logging is enabled.
+- Runtime logging is opt-in, in-memory, bounded, and session-runtime scoped.
+  It is never injected into model context or persisted in session entries.
+- Statistics are computed on demand. Category totals are estimates and may
+  differ from pi/provider token accounting.
+- Per-extension attribution of chained prompt edits is unavailable through the
+  public API. Prompt additions remain one aggregate extension contribution.
+- Tool ownership uses `ToolInfo.sourceInfo`. Injected messages are identified
+  by `customType` when present; `customType` is not guaranteed to be a package
+  or extension name.
+
+## UI sketch
+
+```text
+┌ Context ────────────────────────────────────────────────┐
+│ [Injections]  Statistics                                │
+│                                                        │
+│ INITIAL                      captured: synthetic probe  │
+│  pi                                             3,126  │
+│    base system prompt                             652  │
+│    built-in tool definitions                      640  │
+│    context files                                  846  │
+│      ~/.pi/agent/AGENTS.md                         89  │
+│      ./AGENTS.md                                  757  │
+│    skills                                         988  │
+│  npm:pi-web-providers                           1,510  │
+│    web_search                                   1,414  │
+│    web_contents                                    96  │
+│  extensions (aggregate)                            85  │
+│                                                        │
+│ RUNTIME                         logging: off            │
+│  Press r to start logging future injections.            │
+│                                                        │
+│ ↑/↓ select · Enter preview · Tab switch · r logging    │
+│ Esc close                                              │
+└────────────────────────────────────────────────────────┘
 ```
-$ pi --context-inspect
-Context injections:
 
-  SOURCE                          TOKENS
-  pi: base system prompt             820
-  pi: tool descriptions              412
-  pi: AGENTS.md (~/.pi/agent)        135
-  pi: AGENTS.md (./AGENTS.md)         96
-  pi: skills                         240
-  extension: plan-mode                85
-  extension: <aggregate>             123
-  ------------------------------------
-  TOTAL                             1911
-```
+## Architecture
 
-## Scope
+### Initial capture: prepare, then finalize once
 
-**In scope**
-- One boolean flag: `--context-inspect` (via `pi.registerFlag`).
-- Breakdown of pi-native contributions from `BuildSystemPromptOptions`:
-  base/custom prompt, tool snippets, guidelines, `--append-system-prompt`,
-  context files (each file separately, with path), skills.
-- Extension contributions to the startup context that are observable:
-  system-prompt delta added by other extensions' `before_agent_start` handlers
-  (aggregate) and injected startup messages (attributed by `customType`).
-- Token counts via pi's own `estimateTokens` (estimate, not provider-exact).
-- Print report to stdout, then exit.
+The initial snapshot is built across two events:
 
-**Out of scope**
-- Injections/modifications during subsequent prompts (steering, tool results,
-  compaction, `context` event mutations).
-- Per-extension attribution of chained system-prompt edits (API limitation —
-  handlers only see the cumulative prompt; report as one aggregate line).
-- `pi context --report` subcommand syntax (pi has no extension subcommand API;
-  positional args become prompt text). Optional shell alias instead.
-- TUI widgets / interactive UI.
+1. `before_agent_start`
+   - Save `event.systemPromptOptions` for structured pi-native inputs.
+   - Record the active tools and their `sourceInfo` metadata.
+   - Do not freeze `event.systemPrompt`: later-loaded handlers may still edit
+     it.
+2. The first `context` event for that run
+   - Read `ctx.getSystemPrompt()`. At this point every
+     `before_agent_start` handler has completed, so this is the final chained
+     prompt even when the inspector extension loaded before an injector.
+   - Capture observable injected messages, excluding synthetic probe entries
+     and ordinary conversation history.
+   - Measure and freeze the Initial snapshot. Later `context` events never
+     overwrite it.
 
-## Design
+This removes the old “load last for accurate prompt aggregate” requirement.
+Load order still limits visibility into message mutations made by later
+`context` handlers. Provider-payload rewrites in `before_provider_request` are
+also outside the guaranteed capture surface.
 
-### Structure
+Conditional prompt additions that are inactive in the initial run correctly
+do not appear in Initial. If they activate later, Runtime records them when
+logging is enabled.
 
-- Single file during Prof-of-Concept: `~/.pi/agent/extensions/pi-context-inspect.ts`.
-- Move to the directory after successful PoC: `~/projects/pi-context-inspect`.
+### On-demand silent probe
 
-### Flow
+`/context` needs a complete Initial snapshot even before the first real prompt.
+The public API has no direct way to invoke the `before_agent_start` chain, so
+one synthetic run is necessary.
 
-1. **Factory**: `pi.registerFlag("context-inspect", { type: "boolean", default: false })`
-   plus event subscriptions. No side effects when the flag is off — every
-   handler returns early on `!pi.getFlag("context-inspect")`.
-2. **Capturing the data.** The base prompt inputs (`BuildSystemPromptOptions`)
-   are exposed via `ctx.getSystemPromptOptions()` (command context; optional on
-   plain event ctx — feature-detect) and via `event.systemPromptOptions` in
-   `before_agent_start`. The chained system prompt including other extensions'
-   additions only exists inside a turn. Therefore:
-   - Register the `before_agent_start` handler; since extension load order
-     determines chain position, document that the extension should load last
-     (alphabetical/manual `-e` ordering) for accurate aggregate measurement.
-   - In the handler: capture `event.systemPromptOptions` and
-     `event.systemPrompt` (cumulative prompt at our chain position).
-3. **Triggering a turn without a user prompt.** With just `pi --context-inspect`
-   there is no prompt, so `before_agent_start` never fires.
-   **DECIDED (PoC): Option B, revised.** Option A failed — see PoC findings.
-   Verified flow (works in both `print` and `tui` modes, no `-p` needed):
+Important API constraint: `pi.sendMessage(..., { triggerTurn: true })` starts
+the low-level agent directly and does **not** run `before_agent_start`. It
+cannot be used for this probe.
 
-   ```
-   session_start      → pi.sendUserMessage("probe")     // always triggers a turn
-   before_agent_start → capture event.systemPrompt + event.systemPromptOptions
-   turn_start         → ctx.abort()                     // provider call prevented
-   agent_end          → print report, ctx.shutdown()    // honored right after agent_end
-   ```
+Probe state machine:
 
-   PoC findings (pi 0.80.3):
-   - **Option A dead:** `ctx.getSystemPromptOptions` is NOT available on the
-     `session_start` event ctx (command-context only), and
-     `ctx.getSystemPrompt()` at `session_start` does NOT include other
-     extensions' `before_agent_start` additions.
-   - `pi.sendMessage(..., { triggerTurn: true })` does NOT start a turn in
-     print mode without `-p`; `pi.sendUserMessage()` does.
-   - `before_provider_request` never fires with custom providers whose
-     transport skips the `onPayload` hook (observed with `pi-anthropic-oauth`)
-     — unreliable as an abort point.
-   - `ctx.abort()` at `turn_start` reliably prevents the provider request
-     (verified via an `after_provider_response` sentinel that never fired).
-   - `ctx.shutdown()` in TUI mode is deferred and honored right after
-     `agent_end` (`checkShutdownRequested`); clean exit ~2s in both modes.
-   - Cosmetic: the probe user message and a red "Request was aborted." flash
-     in the TUI before exit. Acceptable for v1.
-   - Startup messages injected by other extensions via `sendMessage` at
-     `session_start` were NOT visible in `ctx.sessionManager.getBranch()` at
-     `before_agent_start`; capturing them likely needs the `context` event
-     during the probe turn.
-4. **Measuring.** For each component, wrap text in a minimal `AgentMessage`
-   shape and use `estimateTokens` from `@earendil-works/pi-coding-agent`
-   (exported from the compaction module); or replicate its chars/4 heuristic if
-   the message-shape ceremony is awkward.
-   Components:
-   - `pi: base system prompt` — `buildSystemPrompt({...options, contextFiles: [], skills: [], appendSystemPrompt: undefined})`
-   - `pi: tool descriptions` — diff of prompt with/without `selectedTools`/`toolSnippets` (or measure snippets directly)
-   - `pi: --append-system-prompt` — `options.appendSystemPrompt`
-   - `pi: <context file path>` — one line per `options.contextFiles[]` entry
-   - `pi: skills` — `options.skills` rendered size
-   - `extension: <aggregate>` — `capturedChainedPrompt.length` minus reconstructed base (only if ≥ 0 and non-trivial)
-   - `extension: <customType>` — startup messages in `ctx.sessionManager.getBranch()` with `role: "custom"`/custom entries present before first user prompt
-5. **Output & exit.** Plain text table to `console.log` (works in `print`/`tui`
-   modes; guard `ctx.hasUI` if using `ctx.ui`). Then `ctx.shutdown()`.
-   Recommend running as `pi --context-inspect --no-session` (document it); the
-   extension does not need `-p`.
+1. If Initial already exists, open the dialog immediately.
+2. Otherwise wait for idle and enter `probing` state.
+3. Hide the normal working row and call `pi.sendUserMessage("")`.
+4. Capture through the normal `before_agent_start` → `context` path.
+5. Abort at `turn_start`, before any provider request.
+6. Record synthetic user/assistant message timestamps from message events.
+7. Only for the probe assistant message, `message_end` returns an empty
+   assistant message with `stopReason: "stop"`; this suppresses pi’s
+   “Operation aborted” transcript row without affecting genuine user aborts.
+8. At `agent_settled`, restore UI state, resolve the pending command, and open
+   the dialog.
 
-### Edge cases
+The empty synthetic user and assistant entries remain in the session tree.
+They must be filtered by exact role+timestamp from every later `context`
+event, the Statistics tab, and Runtime logging. They are hidden from the
+transcript and model, but the probe is not side-effect-free: other extensions
+still observe its lifecycle events. Run it only on demand and at most once per
+extension runtime.
 
-- `getSystemPromptOptions` unavailable on event ctx (it's optional in
-  `ExtensionContextActions`) → feature-detect, degrade to totals-only report
-  using `ctx.getSystemPrompt()`.
-- No other extensions loaded → aggregate line shows 0 / omitted.
-- `--no-extensions` combined with the flag → flag itself won't exist if loaded
-  via discovery; document that `-e path/to/pi-context-inspect.ts` still works.
-- Non-TUI modes (`-p`, `--mode json`) → stdout printing must not corrupt JSON
-  mode; skip or write to stderr when `ctx.mode === "json"`.
-- Token numbers are estimates → label the column `TOKENS (est.)`.
+Use a short timeout and `try/finally` UI restoration so a failed probe cannot
+hang `/context` or leave the working row hidden. If no model/auth is available
+or the probe otherwise fails, show the pi-native snapshot obtainable from
+`ctx.getSystemPromptOptions()` plus a clear “extension additions not observed”
+note.
 
-## Proof-of-Concept Steps
+### Runtime injection logging
 
-Goal: verify that intercepting initial context injections works at all, and
-decide between capture strategies (Option A vs B). Throwaway single file,
-no project setup.
+Runtime logging is disabled by default. Disabled handlers return after one
+state check.
 
-- [x] 1. **Skeleton** — single file `poc.ts`: factory, flag registration,
-  `session_start` handler that logs a stub and calls `ctx.shutdown()`. Verify:
-  `pi -e ./poc.ts --context-inspect` exits after printing.
-- [x] 2. **Spike Option A** — at `session_start`, read
-  `ctx.getSystemPromptOptions?.()`, reconstruct base prompt with
-  `buildSystemPrompt()`, dump raw components. Check whether
-  `ctx.getSystemPrompt()` at this point includes other extensions' static
-  system-prompt additions (test with `marker.ts` helper loaded).
-  **Result: negative** — `getSystemPromptOptions` unavailable at
-  `session_start`; extension injections not visible in `getSystemPrompt()`.
-- [x] 3. **Spike Option B** — synthetic turn, capture in `before_agent_start`,
-  abort at `turn_start`; verified no API call, clean exit in print + TUI.
-  Files: `poc-b.ts` (spike), `marker.ts` (simulated injecting extension).
-- [x] 4. **Decision: A or B** — recorded in Design § Flow item 3.
-    - **Decided**: **Option B (revised)** — `sendUserMessage` probe +
-      `before_agent_start` capture + `turn_start` abort + `agent_end`
-      report/shutdown.
+When enabled, inspect each provider-bound `context` event and record only
+changes relative to the previous observable state:
 
-## Development Steps
+- final chained system-prompt changes;
+- active tool additions/removals;
+- observable context-only or custom message additions/removals.
 
-Starts fresh from project initialization; PoC code is reference material only.
+Normal conversation growth—assistant replies and tool results—is not a runtime
+injection; it belongs in Statistics.
 
-- [x] 1. **Project initialization** — init `pi-context-inspect/` directory:
-  - `package.json` (name, version `0.0.1`, `"pi": { "extensions": ["./index.ts"] }`,
-  deps if any);
-  - `tsconfig.json` if needed;
-  - `.gitignore` (`node_modules/`);
-  - `git init` + initial commit;
-  - Empty `index.ts` with factory skeleton;
-  - Init `AGENTS.md`, move to it relevant parts of `PLAN.md`.
-  - Verify `pi -e ./pi-context-inspect/index.ts` loads.
-- [x] 2. **Capture implementation** — implement the chosen strategy (A or B)
-  properly: flag no-op guard, feature detection, clean shutdown.
-  Also captures extension-injected startup messages via the `context` event
-  (resolves the open question: they ARE visible there, with `customType`),
-  filtering out the probe message itself.
-- [x] 3. **Component measurement** — per-component token estimation; pure
-  functions in helper module (unit-testable, no `pi` access).
-  Implemented in `measure.ts` by carving the captured system prompt on
-  structural markers emitted by pi's `buildSystemPrompt()` (the function
-  itself is not importable — blocked by the package `exports` map):
-  `<project_instructions path>` spans, skills block, `appendSystemPrompt`
-  substring, and the trailing `Current date/cwd` line as the base-prompt end
-  marker; everything after it is the extensions aggregate. Context messages
-  measured with pi's `estimateTokens`.
-- [x] 4. **Report rendering** — aligned plain-text table, total row, sorting by size
-  descending within groups (pi first, extensions second).
-  Implemented in `report.ts` (pure module): dynamic column widths,
-  `TOKENS (est.)` header, thousands separators, `renderReport()` called from
-  `agent_end`.
-- [x] 5. **Edge-case handling** — mode guards, missing options, zero extensions.
-  Added: JSON-mode refusal (stderr + shutdown, keeps stream clean),
-  `session_start.reason === "startup"` guard (no re-probe on
-  reload/resume/fork), watchdog timeout (15 s, unref'd) when the probe turn
-  never completes, `reportDone` idempotency, distinct label for
-  `--system-prompt` custom prompts.
-- [x] 6. **Manual test matrix** — all pass (print + TUI via real pty):
-  - solo `-ne -e ./src/index.ts --context-inspect` ✓ (exposed a print-mode
-    race: pi can exit before agent_end when startup is fast; fixed by a
-    session_shutdown fallback that prints the already-captured report)
-  - marker.ts ✓ (aggregate + custom message); plan-mode example ✓ (no-op
-    without `--plan`; with `--plan`: `extension message: plan-mode-context`)
-  - project `AGENTS.md` absent (empty dir) ✓ / present ✓
-  - `--append-system-prompt` ✓; `--no-context-files --no-skills` ✓
-  - no-op without flag ✓ (print replies, TUI stays open)
-  - `after_provider_response` sentinel: 0 provider calls during inspection ✓
-  - Post-matrix fixes from user testing:
-    - TUI: report printed from `session_shutdown` (after the TUI stops) — no
-      more table interleaved with UI frames; print/json unchanged (agent_end).
-    - Extension tools now visible: probe moved from `session_start` to
-      `resources_discover` (fires after all extensions' startup work incl.
-      async tool registration, e.g. pi-web-providers). Per-tool rows
-      `extension tool: <name> (<source>)` measure snippet + guidelines carved
-      from the prompt plus description + parameter schema (payload side);
-      built-in tools aggregate into `pi: tool definitions (built-in, N)`.
-    - Shutdown grace period (500 ms) in `session_shutdown` so other
-      extensions' in-flight async startup work doesn't hit stale ctx errors.
-    - pi 0.80.6 update: dev pin bumped 0.80.3 → 0.80.6; report/shutdown moved
-      from `agent_end` to `agent_settled` (new in 0.80.4 — fires when the run
-      is truly done, and the TUI's own shutdown check now runs on it). The
-      isIdle retry loop stays as a safety net for the subscription race.
-- [ ] 6. **Report Structure** -- improvement for report readability and clearness.
-  Formatting and colors if possible. Hierarchal bullet structure like:
-    - Base Pi Prompt;
-    - Base Tools Definitions;
-    - Context files:
-      - <file 1>
-      - ...
-      - <file N>
-    - Skills:
-      - <skill 1 name>
-      - ...
-      - <skill M name>
-    - <Extension 1 name>
-      - <Tool 1 name>
-      - ...
-      - <Tool V name>
-      - <Prompt 1>
-      - ...
-    - <Extension K name>
-    - ...
-- [ ] 7. **Docs** — README with usage, the "load last for accurate aggregate" note.
-- [ ] 8. **Publish** — push to a public git repo (GitHub), tag `v0.1.0`; optionally
-  publish to npm so it installs via `pi install npm:pi-context-inspect` /
-  `git:github.com/<user>/pi-context-inspect`. Verify `pi install` + `pi list`.
+Each entry stores request index, kind, label/source, estimated token delta, and
+bounded preview text. Use a ring buffer with both entry and byte limits
+(initial target: 200 entries and 1 MiB). Show an eviction counter when older
+entries are dropped.
 
-## Further Enhancements
+Toggle from either surface:
 
-- [ ] **Interactive TUI browser** (like `pi config`) — instead of (or in addition
-  to) the plain table, open a `ctx.ui.custom()` component listing all injections
-  (source + token size); arrow keys / j/k to navigate, Enter to expand an item
-  and view the full injected text (scrollable), Esc to go back / exit.
-  - Only in `ctx.mode === "tui"`; fall back to the plain-text table in
-    `print`/`json`/`rpc` modes.
-  - Reuse pi TUI components (`SettingsList` pattern from the `tools.ts`
-    example, scrollable text view) — see skill `references/tui.md`.
-  - Consider a second flag or making it the default TUI behavior of
-    `--context-inspect`, with `--context-inspect-plain` for the table.
+- `r` in the Injections tab;
+- `/context runtime on|off`.
 
-## Open Questions
+The UI records “enabled at request N,” so it does not imply that earlier
+runtime injections were captured. Tree navigation clears the log and resets
+its comparison baseline while retaining the enabled/disabled setting.
+Reload/new/resume/fork creates a fresh extension runtime and clears all
+in-memory logging state.
 
-- ~~Does `ctx.getSystemPrompt()` at `session_start` include other extensions'
-  static system-prompt contributions, or only pi's base?~~ **Resolved (PoC):
-  no — Option B chosen.**
-- ~~Exact `estimateTokens` input shape~~ **Resolved (PoC):**
-  `estimateTokens(message: AgentMessage)`; wrapping text as
-  `{ role: "user", content: text }` works.
-- ~~How to capture startup **messages** injected by other extensions?~~
-  **Resolved (step 2):** visible in the `context` event during the probe turn
-  as `role: "custom"` messages with `customType`; probe message filtered out.
-- Can the TUI probe flash ("probe" + "Request was aborted.") be suppressed or
-  is it acceptable for v1? (v1: accept.)
-- Should the report also print the injected **text** (the earlier idea) behind
-  a second flag like `--context-inspect-full`, or keep v1 sizes-only? (v1:
-  sizes-only per current scope; TUI browser covers it later.)
+### Context statistics
+
+Statistics are computed when the tab opens or refreshes; there is no continuous
+statistics collector.
+
+Use `ctx.sessionManager.buildSessionContext().messages`, not
+`buildContextEntries()`: the latter preserves non-context metadata entries.
+Filter synthetic probe messages, then classify estimated tokens into:
+
+- system prompt: base/custom prompt, built-in prompt text, context files,
+  skills, appended prompt, aggregate extension additions;
+- active tool payload definitions;
+- user messages;
+- assistant text, thinking, and tool-call blocks;
+- tool results grouped by tool name;
+- custom messages grouped by `customType`;
+- compaction and branch summaries;
+- bash execution messages included in context.
+
+Use `ctx.getContextUsage()` for pi’s overall `tokens`, `contextWindow`, and
+`percent` when available. Display that separately from the estimated category
+sum; after compaction pi may report unknown usage until the next response.
+Provider serialization, images, tokenizer differences, later `context`
+handlers, and provider-payload rewrites can prevent exact reconciliation.
+Label the view **estimated current/next-request composition**, not an exact
+provider payload.
+
+### Semantic model
+
+Do not encode hierarchy in display labels. Introduce explicit pure data types,
+for example:
+
+- `InitialSnapshot` — origin (`real-turn` or `synthetic-probe`), timestamp,
+  measured items, synthetic-message identities.
+- `InjectionItem` — stable id, phase, kind, source, label, tokens, chars, raw
+  preview text, optional request index.
+- `InjectionGroup` — source/category plus child items and totals.
+- `RuntimeInjection` — change kind and signed token delta.
+- `ContextStatistics` / `StatisticCategory` — category totals and overall
+  usage metadata.
+
+Raw preview text can contain sensitive project instructions or message
+content. Keep it process-local, never log it, never persist it, and reveal it
+only after explicit Enter selection in the dialog.
+
+### Source layout target
+
+- `src/index.ts` — extension factory and event/command wiring only.
+- `src/model.ts` — semantic capture/report types.
+- `src/capture.ts` — initial snapshot and silent-probe state machine.
+- `src/runtime.ts` — bounded runtime diff log.
+- `src/measure.ts` — pure prompt/tool measurement.
+- `src/statistics.ts` — pure message classification and totals.
+- `src/ui/context-dialog.ts` — overlay state machine and rendering.
+- `src/report.ts` — temporary v1 debug renderer; remove once the dialog and
+  tests no longer use it.
+
+### Dialog behavior
+
+Use one component state machine rather than nesting disposable components:
+
+- `tab`: `injections | statistics`;
+- `view`: `list | preview`;
+- selected row and scroll offset per tab.
+
+Tab/Shift+Tab or Left/Right switches tabs. Up/Down and j/k navigate. Enter
+opens a scrollable preview. Escape returns from preview to list, then closes
+the dialog. Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width
+helpers, render caching, and proper theme invalidation.
+
+Use an overlay on sufficiently large terminals. On narrow terminals, open the
+same component as a regular full custom view rather than hiding or clipping the
+overlay.
+
+## Development steps
+
+- [ ] 1. **Remove v1 CLI lifecycle and establish passive capture.**
+  - Delete `registerFlag`, automatic probe, abort/report/shutdown path,
+    watchdog, retry timer, shutdown grace period, JSON refusal, print fallback,
+    and `-p` hint from `src/index.ts`.
+  - Add capture-once preparation in `before_agent_start` and finalization in
+    `context` using final `ctx.getSystemPrompt()`.
+  - Keep normal prompts behaviorally unchanged; no automatic probe.
+  - Keep `measure.ts` and the temporary `report.ts` while capture is verified.
+  - Update package description/keywords after the CLI code is gone.
+  - Verify `npx tsc --noEmit`, a normal prompt, and marker capture with both
+    extension load orders.
+- [ ] 2. **Introduce semantic data model and module boundaries.**
+  - Add `model.ts` and `capture.ts`; keep `index.ts` registration-only.
+  - Replace label-parsing assumptions with typed item/group/source fields.
+  - Add pure tests for grouping, totals, stable ids, and final snapshot freeze.
+- [ ] 3. **Implement the silent probe and `/context` command shell.**
+  - Add the guarded state machine described above; verify the partial PoC
+    findings in production wiring.
+  - Register `/context` and `/context runtime on|off` argument handling.
+  - Before first real turn: probe once, await `agent_settled`, then show a
+    minimal custom dialog confirming capture; on failure show degraded data.
+  - Verify no provider call, no transcript artifacts, no model-context
+    pollution, exact filtering of only synthetic entries, repeated command
+    idempotency, and genuine user abort rendering.
+- [ ] 4. **Build the Injections/Initial dialog.**
+  - Tab bar with Statistics placeholder.
+  - Hierarchical groups/items, totals, capture-origin metadata, navigation,
+    scrolling, narrow-terminal fallback, themed colors and bold text.
+- [ ] 5. **Add injection preview mode.**
+  - Enter opens `InjectionItem.text`; scrolling via arrows/j/k/PgUp/PgDn;
+    Escape returns to the same selected list row.
+  - Wrap ANSI-aware text and avoid exposing raw content outside the dialog.
+- [ ] 6. **Add bounded opt-in Runtime logging.**
+  - Implement prompt/tool/message diffing, request indexing, ring-buffer
+    limits, eviction count, both toggle surfaces, and Runtime section UI.
+  - Verify disabled overhead is only guarded event dispatch/state checks.
+- [ ] 7. **Add the Statistics tab.**
+  - Implement `buildSessionContext().messages` classification and synthetic
+    filtering in `statistics.ts`.
+  - Render category totals, proportions, pi usage/context-window metadata,
+    unknown-after-compaction state, and refresh behavior.
+- [ ] 8. **Polish lifecycle and edge cases.**
+  - Streaming command invocation, probe timeout/no model/no auth, zero other
+    extensions, compaction, tree navigation, reload/new/resume/fork, dynamic
+    tools, images, and conditional prompt additions.
+- [ ] 9. **Complete automated and real-TTY testing.**
+  - Pure measurement/grouping/runtime/statistics tests.
+  - Real pty tests at 60/80/120 columns; theme invalidation; overlay/full-view
+    behavior; marker before/after inspector; no provider-call sentinel.
+  - Use `script` or Python `pty`; tmux is unavailable in this environment.
+- [ ] 10. **Documentation and release.**
+  - README with `/context`, tabs, preview/privacy notes, runtime logging
+    overhead/bounds, estimate disclaimer, and screenshots/asciicast.
+  - Remove obsolete v1 renderer/PoC files if no longer useful.
+  - Add repository/homepage/bugs metadata; decide release version, then tag and
+    verify `pi install` + `pi list`.
+
+## Initial hierarchy
+
+- pi
+  - base/custom system prompt
+  - built-in tool prompt text and payload definitions
+  - context files → one child per path
+  - skills → one child per skill if reliably separable, otherwise aggregate
+  - appended system prompt
+- each extension/tool source (`sourceInfo.source`)
+  - tool → one child per active tool
+  - custom message → identified by `customType` when available
+- extensions (unattributable)
+  - chained prompt additions aggregate
+- TOTAL
+
+## Verification invariants
+
+- Inspection never calls a provider.
+- Normal turns are unchanged when `/context` is not invoked and runtime logging
+  is off.
+- Initial freezes once per extension runtime.
+- Final prompt capture is independent of inspector/injector load order.
+- Probe suppression never hides a genuine user abort.
+- Synthetic probe messages never reach later provider contexts or statistics.
+- Runtime storage is bounded and disabled by default.
+- No raw injection content is printed, logged, or persisted.
+- Every rendered TUI line stays within the supplied width.
+
+## Remaining questions
+
+- Can the structured skills block be split per skill without duplicating pi’s
+  private formatter, or should it remain one aggregate item?
+- For context-only message mutations, should the UI emphasize the inspector’s
+  chain-position limitation inline or only in documentation?
+- Which release version is appropriate if the old CLI version was never
+  publicly released: `v0.1.0` or `v0.2.0`?
