@@ -62,7 +62,7 @@ Default — `/context` or `/context usage`:
 │ estimated total                              24,281   │
 │ pi usage                         24,958 / 200,000  12% │
 │                                                        │
-│ r refresh · Esc close                                  │
+│ r refresh  esc close                                   │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -89,7 +89,7 @@ Default — `/context` or `/context usage`:
 │ RUNTIME                         logging: off            │
 │  Press r to start logging future injections.            │
 │                                                        │
-│ ↑/↓ select · Enter preview · r logging · Esc close     │
+│ ↑↓ navigate  enter preview  r logging  esc close       │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -282,6 +282,17 @@ Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and proper theme invalidation. Both focused views use fullscreen
 overlays at all terminal widths; content must resize rather than clip.
 
+Match pi's native selector styling (`/settings`, `/model`): one blank padding
+row inside both borders and after the dialog header; keep exactly one blank row
+between the dialog header and `INITIAL`, and one before later sub-headers such as
+`RUNTIME`. Use an accent title, `→` cursor, and selected label; keep the cursor
+in a fixed column with hierarchy indentation after it; use bright `text` for main
+rows, `muted` for sub-items and values, and `dim` for sub-sub-items. Selection
+uses `accent` for both label and value, never a full-line background. Put a
+concise muted dialog description between blank rows above the hotkey row.
+Format hints as dim key + muted description and show a dim `(current/total)`
+line only when scrolling is required.
+
 ## Development steps
 
 - [x] 1. **Remove v1 CLI lifecycle and establish passive capture.**
@@ -315,7 +326,11 @@ overlays at all terminal widths; content must resize rather than clip.
     idempotency, and genuine user abort rendering.
 - [x] 4. **Build the Injections/Initial view.**
   - Hierarchical groups/items, totals, capture-origin metadata, navigation,
-    scrolling, fullscreen overlay, themed colors, and bold text.
+    scrolling, fullscreen overlay, and pi-native selector styling.
+  - Use fixed-column `→` selection, foreground-only highlighting, main/sub-item
+    hierarchy colors, muted values (accent when selected), dim scroll position,
+    padded description + styled hotkey rows, top/bottom padding, one row after
+    the dialog header, and one row before `RUNTIME`.
   - Set it as temporary default for `/context`.
 - [x] 5. **Add injection preview mode.**
   - Enter opens `InjectionItem.text`; scrolling via arrows/PgUp/PgDn; Escape

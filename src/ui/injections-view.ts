@@ -15,9 +15,11 @@ import {
 	PreviewScroller,
 } from "./injections-model.ts";
 
-const CHROME_LINE_COUNT = 7;
-const PREVIEW_CHROME_LINE_COUNT = 5;
+const LIST_FIXED_LINE_COUNT = 13;
+const PREVIEW_FIXED_LINE_COUNT = 10;
 const MIN_LIST_LINES = 4;
+const LIST_DESCRIPTION = "Initial injections and estimated token counts.";
+const PREVIEW_DESCRIPTION = "Raw captured text; never logged or persisted.";
 
 /** Runtime-logging state owned by the extension factory closure. */
 export interface RuntimeToggle {
@@ -120,23 +122,42 @@ export class InjectionsView {
 			return lines;
 		}
 
-		this.navigator.setVisibleCount(this.visibleRowCount());
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const lines: string[] = [border];
+		const warningLines = this.degradedWarningLines(width);
+		const visibleRowCount = this.visibleRowCount(warningLines.length);
+		this.navigator.setVisibleCount(visibleRowCount);
+		const lines: string[] = [border, ""];
 
 		lines.push(this.headerLine(width));
-		if (this.input.degradedReason !== undefined) {
-			lines.push(...wrapTextWithAnsi(theme.fg("warning", ` ${this.input.degradedReason}`), width));
-		}
+		lines.push("");
 		lines.push(this.fit(theme.fg("dim", ` ${"INITIAL"}`), width));
+		lines.push(...warningLines);
 		const listLines = this.listLines(width);
-		lines.push(...listLines);
-		for (let pad = listLines.length; pad < this.visibleRowCount(); pad++) lines.push("");
-		lines.push(this.scrollLine(width));
+		const paddingCount = visibleRowCount - listLines.length;
+		if (paddingCount > 0 && listLines.length > 0) {
+			// Keep TOTAL adjacent to the next section; spare fullscreen rows belong
+			// inside the Initial section, before its summary.
+			lines.push(...listLines.slice(0, -1));
+			for (let pad = 0; pad < paddingCount; pad++) lines.push("");
+			lines.push(listLines[listLines.length - 1] ?? "");
+		} else {
+			lines.push(...listLines);
+		}
+		if (this.navigator.hasOverflow) lines.push(this.scrollLine(width));
+		lines.push("");
 		lines.push(this.runtimeLine(width));
-		lines.push(this.fit(theme.fg("dim", " ↑/↓ select · Enter preview · r logging · Esc close"), width));
-		lines.push(border);
+		lines.push("");
+		lines.push(this.fit(theme.fg("muted", ` ${LIST_DESCRIPTION}`), width));
+		lines.push("");
+		lines.push(
+			this.fit(
+				` ${this.hint("↑↓", "navigate")}  ${this.hint("enter", "preview")}  ` +
+					`${this.hint("r", "logging")}  ${this.hint("esc", "close")}`,
+				width,
+			),
+		);
+		lines.push("", border);
 
 		this.cachedWidth = width;
 		this.cachedLines = lines;
@@ -192,22 +213,31 @@ export class InjectionsView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const wrapped = this.getPreviewLines(width, item);
-		const visibleCount = Math.max(MIN_LIST_LINES, this.previewChromeBudget());
+		const visibleCount = this.previewVisibleCount(wrapped.length);
 		this.previewScroller.setExtent(wrapped.length, visibleCount);
 
-		const lines: string[] = [border];
+		const lines: string[] = [border, ""];
 		const title = theme.fg("accent", theme.bold(` ${item.label}`));
-		const meta = `${item.source.label} · ${item.tokens.toLocaleString("en-US")} tokens `;
-		lines.push(this.spread(title, theme.fg("muted", meta), width));
+		const meta = theme.fg("muted", `${item.source.label} · ${item.tokens.toLocaleString("en-US")} tokens `);
+		lines.push(this.spread(title, meta, width));
+		lines.push("");
 
 		const start = this.previewScroller.offset;
 		for (let index = start; index < start + visibleCount; index++) {
 			lines.push(wrapped[index] ?? "");
 		}
 
-		lines.push(this.previewScrollLine(width, wrapped.length));
-		lines.push(this.fit(theme.fg("dim", " ↑/↓ scroll · PgUp/PgDn · Esc back"), width));
-		lines.push(border);
+		if (this.previewScroller.hasOverflow) lines.push(this.previewScrollLine(width, wrapped.length));
+		lines.push("");
+		lines.push(this.fit(theme.fg("muted", ` ${PREVIEW_DESCRIPTION}`), width));
+		lines.push("");
+		lines.push(
+			this.fit(
+				` ${this.hint("↑↓", "scroll")}  ${this.hint("pgup/pgdn", "page")}  ${this.hint("esc", "back")}`,
+				width,
+			),
+		);
+		lines.push("", border);
 		return lines;
 	}
 
@@ -231,14 +261,14 @@ export class InjectionsView {
 
 	private previewScrollLine(width: number, totalLines: number): string {
 		if (!this.previewScroller.hasOverflow) return this.fit("", width);
-		const first = this.previewScroller.offset + 1;
-		const last = this.previewScroller.offset + this.previewScroller.windowSize;
-		return this.fit(this.theme.fg("dim", ` ${first}–${last} of ${totalLines} lines`), width);
+		return this.fit(this.theme.fg("dim", ` (${this.previewScroller.offset + 1}/${totalLines})`), width);
 	}
 
-	private previewChromeBudget(): number {
+	/** Number of preview text lines that fit, reserving one row only when scrolling. */
+	private previewVisibleCount(totalLines: number): number {
 		const terminalRows = process.stdout.rows ?? 24;
-		return terminalRows - PREVIEW_CHROME_LINE_COUNT;
+		const available = Math.max(MIN_LIST_LINES, terminalRows - PREVIEW_FIXED_LINE_COUNT);
+		return totalLines > available ? Math.max(MIN_LIST_LINES, available - 1) : available;
 	}
 
 	private headerLine(width: number): string {
@@ -259,45 +289,54 @@ export class InjectionsView {
 			const row = this.rows[index];
 			if (row === undefined) break;
 			const selected = index === this.navigator.selected;
-			const marker = selected ? theme.fg("accent", "▶ ") : "  ";
-			const indent = "  ".repeat(row.depth + 1);
-			const tokens = row.tokens.toLocaleString("en-US");
-			const labelWidth = Math.max(8, width - visibleWidth(indent) - tokens.length - 4);
+			// The cursor stays in one fixed column; hierarchy indents after it.
+			const marker = selected ? theme.fg("accent", "→ ") : "  ";
+			const indent = "  ".repeat(row.depth);
+			const valueColor = selected ? "accent" : "muted";
+			const tokens = theme.fg(valueColor, row.tokens.toLocaleString("en-US"));
+			const labelWidth = Math.max(8, width - indent.length - visibleWidth(tokens) - 6);
 			const label = truncateToWidth(row.label, labelWidth, "…");
-			const line = this.spread(`${indent}${marker}${this.rowLabel(row, label, selected)}`, `${tokens}  `, width);
-			lines.push(selected ? theme.bg("selectedBg", line) : line);
+			lines.push(this.spread(` ${marker}${indent}${this.rowLabel(row, label, selected)}`, `${tokens}  `, width));
 		}
 		return lines;
 	}
 
 	private rowLabel(row: InjectionRow, label: string, selected: boolean): string {
 		const theme = this.theme;
-		if (row.kind === "total") return theme.bold(label);
-		if (row.kind === "group") {
-			return theme.bold(theme.fg(row.native ? "accent" : "text", label));
-		}
-		return selected ? label : theme.fg("muted", label);
+		if (selected) return theme.fg("accent", label);
+		if (row.kind === "total") return theme.bold(theme.fg("text", label));
+		if (row.kind === "group") return theme.bold(theme.fg("text", label));
+		return theme.fg(row.depth > 1 ? "dim" : "muted", label);
 	}
 
 	private scrollLine(width: number): string {
 		if (!this.navigator.hasOverflow) return this.fit("", width);
-		const first = this.navigator.offset + 1;
-		const last = this.navigator.offset + this.navigator.windowSize;
-		return this.fit(this.theme.fg("dim", ` ${first}–${last} of ${this.rows.length}`), width);
+		return this.fit(this.theme.fg("dim", ` (${this.navigator.selected + 1}/${this.rows.length})`), width);
 	}
 
 	private runtimeLine(width: number): string {
 		const theme = this.theme;
 		const enabled = this.input.runtime.isEnabled();
-		const status = enabled
-			? theme.fg("success", "logging: on")
-			: theme.fg("muted", "logging: off");
+		const status = theme.fg("muted", enabled ? "logging: on" : "logging: off");
 		return this.spread(theme.fg("dim", " RUNTIME"), `${status} `, width);
 	}
 
-	private visibleRowCount(): number {
+	/** Pi-style hint: dim key, slightly brighter (muted) description. */
+	private hint(key: string, description: string): string {
+		return this.theme.fg("dim", key) + this.theme.fg("muted", ` ${description}`);
+	}
+
+	/** Number of list rows that fit after warnings and an optional scroll indicator. */
+	private visibleRowCount(extraLineCount = 0): number {
 		const terminalRows = process.stdout.rows ?? 24;
-		return Math.max(MIN_LIST_LINES, terminalRows - CHROME_LINE_COUNT);
+		const available = Math.max(MIN_LIST_LINES, terminalRows - LIST_FIXED_LINE_COUNT - extraLineCount);
+		return this.rows.length > available ? Math.max(MIN_LIST_LINES, available - 1) : available;
+	}
+
+	/** Wrapped degraded-capture warning placed after the first sub-header. */
+	private degradedWarningLines(width: number): string[] {
+		if (this.input.degradedReason === undefined) return [];
+		return wrapTextWithAnsi(this.theme.fg("warning", ` ${this.input.degradedReason}`), width);
 	}
 
 	private spread(left: string, right: string, width: number): string {

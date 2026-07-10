@@ -99,6 +99,15 @@ Target modules (created incrementally per PLAN.md):
 Keep hierarchy in typed model fields. Never parse labels in UI code to recover
 source, kind, or parent/child relationships.
 
+TUI views follow pi's native selector style: fullscreen horizontal-border
+layout with one blank row inside top/bottom and after the dialog header, plus
+one row before later sub-headers such as `RUNTIME`; accent title and
+fixed-column `→` cursor; bright main rows, muted sub-items/values, and dim
+sub-sub-items. Selected
+labels and values use accent with no background. Put the muted description
+between blank rows before hints, format hints as dim key + muted description,
+and show dim `(current/total)` only on overflow.
+
 ## Verification
 
 ```bash

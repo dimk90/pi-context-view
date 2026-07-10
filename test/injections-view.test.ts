@@ -18,7 +18,13 @@ const BG_COLORS = [
 ] as const;
 
 function createTheme(): Theme {
-	const fgColors = Object.fromEntries(FG_COLORS.map((color) => [color, "#aabbcc"]));
+	const foregroundOverrides: Partial<Record<ThemeColor, string>> = {
+		accent: "#010203",
+		text: "#040506",
+		muted: "#070809",
+		dim: "#101112",
+	};
+	const fgColors = Object.fromEntries(FG_COLORS.map((color) => [color, foregroundOverrides[color] ?? "#aabbcc"]));
 	const bgColors = Object.fromEntries(BG_COLORS.map((color) => [color, "#112233"]));
 	return new Theme(
 		fgColors as ConstructorParameters<typeof Theme>[0],
@@ -83,6 +89,66 @@ function createView(itemsPerGroup = 8, degradedReason?: string): InjectionsView 
 	);
 }
 
+/** Remove SGR sequences so tests can inspect visual columns. */
+function stripSgr(text: string): string {
+	return text.replace(/\u001b\[[\d;]*m/g, "");
+}
+
+test("InjectionsView follows pi selector styling and cursor alignment", () => {
+	const child = item("child", "pi", true, 20);
+	const parent: InjectionItem = { ...item("parent", "pi", true, 50), children: [child] };
+	const piGroup = group("pi", true, [parent]);
+	const styledSnapshot: InitialSnapshot = {
+		origin: "real-turn",
+		capturedAt: new Date("2026-07-10T12:00:00Z"),
+		groups: [piGroup],
+		totalTokens: piGroup.totalTokens,
+	};
+	const view = new InjectionsView(createTheme(), { snapshot: styledSnapshot, runtime: createRuntime() }, () => {});
+
+	let lines = view.render(80);
+	assert.equal(lines[1], "");
+	assert.equal(lines.at(-2), "");
+	const headerIndex = lines.findIndex((line) => stripSgr(line).includes("Context injections"));
+	const initialIndex = lines.findIndex((line) => stripSgr(line).trim() === "INITIAL");
+	const totalIndex = lines.findIndex((line) => stripSgr(line).includes("TOTAL"));
+	const runtimeIndex = lines.findIndex((line) => stripSgr(line).includes("RUNTIME"));
+	assert.ok(headerIndex >= 0 && initialIndex === headerIndex + 2);
+	assert.equal(lines[headerIndex + 1], "");
+	assert.ok(totalIndex >= 0 && runtimeIndex === totalIndex + 2);
+	assert.equal(lines[totalIndex + 1], "");
+	const selectedGroup = lines.find((line) => stripSgr(line).includes("→ pi"));
+	assert.ok(selectedGroup !== undefined);
+	assert.equal(stripSgr(selectedGroup).indexOf("→"), 1);
+	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m→ /);
+	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m50/);
+	assert.doesNotMatch(selectedGroup, /\u001b\[48;/);
+	const parentLine = lines.find((line) => stripSgr(line).includes("parent with a moderately"));
+	const childLine = lines.find((line) => stripSgr(line).includes("child with a moderately"));
+	assert.match(parentLine ?? "", /\u001b\[38;2;7;8;9mparent/);
+	assert.match(parentLine ?? "", /\u001b\[38;2;7;8;9m50/);
+	assert.match(childLine ?? "", /\u001b\[38;2;16;17;18mchild/);
+	assert.match(childLine ?? "", /\u001b\[38;2;7;8;9m20/);
+
+	view.handleInput("\u001b[B");
+	view.handleInput("\u001b[B");
+	lines = view.render(80);
+	const selectedChild = lines.find((line) => stripSgr(line).includes("→     child"));
+	assert.ok(selectedChild !== undefined);
+	assert.equal(stripSgr(selectedChild).indexOf("→"), 1);
+	assert.match(selectedChild, /\u001b\[38;2;1;2;3mchild/);
+	assert.match(selectedChild, /\u001b\[38;2;1;2;3m20/);
+
+	const descriptionIndex = lines.findIndex((line) => stripSgr(line).includes("Initial injections and estimated"));
+	const hintsIndex = lines.findIndex((line) => stripSgr(line).includes("↑↓ navigate"));
+	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
+	assert.equal(lines[descriptionIndex - 1], "");
+	assert.equal(lines[descriptionIndex + 1], "");
+	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m Initial injections/);
+	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18m↑↓/);
+	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m navigate/);
+});
+
 test("InjectionsView keeps every rendered line within the width", () => {
 	for (const width of [24, 40, 66, 120]) {
 		const view = createView(8, "Silent probe unavailable: no model is selected. Extension additions were not observed.");
@@ -105,17 +171,27 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 
 	// Enter on a group row does nothing.
 	view.handleInput("\r");
-	assert.doesNotMatch(view.render(80).join("\n"), /Esc back/);
+	assert.doesNotMatch(view.render(80).join("\n"), /Raw captured text/);
 
 	// Select the second item row and open its preview.
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	const listBefore = view.render(80).join("\n");
 	view.handleInput("\r");
-	const preview = view.render(80).join("\n");
-	assert.match(preview, /Esc back/);
+	const previewLines = view.render(80);
+	const preview = previewLines.join("\n");
+	assert.match(preview, /Raw captured text/);
 	assert.match(preview, /pi-1 preview line 0/);
-	assert.match(preview, /of \d+ lines/);
+	assert.match(preview, /\(\d+\/\d+\)/);
+	const previewHeaderIndex = previewLines.findIndex((line) => stripSgr(line).includes("tokens"));
+	const firstContentIndex = previewLines.findIndex((line) => stripSgr(line).includes("preview line 0"));
+	assert.ok(previewHeaderIndex >= 0 && firstContentIndex === previewHeaderIndex + 2);
+	assert.equal(previewLines[previewHeaderIndex + 1], "");
+	const descriptionIndex = previewLines.findIndex((line) => stripSgr(line).includes("Raw captured text"));
+	assert.ok(descriptionIndex > 0);
+	assert.equal(previewLines[descriptionIndex - 1], "");
+	assert.equal(previewLines[descriptionIndex + 1], "");
+	assert.match(previewLines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m Raw captured text/);
 
 	// Scrolling changes the visible window; Escape returns to the unchanged list.
 	view.handleInput("\u001b[6~"); // PgDn
@@ -139,7 +215,11 @@ test("InjectionsView navigation scrolls and Escape closes", () => {
 		closed = true;
 	});
 
-	const before = view.render(80).join("\n");
+	const initialLines = view.render(80);
+	const scrollIndicator = initialLines.find((line) => /\(1\/\d+\)/.test(stripSgr(line)));
+	assert.ok(scrollIndicator !== undefined);
+	assert.match(scrollIndicator, /\u001b\[38;2;16;17;18m \(1\/\d+\)/);
+	const before = initialLines.join("\n");
 	view.handleInput("\u001b[B");
 	const afterDown = view.render(80).join("\n");
 	assert.notEqual(afterDown, before);
