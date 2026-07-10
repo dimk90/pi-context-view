@@ -17,13 +17,16 @@ Initial capture is prepared once in `before_agent_start` and finalized once in
 the first `context` event:
 
 ```text
-before_agent_start → save structured prompt options + tool metadata
-context            → read final ctx.getSystemPrompt(), messages; freeze Initial
+before_agent_start → save structured prompt options (only available here)
+context            → read final ctx.getSystemPrompt(), final active tool set,
+                     injected messages; freeze Initial as owned copies
 ```
 
 `ctx.getSystemPrompt()` in `context` is the completed prompt chain, including
-injectors loaded after this extension. Do not freeze `event.systemPrompt` in
-our own `before_agent_start` handler.
+injectors loaded after this extension. Do not freeze `event.systemPrompt` or
+the active tool set in our own `before_agent_start` handler — later-loaded
+handlers may still edit the prompt or call `pi.setActiveTools()`. Freeze
+owned copies only; shared references can be mutated by other extensions.
 
 If `/context` runs before a real turn, use one on-demand silent probe:
 
@@ -60,6 +63,8 @@ Runtime injection logging is disabled by default, memory-only, and bounded
   public API; use one aggregate contribution.
 - `context` message mutations remain chain-position dependent: later handlers
   are not observable. Tool ownership must come from `ToolInfo.sourceInfo`.
+- Extensions can inject non-custom-role messages from `context` handlers;
+  role-based detection alone misses them (needs session-branch diffing).
 - `buildContextEntries()` includes non-context metadata. Use
   `buildSessionContext().messages` for Statistics.
 - `ctx.ui.custom()` is TUI-only. Guard with `ctx.mode === "tui"`.

@@ -73,17 +73,21 @@ The old `--context-inspect` print-and-exit workflow is superseded. See
 The initial snapshot is built across two events:
 
 1. `before_agent_start`
-   - Save `event.systemPromptOptions` for structured pi-native inputs.
-   - Record the active tools and their `sourceInfo` metadata.
-   - Do not freeze `event.systemPrompt`: later-loaded handlers may still edit
-     it.
+   - Save `event.systemPromptOptions` for structured pi-native inputs — the
+     only event where they are available.
+   - Nothing else: `event.systemPrompt` is not final (later-loaded handlers
+     may still edit it), and the active tool set is not final either (later
+     handlers may call `pi.setActiveTools()`).
 2. The first `context` event for that run
    - Read `ctx.getSystemPrompt()`. At this point every
      `before_agent_start` handler has completed, so this is the final chained
      prompt even when the inspector extension loaded before an injector.
+   - Snapshot the final active tool set (`getAllTools` ∩ `getActiveTools`)
+     with `sourceInfo` metadata — load-order independent for the same reason.
    - Capture observable injected messages, excluding synthetic probe entries
      and ordinary conversation history.
-   - Measure and freeze the Initial snapshot. Later `context` events never
+   - Measure and freeze the Initial snapshot as owned copies (no shared
+     references other extensions could mutate). Later `context` events never
      overwrite it.
 
 This removes the old “load last for accurate prompt aggregate” requirement.
@@ -243,13 +247,15 @@ overlay.
   - Delete `registerFlag`, automatic probe, abort/report/shutdown path,
     watchdog, retry timer, shutdown grace period, JSON refusal, print fallback,
     and `-p` hint from `src/index.ts`.
-  - Add capture-once preparation in `before_agent_start` and finalization in
-    `context` using final `ctx.getSystemPrompt()`.
+  - Add capture-once preparation in `before_agent_start` (prompt options
+    only) and finalization in `context`: final `ctx.getSystemPrompt()`, final
+    active tool set, injected messages — all frozen as owned copies.
   - Keep normal prompts behaviorally unchanged; no automatic probe.
   - Keep `measure.ts` and the temporary `report.ts` while capture is verified.
   - Update package description/keywords after the CLI code is gone.
   - Verify `npx tsc --noEmit`, a normal prompt, and marker capture with both
-    extension load orders.
+    extension load orders; verify tool-set mutations from a later-loaded
+    extension's `before_agent_start` are reflected in both load orders.
 - [ ] 2. **Introduce semantic data model and module boundaries.**
   - Add `model.ts` and `capture.ts`; keep `index.ts` registration-only.
   - Replace label-parsing assumptions with typed item/group/source fields.
