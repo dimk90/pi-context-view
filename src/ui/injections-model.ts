@@ -2,7 +2,7 @@
  * Pure presentation model for the Injections view: flattened rows and
  * list navigation/scrolling state. No pi or TUI access — unit-testable.
  */
-import type { InitialSnapshot } from "../model.ts";
+import type { InitialSnapshot, InjectionItem } from "../model.ts";
 
 /** What one selectable list row represents. */
 export type InjectionRowKind = "group" | "item" | "total";
@@ -17,6 +17,20 @@ export interface InjectionRow {
 	/** Snapshot item id; present only for `kind: "item"` (preview target). */
 	readonly itemId?: string;
 	readonly native: boolean;
+}
+
+/** Index snapshot items by id for preview lookup. */
+export function collectItemsById(snapshot: InitialSnapshot): Map<string, InjectionItem> {
+	const items = new Map<string, InjectionItem>();
+	for (const group of snapshot.groups) {
+		for (const item of group.items) items.set(item.id, item);
+	}
+	return items;
+}
+
+/** Normalize raw injection text for terminal display without content changes beyond whitespace. */
+export function normalizePreviewText(text: string): string {
+	return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n").replaceAll("\t", "    ");
 }
 
 /** Flatten snapshot groups into display rows, ending with a TOTAL row. */
@@ -106,5 +120,56 @@ export class ListNavigator {
 			this.scrollOffset = this.selectedIndex - this.visibleCount + 1;
 		}
 		this.scrollOffset = Math.min(maxOffset, Math.max(0, this.scrollOffset));
+	}
+}
+
+/**
+ * Scroll-only window over wrapped preview lines. Extent is re-declared each
+ * render (wrapping depends on width); the offset is clamped to stay valid.
+ */
+export class PreviewScroller {
+	private lineCount = 0;
+	private visibleCount = 1;
+	private offsetValue = 0;
+
+	public get offset(): number {
+		return this.offsetValue;
+	}
+
+	public get windowSize(): number {
+		return Math.min(this.visibleCount, this.lineCount);
+	}
+
+	public get hasOverflow(): boolean {
+		return this.lineCount > this.visibleCount;
+	}
+
+	public get maxOffset(): number {
+		return Math.max(0, this.lineCount - this.visibleCount);
+	}
+
+	public setExtent(lineCount: number, visibleCount: number): void {
+		this.lineCount = Math.max(0, lineCount);
+		this.visibleCount = Math.max(1, visibleCount);
+		this.offsetValue = Math.min(this.maxOffset, this.offsetValue);
+	}
+
+	public scrollBy(delta: number): boolean {
+		return this.scrollTo(this.offsetValue + delta);
+	}
+
+	public scrollTo(offset: number): boolean {
+		const next = Math.min(this.maxOffset, Math.max(0, offset));
+		if (next === this.offsetValue) return false;
+		this.offsetValue = next;
+		return true;
+	}
+
+	public page(direction: -1 | 1): boolean {
+		return this.scrollBy(direction * Math.max(1, this.visibleCount - 1));
+	}
+
+	public reset(): void {
+		this.offsetValue = 0;
 	}
 }

@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { InitialSnapshot, InjectionItem } from "../src/model.ts";
-import { buildInjectionRows, ListNavigator } from "../src/ui/injections-model.ts";
+import {
+	buildInjectionRows,
+	collectItemsById,
+	ListNavigator,
+	normalizePreviewText,
+	PreviewScroller,
+} from "../src/ui/injections-model.ts";
 
 function item(id: string, sourceId: string, native: boolean, tokens: number): InjectionItem {
 	return {
@@ -48,6 +54,41 @@ test("buildInjectionRows flattens groups, items, and total in order", () => {
 	assert.equal(rows.at(-1)?.tokens, 170);
 	assert.equal(rows[1]?.itemId, "base-prompt");
 	assert.equal(rows[0]?.itemId, undefined);
+});
+
+test("collectItemsById indexes every snapshot item", () => {
+	const items = collectItemsById(snapshot());
+
+	assert.deepEqual([...items.keys()].sort(), ["base-prompt", "skills", "web_search"]);
+	assert.equal(items.get("skills")?.tokens, 40);
+});
+
+test("normalizePreviewText normalizes line endings and tabs only", () => {
+	assert.equal(normalizePreviewText("a\r\nb\rc\td"), "a\nb\nc    d");
+	assert.equal(normalizePreviewText("plain \u001b[31mansi\u001b[0m"), "plain \u001b[31mansi\u001b[0m");
+});
+
+test("PreviewScroller clamps scrolling to the wrapped extent", () => {
+	const scroller = new PreviewScroller();
+	scroller.setExtent(20, 6);
+
+	assert.equal(scroller.hasOverflow, true);
+	assert.equal(scroller.scrollBy(-1), false);
+	assert.equal(scroller.scrollBy(3), true);
+	assert.equal(scroller.offset, 3);
+
+	scroller.page(1);
+	assert.equal(scroller.offset, 8);
+	assert.equal(scroller.scrollTo(999), true);
+	assert.equal(scroller.offset, scroller.maxOffset);
+	assert.equal(scroller.maxOffset, 14);
+
+	// Re-declaring a smaller extent (narrower wrap) keeps the offset valid.
+	scroller.setExtent(10, 6);
+	assert.equal(scroller.offset, 4);
+
+	scroller.reset();
+	assert.equal(scroller.offset, 0);
 });
 
 test("ListNavigator keeps the selection inside the scroll window", () => {

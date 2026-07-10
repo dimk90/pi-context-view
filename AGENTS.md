@@ -11,9 +11,9 @@ to focused `/context` TUI views:
 There are no tabs. No raw injection content is logged or persisted.
 
 The v1 CLI lifecycle has been removed. Passive capture, the one-shot silent
-probe, command grammar, and the Injections/Initial view are implemented
-(PLAN.md steps 1–4); `/context` temporarily defaults to Injections until the
-Usage view lands. Do not preserve CLI compatibility during the migration.
+probe, command grammar, and the Injections/Initial view with item preview are
+implemented (PLAN.md steps 1–5); `/context` temporarily defaults to Injections
+until the Usage view lands. Do not preserve CLI compatibility during the migration.
 
 ## Target architecture
 
@@ -82,8 +82,10 @@ Target modules (created incrementally per PLAN.md):
 - `src/model.ts` — semantic snapshot/injection/usage types and grouping.
 - `src/capture.ts` — capture-once and silent-probe state machines.
 - `src/command.ts` — command parsing/completions and capture resolution.
-- `src/ui/injections-model.ts` — pure row flattening and list navigation.
-- `src/ui/injections-view.ts` — Injections view component (overlay/full).
+- `src/ui/injections-model.ts` — pure row flattening, list navigation, and
+  preview scrolling/normalization.
+- `src/ui/injections-view.ts` — Injections view component (overlay/full) with
+  Enter-to-preview raw injection text.
 - `src/runtime.ts` — bounded optional Runtime log.
 - `src/measure.ts` — pure prompt/tool measurement.
 - `src/usage.ts` — pure context classification and totals.

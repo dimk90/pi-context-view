@@ -313,7 +313,7 @@ custom views rather than hiding or clipping them.
   - Hierarchical groups/items, totals, capture-origin metadata, navigation,
     scrolling, narrow-terminal fallback, themed colors, and bold text.
   - Set it as temporary default for `/context`.
-- [ ] 5. **Add injection preview mode.**
+- [x] 5. **Add injection preview mode.**
   - Enter opens `InjectionItem.text`; scrolling via arrows/j/k/PgUp/PgDn;
     Escape returns to the same selected list row.
   - Wrap ANSI-aware text and avoid exposing raw content outside the view.

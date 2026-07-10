@@ -39,7 +39,7 @@ function item(id: string, sourceId: string, native: boolean, tokens: number): In
 		label: `${id} with a moderately long label for truncation checks`,
 		chars: tokens * 4,
 		tokens,
-		text: id,
+		text: Array.from({ length: 40 }, (_, line) => `${id} preview line ${line} ${"word ".repeat(12)}`).join("\n"),
 	};
 }
 
@@ -89,7 +89,47 @@ test("InjectionsView keeps every rendered line within the width", () => {
 		for (const line of view.render(width)) {
 			assert.ok(visibleWidth(line) <= width, `line exceeds width ${width}: ${JSON.stringify(line)}`);
 		}
+		view.handleInput("\u001b[B"); // select first item row
+		view.handleInput("\r"); // open preview
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `preview line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
 	}
+});
+
+test("InjectionsView preview opens on items, scrolls, and returns to the same row", () => {
+	let closed = false;
+	const view = new InjectionsView(createTheme(), { snapshot: snapshot(8), runtime: createRuntime() }, () => {
+		closed = true;
+	});
+
+	// Enter on a group row does nothing.
+	view.handleInput("\r");
+	assert.doesNotMatch(view.render(80).join("\n"), /Esc back/);
+
+	// Select the second item row and open its preview.
+	view.handleInput("\u001b[B");
+	view.handleInput("\u001b[B");
+	const listBefore = view.render(80).join("\n");
+	view.handleInput("\r");
+	const preview = view.render(80).join("\n");
+	assert.match(preview, /Esc back/);
+	assert.match(preview, /pi-1 preview line 0/);
+	assert.match(preview, /of \d+ lines/);
+
+	// Scrolling changes the visible window; Escape returns to the unchanged list.
+	view.handleInput("\u001b[6~"); // PgDn
+	const scrolled = view.render(80).join("\n");
+	assert.notEqual(scrolled, preview);
+	assert.doesNotMatch(scrolled, /preview line 0 /);
+
+	view.handleInput("\u001b");
+	assert.equal(closed, false);
+	assert.equal(view.render(80).join("\n"), listBefore);
+
+	// A fresh preview starts back at the top.
+	view.handleInput("\r");
+	assert.match(view.render(80).join("\n"), /preview line 0 /);
 });
 
 test("InjectionsView navigation scrolls and Escape closes", () => {
