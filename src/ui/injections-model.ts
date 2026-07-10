@@ -12,18 +12,21 @@ export interface InjectionRow {
 	readonly kind: InjectionRowKind;
 	readonly label: string;
 	readonly tokens: number;
-	/** Indentation level: 0 for groups/total, 1 for items. */
+	/** Indentation level: 0 for groups/total, 1 for items, 2 for sub-items. */
 	readonly depth: number;
 	/** Snapshot item id; present only for `kind: "item"` (preview target). */
 	readonly itemId?: string;
 	readonly native: boolean;
 }
 
-/** Index snapshot items by id for preview lookup. */
+/** Index snapshot items (including sub-items) by id for preview lookup. */
 export function collectItemsById(snapshot: InitialSnapshot): Map<string, InjectionItem> {
 	const items = new Map<string, InjectionItem>();
 	for (const group of snapshot.groups) {
-		for (const item of group.items) items.set(item.id, item);
+		for (const item of group.items) {
+			items.set(item.id, item);
+			for (const child of item.children ?? []) items.set(child.id, child);
+		}
 	}
 	return items;
 }
@@ -53,6 +56,16 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 				itemId: item.id,
 				native: item.source.native,
 			});
+			for (const child of item.children ?? []) {
+				rows.push({
+					kind: "item",
+					label: child.label,
+					tokens: child.tokens,
+					depth: 2,
+					itemId: child.id,
+					native: child.source.native,
+				});
+			}
 		}
 	}
 	rows.push({ kind: "total", label: "TOTAL", tokens: snapshot.totalTokens, depth: 0, native: true });

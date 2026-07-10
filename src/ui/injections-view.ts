@@ -15,9 +15,8 @@ import {
 	PreviewScroller,
 } from "./injections-model.ts";
 
-const OVERLAY_MIN_COLUMNS = 70;
-const OVERLAY_WIDTH = 66;
-const CHROME_LINE_COUNT = 8;
+const CHROME_LINE_COUNT = 7;
+const PREVIEW_CHROME_LINE_COUNT = 5;
 const MIN_LIST_LINES = 4;
 
 /** Runtime-logging state owned by the extension factory closure. */
@@ -33,12 +32,11 @@ export interface InjectionsViewInput {
 	readonly runtime: RuntimeToggle;
 }
 
-/** Open the Injections view as an overlay, or full-width on narrow terminals. */
+/** Open the Injections view as a fullscreen overlay. */
 export async function showInjectionsView(
 	context: ExtensionCommandContext,
 	input: InjectionsViewInput,
 ): Promise<void> {
-	const useOverlay = (process.stdout.columns ?? 0) >= OVERLAY_MIN_COLUMNS;
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
 			const view = new InjectionsView(theme, input, done);
@@ -51,12 +49,10 @@ export async function showInjectionsView(
 				},
 			};
 		},
-		useOverlay
-			? {
-					overlay: true,
-					overlayOptions: { width: OVERLAY_WIDTH, minWidth: 40, maxHeight: "80%", margin: 1 },
-				}
-			: undefined,
+		{
+			overlay: true,
+			overlayOptions: { width: "100%", maxHeight: "100%", margin: 0 },
+		},
 	);
 }
 
@@ -100,9 +96,9 @@ export class InjectionsView {
 		}
 		if (matchesKey(data, Key.enter)) {
 			this.openPreview();
-		} else if (matchesKey(data, Key.up) || data === "k") {
+		} else if (matchesKey(data, Key.up)) {
 			if (this.navigator.moveBy(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.down) || data === "j") {
+		} else if (matchesKey(data, Key.down)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
 		} else if (matchesKey(data, Key.pageUp)) {
 			if (this.navigator.page(-1)) this.clearCache();
@@ -134,10 +130,12 @@ export class InjectionsView {
 			lines.push(...wrapTextWithAnsi(theme.fg("warning", ` ${this.input.degradedReason}`), width));
 		}
 		lines.push(this.fit(theme.fg("dim", ` ${"INITIAL"}`), width));
-		lines.push(...this.listLines(width));
+		const listLines = this.listLines(width);
+		lines.push(...listLines);
+		for (let pad = listLines.length; pad < this.visibleRowCount(); pad++) lines.push("");
 		lines.push(this.scrollLine(width));
 		lines.push(this.runtimeLine(width));
-		lines.push(this.fit(theme.fg("dim", " ↑/↓ j/k select · Enter preview · r logging · Esc close"), width));
+		lines.push(this.fit(theme.fg("dim", " ↑/↓ select · Enter preview · r logging · Esc close"), width));
 		lines.push(border);
 
 		this.cachedWidth = width;
@@ -156,9 +154,9 @@ export class InjectionsView {
 			this.closePreview();
 			return;
 		}
-		if (matchesKey(data, Key.up) || data === "k") {
+		if (matchesKey(data, Key.up)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.down) || data === "j") {
+		} else if (matchesKey(data, Key.down)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
 		} else if (matchesKey(data, Key.pageUp)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
@@ -203,13 +201,12 @@ export class InjectionsView {
 		lines.push(this.spread(title, theme.fg("muted", meta), width));
 
 		const start = this.previewScroller.offset;
-		const end = start + this.previewScroller.windowSize;
-		for (let index = start; index < end; index++) {
+		for (let index = start; index < start + visibleCount; index++) {
 			lines.push(wrapped[index] ?? "");
 		}
 
 		lines.push(this.previewScrollLine(width, wrapped.length));
-		lines.push(this.fit(theme.fg("dim", " ↑/↓ j/k scroll · PgUp/PgDn · Esc back"), width));
+		lines.push(this.fit(theme.fg("dim", " ↑/↓ scroll · PgUp/PgDn · Esc back"), width));
 		lines.push(border);
 		return lines;
 	}
@@ -241,7 +238,7 @@ export class InjectionsView {
 
 	private previewChromeBudget(): number {
 		const terminalRows = process.stdout.rows ?? 24;
-		return Math.floor(terminalRows * 0.8) - 5;
+		return terminalRows - PREVIEW_CHROME_LINE_COUNT;
 	}
 
 	private headerLine(width: number): string {
@@ -300,8 +297,7 @@ export class InjectionsView {
 
 	private visibleRowCount(): number {
 		const terminalRows = process.stdout.rows ?? 24;
-		const budget = Math.floor(terminalRows * 0.8) - CHROME_LINE_COUNT;
-		return Math.max(MIN_LIST_LINES, Math.min(this.rows.length, budget));
+		return Math.max(MIN_LIST_LINES, terminalRows - CHROME_LINE_COUNT);
 	}
 
 	private spread(left: string, right: string, width: number): string {

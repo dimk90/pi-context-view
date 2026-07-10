@@ -25,7 +25,7 @@ The old `--context-inspect` print-and-exit workflow is superseded. See
 - `/context` is TUI-only in v2. Non-TUI invocation reports that TUI mode is
   required; it does not preserve the old plain-table workflow.
 - `/context` defaults to `/context usage`. Usage and Injections are separate,
-  focused overlays with no tabs or tab-switching keybindings.
+  focused fullscreen overlays with no tabs or tab-switching keybindings.
 - Unknown arguments show concise command usage; argument completions offer
   `usage`, `injections`, and `runtime on|off`.
 - Initial means the first context observable by this extension instance. It
@@ -74,9 +74,12 @@ Default — `/context` or `/context usage`:
 │  pi                                             3,126  │
 │    base system prompt                             652  │
 │    built-in tool definitions                      640  │
-│    context files                                  846  │
-│      ~/.pi/agent/AGENTS.md                         89  │
-│      ./AGENTS.md                                  757  │
+│      edit                                          278  │
+│      read                                          154  │
+│      bash                                          118  │
+│      write                                          90  │
+│    ~/.pi/agent/AGENTS.md                            89  │
+│    ./AGENTS.md                                     757  │
 │    skills                                         988  │
 │  npm:pi-web-providers                           1,510  │
 │    web_search                                   1,414  │
@@ -229,8 +232,10 @@ for example:
 - `InitialSnapshot` — origin (`real-turn` or `synthetic-probe`), timestamp,
   measured items, synthetic-message identities.
 - `InjectionItem` — stable id, phase, kind, source, label, tokens, chars, raw
-  preview text, optional request index.
-- `InjectionGroup` — source/category plus child items and totals.
+  preview text, optional request index, and optional constituent children.
+  Children are a breakdown of the parent (currently individual built-in tools),
+  not additional contributions to group or snapshot totals.
+- `InjectionGroup` — source/category plus top-level items and totals.
 - `RuntimeInjection` — change kind and signed token delta.
 - `ContextUsageSnapshot` / `UsageCategory` — category totals and overall usage
   metadata.
@@ -269,14 +274,13 @@ show concise usage rather than silently choosing a view.
 The views are independent; there is no tab state or tab-switching keybinding.
 The Usage view is read-only: `r` recomputes usage and Escape closes it. The
 Injections view has a small state machine (`list | preview`), selected row, and
-scroll offsets. Up/Down and j/k navigate; Enter opens a scrollable preview;
-Escape returns from preview to list, then closes the view. In that view, `r`
-toggles Runtime logging.
+scroll offsets. Up/Down navigate; Enter opens a scrollable preview; Escape
+returns from preview to list, then closes the view. In that view, `r` toggles
+Runtime logging.
 
 Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width helpers,
-render caching, and proper theme invalidation. Use overlays on sufficiently
-large terminals. On narrow terminals, open the same components as regular full
-custom views rather than hiding or clipping them.
+render caching, and proper theme invalidation. Both focused views use fullscreen
+overlays at all terminal widths; content must resize rather than clip.
 
 ## Development steps
 
@@ -311,22 +315,34 @@ custom views rather than hiding or clipping them.
     idempotency, and genuine user abort rendering.
 - [x] 4. **Build the Injections/Initial view.**
   - Hierarchical groups/items, totals, capture-origin metadata, navigation,
-    scrolling, narrow-terminal fallback, themed colors, and bold text.
+    scrolling, fullscreen overlay, themed colors, and bold text.
   - Set it as temporary default for `/context`.
 - [x] 5. **Add injection preview mode.**
-  - Enter opens `InjectionItem.text`; scrolling via arrows/j/k/PgUp/PgDn;
-    Escape returns to the same selected list row.
+  - Enter opens `InjectionItem.text`; scrolling via arrows/PgUp/PgDn; Escape
+    returns to the same selected list row.
   - Wrap ANSI-aware text and avoid exposing raw content outside the view.
+  - Show individual built-in pi tools as previewable breakdown children under
+    the built-in tool-definitions aggregate without double-counting totals.
+- [ ] 5a. **Harden completed capture and Injections paths after review.**
+  - Ensure a probe that times out before `before_agent_start` still owns and
+    aborts any delayed synthetic turn, so it can never reach a provider.
+  - Sanitize preview terminal control sequences before rendering sensitive raw
+    injection text; wrapping alone must not permit terminal escape injection.
+  - Include terminal height and wrapped degraded-warning lines in fullscreen
+    layout/cache calculations; verify same-width height-only resizing and very
+    short terminals.
 - [ ] 6. **Build the Usage view (the default).**
   - Implement `buildSessionContext().messages` classification and synthetic
     filtering in `usage.ts`.
   - Render category totals, proportions, pi usage/context-window metadata,
     unknown-after-compaction state, and `r` refresh behavior.
-  - Add narrow-terminal fallback, themed colors, and bold text.
+  - Add a fullscreen overlay that resizes cleanly, themed colors, and bold text.
   - Set as default for `/context`.
 - [ ] 7. **Add map/graph for context usage visualization.**
   - Use Claude Code like context visualization -> ask me for template/example.
 - [ ] 8. **Add bounded opt-in Runtime logging.**
+  - The current command/view surfaces store only the toggle state; they do not
+    log injections yet and must not be treated as functional until this step.
   - Implement prompt/tool/message diffing, request indexing, ring-buffer
     limits, eviction count, both toggle surfaces, and Runtime section UI.
   - Verify disabled overhead is only guarded event dispatch/state checks and
@@ -337,9 +353,9 @@ custom views rather than hiding or clipping them.
     tools, images, and conditional prompt additions.
 - [ ] 10. **Complete automated and real-TTY testing.**
   - Pure measurement/grouping/runtime/usage tests.
-  - Real pty tests at 60/80/120 columns; theme invalidation; overlay/full-view
-    behavior; both focused views; marker before/after inspector;
-    no-provider-call sentinel.
+  - Real pty tests at 60/80/120 columns; theme invalidation; fullscreen and
+    height-only resize behavior; both focused views; marker before/after
+    inspector; no-provider-call sentinel.
   - Use `script` or Python `pty`; tmux is unavailable in this environment.
 - [ ] 11. **Documentation and release.**
   - README with all `/context` forms, Usage as the default, injection preview
@@ -356,8 +372,8 @@ custom views rather than hiding or clipping them.
 
 - pi
   - base/custom system prompt
-  - built-in tool prompt text and payload definitions
-  - context files → one child per path
+  - built-in tool definitions aggregate → one breakdown child per active tool
+  - context file → one item per path
   - skills → one child per skill if reliably separable, otherwise aggregate
   - appended system prompt
 - each extension/tool source (`sourceInfo.source`)
@@ -377,7 +393,8 @@ custom views rather than hiding or clipping them.
 - Probe suppression never hides a genuine user abort.
 - Synthetic probe messages never reach later provider contexts or Usage.
 - Runtime storage is bounded and disabled by default.
-- No raw injection content is printed, logged, or persisted.
+- Raw injection content is rendered only after explicit Enter preview; it is
+  never included in notifications/reports, logged by the extension, or persisted.
 - Every rendered TUI line stays within the supplied width.
 
 ## Remaining questions

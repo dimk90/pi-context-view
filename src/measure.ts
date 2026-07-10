@@ -126,12 +126,12 @@ export function textTokens(text: string): number {
  */
 function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], carvedSpans: Span[]): void {
 	let builtinDefinitions = "";
-	let builtinCount = 0;
+	const builtinChildren: InjectionItem[] = [];
 	for (const tool of tools) {
 		const definition = `${tool.name}: ${tool.description}\n${tool.parametersJson}`;
 		if (tool.source === "builtin") {
 			builtinDefinitions += `${definition}\n`;
-			builtinCount++;
+			builtinChildren.push(createItem(`tool:builtin:${tool.name}`, "tool", PI_SOURCE, tool.name, definition));
 			continue;
 		}
 		let promptText = "";
@@ -152,16 +152,18 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 		const source = extensionSource(tool.source);
 		items.push(createItem(`tool:${tool.source}:${tool.name}`, "tool", source, tool.name, promptText + definition));
 	}
-	if (builtinCount > 0) {
-		items.push(
-			createItem(
+	if (builtinChildren.length > 0) {
+		builtinChildren.sort((a, b) => b.tokens - a.tokens);
+		items.push({
+			...createItem(
 				"tool:builtin",
 				"tool",
 				PI_SOURCE,
-				`built-in tool definitions (${builtinCount})`,
+				`built-in tool definitions (${builtinChildren.length})`,
 				builtinDefinitions,
 			),
-		);
+			children: builtinChildren,
+		});
 	}
 }
 

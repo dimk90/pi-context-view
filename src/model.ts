@@ -47,6 +47,8 @@ export interface InjectionItem {
 	readonly tokens: number;
 	/** Raw injected text for preview. Process-local; never log or persist. */
 	readonly text: string;
+	/** Constituent sub-items (e.g. individual built-in tools), largest first. */
+	readonly children?: readonly InjectionItem[];
 }
 
 /** Items of one source, with a precomputed total. */
@@ -110,9 +112,13 @@ interface MutableGroup {
 	totalTokens: number;
 }
 
-/** Owned copy of an item, including its nested source. */
+/** Owned copy of an item, including its nested source and children. */
 function copyItem(item: InjectionItem): InjectionItem {
-	return { ...item, source: { ...item.source } };
+	return {
+		...item,
+		source: { ...item.source },
+		children: item.children?.map((child) => copyItem(child)),
+	};
 }
 
 /** Order groups: pi-native first, then extensions by size, aggregate last. */

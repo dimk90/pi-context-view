@@ -12,8 +12,9 @@ There are no tabs. No raw injection content is logged or persisted.
 
 The v1 CLI lifecycle has been removed. Passive capture, the one-shot silent
 probe, command grammar, and the Injections/Initial view with item preview are
-implemented (PLAN.md steps 1–5); `/context` temporarily defaults to Injections
-until the Usage view lands. Do not preserve CLI compatibility during the migration.
+implemented (PLAN.md steps 1–5); review hardening step 5a is next, and
+`/context` temporarily defaults to Injections until the Usage view lands. Do
+not preserve CLI compatibility during the migration.
 
 ## Target architecture
 
@@ -84,13 +85,11 @@ Target modules (created incrementally per PLAN.md):
 - `src/command.ts` — command parsing/completions and capture resolution.
 - `src/ui/injections-model.ts` — pure row flattening, list navigation, and
   preview scrolling/normalization.
-- `src/ui/injections-view.ts` — Injections view component (overlay/full) with
-  Enter-to-preview raw injection text.
+- `src/ui/injections-view.ts` — fullscreen Injections view with preview state.
 - `src/runtime.ts` — bounded optional Runtime log.
 - `src/measure.ts` — pure prompt/tool measurement.
 - `src/usage.ts` — pure context classification and totals.
-- `src/ui/usage-view.ts` — focused Usage overlay.
-- `src/ui/injections-view.ts` — injection explorer and preview state machine.
+- `src/ui/usage-view.ts` — fullscreen Usage view.
 - `src/report.ts` — temporary v1 renderer; remove when no longer needed.
 - `PLAN.md` — current decisions and step checkboxes; keep them current.
 - `HISTORY.md` — superseded v1 findings; reference only.
@@ -126,8 +125,10 @@ Test marker load order in both directions and use an
 - synthetic entries never reach later model contexts or Usage;
 - Initial freezes once per extension runtime;
 - Runtime is off and bounded by default;
-- no raw injection content is printed, logged, or persisted;
-- all TUI lines respect the supplied width.
+- raw injection content appears only after explicit Enter preview and is never
+  included in notifications/reports, logged by the extension, or persisted;
+- all TUI lines respect the supplied width and fullscreen views resize with
+  both terminal width and height.
 
 ## Dependencies
 

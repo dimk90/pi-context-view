@@ -24,16 +24,20 @@ function item(id: string, sourceId: string, native: boolean, tokens: number): In
 }
 
 function snapshot(): InitialSnapshot {
-	const piItems = [item("base-prompt", "pi", true, 100), item("skills", "pi", true, 40)];
+	const builtinTools: InjectionItem = {
+		...item("tool:builtin", "pi", true, 60),
+		children: [item("tool:builtin:bash", "pi", true, 40), item("tool:builtin:read", "pi", true, 20)],
+	};
+	const piItems = [item("base-prompt", "pi", true, 100), builtinTools, item("skills", "pi", true, 40)];
 	const extensionItems = [item("web_search", "npm:web", false, 30)];
 	return {
 		origin: "synthetic-probe",
 		capturedAt: new Date("2026-07-10T12:00:00Z"),
 		groups: [
-			{ source: { id: "pi", label: "pi", native: true }, items: piItems, totalTokens: 140 },
+			{ source: { id: "pi", label: "pi", native: true }, items: piItems, totalTokens: 200 },
 			{ source: { id: "npm:web", label: "npm:web", native: false }, items: extensionItems, totalTokens: 30 },
 		],
-		totalTokens: 170,
+		totalTokens: 230,
 	};
 }
 
@@ -45,22 +49,28 @@ test("buildInjectionRows flattens groups, items, and total in order", () => {
 		[
 			["group", "pi", 0],
 			["item", "base-prompt", 1],
+			["item", "tool:builtin", 1],
+			["item", "tool:builtin:bash", 2],
+			["item", "tool:builtin:read", 2],
 			["item", "skills", 1],
 			["group", "npm:web", 0],
 			["item", "web_search", 1],
 			["total", "TOTAL", 0],
 		],
 	);
-	assert.equal(rows.at(-1)?.tokens, 170);
+	assert.equal(rows.at(-1)?.tokens, 230);
 	assert.equal(rows[1]?.itemId, "base-prompt");
 	assert.equal(rows[0]?.itemId, undefined);
 });
 
-test("collectItemsById indexes every snapshot item", () => {
+test("collectItemsById indexes every snapshot item including children", () => {
 	const items = collectItemsById(snapshot());
 
-	assert.deepEqual([...items.keys()].sort(), ["base-prompt", "skills", "web_search"]);
-	assert.equal(items.get("skills")?.tokens, 40);
+	assert.deepEqual(
+		[...items.keys()].sort(),
+		["base-prompt", "skills", "tool:builtin", "tool:builtin:bash", "tool:builtin:read", "web_search"],
+	);
+	assert.equal(items.get("tool:builtin:read")?.tokens, 20);
 });
 
 test("normalizePreviewText normalizes line endings and tabs only", () => {

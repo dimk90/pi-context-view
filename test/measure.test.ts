@@ -48,6 +48,13 @@ test("analyzeSystemPrompt emits stable semantic ids and sources", () => {
 			source: "builtin",
 		},
 		{
+			name: "bash",
+			description: "Run a bash command with a much longer description than read",
+			parametersJson: "{}",
+			guidelines: [],
+			source: "builtin",
+		},
+		{
 			name: "search",
 			description: "Search",
 			parametersJson: "{}",
@@ -73,4 +80,13 @@ test("analyzeSystemPrompt emits stable semantic ids and sources", () => {
 	assert.equal(items.find((entry) => entry.id === "tool:npm:web:search")?.source.id, "tool-source:npm:web");
 	assert.equal(items.find((entry) => entry.id === "context-file:./AGENTS.md")?.kind, "context-file");
 	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
+
+	const builtin = items.find((entry) => entry.id === "tool:builtin");
+	assert.equal(builtin?.label, "built-in tool definitions (2)");
+	assert.deepEqual(
+		builtin?.children?.map((child) => child.id),
+		["tool:builtin:bash", "tool:builtin:read"],
+	);
+	const childTokens = builtin?.children?.reduce((sum, child) => sum + child.tokens, 0) ?? 0;
+	assert.ok(childTokens > 0 && builtin !== undefined && Math.abs(builtin.tokens - childTokens) <= 1);
 });
