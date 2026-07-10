@@ -256,7 +256,7 @@ overlay.
   - Verify `npx tsc --noEmit`, a normal prompt, and marker capture with both
     extension load orders; verify tool-set mutations from a later-loaded
     extension's `before_agent_start` are reflected in both load orders.
-- [ ] 2. **Introduce semantic data model and module boundaries.**
+- [x] 2. **Introduce semantic data model and module boundaries.**
   - Add `model.ts` and `capture.ts`; keep `index.ts` registration-only.
   - Replace label-parsing assumptions with typed item/group/source fields.
   - Add pure tests for grouping, totals, stable ids, and final snapshot freeze.

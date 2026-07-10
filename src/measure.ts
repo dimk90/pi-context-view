@@ -1,26 +1,29 @@
 /**
- * Pure measurement logic: split a captured system prompt into components and
- * estimate token sizes. No pi API access — unit-testable.
+ * Pure measurement logic: split a captured system prompt into semantic items
+ * and estimate token sizes. No pi API access — unit-testable.
  *
  * Splitting relies on structural markers that pi's buildSystemPrompt() emits
- * deterministically (verified against pi 0.80.3 dist/core/system-prompt.js):
+ * deterministically (verified against pi 0.80.6 dist/core/system-prompt.js):
  *
- * - context files:  <project_instructions path="...">...</project_instructions>
- * - skills block:   "The following skills provide..." ... </available_skills>
- * - base prompt always ends with "Current date: ...\nCurrent working directory: ..."
- *   → anything after that line was appended by extensions via before_agent_start.
+ * - context files: <project_instructions path="...">...</project_instructions>
+ * - skills block: "The following skills provide..." through </available_skills>
+ * - base prompt ends with "Current date: ...\nCurrent working directory: ..."
+ *   → anything after that line was appended by before_agent_start handlers.
  */
+import {
+	AGGREGATE_SOURCE_ID,
+	type InjectionItem,
+	type InjectionKind,
+	type InjectionSource,
+	PI_SOURCE_ID,
+} from "./model.ts";
 
-/** One measured context injection. */
-export interface MeasuredComponent {
-	/** Human-readable source, e.g. `pi: base system prompt`, `extension msg: plan-mode`. */
-	label: string;
-	group: "pi" | "extensions";
-	chars: number;
-	tokens: number;
-	/** Raw injected text (for future detail views). */
-	text: string;
-}
+const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", native: true };
+const AGGREGATE_SOURCE: InjectionSource = {
+	id: AGGREGATE_SOURCE_ID,
+	label: "extensions (aggregate)",
+	native: false,
+};
 
 /** Minimal slice of BuildSystemPromptOptions that measurement needs. */
 export interface PromptOptionsSlice {
@@ -47,30 +50,83 @@ export interface ToolSlice {
 }
 
 /**
- * Split the captured system prompt into measured components:
- * pi base prompt, --append-system-prompt, each context file, skills block,
- * per-extension-tool contributions (prompt text + payload definition),
- * built-in tool definitions, and the aggregate appended by extensions.
+ * Split a captured system prompt into semantic items: pi base prompt,
+ * appended prompt, context files, skills, active tool contributions, and the
+ * aggregate appended by extensions.
  */
 export function analyzeSystemPrompt(
 	systemPrompt: string,
 	options: PromptOptionsSlice,
 	tools: ToolSlice[] = [],
-): MeasuredComponent[] {
-	const components: MeasuredComponent[] = [];
+): InjectionItem[] {
+	const items: InjectionItem[] = [];
 	const carvedSpans: Span[] = [];
 
 	const baseEnd = findBasePromptEnd(systemPrompt, options.cwd);
 	const base = baseEnd === -1 ? systemPrompt : systemPrompt.slice(0, baseEnd);
 
-	// Tools: built-in definitions aggregate under pi; extension tools get one
-	// row each — prompt text (snippet line + guideline bullets, carved out of
-	// the base prompt) plus the payload definition (description + schema).
+	measureTools(base, tools, items, carvedSpans);
+	measureContextFiles(base, options, items, carvedSpans);
+	measureSkills(base, options, items, carvedSpans);
+	measureAppendedPrompt(base, options, items, carvedSpans);
+
+	const baseLabel =
+		options.customPrompt !== undefined && options.customPrompt.length > 0
+			? "custom system prompt (--system-prompt)"
+			: "base system prompt";
+	items.unshift(createItem("base-prompt", "base-prompt", PI_SOURCE, baseLabel, carve(base, carvedSpans)));
+
+	if (baseEnd !== -1 && baseEnd < systemPrompt.length) {
+		const added = systemPrompt.slice(baseEnd);
+		if (added.trim().length > 0) {
+			items.push(
+				createItem(
+					"prompt-addition:aggregate",
+					"prompt-addition",
+					AGGREGATE_SOURCE,
+					"system prompt additions",
+					added,
+				),
+			);
+		}
+	}
+
+	return items;
+}
+
+/**
+ * Locate the end of pi's base system prompt: the exact two-line
+ * "Current date/Current working directory" suffix buildSystemPrompt emits last.
+ * Returns the index just past that line, or -1 when not found.
+ */
+export function findBasePromptEnd(systemPrompt: string, cwd: string): number {
+	const now = new Date();
+	const date = [
+		now.getFullYear(),
+		String(now.getMonth() + 1).padStart(2, "0"),
+		String(now.getDate()).padStart(2, "0"),
+	].join("-");
+	const promptCwd = cwd.replace(/\\/g, "/");
+	// A context file duplicating this exact marker is less likely than an
+	// extension appending arbitrary text after the marker.
+	const marker = `\nCurrent date: ${date}\nCurrent working directory: ${promptCwd}`;
+	const index = systemPrompt.indexOf(marker);
+	return index === -1 ? -1 : index + marker.length;
+}
+
+/** Same chars/4 heuristic pi's estimateTokens uses for text content. */
+export function textTokens(text: string): number {
+	return Math.ceil(text.length / 4);
+}
+
+function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], carvedSpans: Span[]): void {
 	let builtinDefinitions = "";
+	let builtinCount = 0;
 	for (const tool of tools) {
 		const definition = `${tool.name}: ${tool.description}\n${tool.parametersJson}`;
 		if (tool.source === "builtin") {
 			builtinDefinitions += `${definition}\n`;
+			builtinCount++;
 			continue;
 		}
 		let promptText = "";
@@ -88,86 +144,99 @@ export function analyzeSystemPrompt(
 				carvedSpans.push(span);
 			}
 		}
-		components.push(component(`extension tool: ${tool.name} (${tool.source})`, "extensions", promptText + definition));
+		const source = extensionSource(tool.source);
+		items.push(createItem(`tool:${tool.source}:${tool.name}`, "tool", source, tool.name, promptText + definition));
 	}
-	if (builtinDefinitions.length > 0) {
-		const builtinCount = tools.filter((tool) => tool.source === "builtin").length;
-		components.push(component(`pi: tool definitions (built-in, ${builtinCount})`, "pi", builtinDefinitions));
+	if (builtinCount > 0) {
+		items.push(
+			createItem(
+				"tool:builtin",
+				"tool",
+				PI_SOURCE,
+				`built-in tool definitions (${builtinCount})`,
+				builtinDefinitions,
+			),
+		);
 	}
+}
 
+function measureContextFiles(
+	base: string,
+	options: PromptOptionsSlice,
+	items: InjectionItem[],
+	carvedSpans: Span[],
+): void {
 	for (const file of options.contextFiles ?? []) {
 		const span = findContextFileSpan(base, file.path);
 		if (span === undefined) continue;
-		components.push(component(`pi: context file ${file.path}`, "pi", base.slice(span.start, span.end)));
+		items.push(
+			createItem(
+				`context-file:${file.path}`,
+				"context-file",
+				PI_SOURCE,
+				file.path,
+				base.slice(span.start, span.end),
+			),
+		);
 		carvedSpans.push(span);
 	}
+}
 
-	if ((options.skills?.length ?? 0) > 0) {
-		const span = findSkillsSpan(base);
-		if (span !== undefined) {
-			components.push(component(`pi: skills (${options.skills?.length})`, "pi", base.slice(span.start, span.end)));
-			carvedSpans.push(span);
-		}
-	}
+function measureSkills(base: string, options: PromptOptionsSlice, items: InjectionItem[], carvedSpans: Span[]): void {
+	const skillCount = options.skills?.length ?? 0;
+	if (skillCount === 0) return;
+	const span = findSkillsSpan(base);
+	if (span === undefined) return;
+	items.push(createItem("skills", "skills", PI_SOURCE, `skills (${skillCount})`, base.slice(span.start, span.end)));
+	carvedSpans.push(span);
+}
 
+function measureAppendedPrompt(
+	base: string,
+	options: PromptOptionsSlice,
+	items: InjectionItem[],
+	carvedSpans: Span[],
+): void {
 	const append = options.appendSystemPrompt;
-	if (append !== undefined && append.length > 0) {
-		const start = base.indexOf(append);
-		if (start !== -1) {
-			components.push(component("pi: --append-system-prompt", "pi", append));
-			carvedSpans.push({ start, end: start + append.length });
-		}
-	}
+	if (append === undefined || append.length === 0) return;
+	const start = base.indexOf(append);
+	if (start === -1) return;
+	items.push(createItem("append-prompt", "append-prompt", PI_SOURCE, "appended system prompt", append));
+	carvedSpans.push({ start, end: start + append.length });
+}
 
-	// Base prompt = base minus all carved spans.
-	carvedSpans.sort((a, b) => a.start - b.start);
+function createItem(
+	id: string,
+	kind: InjectionKind,
+	source: InjectionSource,
+	label: string,
+	text: string,
+): InjectionItem {
+	return {
+		id,
+		phase: "initial",
+		kind,
+		source,
+		label,
+		chars: text.length,
+		tokens: textTokens(text),
+		text,
+	};
+}
+
+function extensionSource(source: string): InjectionSource {
+	return { id: `tool-source:${source}`, label: source, native: false };
+}
+
+function carve(text: string, spans: Span[]): string {
+	spans.sort((a, b) => a.start - b.start);
 	let remainder = "";
 	let cursor = 0;
-	for (const span of carvedSpans) {
-		remainder += base.slice(cursor, span.start);
+	for (const span of spans) {
+		remainder += text.slice(cursor, span.start);
 		cursor = Math.max(cursor, span.end);
 	}
-	remainder += base.slice(cursor);
-	const baseLabel =
-		options.customPrompt !== undefined && options.customPrompt.length > 0
-			? "pi: custom system prompt (--system-prompt)"
-			: "pi: base system prompt";
-	components.unshift(component(baseLabel, "pi", remainder));
-
-	if (baseEnd !== -1 && baseEnd < systemPrompt.length) {
-		const added = systemPrompt.slice(baseEnd);
-		if (added.trim().length > 0) {
-			components.push(component("extensions: system prompt additions (aggregate)", "extensions", added));
-		}
-	}
-
-	return components;
-}
-
-/**
- * Locate the end of pi's base system prompt: the exact two-line
- * "Current date/Current working directory" suffix buildSystemPrompt emits last.
- * Returns the index just past that line, or -1 when not found.
- */
-export function findBasePromptEnd(systemPrompt: string, cwd: string): number {
-	const now = new Date();
-	const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-	const promptCwd = cwd.replace(/\\/g, "/");
-	// First occurrence: a context file or extension text duplicating the exact
-	// marker (with today's date and this cwd) is far less likely than an
-	// extension appending arbitrary text after it.
-	const marker = `\nCurrent date: ${date}\nCurrent working directory: ${promptCwd}`;
-	const index = systemPrompt.indexOf(marker);
-	return index === -1 ? -1 : index + marker.length;
-}
-
-/** Same chars/4 heuristic pi's estimateTokens uses for text content. */
-export function textTokens(text: string): number {
-	return Math.ceil(text.length / 4);
-}
-
-function component(label: string, group: "pi" | "extensions", text: string): MeasuredComponent {
-	return { label, group, chars: text.length, tokens: textTokens(text), text };
+	return remainder + text.slice(cursor);
 }
 
 interface Span {
@@ -175,13 +244,11 @@ interface Span {
 	end: number;
 }
 
-/** Find the span of an exact substring, or undefined when absent. */
 function findExactSpan(haystack: string, needle: string): Span | undefined {
 	const start = haystack.indexOf(needle);
 	return start === -1 ? undefined : { start, end: start + needle.length };
 }
 
-/** Find `<project_instructions path="...">...</project_instructions>` for one file. */
 function findContextFileSpan(systemPrompt: string, filePath: string): Span | undefined {
 	const open = `<project_instructions path="${filePath}">`;
 	const close = "</project_instructions>";
@@ -192,7 +259,6 @@ function findContextFileSpan(systemPrompt: string, filePath: string): Span | und
 	return { start, end: end + close.length };
 }
 
-/** Find the skills section (intro sentence through `</available_skills>`). */
 function findSkillsSpan(systemPrompt: string): Span | undefined {
 	const open = "The following skills provide specialized instructions";
 	const close = "</available_skills>";

@@ -21,7 +21,8 @@
 		"README.md"
 	],
 	"scripts": {
-		"check": "tsc --noEmit"
+		"test": "node --test test/*.test.ts",
+		"check": "tsc --noEmit && npm test"
 	},
 	"pi": {
 		"extensions": [
@@ -33,6 +34,7 @@
 	},
 	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "0.80.6",
+		"@types/node": "^22.20.1",
 		"typescript": "^7.0.2"
 	}
 }

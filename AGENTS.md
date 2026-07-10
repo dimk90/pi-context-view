@@ -74,8 +74,8 @@ Runtime injection logging is disabled by default, memory-only, and bounded
 Target modules (created incrementally per PLAN.md):
 
 - `src/index.ts` — factory and event/command wiring only.
-- `src/model.ts` — semantic snapshot/injection/statistics types.
-- `src/capture.ts` — capture-once and silent-probe state machine.
+- `src/model.ts` — semantic snapshot/injection/statistics types and grouping.
+- `src/capture.ts` — capture-once state; silent-probe state machine is step 3.
 - `src/runtime.ts` — bounded optional Runtime log.
 - `src/measure.ts` — pure prompt/tool measurement.
 - `src/statistics.ts` — pure context classification.
@@ -84,6 +84,7 @@ Target modules (created incrementally per PLAN.md):
 - `PLAN.md` — current decisions and step checkboxes; keep them current.
 - `HISTORY.md` — superseded v1 findings; reference only.
 - `poc/` — throwaway/reference spikes; `marker.ts` is also a test injector.
+- `test/` — Node `node:test` pure tests (native TypeScript type stripping).
 
 Keep hierarchy in typed model fields. Never parse labels in UI code to recover
 source, kind, or parent/child relationships.
@@ -91,7 +92,7 @@ source, kind, or parent/child relationships.
 ## Verification
 
 ```bash
-npx tsc --noEmit
+npm run check
 
 # normal-turn no-op: inspection must not alter the response
 pi --model anthropic/claude-haiku-4-5 -e ./src/index.ts --no-session \
