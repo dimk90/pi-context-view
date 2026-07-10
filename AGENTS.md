@@ -94,15 +94,19 @@ source, kind, or parent/child relationships.
 npx tsc --noEmit
 
 # normal-turn no-op: inspection must not alter the response
-pi -e ./src/index.ts --no-session -p "say hi"
+pi --model anthropic/claude-haiku-4-5 -e ./src/index.ts --no-session \
+  -p "Say one word: ok"
 
 # interactive testing without tmux
 script -qec "pi -e ./src/index.ts --no-session" /tmp/context-tui.log
 ```
 
-Use `script` or a Python `pty` harness; tmux is unavailable. Test marker load
-order in both directions and use an `after_provider_response` sentinel for the
-silent probe. Required invariants:
+Use `script` or a Python `pty` harness; tmux is unavailable. Avoid provider
+calls when lifecycle-only tests suffice. When a test genuinely needs a model,
+use the cheapest/simple default: `anthropic/claude-haiku-4-5`.
+
+Test marker load order in both directions and use an
+`after_provider_response` sentinel for the silent probe. Required invariants:
 
 - no provider request during a probe;
 - no visible probe/abort transcript artifacts;
