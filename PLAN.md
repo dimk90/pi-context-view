@@ -208,12 +208,32 @@ Starts fresh from project initialization; PoC code is reference material only.
       built-in tools aggregate into `pi: tool definitions (built-in, N)`.
     - Shutdown grace period (500 ms) in `session_shutdown` so other
       extensions' in-flight async startup work doesn't hit stale ctx errors.
-- [ ] 7. **Docs** — README with usage, the "load last for accurate aggregate" note,
-  and the `alias pi-context='pi --context-inspect --no-session'` tip.
-- [ ] 8. **Install locally** — add the directory to discovery
-  (`~/.pi/agent/extensions/` symlink or settings `"extensions"` path),
-  verify discovery + `/reload`.
-- [ ] 9. **Publish** — push to a public git repo (GitHub), tag `v0.1.0`; optionally
+    - pi 0.80.6 update: dev pin bumped 0.80.3 → 0.80.6; report/shutdown moved
+      from `agent_end` to `agent_settled` (new in 0.80.4 — fires when the run
+      is truly done, and the TUI's own shutdown check now runs on it). The
+      isIdle retry loop stays as a safety net for the subscription race.
+- [ ] 6. **Report Structure** -- improvement for report readability and clearness.
+  Formatting and colors if possible. Hierarchal bullet structure like:
+    - Base Pi Prompt;
+    - Base Tools Definitions;
+    - Context files:
+      - <file 1>
+      - ...
+      - <file N>
+    - Skills:
+      - <skill 1 name>
+      - ...
+      - <skill M name>
+    - <Extension 1 name>
+      - <Tool 1 name>
+      - ...
+      - <Tool V name>
+      - <Prompt 1>
+      - ...
+    - <Extension K name>
+    - ...
+- [ ] 7. **Docs** — README with usage, the "load last for accurate aggregate" note.
+- [ ] 8. **Publish** — push to a public git repo (GitHub), tag `v0.1.0`; optionally
   publish to npm so it installs via `pi install npm:pi-context-inspect` /
   `git:github.com/<user>/pi-context-inspect`. Verify `pi install` + `pi list`.
 

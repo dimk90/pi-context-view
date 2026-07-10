@@ -120,21 +120,24 @@ export default function (pi: ExtensionAPI) {
 		ctx.abort();
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_settled", async (_event, ctx) => {
 		if (!inspecting || reportDone) return;
+		// agent_settled (pi >= 0.80.4) means the run is truly done: no auto-retry,
+		// auto-compaction, or queued follow-ups pending — unlike agent_end.
+		// Extensions receive it before session listeners, so the shutdown request
+		// below is set before the TUI's own agent_settled check runs.
 		// TUI mode: don't print into the running TUI — the table would interleave
 		// with UI frames. session_shutdown fires after the TUI is stopped, so the
 		// report lands on a clean terminal instead.
 		if (ctx.mode !== "tui") {
 			printReport();
 		}
-		// The probe turn can finish BEFORE the TUI subscribes to agent events
-		// (extensions bind first), so a single deferred shutdown request would
-		// never be honored — the TUI checks the flag only when it sees agent_end.
-		// Retry until the request lands: ctx.shutdown() executes immediately when
-		// pi is idle. The ctx goes stale once shutdown proceeds (or in print mode
-		// once the process is exiting), so stop retrying on any error and on
-		// session_shutdown.
+		// Safety net for the subscription race: the probe turn can settle BEFORE
+		// the TUI subscribes to agent events (extensions bind first), and then no
+		// TUI-side check would ever see the request. Retry until it lands:
+		// ctx.shutdown() executes immediately when pi is idle. The ctx goes stale
+		// once shutdown proceeds (or in print mode once the process is exiting),
+		// so stop retrying on any error and on session_shutdown.
 		ctx.shutdown();
 		shutdownRetry = setInterval(() => {
 			try {
@@ -146,7 +149,7 @@ export default function (pi: ExtensionAPI) {
 		}, 100);
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (_event, ctx) => {
 		if (shutdownRetry !== undefined) {
 			clearInterval(shutdownRetry);
 			shutdownRetry = undefined;
@@ -163,6 +166,10 @@ export default function (pi: ExtensionAPI) {
 		// agent_end — capture happens earlier (before_agent_start) either way.
 		if (inspecting && !reportDone) {
 			printReport();
+			// Hint at the clean invocation without the TUI flash.
+			if (ctx.mode === "tui") {
+				console.log("\ntip: run `pi --context-inspect --no-session -p` for clean output without the TUI");
+			}
 		}
 	});
 

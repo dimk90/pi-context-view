@@ -7,13 +7,14 @@ no slash command.
 
 ## Architecture
 
-Capture strategy — "Option B revised", validated by PoC against pi 0.80.3:
+Capture strategy — "Option B revised", validated by PoC against pi 0.80.3
+(shutdown moved to `agent_settled` on 0.80.6):
 
 ```
 session_start      → pi.sendUserMessage("probe")     // always triggers a turn
 before_agent_start → capture event.systemPrompt + event.systemPromptOptions
 turn_start         → ctx.abort()                     // provider call prevented
-agent_end          → print report, ctx.shutdown()    // honored right after agent_end
+agent_settled      → print report, ctx.shutdown()    // run truly done (pi >= 0.80.4)
 ```
 
 Hard-won constraints (do not regress):
