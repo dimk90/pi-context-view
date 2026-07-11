@@ -169,3 +169,18 @@ test("SilentProbeState keeps a timed-out running probe abortable until settlemen
 	assert.equal(state.settle(false), true);
 	assert.equal(state.isCurrentRun, false);
 });
+
+test("SilentProbeState retains a delayed synthetic turn after a pre-run timeout", async () => {
+	const state = new SilentProbeState();
+	const attempt = state.start(1);
+
+	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
+	assert.equal(state.isCurrentRun, false);
+
+	state.observeInput("extension", "");
+	assert.equal(state.beginRun("real prompt"), false);
+	assert.equal(state.isCurrentRun, false);
+	assert.equal(state.beginRun(""), true);
+	assert.equal(state.isCurrentRun, true);
+	assert.equal(state.settle(false), true);
+});

@@ -72,9 +72,11 @@ test("collectItemsById indexes every snapshot item including children", () => {
 	assert.equal(items.get("tool:builtin:read")?.tokens, 20);
 });
 
-test("normalizePreviewText normalizes line endings and tabs only", () => {
+test("normalizePreviewText normalizes whitespace and removes terminal controls", () => {
 	assert.equal(normalizePreviewText("a\r\nb\rc\td"), "a\nb\nc    d");
-	assert.equal(normalizePreviewText("plain \u001b[31mansi\u001b[0m"), "plain \u001b[31mansi\u001b[0m");
+	assert.equal(normalizePreviewText("plain \u001b[31mansi\u001b[0m"), "plain ansi");
+	assert.equal(normalizePreviewText("before\u001b]0;owned\u0007after\u0008!"), "beforeafter!");
+	assert.equal(normalizePreviewText("before\u001bPpayload\u001b\\after\u009B2J"), "beforeafter");
 });
 
 test("PreviewScroller clamps scrolling to the wrapped extent", () => {

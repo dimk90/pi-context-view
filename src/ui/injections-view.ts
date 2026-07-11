@@ -17,7 +17,7 @@ import {
 
 const LIST_FIXED_LINE_COUNT = 13;
 const PREVIEW_FIXED_LINE_COUNT = 10;
-const MIN_LIST_LINES = 4;
+const DEFAULT_TERMINAL_ROWS = 24;
 const BODY_INDENT = "  ";
 const LIST_DESCRIPTION = "Initial injections and estimated token counts.";
 const PREVIEW_DESCRIPTION = "Raw captured text; never logged or persisted.";
@@ -42,7 +42,7 @@ export async function showInjectionsView(
 ): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new InjectionsView(theme, input, done);
+			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows);
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
@@ -64,6 +64,7 @@ export class InjectionsView {
 	private readonly theme: Theme;
 	private readonly input: InjectionsViewInput;
 	private readonly done: (result: undefined) => void;
+	private readonly getTerminalRows: () => number;
 	private readonly rows: InjectionRow[];
 	private readonly navigator: ListNavigator;
 	private readonly itemsById: Map<string, InjectionItem>;
@@ -72,14 +73,21 @@ export class InjectionsView {
 	private previewLines: string[] | undefined;
 	private previewWrapWidth: number | undefined;
 	private cachedWidth: number | undefined;
+	private cachedTerminalRows: number | undefined;
 	private cachedLines: string[] | undefined;
 
-	public constructor(theme: Theme, input: InjectionsViewInput, done: (result: undefined) => void) {
+	public constructor(
+		theme: Theme,
+		input: InjectionsViewInput,
+		done: (result: undefined) => void,
+		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
+	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
+		this.getTerminalRows = getTerminalRows;
 		this.rows = buildInjectionRows(input.snapshot);
-		this.navigator = new ListNavigator(this.rows.length, this.visibleRowCount());
+		this.navigator = new ListNavigator(this.rows.length, 1);
 		this.itemsById = collectItemsById(input.snapshot);
 	}
 
@@ -115,10 +123,18 @@ export class InjectionsView {
 	}
 
 	public render(width: number): string[] {
-		if (this.cachedLines !== undefined && this.cachedWidth === width) return this.cachedLines;
+		const terminalRows = normalizeTerminalRows(this.getTerminalRows());
+		if (
+			this.cachedLines !== undefined &&
+			this.cachedWidth === width &&
+			this.cachedTerminalRows === terminalRows
+		) {
+			return this.cachedLines;
+		}
 		if (this.previewItem !== undefined) {
-			const lines = this.renderPreview(width, this.previewItem);
+			const lines = this.renderPreview(width, terminalRows, this.previewItem);
 			this.cachedWidth = width;
+			this.cachedTerminalRows = terminalRows;
 			this.cachedLines = lines;
 			return lines;
 		}
@@ -126,8 +142,8 @@ export class InjectionsView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const warningLines = this.degradedWarningLines(width);
-		const visibleRowCount = this.visibleRowCount(warningLines.length);
-		this.navigator.setVisibleCount(visibleRowCount);
+		const viewport = calculateViewport(this.rows.length, terminalRows, LIST_FIXED_LINE_COUNT, warningLines.length);
+		this.navigator.setVisibleCount(viewport.visibleCount);
 		const lines: string[] = [border, ""];
 
 		lines.push(this.headerLine(width));
@@ -136,9 +152,9 @@ export class InjectionsView {
 		lines.push(...warningLines);
 		const listLines = this.listLines(width);
 		lines.push(...listLines);
-		if (this.navigator.hasOverflow) lines.push(this.scrollLine(width));
+		if (viewport.showScroll) lines.push(this.scrollLine(width));
 		// Pad so the fixed TOTAL summary sits at the bottom of the scroll area.
-		const paddingCount = visibleRowCount - listLines.length;
+		const paddingCount = viewport.visibleCount - listLines.length;
 		for (let pad = 0; pad < paddingCount; pad++) lines.push("");
 		// TOTAL is outside the scroll area and separated from the sections above.
 		lines.push("");
@@ -159,9 +175,11 @@ export class InjectionsView {
 		);
 		lines.push("", border);
 
+		const fittedLines = fitToTerminalHeight(lines, terminalRows, border);
 		this.cachedWidth = width;
-		this.cachedLines = lines;
-		return lines;
+		this.cachedTerminalRows = terminalRows;
+		this.cachedLines = fittedLines;
+		return fittedLines;
 	}
 
 	public invalidate(): void {
@@ -209,12 +227,12 @@ export class InjectionsView {
 		this.clearCache();
 	}
 
-	private renderPreview(width: number, item: InjectionItem): string[] {
+	private renderPreview(width: number, terminalRows: number, item: InjectionItem): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const wrapped = this.getPreviewLines(width, item);
-		const visibleCount = this.previewVisibleCount(wrapped.length);
-		this.previewScroller.setExtent(wrapped.length, visibleCount);
+		const viewport = calculateViewport(wrapped.length, terminalRows, PREVIEW_FIXED_LINE_COUNT);
+		this.previewScroller.setExtent(wrapped.length, viewport.visibleCount);
 
 		const lines: string[] = [border, ""];
 		const title = theme.fg("accent", theme.bold(item.label));
@@ -223,11 +241,11 @@ export class InjectionsView {
 		lines.push("");
 
 		const start = this.previewScroller.offset;
-		for (let index = start; index < start + visibleCount; index++) {
+		for (let index = start; index < start + viewport.visibleCount; index++) {
 			lines.push(wrapped[index] ?? "");
 		}
 
-		if (this.previewScroller.hasOverflow) lines.push(this.previewScrollLine(width, wrapped.length));
+		if (viewport.showScroll) lines.push(this.previewScrollLine(width, wrapped.length));
 		lines.push("");
 		lines.push(this.fit(theme.fg("muted", `${BODY_INDENT}${PREVIEW_DESCRIPTION}`), width));
 		lines.push("");
@@ -242,7 +260,7 @@ export class InjectionsView {
 			),
 		);
 		lines.push("", border);
-		return lines;
+		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
@@ -269,13 +287,6 @@ export class InjectionsView {
 			this.theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.offset + 1}/${totalLines})`),
 			width,
 		);
-	}
-
-	/** Number of preview text lines that fit, reserving one row only when scrolling. */
-	private previewVisibleCount(totalLines: number): number {
-		const terminalRows = process.stdout.rows ?? 24;
-		const available = Math.max(MIN_LIST_LINES, terminalRows - PREVIEW_FIXED_LINE_COUNT);
-		return totalLines > available ? Math.max(MIN_LIST_LINES, available - 1) : available;
 	}
 
 	private headerLine(width: number): string {
@@ -353,13 +364,6 @@ export class InjectionsView {
 		return this.theme.fg("dim", key) + this.theme.fg("muted", ` ${description}`);
 	}
 
-	/** Number of list rows that fit after warnings and an optional scroll indicator. */
-	private visibleRowCount(extraLineCount = 0): number {
-		const terminalRows = process.stdout.rows ?? 24;
-		const available = Math.max(MIN_LIST_LINES, terminalRows - LIST_FIXED_LINE_COUNT - extraLineCount);
-		return this.rows.length > available ? Math.max(MIN_LIST_LINES, available - 1) : available;
-	}
-
 	/** Wrapped degraded-capture warning placed after the first sub-header. */
 	private degradedWarningLines(width: number): string[] {
 		if (this.input.degradedReason === undefined) return [];
@@ -380,6 +384,34 @@ export class InjectionsView {
 
 	private clearCache(): void {
 		this.cachedWidth = undefined;
+		this.cachedTerminalRows = undefined;
 		this.cachedLines = undefined;
 	}
+}
+
+/** Divide terminal rows between content and an overflow indicator. */
+function calculateViewport(
+	itemCount: number,
+	terminalRows: number,
+	fixedLineCount: number,
+	extraLineCount = 0,
+): { visibleCount: number; showScroll: boolean } {
+	const available = Math.max(1, terminalRows - fixedLineCount - extraLineCount);
+	const showScroll = itemCount > available && available > 1;
+	return {
+		visibleCount: Math.max(1, available - (showScroll ? 1 : 0)),
+		showScroll,
+	};
+}
+
+/** Keep emergency short-terminal output bounded while preserving both borders. */
+function fitToTerminalHeight(lines: string[], terminalRows: number, border: string): string[] {
+	if (lines.length <= terminalRows) return lines;
+	if (terminalRows === 1) return [border];
+	return [...lines.slice(0, terminalRows - 1), border];
+}
+
+/** Normalize an injected terminal-height reading to a usable positive integer. */
+function normalizeTerminalRows(rows: number): number {
+	return Number.isFinite(rows) ? Math.max(1, Math.floor(rows)) : DEFAULT_TERMINAL_ROWS;
 }

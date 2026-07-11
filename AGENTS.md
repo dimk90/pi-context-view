@@ -11,10 +11,10 @@ to focused `/context` TUI views:
 There are no tabs. No raw injection content is logged or persisted.
 
 The v1 CLI lifecycle has been removed. Passive capture, the one-shot silent
-probe, command grammar, and the Injections/Initial view with item preview are
-implemented (PLAN.md steps 1–5); review hardening step 5a is next, and
-`/context` temporarily defaults to Injections until the Usage view lands. Do
-not preserve CLI compatibility during the migration.
+probe, command grammar, the Injections/Initial view with item preview, and its
+review hardening are implemented (PLAN.md steps 1–5a). The Usage view is next,
+and `/context` temporarily defaults to Injections until it lands. Do not
+preserve CLI compatibility during the migration.
 
 ## Target architecture
 

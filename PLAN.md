@@ -122,7 +122,7 @@ sub-header is tagged — `Degraded:` in the error color — and the specific rea
 wraps directly below it:
 
 ```text
-INITIAL [Degraded: pi-native fallback used]
+[INITIAL] [Degraded: pi-native fallback used]
   Silent probe unavailable: context-noauth has no configured authentication.
   Extension additions were not observed.
 → pi                                                                     3,126
@@ -400,7 +400,7 @@ line only when scrolling is required.
   - Wrap ANSI-aware text and avoid exposing raw content outside the view.
   - Show individual built-in pi tools as previewable breakdown children under
     the built-in tool-definitions aggregate without double-counting totals.
-- [ ] 5a. **Harden completed capture and Injections paths after review.**
+- [x] 5a. **Harden completed capture and Injections paths after review.**
   - Ensure a probe that times out before `before_agent_start` still owns and
     aborts any delayed synthetic turn, so it can never reach a provider.
   - Sanitize preview terminal control sequences before rendering sensitive raw

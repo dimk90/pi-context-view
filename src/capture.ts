@@ -58,8 +58,15 @@ export interface SyntheticMessageIdentity {
 	readonly timestamp: number;
 }
 
-/** Lifecycle of the single probe attempt; only "running"/"timed-out" count as the current run. */
-type ProbePhase = "idle" | "waiting" | "running" | "timed-out" | "failed" | "settled";
+/** Lifecycle of the single probe attempt, including ownership retained after its completion times out. */
+type ProbePhase =
+	| "idle"
+	| "waiting"
+	| "waiting-after-timeout"
+	| "running"
+	| "running-after-timeout"
+	| "failed"
+	| "settled";
 
 /**
  * Capture-once state machine. `prepare()` refreshes the structured options on
@@ -116,7 +123,7 @@ export class SilentProbeState {
 
 	/** True while the probe owns the in-flight agent run (including after a timeout). */
 	public get isCurrentRun(): boolean {
-		return this.phase === "running" || this.phase === "timed-out";
+		return this.phase === "running" || this.phase === "running-after-timeout";
 	}
 
 	/** Defensive copies of the recorded probe message identities. */
@@ -138,7 +145,11 @@ export class SilentProbeState {
 			this.resolveCompletion = resolve;
 		});
 		this.timeout = setTimeout(() => {
-			this.phase = this.phase === "running" ? "timed-out" : "failed";
+			if (this.phase === "waiting") {
+				this.phase = "waiting-after-timeout";
+			} else if (this.phase === "running") {
+				this.phase = "running-after-timeout";
+			}
 			this.resolve({ status: "failed", reason: "Silent probe timed out." });
 		}, timeoutMs);
 		return { started: true, completion: this.completion };
@@ -146,15 +157,15 @@ export class SilentProbeState {
 
 	/** Mark the exact extension-originated empty input that starts the probe. */
 	public observeInput(source: InputSource, text: string): void {
-		if (this.phase === "waiting" && source === "extension" && text === "") {
-			this.inputObserved = true;
-		}
+		const awaitingInput = this.phase === "waiting" || this.phase === "waiting-after-timeout";
+		if (awaitingInput && source === "extension" && text === "") this.inputObserved = true;
 	}
 
 	/** Associate the next matching lifecycle with the probe, not a real turn. */
 	public beginRun(prompt: string): boolean {
-		if (this.phase !== "waiting" || !this.inputObserved || prompt !== "") return false;
-		this.phase = "running";
+		const ownsPendingInput = this.phase === "waiting" || this.phase === "waiting-after-timeout";
+		if (!ownsPendingInput || !this.inputObserved || prompt !== "") return false;
+		this.phase = this.phase === "waiting-after-timeout" ? "running-after-timeout" : "running";
 		return true;
 	}
 
@@ -206,9 +217,9 @@ export class SilentProbeState {
 
 	/** End a pending attempt during shutdown or a synchronous startup failure. */
 	public fail(reason: string): void {
-		if (this.completion === undefined || this.outcome !== undefined) return;
+		if (this.completion === undefined || this.phase === "failed" || this.phase === "settled") return;
 		this.phase = "failed";
-		this.resolve({ status: "failed", reason });
+		if (this.outcome === undefined) this.resolve({ status: "failed", reason });
 	}
 
 	/** Settle the completion promise exactly once and clear the timeout. */

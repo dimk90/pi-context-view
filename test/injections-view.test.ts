@@ -83,11 +83,16 @@ function createRuntime(): RuntimeToggle & { enabled: boolean } {
 	};
 }
 
-function createView(itemsPerGroup = 8, degradedReason?: string): InjectionsView {
+function createView(
+	itemsPerGroup = 8,
+	degradedReason?: string,
+	getTerminalRows: () => number = () => 24,
+): InjectionsView {
 	return new InjectionsView(
 		createTheme(),
 		{ snapshot: snapshot(itemsPerGroup), degradedReason, runtime: createRuntime() },
 		() => {},
+		getTerminalRows,
 	);
 }
 
@@ -112,13 +117,13 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(lines[1], "");
 	assert.equal(lines.at(-2), "");
 	const headerIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections"));
-	const initialIndex = lines.findIndex((line) => stripSgr(line).trim() === "INITIAL");
+	const initialIndex = lines.findIndex((line) => stripSgr(line).trim() === "[INITIAL]");
 	assert.ok(headerIndex >= 0 && initialIndex === headerIndex + 2);
 	assert.equal(lines[headerIndex + 1], "");
 	assert.equal(stripSgr(lines[headerIndex] ?? "").indexOf("Context Injections"), 0);
-	assert.equal(stripSgr(lines[initialIndex] ?? "").indexOf("INITIAL"), 0);
+	assert.equal(stripSgr(lines[initialIndex] ?? "").indexOf("[INITIAL]"), 0);
 	// The INITIAL sub-header uses the theme's mdHeading color.
-	assert.match(lines[initialIndex] ?? "", /\u001b\[38;2;22;23;24mINITIAL/);
+	assert.match(lines[initialIndex] ?? "", /\u001b\[38;2;22;23;24m\[INITIAL\]/);
 	assert.match(stripSgr(lines[headerIndex] ?? ""), /Runtime Logging: Off/);
 	// "Runtime Logging:" is dim, "Off" is muted.
 	assert.match(lines[headerIndex] ?? "", /\u001b\[38;2;16;17;18mRuntime Logging:/);
@@ -172,13 +177,13 @@ test("InjectionsView tags the INITIAL header only when the capture is degraded",
 	const plain = createView(4);
 	const plainInitial = plain.render(80).find((line) => stripSgr(line).includes("INITIAL"));
 	assert.ok(plainInitial !== undefined);
-	assert.equal(stripSgr(plainInitial).trim(), "INITIAL");
+	assert.equal(stripSgr(plainInitial).trim(), "[INITIAL]");
 
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
 	const degraded = createView(4, reason);
 	const degradedInitial = degraded.render(80).find((line) => stripSgr(line).includes("INITIAL"));
 	assert.ok(degradedInitial !== undefined);
-	assert.equal(stripSgr(degradedInitial).trim(), "INITIAL [Degraded: pi-native fallback used]");
+	assert.equal(stripSgr(degradedInitial).trim(), "[INITIAL] [Degraded: pi-native fallback used]");
 	// "Degraded:" is drawn in the error color; the brackets/detail stay dim.
 	assert.match(degradedInitial, /\u001b\[38;2;19;20;21mDegraded:/);
 	assert.match(degradedInitial, /\u001b\[38;2;16;17;18m pi-native fallback used\]/);
@@ -196,6 +201,33 @@ test("InjectionsView keeps every rendered line within the width", () => {
 			assert.ok(visibleWidth(line) <= width, `preview line exceeds width ${width}: ${JSON.stringify(line)}`);
 		}
 	}
+});
+
+test("InjectionsView reflows on height-only resize and bounds very short output", () => {
+	let terminalRows = 30;
+	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
+	const view = createView(30, reason, () => terminalRows);
+
+	const tall = view.render(40);
+	assert.equal(tall.length, 30);
+	assert.ok(tall.some((line) => stripSgr(line).includes("Silent probe unavailable")));
+
+	terminalRows = 18;
+	const resized = view.render(40);
+	assert.equal(resized.length, 18);
+	assert.notStrictEqual(resized, tall);
+
+	terminalRows = 8;
+	const veryShort = view.render(40);
+	assert.equal(veryShort.length, 8);
+	assert.match(stripSgr(veryShort[0] ?? ""), /^─+$/);
+	assert.match(stripSgr(veryShort.at(-1) ?? ""), /^─+$/);
+
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const shortPreview = view.render(40);
+	assert.equal(shortPreview.length, 8);
+	assert.match(stripSgr(shortPreview.at(-1) ?? ""), /^─+$/);
 });
 
 test("InjectionsView preview opens on items, scrolls, and returns to the same row", () => {
