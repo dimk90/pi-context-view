@@ -150,10 +150,14 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.equal(category(usage.categories, "mcp-tools").tokens, 5);
 	assert.equal(category(usage.categories, "context-files").tokens, 6);
 	assert.equal(category(usage.categories, "skills").tokens, 6);
-	assert.equal(category(usage.categories, "messages").tokens, 13);
+	assert.equal(findCategory(usage.categories, "messages"), undefined);
 	assert.equal(category(usage.categories, "user-messages").tokens, 2);
-	assert.equal(category(usage.categories, "assistant-messages").tokens, 7);
-	assert.equal(category(usage.categories, "tool-results").tokens, 2);
+	assert.equal(category(usage.categories, "agent-text-messages").tokens, 1);
+	assert.equal(category(usage.categories, "agent-thinking-messages").tokens, 2);
+	assert.equal(category(usage.categories, "agent-tool-call-messages").tokens, 4);
+	assert.equal(category(usage.categories, "tool-output").tokens, 4);
+	assert.equal(category(usage.categories, "tool-result:read").tokens, 2);
+	assert.equal(findCategory(usage.categories, "tool-results"), undefined);
 	assert.equal(category(usage.categories, "extension-messages").tokens, 1);
 	assert.equal(category(usage.categories, "bash-executions").tokens, 2);
 	assert.equal(category(usage.categories, "compacted-data").tokens, 3);
@@ -186,9 +190,12 @@ test("computeUsage drops empty categories and aggregates duplicate tool/custom m
 	];
 	const usage = computeUsage({ snapshot: snapshot(), messages });
 
-	assert.deepEqual(category(usage.categories, "tool-results").children, [
-		{ id: "tool-result:read", label: "read", tokens: 3 },
-	]);
+	assert.deepEqual(category(usage.categories, "tool-output"), {
+		id: "tool-output",
+		label: "Tool Output",
+		tokens: 3,
+		children: [{ id: "tool-result:read", label: "read", tokens: 3 }],
+	});
 	assert.deepEqual(category(usage.categories, "extension-messages").children, [
 		{ id: "custom-message:marker", label: "marker", tokens: 3 },
 	]);

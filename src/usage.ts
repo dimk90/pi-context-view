@@ -141,19 +141,16 @@ function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
 		}
 	}
 
-	const assistant = aggregate("assistant-messages", "Assistant Messages", withoutEmpty([
-		leaf("assistant-text", "Text", textTokens(assistantTextChars)),
-		leaf("assistant-thinking", "Thinking", textTokens(thinkingChars)),
-		leaf("assistant-tool-calls", "Tool Calls", textTokens(toolCallChars)),
-	]));
-	const conversation = aggregate("messages", "Messages", withoutEmpty([
-		leaf("user-messages", "User Messages", userTokens),
-		assistant,
-		aggregate("tool-results", "Tool Results", leavesFromMap("tool-result", toolResults)),
+	const toolOutput = aggregate("tool-output", "Tool Output", withoutEmpty([
+		...leavesFromMap("tool-result", toolResults),
 		leaf("bash-executions", "Bash Executions", bashTokens),
 	]));
 	return withoutEmpty([
-		conversation,
+		leaf("user-messages", "User Messages", userTokens),
+		leaf("agent-text-messages", "Agent Text Messages", textTokens(assistantTextChars)),
+		leaf("agent-thinking-messages", "Agent Thinking Messages", textTokens(thinkingChars)),
+		leaf("agent-tool-call-messages", "Agent Tool Call Messages", textTokens(toolCallChars)),
+		toolOutput,
 		aggregate("extension-messages", "Extensions", leavesFromMap("custom-message", customMessages)),
 		leaf("compacted-data", "Compacted Data", compactedTokens),
 	]);

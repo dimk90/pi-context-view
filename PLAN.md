@@ -65,21 +65,21 @@ Default — `/context` or `/context usage`:
 
   Context Usage:
 
-  ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛁ ⛁ ⛁ ⛶ ⛶ ⛶ ⛶     Model:
+  ■ ■ ■ ◧ ◧ ■ ■ ■ ■ ■ ⛶ ⛶ ⛶ ⛶     Model:
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    claude-opus-4-8
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    43.8k/1m tokens (4%)
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    Estimated usage by category:
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ System Prompt: 3.7k tokens (0.4%)
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ System Tools: 11.8k tokens (1.2%)
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Custom Tools: ...
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ MCP tools: ...
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Memory (AGENTS.md): 1.8k tokens (0.2%)
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Skills: 3.2k tokens (0.3%)
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Messages: 23.7k tokens (2.4%)
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Extensions: ...
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ ...
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Compacted Data: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    Category:
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ System Prompt: 3.7k tokens (0.4%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ System Tools: 11.8k tokens (1.2%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ Custom Tools: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ MCP tools: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ Memory (AGENTS.md): 1.8k tokens (0.2%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ Skills: 3.2k tokens (0.3%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ User Messages: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ Tool Output: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ■ Extensions: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ▦ Compacted Data: ...
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛶ Free space: 955.8k (95.6%)
 
   R Refresh · Esc Close
@@ -321,6 +321,7 @@ only after explicit Enter selection in the Injections view.
 - `src/measure.ts` — pure prompt/tool measurement.
 - `src/usage.ts` — pure message classification and usage totals.
 - `src/ui/usage-view.ts` — focused Usage overlay.
+- `src/ui/usage-map.ts` — pure proportional-cell model for the Usage graph.
 - `src/ui/injections-view.ts` — Initial/Runtime explorer and preview state.
 
 ### Command and view behavior
@@ -423,13 +424,40 @@ line only when scrolling is required.
   - Implement `buildSessionContext().messages` classification and synthetic
     filtering in `usage.ts`.
   - Render category totals, proportions, pi usage/context-window metadata,
-    unknown-after-compaction state, and `r` refresh behavior.
+    unknown-after-compaction state, and `r` refresh behavior. Split user, agent
+    text, agent thinking, and agent tool-call messages into independent colored
+    top-level categories. Keep provider tool results and persisted bash output
+    in a top-level `Tool Output` category.
   - Add a fullscreen overlay that resizes cleanly, themed colors, and bold text.
   - Set as default for `/context`.
-- [ ] 7. **Add map/graph for context usage visualization.**
-  - Use Claude Code like context visualization -> map from UI sketches.
-  - Use colors for different categories of the data in the context.
-  - Ask me if the need any clarification about ui sketch.
+- [x] 7. **Add map/graph for context usage visualization.**
+  - Render the selected 14×14 Claude Code-like map with themed `■` full,
+    `◧` partial, `▦` compacted-data, and dim `⛶` free cells.
+  - Allocate occupied cells from estimated category totals against pi's context
+    window; keep pi-reported overall usage separate because its accounting and
+    last-response timing may differ.
+  - Keep the color-matched category legend beside the map at 52+ columns, remove
+    inter-cell spacing from 52–71 columns, and retain a category-only fallback
+    below 52 columns.
+  - Give every top-level category a distinct semantic theme color except the
+    intentionally shared small System Prompt/System Tools color; align token
+    values and percentages in separate columns at the earliest common position.
+  - Keep all aggregate breakdowns collapsed except `Tool Output`: show its
+    per-tool results and bash executions directly, without a `Tool Results`
+    layer. Make that list independently scrollable when needed; map allocation
+    continues to use top-level totals only.
+- [ ] 7a. **Make Usage categories selectable and add category preview.**
+  - Add a fixed-column cursor plus arrow, Page Up/Down, Home, and End navigation
+    across category rows; keep scrolling bounded and preserve selection through
+    width/height reflows and `r` refresh where the selected category still exists.
+  - Open the selected category with Enter. Preview its typed constituent
+    hierarchy with aligned token estimates and context-window proportions,
+    without counting children again. If category-specific raw content is shown,
+    keep it explicit-Enter-only, terminal-sanitized, memory-only, and unpersisted.
+  - Escape returns to the same selected row; a second Escape closes the Usage
+    view. Keep map colors and top-level allocation unchanged in preview mode.
+  - Cover leaf/aggregate categories, Tool Output children, empty breakdowns,
+    overflow scrolling, narrow widths, and short terminal heights in tests.
 - [ ] 8. **Add bounded opt-in Runtime mutation logging.**
   - The current command/view surfaces store only the toggle state; they do not
     log mutations yet and must not be treated as functional until this step.
@@ -501,6 +529,8 @@ by one blank row, and sums the token estimates across all of them.
 - Probe suppression never hides a genuine user abort.
 - Synthetic probe messages never reach later provider contexts or Usage.
 - Runtime storage is bounded and disabled by default.
+- Usage-map occupancy and legend colors match the estimated category model;
+  pi-reported usage remains separately labeled metadata.
 - Raw injection content is rendered only after explicit Enter preview; it is
   never included in notifications/reports, logged by the extension, or persisted.
 - Every rendered TUI line stays within the supplied width.
