@@ -16,11 +16,10 @@ import {
 } from "./injections-model.ts";
 
 const LIST_FIXED_LINE_COUNT = 13;
-const PREVIEW_FIXED_LINE_COUNT = 10;
+const PREVIEW_FIXED_LINE_COUNT = 8;
 const DEFAULT_TERMINAL_ROWS = 24;
 const BODY_INDENT = "  ";
 const LIST_DESCRIPTION = "Initial injections and estimated token counts.";
-const PREVIEW_DESCRIPTION = "Raw captured text; never logged or persisted.";
 
 /** Runtime-logging state owned by the extension factory closure. */
 export interface RuntimeToggle {
@@ -246,8 +245,6 @@ export class InjectionsView {
 		}
 
 		if (viewport.showScroll) lines.push(this.previewScrollLine(width, wrapped.length));
-		lines.push("");
-		lines.push(this.fit(theme.fg("muted", `${BODY_INDENT}${PREVIEW_DESCRIPTION}`), width));
 		lines.push("");
 		lines.push(
 			this.fit(

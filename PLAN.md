@@ -71,15 +71,17 @@ Default — `/context` or `/context usage`:
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    Estimated usage by category:
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ System Prompt: 3.7k tokens (0.4%)
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ System Tools: 11.8k tokens (1.2%)
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ AGENTS.md files: 1.8k tokens (0.2%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Custom Tools: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ MCP tools: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Memory (AGENTS.md): 1.8k tokens (0.2%)
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Skills: 3.2k tokens (0.3%)
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Messages: 23.7k tokens (2.4%)
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Extensions: ...
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Compacted Data: ...
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛶ Free space: 955.8k (95.6%)
-  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶
 
-  R Refresh  Esc Close
+  R Refresh · Esc Close
 
 ────────────────────────────────────────────────────────────────────────────────
 ```
@@ -92,23 +94,29 @@ Default — `/context` or `/context usage`:
 Context Injections                                        Runtime Logging: Off
 
 [INITIAL]
-→ pi                                                                     3,126
+→ pi                                                                     3,000
     Base Prompt                                                            652
     Built-in Tools (4)                                                     640
       edit                                                                 278
       read                                                                 154
       bash                                                                 118
       write                                                                 90
-    Skills (6)                                                             988
+    Skills (6)                                                             862
+      code-style                                                           236
+      pi-extension                                                         192
+      typescript-code                                                      168
+      skill-creator                                                        124
+      python-code                                                           82
+      commit                                                                60
     ~/.pi/agent/AGENTS.md                                                   89
     ./AGENTS.md                                                            757
   npm:pi-web-providers                                                   1,510
     web_search                                                           1,414
     web_contents                                                            96
   extensions (aggregate)                                                    85
-  (1/16)
+  (1/22)
 
-  TOTAL                                                                  5,038
+  TOTAL                                                                  4,912
 
   Initial injections and estimated token counts.
 
@@ -125,7 +133,7 @@ wraps directly below it:
 [INITIAL] [Degraded: pi-native fallback used]
   Silent probe unavailable: context-noauth has no configured authentication.
   Extension additions were not observed.
-→ pi                                                                     3,126
+→ pi                                                                     3,000
 ...
 ```
 
@@ -140,8 +148,6 @@ Base Prompt                                                pi · 652 tokens
   ...raw captured text, wrapped to width...
 
   (1/58)
-
-  Raw captured text; never logged or persisted.
 
   ↑↓ Scroll · Pgup/Pgdn Page · Esc Back
 
@@ -451,12 +457,14 @@ line only when scrolling is required.
 Within the `pi` group, items use a fixed semantic order regardless of size:
 `Base Prompt`, `Built-in Tools (N)`, other tools, `Skills (K)`, then the rest
 (context files, prompt additions) by size descending. Home-directory context
-file paths are abbreviated with `~`.
+file paths are abbreviated with `~`. Measurements and previews use semantic
+content only: pi's XML transport wrappers, section-introduction scaffolding,
+and dynamic date/working-directory footer are excluded.
 
 - pi
   - Base/Custom Prompt
   - Built-in Tools (N) → one breakdown child per active built-in tool
-  - Skills (K) → one child per skill if reliably separable, otherwise aggregate
+  - Skills (K) → one content-only breakdown child per skill
   - context file → one item per path (`~` for home paths)
   - appended system prompt
 - each extension/tool source (`sourceInfo.source`)

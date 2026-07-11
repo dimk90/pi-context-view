@@ -250,7 +250,13 @@ export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOpti
 		customPrompt: options.customPrompt,
 		appendSystemPrompt: options.appendSystemPrompt,
 		contextFilePaths: options.contextFiles?.map((file) => file.path),
-		skillCount: options.skills?.length,
+		skills: options.skills
+			?.filter((skill) => !skill.disableModelInvocation)
+			.map((skill) => ({
+				name: skill.name,
+				description: skill.description,
+				filePath: skill.filePath,
+			})),
 	};
 }
 

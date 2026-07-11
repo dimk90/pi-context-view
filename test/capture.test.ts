@@ -9,6 +9,7 @@ import type {
 
 import {
 	captureActiveTools,
+	copyPromptOptions,
 	InitialCaptureState,
 	measureInjectedMessages,
 	SilentProbeState,
@@ -17,6 +18,26 @@ import {
 /** Minimal custom-role message fixture. */
 function customMessage(customType: string, content: string, timestamp: number): ContextEvent["messages"][number] {
 	return { role: "custom", customType, content, display: false, timestamp };
+}
+
+/** Skill fixture with explicit model-visibility state. */
+function skill(
+	name: string,
+	disableModelInvocation: boolean,
+): NonNullable<BuildSystemPromptOptions["skills"]>[number] {
+	return {
+		name,
+		description: `${name} description`,
+		filePath: `/tmp/${name}/SKILL.md`,
+		baseDir: `/tmp/${name}`,
+		disableModelInvocation,
+		sourceInfo: {
+			path: `/tmp/${name}/SKILL.md`,
+			source: "temporary",
+			scope: "temporary",
+			origin: "top-level",
+		},
+	};
 }
 
 /** ToolInfo fixture with the given provenance source and one guideline. */
@@ -45,6 +66,25 @@ test("captureActiveTools uses the final active set", () => {
 	assert.deepEqual(tools.map((entry) => entry.name), ["search"]);
 	assert.equal(tools[0]?.source, "npm:web");
 	assert.equal(tools[0]?.snippet, "Search the web");
+});
+
+test("copyPromptOptions owns decomposition metadata and keeps only visible skills", () => {
+	const contextFile = { path: "./AGENTS.md", content: "rules" };
+	const visibleSkill = skill("visible", false);
+	const options: BuildSystemPromptOptions = {
+		cwd: "/tmp",
+		contextFiles: [contextFile],
+		skills: [visibleSkill, skill("hidden", true)],
+	};
+
+	const copied = copyPromptOptions(options);
+	contextFile.path = "./changed.md";
+	visibleSkill.description = "changed";
+
+	assert.deepEqual(copied.contextFilePaths, ["./AGENTS.md"]);
+	assert.deepEqual(copied.skills, [
+		{ name: "visible", description: "visible description", filePath: "/tmp/visible/SKILL.md" },
+	]);
 });
 
 test("measureInjectedMessages gives duplicate custom types stable occurrence ids", () => {

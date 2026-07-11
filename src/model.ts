@@ -47,7 +47,7 @@ export interface InjectionItem {
 	readonly tokens: number;
 	/** Raw injected text for preview. Process-local; never log or persist. */
 	readonly text: string;
-	/** Constituent sub-items (e.g. individual built-in tools), largest first. */
+	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
 	readonly children?: readonly InjectionItem[];
 }
 

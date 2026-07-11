@@ -238,7 +238,7 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 
 	// Enter on a group row does nothing.
 	view.handleInput("\r");
-	assert.doesNotMatch(view.render(80).join("\n"), /Raw captured text/);
+	assert.doesNotMatch(view.render(80).join("\n"), /pi-0 preview line/);
 
 	// Select the second item row and open its preview.
 	view.handleInput("\u001b[B");
@@ -247,7 +247,7 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	view.handleInput("\r");
 	const previewLines = view.render(80);
 	const preview = previewLines.join("\n");
-	assert.match(preview, /Raw captured text/);
+	assert.doesNotMatch(preview, /Raw captured text/);
 	assert.match(preview, /pi-1 preview line 0/);
 	assert.match(preview, /\(\d+\/\d+\)/);
 	const previewHeaderIndex = previewLines.findIndex((line) => stripSgr(line).includes("tokens"));
@@ -256,11 +256,9 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	// Preview content is indented two spaces.
 	assert.equal(stripSgr(previewLines[firstContentIndex] ?? "").indexOf("pi-1"), 2);
 	assert.equal(previewLines[previewHeaderIndex + 1], "");
-	const descriptionIndex = previewLines.findIndex((line) => stripSgr(line).includes("Raw captured text"));
-	assert.ok(descriptionIndex > 0);
-	assert.equal(previewLines[descriptionIndex - 1], "");
-	assert.equal(previewLines[descriptionIndex + 1], "");
-	assert.match(previewLines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m  Raw captured text/);
+	const hintIndex = previewLines.findIndex((line) => stripSgr(line).includes("↑↓ Scroll"));
+	assert.ok(hintIndex > 0);
+	assert.equal(previewLines[hintIndex - 1], "");
 
 	// Scrolling changes the visible window; Escape returns to the unchanged list.
 	view.handleInput("\u001b[6~"); // PgDn
