@@ -279,7 +279,7 @@ test("UsageView opens a category breakdown preview and returns to the same row",
 	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
 	const hintIndex = plain.findIndex((line) => line.includes("↑↓ Scroll"));
 	assert.ok(hintIndex > 0);
-	assert.match(plain[hintIndex] ?? "", /↑↓ Scroll · Pgup\/Pgdn Page · Esc Back/);
+	assert.match(plain[hintIndex] ?? "", /↑↓ Scroll · PgUp\/PgDn Page · Esc Back/);
 
 	// First Escape returns to the same selected list row; second closes the view.
 	view.handleInput("\u001b");

@@ -426,7 +426,7 @@ export class UsageView {
 			this.fit(
 				hintRow(theme, [
 					["↑↓", "Scroll"],
-					["Pgup/Pgdn", "Page"],
+					["PgUp/PgDn", "Page"],
 					["Esc", "Back"],
 				]),
 				width,

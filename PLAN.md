@@ -150,7 +150,7 @@ Base Prompt                                                pi · 652 tokens
 
   (1/58)
 
-  ↑↓ Scroll · Pgup/Pgdn Page · Esc Back
+  ↑↓ Scroll · PgUp/PgDn Page · Esc Back
 
 ────────────────────────────────────────────────────────────────────────────────
 ```

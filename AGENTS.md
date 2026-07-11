@@ -117,7 +117,8 @@ terminal colors so views track the user's active theme.
 Headers, sub-headers, and the `→` cursor sit flush at column 0; the muted
 description, `(current/total)` counter, hint row, and preview body content are
 indented two spaces. Join hints with ` · `. Titles, section names, and hint
-labels use Title Case (`Context Injections`, `Esc Close`); keep recognizable
+labels use Title Case (`Context Injections`, `Esc Close`); key names use their
+conventional keyboard casing (`PgUp/PgDn`, not `Pgup/Pgdn`); keep recognizable
 identifiers such as `pi`
 and tool names (`edit`, `web_search`) in their literal casing, and keep longer
 descriptions in sentence case.

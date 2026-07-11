@@ -258,7 +258,7 @@ export class InjectionsView {
 			this.fit(
 				hintRow(this.theme, [
 					["↑↓", "Scroll"],
-					["Pgup/Pgdn", "Page"],
+					["PgUp/PgDn", "Page"],
 					["Esc", "Back"],
 				]),
 				width,

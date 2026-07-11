@@ -73,7 +73,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("context", {
-		description: "Inspect context usage or injections",
+		// RegisteredCommand has no argumentHint; mimic pi's `<hint> — <description>` style.
+		description: "[usage|injections|runtime on|off] — Inspect context usage or injections",
 		getArgumentCompletions: getContextArgumentCompletions,
 		handler: async (args, ctx) => {
 			const command = parseContextCommand(args);
