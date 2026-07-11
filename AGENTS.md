@@ -1,4 +1,4 @@
-# pi-context-inspect
+# pi-context-view
 
 Pi extension in migration from the superseded `--context-inspect` CLI workflow
 to focused `/context` TUI views:

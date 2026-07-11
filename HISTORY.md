@@ -1,4 +1,4 @@
-# pi-context-inspect — Development History
+# pi-context-view — Development History
 
 ## v1: `--context-inspect` CLI workflow (superseded)
 

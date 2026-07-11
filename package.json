@@ -1,5 +1,5 @@
 {
-	"name": "pi-context-inspect",
+	"name": "pi-context-view",
 	"version": "0.1.0",
 	"description": "Pi extension: inspect context injections and usage via /context",
 	"type": "module",

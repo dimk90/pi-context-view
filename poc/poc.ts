@@ -1,5 +1,5 @@
 /**
- * PoC for pi-context-inspect: verify capture of initial context injections.
+ * PoC for pi-context-view: verify capture of initial context injections.
  *
  * Spike Option A: at session_start, read ctx.getSystemPromptOptions?.() and
  * ctx.getSystemPrompt(); dump raw components to see what is observable

@@ -1,5 +1,5 @@
 /**
- * pi-context-inspect — inspect what occupies the model context.
+ * pi-context-view — inspect what occupies the model context.
  *
  * Passively captures the first real turn, or runs one on-demand silent probe
  * when a context view is opened before any real turn.

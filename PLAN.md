@@ -1,4 +1,4 @@
-# pi-context-inspect — Development Plan
+# pi-context-view — Development Plan
 
 ## Goal
 
