@@ -148,9 +148,19 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
 	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
 	assert.equal(plain[descriptionIndex]?.indexOf("The map"), 2);
-	assert.equal(plain[hintsIndex]?.indexOf("Esc"), 2);
+	assert.equal(plain[hintsIndex]?.indexOf("↑↓"), 2);
+	assert.match(plain[hintsIndex] ?? "", /↑↓ Navigate · Enter Preview · Esc Close/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mEsc/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Close/);
+
+	// The first category row starts selected: fixed-column accent cursor and accent label/values.
+	const selectedRow = lines.find((line) => stripSgr(line).includes("→ "));
+	assert.ok(selectedRow !== undefined);
+	assert.match(stripSgr(selectedRow), /→ ■ System Prompt:/);
+	assert.match(selectedRow, /\u001b\[38;2;1;2;3m→ /);
+	assert.match(selectedRow, /\u001b\[38;2;1;2;3mSystem Prompt:/);
+	assert.match(selectedRow, /\u001b\[38;2;1;2;3m3\.7k/);
+	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
 test("UsageView reports unknown post-compaction usage and closes on Escape", () => {
@@ -205,12 +215,135 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	assert.ok(!initial.some((line) => line.includes("tool_15:")));
 	assert.ok(!initial.some((line) => line.includes("read should stay collapsed")));
 	assert.ok(!initial.some((line) => line.includes("Tool Results:")));
-	assert.ok(initial.some((line) => line.includes("↑↓ Scroll")));
+	assert.ok(initial.some((line) => /\(1\/\d+\)/.test(line)));
 
 	view.handleInput("\u001b[4~"); // End
 	const ending = view.render(80).map(stripSgr);
 	assert.ok(ending.some((line) => /· tool_15:\s+100\s+0%/.test(line)));
-	assert.ok(ending.some((line) => /⛶ Free Space:\s+998\.4k\s+100%/.test(line)));
+	assert.ok(ending.some((line) => /→ ⛶ Free Space:\s+998\.4k\s+100%/.test(line)));
+});
+
+test("UsageView keeps the selection inside the viewport across height reflows", () => {
+	let rows = 24;
+	const tools = Array.from({ length: 15 }, (_, index) => ({
+		id: `tool-result:tool_${index + 1}`,
+		label: `tool_${index + 1}`,
+		tokens: 100,
+	}));
+	const overflowUsage: ContextUsageSnapshot = {
+		...usage(1_500),
+		categories: [{ id: "tool-output", label: "Tool Output", tokens: 1_500, children: tools }],
+		estimatedTokens: 1_500,
+	};
+	const view = new UsageView(createTheme(), { usage: overflowUsage }, () => {}, () => rows);
+
+	view.render(80);
+	for (let step = 0; step < 9; step++) view.handleInput("\u001b[B");
+	assert.ok(view.render(80).some((line) => /→\s+· tool_9:/.test(stripSgr(line))));
+
+	rows = 16;
+	assert.ok(view.render(80).some((line) => /→\s+· tool_9:/.test(stripSgr(line))));
+	rows = 24;
+	assert.ok(view.render(80).some((line) => /→\s+· tool_9:/.test(stripSgr(line))));
+	for (const width of [40, 60, 120]) {
+		assert.ok(view.render(width).some((line) => /→\s+· tool_9:/.test(stripSgr(line))), `width ${width}`);
+	}
+});
+
+test("UsageView opens a category breakdown preview and returns to the same row", () => {
+	let closed = false;
+	const view = new UsageView(createTheme(), { usage: usage() }, () => {
+		closed = true;
+	}, () => 24);
+
+	// Select Tool Output (aggregate) and open it.
+	view.render(80);
+	for (let step = 0; step < 10; step++) view.handleInput("\u001b[B");
+	const listBefore = view.render(80).join("\n");
+	assert.match(stripSgr(listBefore), /→ ■ Tool Output:/);
+
+	view.handleInput("\r");
+	const preview = view.render(80);
+	const plain = preview.map(stripSgr);
+	assert.equal(plain[2]?.indexOf("Tool Output"), 0);
+	assert.match(preview[2] ?? "", /\u001b\[38;2;1;2;3m.*Tool Output/);
+	assert.match(plain[2] ?? "", /5k tokens · 0\.5%/);
+	assert.equal(preview[3], "");
+	// Children with aligned token and percentage columns, indented two spaces, no map.
+	const readLine = plain.find((line) => line.includes("· read:"));
+	const searchLine = plain.find((line) => line.includes("· web_search:"));
+	assert.ok(readLine !== undefined && searchLine !== undefined);
+	assert.equal(readLine.indexOf("·"), 4);
+	assert.match(readLine, /· read:\s+3k\s+0\.3%/);
+	assert.equal(readLine.indexOf("3k"), searchLine.indexOf("2k"));
+	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
+	const hintIndex = plain.findIndex((line) => line.includes("↑↓ Scroll"));
+	assert.ok(hintIndex > 0);
+	assert.match(plain[hintIndex] ?? "", /↑↓ Scroll · Pgup\/Pgdn Page · Esc Back/);
+
+	// First Escape returns to the same selected list row; second closes the view.
+	view.handleInput("\u001b");
+	assert.equal(closed, false);
+	assert.equal(view.render(80).join("\n"), listBefore);
+	view.handleInput("\u001b");
+	assert.equal(closed, true);
+});
+
+test("UsageView previews leaf categories, free space, and long breakdowns safely", () => {
+	const tools = Array.from({ length: 30 }, (_, index) => ({
+		id: `tool-result:tool_${index + 1}`,
+		label: `tool_${index + 1}`,
+		tokens: 100,
+	}));
+	const mixedUsage: ContextUsageSnapshot = {
+		...usage(4_000),
+		categories: [
+			{ id: "user-messages", label: "User Messages", tokens: 1_000 },
+			{ id: "tool-output", label: "Tool Output", tokens: 3_000, children: tools },
+		],
+		estimatedTokens: 4_000,
+	};
+	const view = new UsageView(createTheme(), { usage: mixedUsage }, () => {}, () => 20);
+
+	// Leaf category: explicit empty-breakdown message instead of raw content.
+	view.render(80);
+	view.handleInput("\r");
+	const leafPreview = view.render(80).map(stripSgr);
+	assert.equal(leafPreview[2]?.indexOf("User Messages"), 0);
+	assert.ok(leafPreview.some((line) => line.includes("No constituent breakdown.")));
+	view.handleInput("\u001b");
+
+	// Aggregate overflow: preview scrolls and stays bounded.
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const top = view.render(80).map(stripSgr);
+	assert.ok(top.some((line) => line.includes("· tool_1:")));
+	assert.ok(!top.some((line) => line.includes("· tool_30:")));
+	assert.ok(top.some((line) => /\(1\/30\)/.test(line)));
+	view.handleInput("\u001b[4~"); // End
+	const bottom = view.render(80).map(stripSgr);
+	assert.ok(bottom.some((line) => line.includes("· tool_30:")));
+	assert.ok(!bottom.some((line) => line.includes("· tool_1:")));
+	view.handleInput("\u001b[1~"); // Home
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("· tool_1:")));
+	view.handleInput("\u001b");
+
+	// Enter on the free-space row opens nothing.
+	view.handleInput("\u001b[4~"); // End → Free Space
+	const freeSelected = view.render(80).join("\n");
+	assert.match(stripSgr(freeSelected), /→ ⛶ Free Space:/);
+	view.handleInput("\r");
+	assert.equal(view.render(80).join("\n"), freeSelected);
+
+	// Preview lines respect narrow widths and short terminals.
+	view.handleInput("\u001b[1~");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	for (const width of [24, 40, 66]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `preview line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+	}
 });
 
 test("UsageView respects width and height changes", () => {

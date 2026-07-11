@@ -82,7 +82,7 @@ Default — `/context` or `/context usage`:
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ▦ Compacted Data: ...
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛶ Free space: 955.8k (95.6%)
 
-  Esc Close
+  ↑↓ Navigate · Enter Preview · Esc Close
 
 ────────────────────────────────────────────────────────────────────────────────
 ```
@@ -339,11 +339,13 @@ Provide argument completion for this grammar. Unknown or incomplete arguments
 show concise usage rather than silently choosing a view.
 
 The views are independent; there is no tab state or tab-switching keybinding.
-The Usage view is read-only: `r` recomputes usage and Escape closes it. The
-Injections view has a small state machine (`list | preview`), selected row, and
-scroll offsets. Up/Down navigate; Enter opens a scrollable preview; Escape
-returns from preview to list, then closes the view. In that view, `r` toggles
-Runtime logging.
+Both views share a small state machine (`list | preview`), a selected row, and
+scroll offsets. Up/Down/PgUp/PgDn/Home/End navigate; Enter opens a scrollable
+preview; Escape returns from preview to list, then closes the view. The Usage
+preview shows the selected category's typed constituent hierarchy with aligned
+token estimates and context-window proportions; the Injections preview shows
+sanitized raw injection text. In the Injections view, `r` toggles Runtime
+logging.
 
 Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and proper theme invalidation. Both focused views use fullscreen
@@ -446,7 +448,7 @@ line only when scrolling is required.
     per-tool results and bash executions directly, without a `Tool Results`
     layer. Make that list independently scrollable when needed; map allocation
     continues to use top-level totals only.
-- [ ] 7a. **Make Usage categories selectable and add category preview.**
+- [x] 7a. **Make Usage categories selectable and add category preview.**
   - Add a fixed-column cursor plus arrow, Page Up/Down, Home, and End navigation
     across category rows; keep scrolling bounded and preserve selection through
     width/height reflows.

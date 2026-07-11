@@ -12,9 +12,9 @@ There are no tabs. No raw injection content is logged or persisted.
 
 The v1 CLI lifecycle has been removed. Passive capture, the one-shot silent
 probe, command grammar, the Injections/Initial view with item preview, and its
-review hardening, the Usage view, and its context map are implemented
-(PLAN.md steps 1–7). `/context` defaults to Usage. Usage category selection and
-preview (step 7a) are next; hidden Runtime mutation logging follows. Do not
+review hardening, the Usage view, its context map, and Usage category
+selection/preview are implemented (PLAN.md steps 1–7a). `/context` defaults to
+Usage. Hidden Runtime mutation logging (step 8) is next. Do not
 preserve CLI compatibility during the migration.
 
 ## Target architecture

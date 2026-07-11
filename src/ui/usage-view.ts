@@ -1,13 +1,16 @@
 /**
- * Focused `/context usage` view: read-only estimated context composition with
- * a proportional context-window map and pi-reported metadata.
+ * Focused `/context usage` view: estimated context composition with a
+ * proportional context-window map, pi-reported metadata, selectable category
+ * rows, and an Enter-opened constituent-breakdown preview.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { ContextUsageSnapshot, UsageCategory } from "../model.ts";
+import { ListNavigator, PreviewScroller } from "./injections-model.ts";
 import {
 	BODY_INDENT,
+	calculateViewport,
 	DEFAULT_TERMINAL_ROWS,
 	fitLine,
 	fitToTerminalHeight,
@@ -20,6 +23,8 @@ import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 const USAGE_DESCRIPTION = "The map estimates next-request usage; provider token counts may differ.";
 const USAGE_TAIL_LINE_COUNT = 6;
 const DETAIL_HEADER_LINE_COUNT = 4;
+const PREVIEW_FIXED_LINE_COUNT = 8;
+const CURSOR_COLUMN_WIDTH = 2;
 const MAX_LEGEND_VALUE_COLUMN = 28;
 const LEGEND_VALUE_GAP = 2;
 const MAP_SIDE_BY_SIDE_MIN_WIDTH = 52;
@@ -84,10 +89,10 @@ export class UsageView {
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
 	private readonly usage: ContextUsageSnapshot;
-	private detailOffset = 0;
-	private detailRowCount = 0;
-	private detailViewportRows = 1;
-	private detailHasOverflow = false;
+	private readonly legendRows: readonly LegendRow[];
+	private readonly navigator: ListNavigator;
+	private readonly previewScroller = new PreviewScroller();
+	private previewRow: CategoryLegendRow | undefined;
 	private cachedWidth: number | undefined;
 	private cachedTerminalRows: number | undefined;
 	private cachedLines: string[] | undefined;
@@ -104,20 +109,35 @@ export class UsageView {
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
 		this.usage = input.usage;
+		this.legendRows = this.buildLegendRows();
+		this.navigator = new ListNavigator(this.legendRows.length, 1);
 	}
 
-	/** Handle category scrolling and close keys; other input is ignored. */
+	/** Handle category navigation, preview opening, and close keys. */
 	public handleInput(data: string): void {
+		if (this.previewRow !== undefined) {
+			this.handlePreviewInput(data);
+			return;
+		}
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.done(undefined);
 			return;
 		}
-		if (matchesKey(data, Key.up)) this.scrollDetails(-1);
-		else if (matchesKey(data, Key.down)) this.scrollDetails(1);
-		else if (matchesKey(data, Key.pageUp)) this.scrollDetails(-this.detailViewportRows);
-		else if (matchesKey(data, Key.pageDown)) this.scrollDetails(this.detailViewportRows);
-		else if (matchesKey(data, Key.home)) this.scrollDetails(-this.detailRowCount);
-		else if (matchesKey(data, Key.end)) this.scrollDetails(this.detailRowCount);
+		if (matchesKey(data, Key.enter)) {
+			this.openPreview();
+		} else if (matchesKey(data, Key.up)) {
+			if (this.navigator.moveBy(-1)) this.clearCache();
+		} else if (matchesKey(data, Key.down)) {
+			if (this.navigator.moveBy(1)) this.clearCache();
+		} else if (matchesKey(data, Key.pageUp)) {
+			if (this.navigator.page(-1)) this.clearCache();
+		} else if (matchesKey(data, Key.pageDown)) {
+			if (this.navigator.page(1)) this.clearCache();
+		} else if (matchesKey(data, Key.home)) {
+			if (this.navigator.moveTo(0)) this.clearCache();
+		} else if (matchesKey(data, Key.end)) {
+			if (this.navigator.moveTo(this.legendRows.length - 1)) this.clearCache();
+		}
 	}
 
 	/** Render a cached fullscreen frame for the current width and terminal height. */
@@ -131,25 +151,9 @@ export class UsageView {
 			return this.cachedLines;
 		}
 
-		const theme = this.theme;
-		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const prefix = [border, "", this.headerLine(width), "", ...this.degradedWarningLines(width)];
-		const availableDashboardRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_LINE_COUNT);
-		const dashboard = this.dashboardLines(width, availableDashboardRows).slice(0, availableDashboardRows);
-		while (dashboard.length < availableDashboardRows) dashboard.push("");
-		const hints: Array<readonly [string, string]> = [];
-		if (this.detailHasOverflow) hints.push(["↑↓", "Scroll"]);
-		hints.push(["Esc", "Close"]);
-		const tail = [
-			"",
-			this.fit(theme.fg("muted", `${BODY_INDENT}${USAGE_DESCRIPTION}`), width),
-			"",
-			this.fit(hintRow(theme, hints), width),
-			"",
-			border,
-		];
-		const lines = fitToTerminalHeight([...prefix, ...dashboard, ...tail], terminalRows, border);
-
+		const lines = this.previewRow === undefined
+			? this.renderDashboard(width, terminalRows)
+			: this.renderPreview(width, terminalRows, this.previewRow);
 		this.cachedWidth = width;
 		this.cachedTerminalRows = terminalRows;
 		this.cachedLines = lines;
@@ -159,6 +163,34 @@ export class UsageView {
 	/** Invalidate theme-dependent rendered output. */
 	public invalidate(): void {
 		this.clearCache();
+	}
+
+	// === Dashboard mode ===
+
+	/** Full map/legend frame with navigation hints. */
+	private renderDashboard(width: number, terminalRows: number): string[] {
+		const theme = this.theme;
+		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
+		const prefix = [border, "", this.headerLine(width), "", ...this.degradedWarningLines(width)];
+		const availableDashboardRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_LINE_COUNT);
+		const dashboard = this.dashboardLines(width, availableDashboardRows).slice(0, availableDashboardRows);
+		while (dashboard.length < availableDashboardRows) dashboard.push("");
+		const tail = [
+			"",
+			this.fit(theme.fg("muted", `${BODY_INDENT}${USAGE_DESCRIPTION}`), width),
+			"",
+			this.fit(
+				hintRow(theme, [
+					["↑↓", "Navigate"],
+					["Enter", "Preview"],
+					["Esc", "Close"],
+				]),
+				width,
+			),
+			"",
+			border,
+		];
+		return fitToTerminalHeight([...prefix, ...dashboard, ...tail], terminalRows, border);
 	}
 
 	/** Accent title at the top of the fullscreen view. */
@@ -193,26 +225,28 @@ export class UsageView {
 		});
 	}
 
-	/** Model/usage metadata, top-level categories, and direct Tool Output children. */
+	/** Model/usage metadata plus the selectable category legend viewport. */
 	private detailLines(width: number, rows: number): string[] {
 		const theme = this.theme;
-		const legendRows: LegendRow[] = buildCategoryLegendRows(this.usage.categories);
-		const freeTokens = this.freeSpaceTokens();
-		if (freeTokens !== undefined) legendRows.push({ type: "free", tokens: freeTokens });
-		const viewportRows = Math.max(0, rows - DETAIL_HEADER_LINE_COUNT);
-		this.detailRowCount = legendRows.length;
-		this.detailViewportRows = Math.max(1, viewportRows);
-		this.detailOffset = Math.min(this.detailOffset, this.maximumDetailOffset());
-		this.detailHasOverflow = legendRows.length > viewportRows;
+		const viewportRows = Math.max(1, rows - DETAIL_HEADER_LINE_COUNT);
+		this.navigator.setVisibleCount(viewportRows);
 
 		const heading = theme.fg("mdHeading", theme.bold("Category:"));
-		const counter = this.detailHasOverflow
-			? theme.fg("dim", `(${this.detailOffset + 1}/${legendRows.length})`)
+		const counter = this.navigator.hasOverflow
+			? theme.fg("dim", `(${this.navigator.selected + 1}/${this.legendRows.length})`)
 			: "";
-		const columns = this.legendColumns(legendRows, width);
-		const visibleRows = legendRows
-			.slice(this.detailOffset, this.detailOffset + viewportRows)
-			.map((row) => this.legendLine(row, columns, width));
+		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
+		const columns = this.legendColumns(this.legendRows, rowWidth);
+		const visibleRows: string[] = [];
+		const start = this.navigator.offset;
+		for (let index = start; index < start + this.navigator.windowSize; index++) {
+			const row = this.legendRows[index];
+			if (row === undefined) break;
+			const selected = index === this.navigator.selected;
+			// The cursor stays in one fixed column at the start of the legend.
+			const cursor = selected ? theme.fg("accent", "→ ") : "  ";
+			visibleRows.push(this.fit(`${cursor}${this.legendLine(row, columns, rowWidth, selected)}`, width));
+		}
 		return [
 			`${theme.fg("dim", "Model:")} ${theme.fg("muted", this.usage.modelLabel ?? "Unavailable")}`,
 			this.reportedSummary(width),
@@ -237,6 +271,14 @@ export class UsageView {
 		);
 	}
 
+	/** All navigable legend rows: top-level categories, Tool Output children, free space. */
+	private buildLegendRows(): LegendRow[] {
+		const rows: LegendRow[] = buildCategoryLegendRows(this.usage.categories);
+		const freeTokens = this.freeSpaceTokens();
+		if (freeTokens !== undefined) rows.push({ type: "free", tokens: freeTokens });
+		return rows;
+	}
+
 	/** Estimated remaining space, or undefined without a usable context window. */
 	private freeSpaceTokens(): number | undefined {
 		const contextWindow = this.usage.reported?.contextWindow;
@@ -258,16 +300,16 @@ export class UsageView {
 	}
 
 	/** One aligned hierarchy row with independent token and percentage columns. */
-	private legendLine(row: LegendRow, columns: LegendColumns, width: number): string {
-		const left = fitLine(this.styledLegendLabel(row), columns.value);
+	private legendLine(row: LegendRow, columns: LegendColumns, width: number, selected: boolean): string {
+		const left = fitLine(this.styledLegendLabel(row, selected), columns.value);
 		const leftPadding = " ".repeat(Math.max(0, columns.value - visibleWidth(left)));
 		const tokens = formatTokens(legendTokens(row));
-		const valueColor = row.type === "category" && row.depth > 1 ? "dim" : "muted";
+		const valueColor = selected ? "accent" : row.type === "category" && row.depth > 1 ? "dim" : "muted";
 		const tokenPadding = " ".repeat(Math.max(0, columns.tokenWidth - tokens.length));
 		const percent = this.plainLegendPercent(legendTokens(row));
 		const percentPart = percent === ""
 			? ""
-			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg("dim", percent)}`;
+			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "dim", percent)}`;
 		return fitLine(
 			`${left}${leftPadding}${this.theme.fg(valueColor, tokens)}${tokenPadding}${percentPart}`,
 			width,
@@ -281,15 +323,15 @@ export class UsageView {
 		return `${indent}${categoryMarker(row.category.id, row.depth)} ${row.category.label}:`;
 	}
 
-	/** Themed hierarchy label; child values remain breakdowns of their top-level parent. */
-	private styledLegendLabel(row: LegendRow): string {
+	/** Themed hierarchy label; the marker keeps its map color even when selected. */
+	private styledLegendLabel(row: LegendRow, selected: boolean): string {
 		if (row.type === "free") {
-			return `${this.theme.fg("dim", FREE_CELL)} ${this.theme.fg("text", "Free Space:")}`;
+			return `${this.theme.fg("dim", FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space:")}`;
 		}
 		const indent = "  ".repeat(row.depth);
 		const color = categoryColor(row.rootId);
 		const marker = this.theme.fg(color, categoryMarker(row.category.id, row.depth));
-		const labelColor = row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
+		const labelColor = selected ? "accent" : row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
 		return `${indent}${marker} ${this.theme.fg(labelColor, `${row.category.label}:`)}`;
 	}
 
@@ -309,23 +351,102 @@ export class UsageView {
 		return this.theme.fg(categoryColor(cell.categoryId), glyph);
 	}
 
-	/** Move the category viewport while preserving its current bounds. */
-	private scrollDetails(delta: number): void {
-		const nextOffset = Math.max(0, Math.min(this.maximumDetailOffset(), this.detailOffset + delta));
-		if (nextOffset === this.detailOffset) return;
-		this.detailOffset = nextOffset;
-		this.clearCache();
-	}
-
-	/** Last valid first row for the current category viewport. */
-	private maximumDetailOffset(): number {
-		return Math.max(0, this.detailRowCount - this.detailViewportRows);
-	}
-
 	/** Wrapped degraded-capture warning placed above the dashboard. */
 	private degradedWarningLines(width: number): string[] {
 		if (this.input.degradedReason === undefined) return [];
 		return wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${this.input.degradedReason}`), width);
+	}
+
+	// === Preview mode ===
+
+	/** Preview scrolling and return-to-list keys. */
+	private handlePreviewInput(data: string): void {
+		if (matchesKey(data, Key.escape) || data === "q") {
+			this.closePreview();
+			return;
+		}
+		if (matchesKey(data, Key.up)) {
+			if (this.previewScroller.scrollBy(-1)) this.clearCache();
+		} else if (matchesKey(data, Key.down)) {
+			if (this.previewScroller.scrollBy(1)) this.clearCache();
+		} else if (matchesKey(data, Key.pageUp)) {
+			if (this.previewScroller.page(-1)) this.clearCache();
+		} else if (matchesKey(data, Key.pageDown)) {
+			if (this.previewScroller.page(1)) this.clearCache();
+		} else if (matchesKey(data, Key.home)) {
+			if (this.previewScroller.scrollTo(0)) this.clearCache();
+		} else if (matchesKey(data, Key.end)) {
+			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
+		}
+	}
+
+	/** Open the selected category's breakdown; free space has no preview. */
+	private openPreview(): void {
+		const row = this.legendRows[this.navigator.selected];
+		if (row === undefined || row.type !== "category") return;
+		this.previewRow = row;
+		this.previewScroller.reset();
+		this.clearCache();
+	}
+
+	/** Return to the list with the same selected row. */
+	private closePreview(): void {
+		this.previewRow = undefined;
+		this.clearCache();
+	}
+
+	/** Scrollable typed constituent hierarchy for one category. */
+	private renderPreview(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
+		const theme = this.theme;
+		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
+		const body = this.previewBodyLines(width, row);
+		const viewport = calculateViewport(body.length, terminalRows, PREVIEW_FIXED_LINE_COUNT);
+		this.previewScroller.setExtent(body.length, viewport.visibleCount);
+
+		const lines: string[] = [border, ""];
+		const title = theme.fg("accent", theme.bold(row.category.label));
+		const percent = this.plainLegendPercent(row.category.tokens);
+		const meta = theme.fg(
+			"muted",
+			`${formatTokens(row.category.tokens)} tokens${percent === "" ? "" : ` · ${percent}`} `,
+		);
+		lines.push(spreadLine(title, meta, width));
+		lines.push("");
+
+		const start = this.previewScroller.offset;
+		for (let index = start; index < start + viewport.visibleCount; index++) {
+			lines.push(body[index] ?? "");
+		}
+
+		if (viewport.showScroll) {
+			lines.push(this.fit(theme.fg("dim", `${BODY_INDENT}(${start + 1}/${body.length})`), width));
+		}
+		lines.push("");
+		lines.push(
+			this.fit(
+				hintRow(theme, [
+					["↑↓", "Scroll"],
+					["Pgup/Pgdn", "Page"],
+					["Esc", "Back"],
+				]),
+				width,
+			),
+		);
+		lines.push("", border);
+		return fitToTerminalHeight(lines, terminalRows, border);
+	}
+
+	/** Aligned breakdown rows of the previewed category, without recounting children. */
+	private previewBodyLines(width: number, row: CategoryLegendRow): string[] {
+		const bodyRows = buildPreviewRows(row);
+		if (bodyRows.length === 0) {
+			return [this.fit(this.theme.fg("muted", `${BODY_INDENT}No constituent breakdown.`), width)];
+		}
+		const rowWidth = Math.max(1, width - BODY_INDENT.length);
+		const columns = this.legendColumns(bodyRows, rowWidth);
+		return bodyRows.map((child) =>
+			this.fit(`${BODY_INDENT}${this.legendLine(child, columns, rowWidth, false)}`, width)
+		);
 	}
 
 	/** Truncate one rendered line to the supplied width. */
@@ -351,6 +472,17 @@ function buildCategoryLegendRows(categories: readonly UsageCategory[]): Category
 			rows.push({ type: "category", category: child, depth: 1, rootId: category.id });
 		}
 	}
+	return rows;
+}
+
+/** Flatten one previewed category's constituent hierarchy, largest branch order preserved. */
+function buildPreviewRows(row: CategoryLegendRow): CategoryLegendRow[] {
+	const rows: CategoryLegendRow[] = [];
+	const visit = (category: UsageCategory, depth: number): void => {
+		rows.push({ type: "category", category, depth, rootId: row.rootId });
+		for (const child of category.children ?? []) visit(child, depth + 1);
+	};
+	for (const child of row.category.children ?? []) visit(child, 1);
 	return rows;
 }
 
