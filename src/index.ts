@@ -102,21 +102,20 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			await showUsageView(ctx, {
-				compute: () =>
-					computeUsage({
-						snapshot: buildNativeSnapshot({
-							systemPrompt: ctx.getSystemPrompt(),
-							options: ctx.getSystemPromptOptions(),
-							allTools: pi.getAllTools(),
-							activeToolNames: pi.getActiveTools(),
-						}),
-						// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
-						messages: probe.filterMessages(
-							buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
-						),
-						reported: toReportedUsage(ctx.getContextUsage()),
-						modelLabel: ctx.model?.id,
+				usage: computeUsage({
+					snapshot: buildNativeSnapshot({
+						systemPrompt: ctx.getSystemPrompt(),
+						options: ctx.getSystemPromptOptions(),
+						allTools: pi.getAllTools(),
+						activeToolNames: pi.getActiveTools(),
 					}),
+					// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
+					messages: probe.filterMessages(
+						buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
+					),
+					reported: toReportedUsage(ctx.getContextUsage()),
+					modelLabel: ctx.model?.id,
+				}),
 				degradedReason: initial.degradedReason,
 			});
 		},

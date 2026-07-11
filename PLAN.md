@@ -82,7 +82,7 @@ Default — `/context` or `/context usage`:
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ▦ Compacted Data: ...
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛶ Free space: 955.8k (95.6%)
 
-  R Refresh · Esc Close
+  Esc Close
 
 ────────────────────────────────────────────────────────────────────────────────
 ```
@@ -424,7 +424,7 @@ line only when scrolling is required.
   - Implement `buildSessionContext().messages` classification and synthetic
     filtering in `usage.ts`.
   - Render category totals, proportions, pi usage/context-window metadata,
-    unknown-after-compaction state, and `r` refresh behavior. Split user, agent
+    and the unknown-after-compaction state. Split user, agent
     text, agent thinking, and agent tool-call messages into independent colored
     top-level categories. Keep provider tool results and persisted bash output
     in a top-level `Tool Output` category.
@@ -449,7 +449,7 @@ line only when scrolling is required.
 - [ ] 7a. **Make Usage categories selectable and add category preview.**
   - Add a fixed-column cursor plus arrow, Page Up/Down, Home, and End navigation
     across category rows; keep scrolling bounded and preserve selection through
-    width/height reflows and `r` refresh where the selected category still exists.
+    width/height reflows.
   - Open the selected category with Enter. Preview its typed constituent
     hierarchy with aligned token estimates and context-window proportions,
     without counting children again. If category-specific raw content is shown,

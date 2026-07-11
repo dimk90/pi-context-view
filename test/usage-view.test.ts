@@ -88,7 +88,7 @@ function stripSgr(text: string): string {
 }
 
 test("UsageView renders the 14x14 map and matching category legend with semantic colors", () => {
-	const view = new UsageView(createTheme(), { compute: () => usage() }, () => {}, () => 30);
+	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
@@ -145,29 +145,24 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const memoryLine = plain.find((line) => line.includes("Memory (AGENTS.md):"));
 	assert.match(memoryLine ?? "", /Memory \(AGENTS\.md\):\s+1\.5k/);
 	const descriptionIndex = plain.findIndex((line) => line.includes("The map estimates next-request usage"));
-	const hintsIndex = plain.findIndex((line) => line.includes("R Refresh"));
+	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
 	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
 	assert.equal(plain[descriptionIndex]?.indexOf("The map"), 2);
-	assert.equal(plain[hintsIndex]?.indexOf("R"), 2);
-	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mR/);
-	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Refresh/);
+	assert.equal(plain[hintsIndex]?.indexOf("Esc"), 2);
+	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mEsc/);
+	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Close/);
 });
 
-test("UsageView refreshes on r, reports unknown post-compaction usage, and closes on Escape", () => {
-	let computations = 0;
+test("UsageView reports unknown post-compaction usage and closes on Escape", () => {
 	let closed = false;
 	const view = new UsageView(
 		createTheme(),
 		{
-			compute: () => {
-				computations++;
-				if (computations === 1) return usage();
-				return {
-					...usage(),
-					reported: { contextWindow: 1_000_000 },
-					categories: [{ id: "user-messages", label: "User Messages", tokens: 50_000 }],
-					estimatedTokens: 50_000,
-				};
+			usage: {
+				...usage(),
+				reported: { contextWindow: 1_000_000 },
+				categories: [{ id: "user-messages", label: "User Messages", tokens: 50_000 }],
+				estimatedTokens: 50_000,
 			},
 		},
 		() => {
@@ -176,14 +171,10 @@ test("UsageView refreshes on r, reports unknown post-compaction usage, and close
 		() => 24,
 	);
 
-	assert.equal(computations, 1);
-	assert.match(stripSgr(view.render(80).join("\n")), /■ User Messages:\s+3k/);
-	view.handleInput("r");
-	assert.equal(computations, 2);
-	const refreshed = stripSgr(view.render(80).join("\n"));
-	assert.match(refreshed, /Usage unknown · 1m token window/);
-	assert.match(refreshed, /■ User Messages:\s+50k/);
-	assert.match(refreshed, /⛶ Free Space:\s+950k/);
+	const rendered = stripSgr(view.render(80).join("\n"));
+	assert.match(rendered, /Usage unknown · 1m token window/);
+	assert.match(rendered, /■ User Messages:\s+50k/);
+	assert.match(rendered, /⛶ Free Space:\s+950k/);
 
 	view.handleInput("\u001b");
 	assert.equal(closed, true);
@@ -208,7 +199,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 		],
 		estimatedTokens: 1_600,
 	};
-	const view = new UsageView(createTheme(), { compute: () => nestedUsage }, () => {}, () => 24);
+	const view = new UsageView(createTheme(), { usage: nestedUsage }, () => {}, () => 24);
 	const initial = view.render(80).map(stripSgr);
 	assert.ok(initial.some((line) => /· tool_1:\s+100\s+0%/.test(line)));
 	assert.ok(!initial.some((line) => line.includes("tool_15:")));
@@ -225,7 +216,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 test("UsageView respects width and height changes", () => {
 	let rows = 30;
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
-	const view = new UsageView(createTheme(), { compute: () => usage(), degradedReason: reason }, () => {}, () => rows);
+	const view = new UsageView(createTheme(), { usage: usage(), degradedReason: reason }, () => {}, () => rows);
 
 	for (const width of [24, 40, 60, 80, 120]) {
 		for (const line of view.render(width)) {

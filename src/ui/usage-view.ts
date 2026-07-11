@@ -1,7 +1,6 @@
 /**
  * Focused `/context usage` view: read-only estimated context composition with
- * a proportional context-window map, pi-reported metadata, and on-demand `r`
- * recomputation.
+ * a proportional context-window map and pi-reported metadata.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
@@ -32,9 +31,9 @@ const PARTIAL_CELL = "◧";
 const COMPACTED_CELL = "▦";
 const FREE_CELL = "⛶";
 
-/** Everything the Usage view renders; `compute` re-runs classification on demand. */
+/** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
-	compute(): ContextUsageSnapshot;
+	readonly usage: ContextUsageSnapshot;
 	readonly degradedReason?: string;
 }
 
@@ -84,7 +83,7 @@ export class UsageView {
 	private readonly input: UsageViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
-	private usage: ContextUsageSnapshot;
+	private readonly usage: ContextUsageSnapshot;
 	private detailOffset = 0;
 	private detailRowCount = 0;
 	private detailViewportRows = 1;
@@ -93,7 +92,7 @@ export class UsageView {
 	private cachedTerminalRows: number | undefined;
 	private cachedLines: string[] | undefined;
 
-	/** Create a view and compute its first on-demand snapshot. */
+	/** Create a view over one precomputed usage snapshot. */
 	public constructor(
 		theme: Theme,
 		input: UsageViewInput,
@@ -104,19 +103,13 @@ export class UsageView {
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
-		this.usage = input.compute();
+		this.usage = input.usage;
 	}
 
-	/** Handle category scrolling, refresh, and close keys; other input is ignored. */
+	/** Handle category scrolling and close keys; other input is ignored. */
 	public handleInput(data: string): void {
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.done(undefined);
-			return;
-		}
-		if (data === "r") {
-			this.usage = this.input.compute();
-			this.detailOffset = 0;
-			this.clearCache();
 			return;
 		}
 		if (matchesKey(data, Key.up)) this.scrollDetails(-1);
@@ -146,7 +139,7 @@ export class UsageView {
 		while (dashboard.length < availableDashboardRows) dashboard.push("");
 		const hints: Array<readonly [string, string]> = [];
 		if (this.detailHasOverflow) hints.push(["↑↓", "Scroll"]);
-		hints.push(["R", "Refresh"], ["Esc", "Close"]);
+		hints.push(["Esc", "Close"]);
 		const tail = [
 			"",
 			this.fit(theme.fg("muted", `${BODY_INDENT}${USAGE_DESCRIPTION}`), width),
