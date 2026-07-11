@@ -149,7 +149,9 @@ export class InjectionsView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const warningLines = this.degradedWarningLines(width);
-		const viewport = calculateViewport(this.rows.length, terminalRows, LIST_FIXED_LINE_COUNT, warningLines.length);
+		const degradedDescriptionLine = this.degradedDescriptionLine(width);
+		const extraLineCount = warningLines.length + (degradedDescriptionLine === undefined ? 0 : 1);
+		const viewport = calculateViewport(this.rows.length, terminalRows, LIST_FIXED_LINE_COUNT, extraLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 		const lines: string[] = [border, ""];
 
@@ -168,6 +170,7 @@ export class InjectionsView {
 		lines.push(this.totalLine(width));
 		lines.push("");
 		lines.push(this.fit(theme.fg("muted", `${BODY_INDENT}${LIST_DESCRIPTION}`), width));
+		if (degradedDescriptionLine !== undefined) lines.push(degradedDescriptionLine);
 		lines.push("");
 		lines.push(
 			this.fit(
@@ -303,14 +306,10 @@ export class InjectionsView {
 		return this.spread(title, status, width);
 	}
 
-	/** The `INITIAL` sub-header, tagged with the capture origin only when degraded. */
+	/** The `INITIAL` section sub-header. */
 	private initialHeaderLine(width: number): string {
-		const theme = this.theme;
-		const label = theme.fg("mdHeading", theme.bold("[INITIAL]"));
-		if (this.input.degradedReason === undefined) return this.fit(label, width);
-		const tag = `${theme.fg("dim", " [")}${theme.fg("error", "Degraded:")}` +
-			`${theme.fg("dim", " pi-native fallback used]")}`;
-		return this.fit(`${label}${tag}`, width);
+		const label = this.theme.fg("mdHeading", this.theme.bold("[INITIAL]"));
+		return this.fit(label, width);
 	}
 
 	private listLines(width: number): string[] {
@@ -358,10 +357,20 @@ export class InjectionsView {
 		);
 	}
 
-	/** Wrapped degraded-capture warning placed after the first sub-header. */
+	/** Wrapped degraded-capture reason placed after the first sub-header. */
 	private degradedWarningLines(width: number): string[] {
 		if (this.input.degradedReason === undefined) return [];
-		return wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${this.input.degradedReason}`), width);
+		const reason = this.theme.fg("warning", `${BODY_INDENT}${this.input.degradedReason}`);
+		return wrapTextWithAnsi(reason, width);
+	}
+
+	/** Degraded-capture indicator shown as part of the dialog description. */
+	private degradedDescriptionLine(width: number): string | undefined {
+		if (this.input.degradedReason === undefined) return undefined;
+		return this.fit(
+			this.theme.fg("warning", `${BODY_INDENT}[Degraded: pi-native fallback used]`),
+			width,
+		);
 	}
 
 	private spread(left: string, right: string, width: number): string {

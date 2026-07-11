@@ -173,20 +173,27 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.match(lines[hintsIndex] ?? "", / · /);
 });
 
-test("InjectionsView tags the INITIAL header only when the capture is degraded", () => {
+test("InjectionsView adds degraded INITIAL capture to the dialog description", () => {
 	const plain = createView(4);
-	const plainInitial = plain.render(80).find((line) => stripSgr(line).includes("INITIAL"));
-	assert.ok(plainInitial !== undefined);
-	assert.equal(stripSgr(plainInitial).trim(), "[INITIAL]");
+	const plainLines = plain.render(80);
+	const plainInitialIndex = plainLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
+	assert.ok(plainInitialIndex >= 0);
+	assert.equal(stripSgr(plainLines[plainInitialIndex] ?? "").trim(), "[INITIAL]");
+	assert.ok(!plainLines.some((line) => stripSgr(line).includes("Degraded:")));
 
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
 	const degraded = createView(4, reason);
-	const degradedInitial = degraded.render(80).find((line) => stripSgr(line).includes("INITIAL"));
-	assert.ok(degradedInitial !== undefined);
-	assert.equal(stripSgr(degradedInitial).trim(), "[INITIAL] [Degraded: pi-native fallback used]");
-	// "Degraded:" is drawn in the error color; the brackets/detail stay dim.
-	assert.match(degradedInitial, /\u001b\[38;2;19;20;21mDegraded:/);
-	assert.match(degradedInitial, /\u001b\[38;2;16;17;18m pi-native fallback used\]/);
+	const degradedLines = degraded.render(80);
+	const degradedInitialIndex = degradedLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
+	assert.ok(degradedInitialIndex >= 0);
+	assert.equal(stripSgr(degradedLines[degradedInitialIndex] ?? "").trim(), "[INITIAL]");
+	assert.match(stripSgr(degradedLines[degradedInitialIndex + 1] ?? ""), /Silent probe unavailable/);
+
+	const descriptionIndex = degradedLines.findIndex((line) => stripSgr(line).includes("Initial injections and estimated"));
+	assert.ok(descriptionIndex >= 0);
+	const degradedDescription = degradedLines[descriptionIndex + 1] ?? "";
+	assert.equal(stripSgr(degradedDescription), "  [Degraded: pi-native fallback used]");
+	assert.match(degradedDescription, /\u001b\[38;2;170;187;204m  \[Degraded: pi-native fallback used\]/);
 });
 
 test("InjectionsView keeps every rendered line within the width", () => {
