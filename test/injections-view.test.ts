@@ -5,7 +5,7 @@ import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import type { InitialSnapshot, InjectionGroup, InjectionItem } from "../src/model.ts";
-import { InjectionsView, type RuntimeToggle } from "../src/ui/injections-view.ts";
+import { InjectionsView } from "../src/ui/injections-view.ts";
 
 const FG_COLORS: ThemeColor[] = [
 	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text",
@@ -71,18 +71,6 @@ function snapshot(itemsPerGroup: number): InitialSnapshot {
 	};
 }
 
-function createRuntime(): RuntimeToggle & { enabled: boolean } {
-	return {
-		enabled: false,
-		isEnabled() {
-			return this.enabled;
-		},
-		setEnabled(enabled: boolean) {
-			this.enabled = enabled;
-		},
-	};
-}
-
 function createView(
 	itemsPerGroup = 8,
 	degradedReason?: string,
@@ -90,7 +78,7 @@ function createView(
 ): InjectionsView {
 	return new InjectionsView(
 		createTheme(),
-		{ snapshot: snapshot(itemsPerGroup), degradedReason, runtime: createRuntime() },
+		{ snapshot: snapshot(itemsPerGroup), degradedReason },
 		() => {},
 		getTerminalRows,
 	);
@@ -111,24 +99,21 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 		groups: [piGroup],
 		totalTokens: piGroup.totalTokens,
 	};
-	const view = new InjectionsView(createTheme(), { snapshot: styledSnapshot, runtime: createRuntime() }, () => {});
+	const view = new InjectionsView(createTheme(), { snapshot: styledSnapshot }, () => {});
 
 	let lines = view.render(80);
 	assert.equal(lines[1], "");
 	assert.equal(lines.at(-2), "");
 	const headerIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections"));
-	const initialIndex = lines.findIndex((line) => stripSgr(line).trim() === "[INITIAL]");
-	assert.ok(headerIndex >= 0 && initialIndex === headerIndex + 2);
+	const tabIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections · [INITIAL]  RUNTIME"));
+	assert.ok(headerIndex >= 0 && tabIndex === headerIndex);
 	assert.equal(lines[headerIndex + 1], "");
 	assert.equal(stripSgr(lines[headerIndex] ?? "").indexOf("Context Injections"), 0);
-	assert.equal(stripSgr(lines[initialIndex] ?? "").indexOf("[INITIAL]"), 0);
-	// The INITIAL sub-header uses the theme's mdHeading color.
-	assert.match(lines[initialIndex] ?? "", /\u001b\[38;2;22;23;24m\[INITIAL\]/);
-	assert.match(stripSgr(lines[headerIndex] ?? ""), /Runtime Logging: Off/);
-	// "Runtime Logging:" is dim, "Off" is muted.
-	assert.match(lines[headerIndex] ?? "", /\u001b\[38;2;16;17;18mRuntime Logging:/);
-	assert.match(lines[headerIndex] ?? "", /\u001b\[38;2;7;8;9mOff/);
-	assert.ok(!lines.some((line) => stripSgr(line).includes("RUNTIME")));
+	assert.equal(stripSgr(lines[tabIndex] ?? ""), "Context Injections · [INITIAL]  RUNTIME");
+	// Initial is active in mdHeading; Runtime is dim and inactive.
+	assert.match(lines[tabIndex] ?? "", /\u001b\[38;2;22;23;24m\[INITIAL\]/);
+	assert.match(lines[tabIndex] ?? "", /\u001b\[38;2;16;17;18mRUNTIME/);
+	assert.ok(!lines.some((line) => stripSgr(line).includes("Runtime Logging:")));
 	const selectedGroup = lines.find((line) => stripSgr(line).includes("→ pi"));
 	assert.ok(selectedGroup !== undefined);
 	assert.equal(stripSgr(selectedGroup).indexOf("→"), 0);
@@ -142,14 +127,14 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.match(childLine ?? "", /\u001b\[38;2;16;17;18mchild/);
 	assert.match(childLine ?? "", /\u001b\[38;2;7;8;9m20/);
 
-	// TOTAL is a fixed summary outside the scroll area, one blank row below the
-	// sections; it sums the whole snapshot (nested children are not double-counted).
+	// TOTAL is the final table row and sums the snapshot without double-counting children.
 	const totalRowIndex = lines.findIndex((line) => stripSgr(line).includes("TOTAL"));
 	const descIndex = lines.findIndex((line) => stripSgr(line).includes("Injections into the model context"));
 	assert.ok(totalRowIndex >= 0 && totalRowIndex < descIndex);
 	assert.equal(lines[totalRowIndex - 1], "");
 	assert.equal(stripSgr(lines[totalRowIndex] ?? "").indexOf("TOTAL"), 2);
 	assert.match(stripSgr(lines[totalRowIndex] ?? ""), /TOTAL\s+50/);
+	assert.doesNotMatch(stripSgr(lines[totalRowIndex] ?? ""), /→/);
 
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
@@ -170,7 +155,9 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m  Injections into/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18m↑↓/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Navigate/);
+	assert.doesNotMatch(stripSgr(lines[hintsIndex] ?? ""), /Switch Tabs|←→\/Tab/);
 	assert.match(lines[hintsIndex] ?? "", / · /);
+	assert.doesNotMatch(stripSgr(lines[hintsIndex] ?? ""), /Toggle Runtime|\bR\b/);
 });
 
 test("InjectionsView adds degraded INITIAL capture to the dialog description", () => {
@@ -178,7 +165,7 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	const plainLines = plain.render(80);
 	const plainInitialIndex = plainLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
 	assert.ok(plainInitialIndex >= 0);
-	assert.equal(stripSgr(plainLines[plainInitialIndex] ?? "").trim(), "[INITIAL]");
+	assert.equal(stripSgr(plainLines[plainInitialIndex] ?? ""), "Context Injections · [INITIAL]  RUNTIME");
 	assert.ok(!plainLines.some((line) => stripSgr(line).includes("Degraded:")));
 
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
@@ -186,8 +173,9 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	const degradedLines = degraded.render(80);
 	const degradedInitialIndex = degradedLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
 	assert.ok(degradedInitialIndex >= 0);
-	assert.equal(stripSgr(degradedLines[degradedInitialIndex] ?? "").trim(), "[INITIAL]");
-	assert.match(stripSgr(degradedLines[degradedInitialIndex + 1] ?? ""), /Silent probe unavailable/);
+	assert.equal(stripSgr(degradedLines[degradedInitialIndex] ?? ""), "Context Injections · [INITIAL]  RUNTIME");
+	assert.equal(degradedLines[degradedInitialIndex + 1], "");
+	assert.match(stripSgr(degradedLines[degradedInitialIndex + 2] ?? ""), /Silent probe unavailable/);
 
 	const descriptionIndex = degradedLines.findIndex((line) =>
 		stripSgr(line).includes("Injections into the model context"),
@@ -196,6 +184,17 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	const degradedDescription = degradedLines[descriptionIndex + 1] ?? "";
 	assert.equal(stripSgr(degradedDescription), "  [Degraded: pi-native fallback used]");
 	assert.match(degradedDescription, /\u001b\[38;2;170;187;204m  \[Degraded: pi-native fallback used\]/);
+});
+
+test("InjectionsView keeps Runtime inactive when tab-switch keys are pressed", () => {
+	const view = createView(4);
+	const initial = view.render(80);
+
+	for (const key of ["\u001b[C", "\u001b[D", "\t", "\u001b[Z"]) {
+		view.handleInput(key);
+		assert.equal(view.render(80), initial);
+	}
+	assert.ok(initial.some((line) => stripSgr(line).includes("Context Injections · [INITIAL]  RUNTIME")));
 });
 
 test("InjectionsView keeps every rendered line within the width", () => {
@@ -241,7 +240,7 @@ test("InjectionsView reflows on height-only resize and bounds very short output"
 
 test("InjectionsView preview opens on items, scrolls, and returns to the same row", () => {
 	let closed = false;
-	const view = new InjectionsView(createTheme(), { snapshot: snapshot(8), runtime: createRuntime() }, () => {
+	const view = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => {
 		closed = true;
 	});
 
@@ -286,17 +285,17 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	assert.match(view.render(80).join("\n"), /preview line 0 /);
 });
 
-test("InjectionsView navigation scrolls and Escape closes", () => {
+test("InjectionsView navigation scrolls the non-selectable total and Escape closes", () => {
 	let closed = false;
-	const runtime = createRuntime();
-	const view = new InjectionsView(createTheme(), { snapshot: snapshot(30), runtime }, () => {
+	const view = new InjectionsView(createTheme(), { snapshot: snapshot(30) }, () => {
 		closed = true;
 	});
 
 	const initialLines = view.render(80);
 	const scrollIndicator = initialLines.find((line) => /\(1\/\d+\)/.test(stripSgr(line)));
 	assert.ok(scrollIndicator !== undefined);
-	assert.match(scrollIndicator, /\u001b\[38;2;16;17;18m  \(1\/\d+\)/);
+	assert.match(stripSgr(scrollIndicator), /\(1\/62\)/);
+	assert.match(scrollIndicator, /\u001b\[38;2;16;17;18m  \(1\/62\)/);
 	const before = initialLines.join("\n");
 	view.handleInput("\u001b[B");
 	const afterDown = view.render(80).join("\n");
@@ -306,14 +305,12 @@ test("InjectionsView navigation scrolls and Escape closes", () => {
 	const atEnd = view.render(80).join("\n");
 	assert.match(stripSgr(atEnd), /→   ext-29/);
 	assert.match(atEnd, /TOTAL/);
+	assert.doesNotMatch(stripSgr(atEnd), /→ TOTAL/);
 
+	view.handleInput("\u001b[B");
+	assert.equal(view.render(80).join("\n"), atEnd);
 	view.handleInput("r");
-	assert.equal(runtime.enabled, true);
-	const enabledLines = view.render(80);
-	const enabledHeader = enabledLines.find((line) => stripSgr(line).includes("Runtime Logging: On"));
-	assert.ok(enabledHeader !== undefined);
-	// "On" switches to accent.
-	assert.match(enabledHeader, /\u001b\[38;2;1;2;3mOn/);
+	assert.equal(view.render(80).join("\n"), atEnd);
 
 	view.handleInput("\u001b");
 	assert.equal(closed, true);

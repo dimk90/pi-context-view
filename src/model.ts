@@ -10,8 +10,8 @@ export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
 /** What produced the captured snapshot. */
 export type CaptureOrigin = "real-turn" | "synthetic-probe";
 
-/** Which lifecycle phase an injection belongs to. */
-export type InjectionPhase = "initial" | "runtime";
+/** The frozen lifecycle phase represented by the v0.2.0 injection model. */
+export type InjectionPhase = "initial";
 
 /** What kind of context data an injection item is. */
 export type InjectionKind =

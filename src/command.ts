@@ -12,13 +12,11 @@ import {
 } from "./capture.ts";
 import type { InitialSnapshot } from "./model.ts";
 
-const COMMAND_USAGE = "Usage: /context [usage|injections|runtime on|runtime off]";
+const COMMAND_USAGE = "Usage: /context [usage|injections]";
 const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
-	{ value: "injections", label: "injections", description: "Explore initial and runtime injections" },
-	{ value: "runtime on", label: "runtime on", description: "Enable future runtime injection logging" },
-	{ value: "runtime off", label: "runtime off", description: "Disable runtime injection logging" },
+	{ value: "injections", label: "injections", description: "Explore initial context injections" },
 ] satisfies AutocompleteItem[];
 
 /** The focused view a `/context` invocation requests. */
@@ -27,7 +25,6 @@ export type ContextView = "usage" | "injections";
 /** Parsed `/context` argument grammar. */
 export type ContextCommand =
 	| { readonly type: "view"; readonly view: ContextView }
-	| { readonly type: "runtime"; readonly enabled: boolean }
 	| { readonly type: "invalid"; readonly message: string };
 
 /** Resolved Initial capture, possibly degraded to the pi-native fallback. */
@@ -47,9 +44,6 @@ export function parseContextCommand(argumentsText: string): ContextCommand {
 	}
 	if (words.length === 1 && words[0] === "injections") {
 		return { type: "view", view: "injections" };
-	}
-	if (words.length === 2 && words[0] === "runtime" && (words[1] === "on" || words[1] === "off")) {
-		return { type: "runtime", enabled: words[1] === "on" };
 	}
 	return { type: "invalid", message: COMMAND_USAGE };
 }

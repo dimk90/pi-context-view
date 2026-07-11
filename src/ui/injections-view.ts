@@ -1,6 +1,6 @@
 /**
- * Focused `/context injections` view: hierarchical Initial snapshot rows,
- * capture-origin metadata, and the Runtime logging toggle.
+ * Focused `/context injections` view: hierarchical Initial snapshot rows and
+ * a disabled Runtime roadmap label.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
@@ -25,21 +25,14 @@ import {
 	spreadLine,
 } from "./layout.ts";
 
-const LIST_FIXED_LINE_COUNT = 13;
+const LIST_FIXED_LINE_COUNT = 10;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const LIST_DESCRIPTION = "Injections into the model context for the first turn, with token estimates.";
-
-/** Runtime-logging state owned by the extension factory closure. */
-export interface RuntimeToggle {
-	isEnabled(): boolean;
-	setEnabled(enabled: boolean): void;
-}
 
 /** Everything the Injections view renders. */
 export interface InjectionsViewInput {
 	readonly snapshot: InitialSnapshot;
 	readonly degradedReason?: string;
-	readonly runtime: RuntimeToggle;
 }
 
 /** Open the Injections view as a fullscreen overlay. */
@@ -94,7 +87,7 @@ export class InjectionsView {
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
 		this.rows = buildInjectionRows(input.snapshot);
-		this.navigator = new ListNavigator(this.rows.length, 1);
+		this.navigator = new ListNavigator(this.rows.length, 1, this.rows.length - 2);
 		this.itemsById = collectItemsById(input.snapshot);
 	}
 
@@ -105,11 +98,6 @@ export class InjectionsView {
 		}
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.done(undefined);
-			return;
-		}
-		if (data === "r") {
-			this.input.runtime.setEnabled(!this.input.runtime.isEnabled());
-			this.clearCache();
 			return;
 		}
 		if (matchesKey(data, Key.enter)) {
@@ -145,7 +133,6 @@ export class InjectionsView {
 			this.cachedLines = lines;
 			return lines;
 		}
-
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const warningLines = this.degradedWarningLines(width);
@@ -157,17 +144,12 @@ export class InjectionsView {
 
 		lines.push(this.headerLine(width));
 		lines.push("");
-		lines.push(this.initialHeaderLine(width));
 		lines.push(...warningLines);
 		const listLines = this.listLines(width);
 		lines.push(...listLines);
 		if (viewport.showScroll) lines.push(this.scrollLine(width));
-		// Pad so the fixed TOTAL summary sits at the bottom of the scroll area.
 		const paddingCount = viewport.visibleCount - listLines.length;
 		for (let pad = 0; pad < paddingCount; pad++) lines.push("");
-		// TOTAL is outside the scroll area and separated from the sections above.
-		lines.push("");
-		lines.push(this.totalLine(width));
 		lines.push("");
 		lines.push(this.fit(theme.fg("muted", `${BODY_INDENT}${LIST_DESCRIPTION}`), width));
 		if (degradedDescriptionLine !== undefined) lines.push(degradedDescriptionLine);
@@ -177,7 +159,6 @@ export class InjectionsView {
 				hintRow(this.theme, [
 					["↑↓", "Navigate"],
 					["Enter", "Preview"],
-					["R", "Toggle Runtime Logging"],
 					["Esc", "Close"],
 				]),
 				width,
@@ -300,16 +281,10 @@ export class InjectionsView {
 	private headerLine(width: number): string {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold("Context Injections"));
-		const enabled = this.input.runtime.isEnabled();
-		const state = enabled ? theme.fg("accent", "On") : theme.fg("muted", "Off");
-		const status = `${theme.fg("dim", "Runtime Logging:")} ${state} `;
-		return this.spread(title, status, width);
-	}
-
-	/** The `INITIAL` section sub-header. */
-	private initialHeaderLine(width: number): string {
-		const label = this.theme.fg("mdHeading", this.theme.bold("[INITIAL]"));
-		return this.fit(label, width);
+		const separator = theme.fg("dim", " · ");
+		const initial = theme.fg("mdHeading", theme.bold("[INITIAL]"));
+		const runtime = theme.fg("dim", "RUNTIME");
+		return this.fit(`${title}${separator}${initial}  ${runtime}`, width);
 	}
 
 	private listLines(width: number): string[] {
@@ -320,12 +295,18 @@ export class InjectionsView {
 		for (let index = start; index < end; index++) {
 			const row = this.rows[index];
 			if (row === undefined) break;
-			const selected = index === this.navigator.selected;
+			if (row.kind === "separator") {
+				lines.push("");
+				continue;
+			}
+			const selected = row.kind !== "total" && index === this.navigator.selected;
 			// The cursor stays in one fixed column; hierarchy indents after it.
 			const marker = selected ? theme.fg("accent", "→ ") : BODY_INDENT;
 			const indent = BODY_INDENT.repeat(row.depth);
-			const valueColor = selected ? "accent" : "muted";
-			const tokens = theme.fg(valueColor, row.tokens.toLocaleString("en-US"));
+			const value = row.tokens.toLocaleString("en-US");
+			const tokens = row.kind === "total"
+				? theme.bold(theme.fg("text", value))
+				: theme.fg(selected ? "accent" : "muted", value);
 			const labelWidth = Math.max(8, width - indent.length - visibleWidth(tokens) - 6);
 			const label = truncateToWidth(row.label, labelWidth, "…");
 			lines.push(this.spread(`${marker}${indent}${this.rowLabel(row, label, selected)}`, `${tokens}  `, width));
@@ -336,28 +317,22 @@ export class InjectionsView {
 	private rowLabel(row: InjectionRow, label: string, selected: boolean): string {
 		const theme = this.theme;
 		if (selected) return theme.fg("accent", label);
-		if (row.kind === "group") return theme.bold(theme.fg("text", label));
+		if (row.kind === "group" || row.kind === "total") return theme.bold(theme.fg("text", label));
 		return theme.fg(row.depth > 1 ? "dim" : "muted", label);
-	}
-
-	/** Fixed TOTAL summary across all currently rendered sections. */
-	private totalLine(width: number): string {
-		const theme = this.theme;
-		const label = theme.bold(theme.fg("text", "TOTAL"));
-		const total = this.input.snapshot.totalTokens.toLocaleString("en-US");
-		const tokens = theme.bold(theme.fg("text", total));
-		return this.spread(`${BODY_INDENT}${label}`, `${tokens}  `, width);
 	}
 
 	private scrollLine(width: number): string {
 		if (!this.navigator.hasOverflow) return this.fit("", width);
 		return this.fit(
-			this.theme.fg("dim", `${BODY_INDENT}(${this.navigator.selected + 1}/${this.rows.length})`),
+			this.theme.fg(
+				"dim",
+				`${BODY_INDENT}(${this.navigator.selectedOrdinal + 1}/${this.navigator.selectableCount})`,
+			),
 			width,
 		);
 	}
 
-	/** Wrapped degraded-capture reason placed after the first sub-header. */
+	/** Wrapped degraded-capture reason placed below the dialog header. */
 	private degradedWarningLines(width: number): string[] {
 		if (this.input.degradedReason === undefined) return [];
 		const reason = this.theme.fg("warning", `${BODY_INDENT}${this.input.degradedReason}`);

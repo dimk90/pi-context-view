@@ -20,13 +20,6 @@ import { computeUsage, toReportedUsage } from "./usage.ts";
 export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
 	const probe = new SilentProbeState();
-	let runtimeEnabled = false;
-	const runtime = {
-		isEnabled: () => runtimeEnabled,
-		setEnabled: (enabled: boolean) => {
-			runtimeEnabled = enabled;
-		},
-	};
 
 	pi.on("input", (event) => {
 		probe.observeInput(event.source, event.text);
@@ -74,7 +67,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("context", {
 		// RegisteredCommand has no argumentHint; mimic pi's `<hint> — <description>` style.
-		description: "[usage|injections|runtime on|off] — Inspect context usage or injections",
+		description: "[usage|injections] — Inspect context usage or injections",
 		getArgumentCompletions: getContextArgumentCompletions,
 		handler: async (args, ctx) => {
 			const command = parseContextCommand(args);
@@ -86,19 +79,11 @@ export default function (pi: ExtensionAPI) {
 				reportCommandMessage(ctx, "/context requires TUI mode.", "warning");
 				return;
 			}
-			if (command.type === "runtime") {
-				runtime.setEnabled(command.enabled);
-				const state = command.enabled ? "enabled" : "disabled";
-				reportCommandMessage(ctx, `Runtime injection logging ${state}.`, "info");
-				return;
-			}
-
 			const initial = await resolveInitialCapture(pi, capture, probe, ctx);
 			if (command.view === "injections") {
 				await showInjectionsView(ctx, {
 					snapshot: initial.snapshot,
 					degradedReason: initial.degradedReason,
-					runtime,
 				});
 				return;
 			}

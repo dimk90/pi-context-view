@@ -16,11 +16,12 @@ Add a `/context` slash command to pi with two focused surfaces:
 
 Release scope:
 
-- **v0.2.0** — Usage and Initial are functional. The Injections view shows
-  `INITIAL` and `RUNTIME` tabs, but `RUNTIME` is visibly disabled. No Runtime
-  status, toggle, command, completion, section, or mutation state is exposed.
-- **v0.3.0** — enable the Runtime tab and bounded mutation logging, restore
-  `/context runtime on|off`, and compact attached skill expansions in User
+- **v0.2.0** — Usage and Initial are functional. The Injections header shows
+  active `INITIAL` and dim disabled `RUNTIME` labels. No Runtime status, toggle,
+  command, completion, mutation data, logging state, focus, or switching is
+  exposed.
+- **v0.3.0** — enable Runtime with bounded mutation logging,
+  restore `/context runtime on|off`, and compact attached skill expansions in User
   Message previews into skill-name badges.
 
 The old `--context-inspect` print-and-exit workflow is superseded. See
@@ -32,9 +33,8 @@ The old `--context-inspect` print-and-exit workflow is superseded. See
   required; it does not preserve the old plain-table workflow.
 - `/context` defaults to `/context usage`. Usage and Injections remain separate
   focused fullscreen overlays; only Injections has a tab bar.
-- In v0.2.0, `INITIAL` is the active Injections tab and `RUNTIME` is a dim,
-  disabled roadmap tab. Because only one tab is available, there is no tab
-  switching keybinding yet.
+- In v0.2.0, `INITIAL` is active and `RUNTIME` is a dim disabled roadmap label.
+  Runtime cannot receive focus, and there is no tab-switching keybinding.
 - Unknown arguments show concise command usage. v0.2.0 argument completions
   offer only `usage` and `injections`; v0.3.0 restores `runtime on|off`.
 - Initial means the first context observable by this extension instance. It
@@ -110,9 +110,8 @@ v0.2.0 Injections view — `/context injections`:
 ```text
 ────────────────────────────────────────────────────────────────────────────────
 
-Context Injections
+Context Injections · [INITIAL]  RUNTIME
 
-[INITIAL]   RUNTIME
 → pi                                                                     3,000
     Base Prompt                                                            652
     Built-in Tools (4)                                                     640
@@ -133,6 +132,7 @@ Context Injections
     web_search                                                           1,414
     web_contents                                                            96
   extensions (aggregate)                                                    85
+
   TOTAL                                                                  4,912
   (1/22)
 
@@ -144,21 +144,26 @@ Context Injections
 ```
 
 `INITIAL` uses the active-tab treatment. `RUNTIME` is dim and cannot receive
-focus in v0.2.0; it is the only Runtime-related UI retained for roadmap
-discoverability. `TOTAL` is the final non-selectable row in the Initial table,
-uses only the frozen Initial snapshot, participates in table scrolling, and is
-skipped by cursor navigation and the selectable-row counter.
+focus in v0.2.0; the labels are not switchable. `TOTAL` is preceded by one empty
+table row and is the final non-selectable row
+in the Initial table. It uses only the frozen Initial snapshot, participates in
+table scrolling, and is skipped by cursor navigation and the selectable-row
+counter.
 
-When capture is degraded (no model/auth or a failed probe), the active
-`INITIAL` tab is tagged — `Degraded:` in the error color — and the specific
-reason wraps directly below the tab bar:
+When capture is degraded (no model/auth or a failed probe), the specific reason
+wraps below the dialog header and a `Degraded:` indicator appears with the
+dialog description:
 
 ```text
-[INITIAL] [Degraded: pi-native fallback used]   RUNTIME
+Context Injections · [INITIAL]  RUNTIME
+
   Silent probe unavailable: context-noauth has no configured authentication.
   Extension additions were not observed.
 → pi                                                                     3,000
 ...
+
+  Injections into the model context for the first turn, with token estimates.
+  [Degraded: pi-native fallback used]
 ```
 
 Enter on an item opens a scrolling raw-text preview:
@@ -371,9 +376,9 @@ show concise usage rather than silently choosing a view. The current placeholder
 v0.3.0 restores them when Runtime logging is functional.
 
 The Usage and Injections views are independent. Usage has no tabs. Injections
-has `INITIAL | RUNTIME`, but only Initial is focusable in v0.2.0, so no tab
-state or switching keybinding is needed yet. Both functional surfaces share a
-small state machine (`list | preview`), a selected row, and scroll offsets.
+shows `INITIAL | RUNTIME`, but only Initial is focusable in v0.2.0, so there is
+no tab state or switching keybinding. Both functional surfaces share a small
+state machine (`list | preview`), a selected row, and scroll offsets.
 Up/Down/PgUp/PgDn/Home/End navigate; Enter opens a scrollable preview; Escape
 returns from preview to list, then closes the view. The Usage preview shows the
 selected category's actual content as a chronological entry stream (bracketed
@@ -384,15 +389,16 @@ Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and proper theme invalidation. Both focused views use fullscreen
 overlays at all terminal widths; content must resize rather than clip.
 
-The v0.2.0 Injections header has no Runtime logging status. Its tab bar is the
-first content row: active `INITIAL` in `mdHeading`, disabled
-`RUNTIME` in `dim`. The hint row has no Runtime toggle. v0.3.0 may add
+The v0.2.0 Injections header has no Runtime logging status. It renders
+`Context Injections · [INITIAL]  RUNTIME`, with `INITIAL` active in `mdHeading`
+and disabled `RUNTIME` in `dim`. The hint row has no tab switching or Runtime
+toggle. v0.3.0 may add
 status/toggle affordances only when the Runtime implementation lands.
 
 Match pi's native selector styling (`/settings`, `/model`): one blank padding
-row inside both borders and after the dialog header; keep exactly one blank row
-between the dialog header and the Injections tab bar. Use an accent title, an
-active `mdHeading` tab, a dim disabled tab, a `→` cursor, and an accent selected
+row inside both borders and after the dialog header. Put the Injections labels
+beside the accent title, separated by a dim ` · `. Use an active `mdHeading`
+label, a dim disabled label, a `→` cursor, and an accent selected
 label; keep the cursor in a fixed column with hierarchy indentation after it;
 use bright `text` for main rows, `muted` for sub-items and values, and `dim` for
 sub-sub-items. Selection
@@ -504,19 +510,18 @@ line only when scrolling is required.
   - Cover per-block splitting, chronological flattening, entry caps,
     sanitization, empty categories, Tool Output children, overflow scrolling,
     narrow widths, and short terminal heights in tests.
-- [ ] 8. **Finalize the v0.2.0 Injections tabs and scope.**
-  - Add the `INITIAL | RUNTIME` tab bar. Keep Initial active and fully
-    functional; render `RUNTIME` dim and disabled, with no focus or
+- [x] 8. **Finalize the v0.2.0 Injections tabs and scope.**
+  - Put `INITIAL | RUNTIME` in the dialog header after a ` · ` separator. Keep
+    Initial fully functional; render Runtime dim and disabled with no focus or
     switching keybinding.
   - Remove the temporary Runtime state, header status, `r` hint/handler,
-    `/context runtime on|off` command path, and Runtime completions. The
-    disabled roadmap tab is the only Runtime-related UI in v0.2.0.
-  - Move `TOTAL` into the Initial table as its final non-selectable row. Count
-    only Initial snapshot contributions, include it in table scrolling, and
-    skip it during cursor navigation, the selectable-row counter, and Enter
-    preview.
-  - Update view/model/command tests for disabled-tab rendering, Runtime surface
-    removal, Initial-only totals, overflow, and narrow/short layouts.
+    `/context runtime on|off` command path, and Runtime completions.
+  - Move `TOTAL` into the Initial table as its final non-selectable row, with
+    one empty row before it. Count only Initial snapshot contributions, include
+    both rows in table scrolling, and skip them during cursor navigation, the
+    selectable-row counter, and Enter preview.
+  - Update view/model/command tests for disabled Runtime rendering, Runtime
+    surface removal, Initial-only totals, overflow, and narrow/short layouts.
 - [ ] 9. **Polish lifecycle and edge cases for v0.2.0.**
   - Exercise streaming command invocation, probe timeout/no model/no auth,
     zero other extensions, compaction, tree navigation, reload/new/resume/fork,
@@ -535,7 +540,7 @@ line only when scrolling is required.
     extension observes, every shipped slash-command form, CLI install/load/test
     commands, Usage as the default, Initial preview behavior and privacy, and
     why estimates can differ from provider accounting.
-  - State that Runtime is a disabled v0.3.0 roadmap tab; do not document
+  - State that Runtime is a disabled v0.3.0 roadmap label; do not document
     Runtime logging, bounds, status, toggles, or commands as shipped behavior.
   - Follow pi package guidance: include the `pi-package` keyword, document
     `pi install`, `pi list`, temporary `pi -e`, trust implications, and add
@@ -574,8 +579,8 @@ line only when scrolling is required.
 ### v0.3.0
 
 - [ ] 15. **Add bounded opt-in Runtime mutation logging.**
-  - Enable the Runtime tab and add its navigation/state only with functional
-    logging; restore `/context runtime on|off` and argument completions.
+  - Enable the Runtime tab with functional logging state; restore
+    `/context runtime on|off` and argument completions.
   - Diff provider-bound states and retain only hidden prompt-component changes,
     active-tool/schema changes, transient context-only messages, and branch
     message mutations made by `context` handlers.
@@ -620,10 +625,11 @@ and dynamic date/working-directory footer are excluded.
 - extensions (unattributable)
   - chained prompt additions aggregate
 
-`TOTAL` is the final non-selectable row in the scrollable Initial table. It
-sums only the frozen Initial snapshot, uses the table's label/value alignment,
-and is skipped by cursor navigation, the selectable-row counter, and Enter
-preview. Runtime gets independent totals in v0.3.0 rather than changing this
+`TOTAL` is the final non-selectable row in the scrollable Initial table, with
+one empty row immediately before it. It sums only the frozen Initial snapshot,
+uses the table's label/value alignment, and is skipped by cursor navigation,
+the selectable-row counter, and Enter preview. Runtime gets independent totals
+in v0.3.0 rather than changing this
 row.
 
 ## Verification invariants
@@ -636,8 +642,8 @@ row.
 - Final prompt capture is independent of inspector/injector load order.
 - Probe suppression never hides a genuine user abort.
 - Synthetic probe messages never reach later provider contexts or Usage.
-- No Runtime state, mutation handlers, commands, completions, status, or toggle
-  ships; only the disabled `RUNTIME` tab label is visible.
+- No Runtime logging state, mutation handlers, commands, completions, status,
+  toggle, focus, or switching ships; only the dim `RUNTIME` label is visible.
 - The Initial `TOTAL` row counts Initial only and is not selectable.
 - Usage-map occupancy and legend colors match the estimated category model;
   pi-reported usage remains separately labeled metadata.

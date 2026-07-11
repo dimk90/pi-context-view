@@ -41,7 +41,7 @@ function snapshot(): InitialSnapshot {
 	};
 }
 
-test("buildInjectionRows flattens groups and items without a total row", () => {
+test("buildInjectionRows flattens groups and separates the Initial total", () => {
 	const rows = buildInjectionRows(snapshot());
 
 	assert.deepEqual(
@@ -55,11 +55,14 @@ test("buildInjectionRows flattens groups and items without a total row", () => {
 			["item", "skills", 1],
 			["group", "npm:web", 0],
 			["item", "web_search", 1],
+			["separator", "", 0],
+			["total", "TOTAL", 0],
 		],
 	);
 	const basePromptRow = rows[1];
 	assert.equal(basePromptRow?.kind, "item");
 	if (basePromptRow?.kind === "item") assert.equal(basePromptRow.itemId, "base-prompt");
+	assert.equal(rows.at(-1)?.tokens, 230);
 });
 
 test("collectItemsById indexes every snapshot item including children", () => {
@@ -126,4 +129,16 @@ test("ListNavigator keeps the selection inside the scroll window", () => {
 	assert.equal(navigator.offset, 0);
 	assert.equal(navigator.windowSize, 10);
 	assert.equal(navigator.hasOverflow, false);
+});
+
+test("ListNavigator skips non-selectable trailing rows while scrolling them into view", () => {
+	const navigator = new ListNavigator(7, 3, 5);
+
+	assert.equal(navigator.selectableCount, 5);
+	assert.equal(navigator.selectedOrdinal, 0);
+	assert.equal(navigator.moveTo(5), true);
+	assert.equal(navigator.selected, 4);
+	assert.equal(navigator.selectedOrdinal, 4);
+	assert.equal(navigator.offset, 4);
+	assert.equal(navigator.moveBy(1), false);
 });

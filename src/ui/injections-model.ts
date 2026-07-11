@@ -26,6 +26,18 @@ export type InjectionRow =
 		readonly depth: 1 | 2;
 		/** Stable preview target id from the snapshot. */
 		readonly itemId: string;
+	}
+	| {
+		readonly kind: "separator";
+		readonly label: "";
+		readonly tokens: 0;
+		readonly depth: 0;
+	}
+	| {
+		readonly kind: "total";
+		readonly label: "TOTAL";
+		readonly tokens: number;
+		readonly depth: 0;
 	};
 
 /** Index snapshot items (including sub-items) by id for preview lookup. */
@@ -52,10 +64,7 @@ export function normalizePreviewText(text: string): string {
 		.replace(TERMINAL_CONTROL_CHARACTER, "");
 }
 
-/**
- * Flatten snapshot groups into scrollable display rows. The TOTAL summary is
- * rendered separately, outside the scroll area, by the view.
- */
+/** Flatten snapshot groups into rows separated from the non-selectable Initial total. */
 export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 	const rows: InjectionRow[] = [];
 	for (const group of snapshot.groups) {
@@ -84,26 +93,38 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 			}
 		}
 	}
+	rows.push({ kind: "separator", label: "", tokens: 0, depth: 0 });
+	rows.push({ kind: "total", label: "TOTAL", tokens: snapshot.totalTokens, depth: 0 });
 	return rows;
 }
 
 /**
- * Selection and scroll-window state over a fixed row list. The window always
- * contains the selected row and never extends past either end.
+ * Selection and scroll-window state over fixed rows. A trailing summary can
+ * participate in scrolling without being included in selection navigation.
  */
 export class ListNavigator {
 	private readonly rowCount: number;
+	private readonly selectableRowCount: number;
 	private visibleCount: number;
 	private selectedIndex = 0;
 	private scrollOffset = 0;
 
-	public constructor(rowCount: number, visibleCount: number) {
+	public constructor(rowCount: number, visibleCount: number, selectableRowCount = rowCount) {
 		this.rowCount = Math.max(0, rowCount);
+		this.selectableRowCount = Math.min(this.rowCount, Math.max(0, selectableRowCount));
 		this.visibleCount = Math.max(1, visibleCount);
 	}
 
 	public get selected(): number {
 		return this.selectedIndex;
+	}
+
+	public get selectedOrdinal(): number {
+		return this.selectedIndex;
+	}
+
+	public get selectableCount(): number {
+		return this.selectableRowCount;
 	}
 
 	public get offset(): number {
@@ -128,8 +149,8 @@ export class ListNavigator {
 	}
 
 	public moveTo(index: number): boolean {
-		if (this.rowCount === 0) return false;
-		const next = Math.min(this.rowCount - 1, Math.max(0, index));
+		if (this.selectableRowCount === 0) return false;
+		const next = Math.min(this.selectableRowCount - 1, Math.max(0, index));
 		if (next === this.selectedIndex) return false;
 		this.selectedIndex = next;
 		this.ensureVisible();
@@ -146,6 +167,11 @@ export class ListNavigator {
 			this.scrollOffset = this.selectedIndex;
 		} else if (this.selectedIndex >= this.scrollOffset + this.visibleCount) {
 			this.scrollOffset = this.selectedIndex - this.visibleCount + 1;
+		}
+
+		const trailingRows = this.rowCount - this.selectedIndex - 1;
+		if (this.selectedIndex === this.selectableRowCount - 1 && trailingRows < this.visibleCount) {
+			this.scrollOffset = maxOffset;
 		}
 		this.scrollOffset = Math.min(maxOffset, Math.max(0, this.scrollOffset));
 	}
