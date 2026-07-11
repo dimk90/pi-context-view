@@ -145,7 +145,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	// TOTAL is a fixed summary outside the scroll area, one blank row below the
 	// sections; it sums the whole snapshot (nested children are not double-counted).
 	const totalRowIndex = lines.findIndex((line) => stripSgr(line).includes("TOTAL"));
-	const descIndex = lines.findIndex((line) => stripSgr(line).includes("Initial injections and estimated"));
+	const descIndex = lines.findIndex((line) => stripSgr(line).includes("Injections into the model context"));
 	assert.ok(totalRowIndex >= 0 && totalRowIndex < descIndex);
 	assert.equal(lines[totalRowIndex - 1], "");
 	assert.equal(stripSgr(lines[totalRowIndex] ?? "").indexOf("TOTAL"), 2);
@@ -160,14 +160,14 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3mchild/);
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3m20/);
 
-	const descriptionIndex = lines.findIndex((line) => stripSgr(line).includes("Initial injections and estimated"));
+	const descriptionIndex = lines.findIndex((line) => stripSgr(line).includes("Injections into the model context"));
 	const hintsIndex = lines.findIndex((line) => stripSgr(line).includes("↑↓ Navigate"));
 	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
 	assert.equal(lines[descriptionIndex - 1], "");
 	assert.equal(lines[descriptionIndex + 1], "");
-	assert.equal(stripSgr(lines[descriptionIndex] ?? "").indexOf("Initial injections"), 2);
+	assert.equal(stripSgr(lines[descriptionIndex] ?? "").indexOf("Injections into"), 2);
 	assert.equal(stripSgr(lines[hintsIndex] ?? "").indexOf("↑↓"), 2);
-	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m  Initial injections/);
+	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m  Injections into/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18m↑↓/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Navigate/);
 	assert.match(lines[hintsIndex] ?? "", / · /);
@@ -189,7 +189,9 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	assert.equal(stripSgr(degradedLines[degradedInitialIndex] ?? "").trim(), "[INITIAL]");
 	assert.match(stripSgr(degradedLines[degradedInitialIndex + 1] ?? ""), /Silent probe unavailable/);
 
-	const descriptionIndex = degradedLines.findIndex((line) => stripSgr(line).includes("Initial injections and estimated"));
+	const descriptionIndex = degradedLines.findIndex((line) =>
+		stripSgr(line).includes("Injections into the model context"),
+	);
 	assert.ok(descriptionIndex >= 0);
 	const degradedDescription = degradedLines[descriptionIndex + 1] ?? "";
 	assert.equal(stripSgr(degradedDescription), "  [Degraded: pi-native fallback used]");

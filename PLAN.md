@@ -136,7 +136,7 @@ Context Injections
   TOTAL                                                                  4,912
   (1/22)
 
-  Initial injections and estimated token counts.
+  Injections into the model context for the first turn, with token estimates.
 
   ↑↓ Navigate · Enter Preview · Esc Close
 

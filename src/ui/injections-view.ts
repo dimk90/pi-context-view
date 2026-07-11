@@ -27,7 +27,7 @@ import {
 
 const LIST_FIXED_LINE_COUNT = 13;
 const PREVIEW_FIXED_LINE_COUNT = 8;
-const LIST_DESCRIPTION = "Initial injections and estimated token counts.";
+const LIST_DESCRIPTION = "Injections into the model context for the first turn, with token estimates.";
 
 /** Runtime-logging state owned by the extension factory closure. */
 export interface RuntimeToggle {
