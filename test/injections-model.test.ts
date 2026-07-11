@@ -84,6 +84,7 @@ test("PreviewScroller clamps scrolling to the wrapped extent", () => {
 	scroller.setExtent(20, 6);
 
 	assert.equal(scroller.hasOverflow, true);
+	assert.equal(scroller.visibleEnd, 6);
 	assert.equal(scroller.scrollBy(-1), false);
 	assert.equal(scroller.scrollBy(3), true);
 	assert.equal(scroller.offset, 3);
@@ -93,10 +94,12 @@ test("PreviewScroller clamps scrolling to the wrapped extent", () => {
 	assert.equal(scroller.scrollTo(999), true);
 	assert.equal(scroller.offset, scroller.maxOffset);
 	assert.equal(scroller.maxOffset, 14);
+	assert.equal(scroller.visibleEnd, 20);
 
 	// Re-declaring a smaller extent (narrower wrap) keeps the offset valid.
 	scroller.setExtent(10, 6);
 	assert.equal(scroller.offset, 4);
+	assert.equal(scroller.visibleEnd, 10);
 
 	scroller.reset();
 	assert.equal(scroller.offset, 0);

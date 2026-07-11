@@ -289,7 +289,7 @@ export class InjectionsView {
 	private previewScrollLine(width: number, totalLines: number): string {
 		if (!this.previewScroller.hasOverflow) return this.fit("", width);
 		return this.fit(
-			this.theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.offset + 1}/${totalLines})`),
+			this.theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${totalLines})`),
 			width,
 		);
 	}

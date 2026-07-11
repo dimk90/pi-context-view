@@ -427,7 +427,9 @@ export class UsageView {
 		}
 
 		if (viewport.showScroll) {
-			lines.push(this.fit(theme.fg("dim", `${BODY_INDENT}(${start + 1}/${body.length})`), width));
+			lines.push(
+				this.fit(theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${body.length})`), width),
+			);
 		}
 		lines.push("");
 		lines.push(
@@ -461,16 +463,17 @@ export class UsageView {
 		return lines;
 	}
 
-	/** Bracketed entry header: dim datetime, muted breadcrumb cells, dim tokens. */
+	/** Bracketed entry header: dim datetime, mdHeading lead breadcrumb cell, muted rest, dim tokens. */
 	private entryHeader(entry: UsagePreviewEntry): string {
 		const theme = this.theme;
 		const cells: string[] = [];
 		if (entry.timestamp !== undefined) {
 			cells.push(theme.fg("dim", `[${formatEntryTimestamp(entry.timestamp)}]`));
 		}
-		for (const cell of entry.breadcrumb) {
-			cells.push(`${theme.fg("dim", "[")}${theme.fg("muted", cell)}${theme.fg("dim", "]")}`);
-		}
+		entry.breadcrumb.forEach((cell, index) => {
+			const color: ThemeColor = index === 0 ? "mdHeading" : "muted";
+			cells.push(`${theme.fg("dim", "[")}${theme.fg(color, cell)}${theme.fg("dim", "]")}`);
+		});
 		cells.push(theme.fg("dim", formatTokens(entry.tokens)));
 		return cells.join(" ");
 	}

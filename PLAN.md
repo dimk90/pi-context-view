@@ -455,7 +455,8 @@ line only when scrolling is required.
   - Open the selected category with Enter. Preview its actual content as a
     chronological entry stream, one entry per constituent block: header
     `[DD-MM-YYYY HH:MM:SS] [breadcrumb…] tokens` (dim datetime and tokens,
-    muted bracket cells), content indented below, blank row between entries.
+    mdHeading first bracket cell, muted rest), content indented below, blank
+    row between entries.
   - Assistant messages produce per-block entries: tool calls get
     `[assistant] [toolname]`, text/thinking add a `text i/n` cell only for
     multi-block messages. Snapshot-backed categories (System Prompt/Tools,

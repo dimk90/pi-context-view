@@ -168,6 +168,11 @@ export class PreviewScroller {
 		return Math.min(this.visibleCount, this.lineCount);
 	}
 
+	/** One-based final line currently visible, suitable for a progress counter. */
+	public get visibleEnd(): number {
+		return Math.min(this.lineCount, this.offsetValue + this.windowSize);
+	}
+
 	public get hasOverflow(): boolean {
 		return this.lineCount > this.visibleCount;
 	}

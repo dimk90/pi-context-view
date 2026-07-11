@@ -294,7 +294,7 @@ test("UsageView opens a category content preview and returns to the same row", (
 	assert.match(plain[2] ?? "", /5k tokens · 0\.5%/);
 	assert.equal(preview[3], "");
 
-	// Entries render chronologically: bracketed dim datetime + muted breadcrumb + dim tokens.
+	// Entries render chronologically: bracketed dim datetime + mdHeading lead breadcrumb + dim tokens.
 	const searchHeader = plain.findIndex((line) =>
 		/^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[web_search\] 2k$/.test(line)
 	);
@@ -304,7 +304,7 @@ test("UsageView opens a category content preview and returns to the same row", (
 	assert.ok(searchHeader >= 0 && readHeader >= 0);
 	assert.ok(searchHeader < readHeader, "entries are chronological, not size-ordered");
 	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;16;17;18m\[\d{2}-\d{2}-\d{4}/);
-	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;7;8;9mread/);
+	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;22;23;24mread/);
 	// Content indented two spaces past the header; blank row between entries.
 	assert.equal(plain[searchHeader + 1], "    search result content");
 	assert.equal(plain[searchHeader + 2], "");
@@ -361,11 +361,12 @@ test("UsageView previews empty categories, free space, and long content safely",
 	const top = view.render(80).map(stripSgr);
 	assert.ok(top.some((line) => line.includes("[tool_1]")));
 	assert.ok(!top.some((line) => line.includes("[tool_30]")));
-	assert.ok(top.some((line) => /\(1\/\d+\)/.test(line)));
+	assert.ok(top.some((line) => /\(\d+\/\d+\)/.test(line)));
 	view.handleInput("\u001b[4~"); // End
 	const bottom = view.render(80).map(stripSgr);
 	assert.ok(bottom.some((line) => line.includes("[tool_30]")));
 	assert.ok(!bottom.some((line) => line.includes("[tool_1]")));
+	assert.ok(bottom.some((line) => /\((\d+)\/\1\)/.test(line)), "counter reaches total at the end");
 	view.handleInput("\u001b[1~"); // Home
 	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("[tool_1]")));
 	view.handleInput("\u001b");
@@ -405,7 +406,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 						entries: [
 							{
 								timestamp: Date.UTC(2026, 6, 11, 15, 0, 0),
-								breadcrumb: ["bash"],
+								breadcrumb: ["assistant", "bash"],
 								tokens: 1_000,
 								text: `\u001b]0;evil\u0007${longText}`,
 							},
@@ -429,6 +430,10 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	view.handleInput("\r");
 	const capped = view.render(100);
 	const plainCapped = capped.map(stripSgr);
+	// Lead breadcrumb cell is mdHeading; later cells stay muted.
+	const cappedHeader = capped.find((line) => stripSgr(line).includes("[assistant] [bash]"));
+	assert.match(cappedHeader ?? "", /\u001b\[38;2;22;23;24massistant/);
+	assert.match(cappedHeader ?? "", /\u001b\[38;2;7;8;9mbash/);
 	assert.ok(plainCapped.some((line) => line === "    line 20"));
 	assert.ok(!plainCapped.some((line) => line.includes("line 21")));
 	const marker = plainCapped.findIndex((line) => line === "    … +10 lines");
@@ -446,6 +451,8 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	const header = snapshotPreview.findIndex((line) => /^  \[Base Prompt\] 1k$/.test(line));
 	assert.ok(header >= 0, "snapshot entry header has no datetime cell");
 	assert.equal(snapshotPreview[header + 1], "    You are pi.");
+	// Without a datetime, the lead breadcrumb cell still uses mdHeading.
+	assert.match(view.render(100)[header] ?? "", /\u001b\[38;2;22;23;24mBase Prompt/);
 });
 
 test("UsageView respects width and height changes", () => {

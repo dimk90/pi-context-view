@@ -265,6 +265,8 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	const scrolled = view.render(80).join("\n");
 	assert.notEqual(scrolled, preview);
 	assert.doesNotMatch(scrolled, /preview line 0 /);
+	view.handleInput("\u001b[4~"); // End
+	assert.match(stripSgr(view.render(80).join("\n")), /\((\d+)\/\1\)/);
 
 	view.handleInput("\u001b");
 	assert.equal(closed, false);
