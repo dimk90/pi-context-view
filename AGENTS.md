@@ -12,8 +12,8 @@ There are no tabs. No raw injection content is logged or persisted.
 
 The v1 CLI lifecycle has been removed. Passive capture, the one-shot silent
 probe, command grammar, the Injections/Initial view with item preview, and its
-review hardening are implemented (PLAN.md steps 1–5a). The Usage view is next,
-and `/context` temporarily defaults to Injections until it lands. Do not
+review hardening and the Usage view are implemented (PLAN.md steps 1–6).
+`/context` defaults to Usage. The context-usage map/graph is next. Do not
 preserve CLI compatibility during the migration.
 
 ## Target architecture
@@ -90,7 +90,6 @@ Target modules (created incrementally per PLAN.md):
 - `src/measure.ts` — pure prompt/tool measurement.
 - `src/usage.ts` — pure context classification and totals.
 - `src/ui/usage-view.ts` — fullscreen Usage view.
-- `src/report.ts` — temporary v1 renderer; remove when no longer needed.
 - `PLAN.md` — current decisions and step checkboxes; keep them current.
 - `HISTORY.md` — superseded v1 findings; reference only.
 - `poc/` — throwaway/reference spikes; `marker.ts` is also a test injector.

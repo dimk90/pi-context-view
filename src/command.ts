@@ -1,30 +1,19 @@
 /**
- * `/context` command grammar, capture resolution, and the temporary
- * capture-confirmation overlay shown until the focused views land.
+ * `/context` command grammar, argument completions, and Initial capture
+ * resolution shared by the Usage and Injections views.
  */
-import {
-	DynamicBorder,
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	type Theme,
-} from "@earendil-works/pi-coding-agent";
-import {
-	type AutocompleteItem,
-	Container,
-	matchesKey,
-	Text,
-} from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
 import {
-	buildNativeFallbackSnapshot,
+	buildNativeSnapshot,
 	type InitialCaptureState,
 	type SilentProbeState,
 } from "./capture.ts";
 import type { InitialSnapshot } from "./model.ts";
 
 const COMMAND_USAGE = "Usage: /context [usage|injections|runtime on|runtime off]";
-/** Temporary until the Usage view exists (PLAN.md step 6); then "usage". */
-const DEFAULT_VIEW: ContextView = "injections";
+const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
 	{ value: "injections", label: "injections", description: "Explore initial and runtime injections" },
@@ -41,8 +30,8 @@ export type ContextCommand =
 	| { readonly type: "runtime"; readonly enabled: boolean }
 	| { readonly type: "invalid"; readonly message: string };
 
-/** Data shown by the temporary step-3 capture confirmation view. */
-export interface CapturePlaceholder {
+/** Resolved Initial capture, possibly degraded to the pi-native fallback. */
+export interface InitialCaptureResult {
 	readonly snapshot: InitialSnapshot;
 	readonly degradedReason?: string;
 }
@@ -78,7 +67,7 @@ export async function resolveInitialCapture(
 	capture: InitialCaptureState,
 	probe: SilentProbeState,
 	context: ExtensionCommandContext,
-): Promise<CapturePlaceholder> {
+): Promise<InitialCaptureResult> {
 	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
 
 	await context.waitForIdle();
@@ -111,39 +100,6 @@ export async function resolveInitialCapture(
 	}
 }
 
-/** Render a minimal capture confirmation until the full focused views land. */
-export async function showCapturePlaceholder(
-	context: ExtensionCommandContext,
-	view: ContextView,
-	capture: CapturePlaceholder,
-): Promise<void> {
-	await context.ui.custom<void>(
-		(_tui, theme, _keybindings, done) => {
-			let container = createPlaceholderContainer(theme, view, capture);
-			return {
-				render: (width: number) => container.render(width),
-				invalidate: () => {
-					container = createPlaceholderContainer(theme, view, capture);
-				},
-				handleInput: (data: string) => {
-					if (matchesKey(data, "escape") || matchesKey(data, "enter") || data === "q") {
-						done(undefined);
-					}
-				},
-			};
-		},
-		{
-			overlay: true,
-			overlayOptions: {
-				width: 62,
-				minWidth: 36,
-				maxHeight: "70%",
-				margin: 1,
-			},
-		},
-	);
-}
-
 /** Report command errors in both interactive and headless modes. */
 export function reportCommandMessage(
 	context: ExtensionCommandContext,
@@ -171,9 +127,9 @@ function createFallback(
 	pi: ExtensionAPI,
 	context: ExtensionCommandContext,
 	reason: string,
-): CapturePlaceholder {
+): InitialCaptureResult {
 	return {
-		snapshot: buildNativeFallbackSnapshot({
+		snapshot: buildNativeSnapshot({
 			systemPrompt: context.getSystemPrompt(),
 			options: context.getSystemPromptOptions(),
 			allTools: pi.getAllTools(),
@@ -181,38 +137,4 @@ function createFallback(
 		}),
 		degradedReason: `${reason} Extension additions were not observed.`,
 	};
-}
-
-/** Assemble the bordered overlay content for one render pass. */
-function createPlaceholderContainer(
-	theme: Theme,
-	view: ContextView,
-	capture: CapturePlaceholder,
-): Container {
-	const container = new Container();
-	const title = view === "usage" ? "Context Usage" : "Context Injections";
-	const origin = formatCaptureOrigin(capture);
-	const detail = view === "usage"
-		? "The full Usage composition view is not implemented yet."
-		: "The full Injections explorer is not implemented yet.";
-
-	container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-	container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
-	container.addChild(new Text(theme.fg("success", "Initial capture ready."), 1, 1));
-	container.addChild(new Text(`Origin: ${origin}`, 1, 0));
-	container.addChild(new Text(`Groups: ${capture.snapshot.groups.length}`, 1, 0));
-	container.addChild(new Text(`Estimated tokens: ${capture.snapshot.totalTokens.toLocaleString("en-US")}`, 1, 0));
-	if (capture.degradedReason !== undefined) {
-		container.addChild(new Text(theme.fg("warning", capture.degradedReason), 1, 1));
-	}
-	container.addChild(new Text(theme.fg("muted", detail), 1, 1));
-	container.addChild(new Text(theme.fg("dim", "Enter/Esc close"), 1, 0));
-	container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-	return container;
-}
-
-/** Human-readable capture provenance shown in the overlay. */
-function formatCaptureOrigin(capture: CapturePlaceholder): string {
-	if (capture.degradedReason !== undefined) return "pi-native fallback";
-	return capture.snapshot.origin === "real-turn" ? "first real turn" : "silent probe";
 }

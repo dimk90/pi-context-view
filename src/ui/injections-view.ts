@@ -14,11 +14,19 @@ import {
 	normalizePreviewText,
 	PreviewScroller,
 } from "./injections-model.ts";
+import {
+	BODY_INDENT,
+	calculateViewport,
+	DEFAULT_TERMINAL_ROWS,
+	fitLine,
+	fitToTerminalHeight,
+	hintRow,
+	normalizeTerminalRows,
+	spreadLine,
+} from "./layout.ts";
 
 const LIST_FIXED_LINE_COUNT = 13;
 const PREVIEW_FIXED_LINE_COUNT = 8;
-const DEFAULT_TERMINAL_ROWS = 24;
-const BODY_INDENT = "  ";
 const LIST_DESCRIPTION = "Initial injections and estimated token counts.";
 
 /** Runtime-logging state owned by the extension factory closure. */
@@ -163,7 +171,7 @@ export class InjectionsView {
 		lines.push("");
 		lines.push(
 			this.fit(
-				this.hintRow([
+				hintRow(this.theme, [
 					["↑↓", "Navigate"],
 					["Enter", "Preview"],
 					["R", "Toggle Runtime Logging"],
@@ -248,7 +256,7 @@ export class InjectionsView {
 		lines.push("");
 		lines.push(
 			this.fit(
-				this.hintRow([
+				hintRow(this.theme, [
 					["↑↓", "Scroll"],
 					["Pgup/Pgdn", "Page"],
 					["Esc", "Back"],
@@ -350,17 +358,6 @@ export class InjectionsView {
 		);
 	}
 
-	/** Pi-style hint row: two-space indent, `key description` pairs joined by ` · `. */
-	private hintRow(hints: ReadonlyArray<readonly [string, string]>): string {
-		const separator = this.theme.fg("dim", " · ");
-		return `${BODY_INDENT}${hints.map(([key, description]) => this.hint(key, description)).join(separator)}`;
-	}
-
-	/** Pi-style hint: dim key, slightly brighter (muted) description. */
-	private hint(key: string, description: string): string {
-		return this.theme.fg("dim", key) + this.theme.fg("muted", ` ${description}`);
-	}
-
 	/** Wrapped degraded-capture warning placed after the first sub-header. */
 	private degradedWarningLines(width: number): string[] {
 		if (this.input.degradedReason === undefined) return [];
@@ -368,15 +365,11 @@ export class InjectionsView {
 	}
 
 	private spread(left: string, right: string, width: number): string {
-		const gap = width - visibleWidth(left) - visibleWidth(right);
-		if (gap < 1) {
-			return this.fit(`${truncateToWidth(left, Math.max(1, width - visibleWidth(right) - 2), "…")} ${right}`, width);
-		}
-		return `${left}${" ".repeat(gap)}${right}`;
+		return spreadLine(left, right, width);
 	}
 
 	private fit(line: string, width: number): string {
-		return truncateToWidth(line, width, "…");
+		return fitLine(line, width);
 	}
 
 	private clearCache(): void {
@@ -384,31 +377,4 @@ export class InjectionsView {
 		this.cachedTerminalRows = undefined;
 		this.cachedLines = undefined;
 	}
-}
-
-/** Divide terminal rows between content and an overflow indicator. */
-function calculateViewport(
-	itemCount: number,
-	terminalRows: number,
-	fixedLineCount: number,
-	extraLineCount = 0,
-): { visibleCount: number; showScroll: boolean } {
-	const available = Math.max(1, terminalRows - fixedLineCount - extraLineCount);
-	const showScroll = itemCount > available && available > 1;
-	return {
-		visibleCount: Math.max(1, available - (showScroll ? 1 : 0)),
-		showScroll,
-	};
-}
-
-/** Keep emergency short-terminal output bounded while preserving both borders. */
-function fitToTerminalHeight(lines: string[], terminalRows: number, border: string): string[] {
-	if (lines.length <= terminalRows) return lines;
-	if (terminalRows === 1) return [border];
-	return [...lines.slice(0, terminalRows - 1), border];
-}
-
-/** Normalize an injected terminal-height reading to a usable positive integer. */
-function normalizeTerminalRows(rows: number): number {
-	return Number.isFinite(rows) ? Math.max(1, Math.floor(rows)) : DEFAULT_TERMINAL_ROWS;
 }

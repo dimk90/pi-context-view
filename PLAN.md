@@ -12,8 +12,9 @@ tabbed dialog:
   - **Initial** — the first observable provider-bound context in the current
     extension runtime: pi prompt components, active tool definitions,
     extension prompt additions, and injected messages.
-  - **Runtime** — an optional, bounded log of context injections observed
-    after the initial snapshot. Logging is disabled by default.
+  - **Runtime** — an optional, bounded log of hidden provider-bound context
+    mutations observed after the initial snapshot. Logging is disabled by
+    default.
 - `/context runtime on|off` — control future Runtime logging without opening a
   view or triggering a probe.
 
@@ -184,8 +185,8 @@ Load order still limits visibility into message mutations made by later
 also outside the guaranteed capture surface.
 
 Conditional prompt additions that are inactive in the initial run correctly
-do not appear in Initial. If they activate later, Runtime records them when
-logging is enabled.
+do not appear in Initial. If they activate later, Runtime records the hidden
+provider-bound change when logging is enabled.
 
 ### On-demand silent probe
 
@@ -232,15 +233,21 @@ note.
 Runtime logging is disabled by default. Disabled handlers return after one
 state check.
 
-When enabled, inspect each provider-bound `context` event and record only
-changes relative to the previous observable state:
+When enabled, compare each provider-bound `context` event with the previous
+observable state and record only hidden mutations that the interactive
+transcript does not already explain:
 
-- final chained system-prompt changes;
-- active tool additions/removals;
-- observable context-only or custom message additions/removals.
+- final chained system-prompt components added, removed, or changed, including
+  conditional extension additions, skills, and context files;
+- active tools added or removed, and tool schemas changed;
+- transient messages added only for provider context;
+- ordinary branch messages modified or removed by `context` handlers before
+  the provider call.
 
-Normal conversation growth—assistant replies and tool results—is not a runtime
-injection; it belongs in Usage.
+Do not copy ordinary user/assistant messages, visible custom messages, tool
+calls/results, or unchanged prompt components into Runtime. Normal conversation
+growth belongs in Usage. When no hidden context mutation occurs, Runtime stays
+empty.
 
 Each entry stores request index, kind, label/source, estimated token delta, and
 bounded preview text. Use a ring buffer with both entry and byte limits
@@ -315,8 +322,6 @@ only after explicit Enter selection in the Injections view.
 - `src/usage.ts` — pure message classification and usage totals.
 - `src/ui/usage-view.ts` — focused Usage overlay.
 - `src/ui/injections-view.ts` — Initial/Runtime explorer and preview state.
-- `src/report.ts` — temporary v1 debug renderer; remove once the views and
-  tests no longer use it.
 
 ### Command and view behavior
 
@@ -414,7 +419,7 @@ line only when scrolling is required.
   - Include terminal height and wrapped degraded-warning lines in fullscreen
     layout/cache calculations; verify same-width height-only resizing and very
     short terminals.
-- [ ] 6. **Build the Usage view (the default).**
+- [x] 6. **Build the Usage view (the default).**
   - Implement `buildSessionContext().messages` classification and synthetic
     filtering in `usage.ts`.
   - Render category totals, proportions, pi usage/context-window metadata,
@@ -422,14 +427,23 @@ line only when scrolling is required.
   - Add a fullscreen overlay that resizes cleanly, themed colors, and bold text.
   - Set as default for `/context`.
 - [ ] 7. **Add map/graph for context usage visualization.**
-  - Use Claude Code like context visualization -> ask me for template/example.
-- [ ] 8. **Add bounded opt-in Runtime logging.**
+  - Use Claude Code like context visualization -> map from UI sketches.
+  - Use colors for different categories of the data in the context.
+  - Ask me if the need any clarification about ui sketch.
+- [ ] 8. **Add bounded opt-in Runtime mutation logging.**
   - The current command/view surfaces store only the toggle state; they do not
-    log injections yet and must not be treated as functional until this step.
-  - Implement prompt/tool/message diffing, request indexing, ring-buffer
-    limits, eviction count, both toggle surfaces, and Runtime section UI shown
-    only when the log is non-empty (header always reflects the toggle state).
-  - Verify disabled overhead is only guarded event dispatch/state checks and
+    log mutations yet and must not be treated as functional until this step.
+  - Diff provider-bound states and retain only hidden prompt-component changes,
+    active-tool/schema changes, transient context-only messages, and branch
+    message mutations made by `context` handlers.
+  - Exclude ordinary transcript-visible messages, tool calls/results, normal
+    conversation growth, and unchanged components; an unchanged request adds no
+    Runtime entries.
+  - Add request indexing, ring-buffer limits, eviction count, both toggle
+    surfaces, and Runtime section UI shown only when the log is non-empty
+    (header always reflects the toggle state).
+  - Verify disabled overhead is only guarded event dispatch/state checks,
+    visible transcript activity creates no Runtime entries, and
     `/context runtime on|off` never probes or opens a view.
 - [ ] 9. **Polish lifecycle and edge cases.**
   - Streaming command invocation, probe timeout/no model/no auth, zero other

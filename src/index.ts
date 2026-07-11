@@ -4,17 +4,18 @@
  * Passively captures the first real turn, or runs one on-demand silent probe
  * when a context view is opened before any real turn.
  */
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import {
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
 	resolveInitialCapture,
-	showCapturePlaceholder,
 } from "./command.ts";
-import { InitialCaptureState, SilentProbeState } from "./capture.ts";
+import { buildNativeSnapshot, InitialCaptureState, SilentProbeState } from "./capture.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
+import { showUsageView } from "./ui/usage-view.ts";
+import { computeUsage, toReportedUsage } from "./usage.ts";
 
 export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
@@ -91,16 +92,33 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const placeholder = await resolveInitialCapture(pi, capture, probe, ctx);
+			const initial = await resolveInitialCapture(pi, capture, probe, ctx);
 			if (command.view === "injections") {
 				await showInjectionsView(ctx, {
-					snapshot: placeholder.snapshot,
-					degradedReason: placeholder.degradedReason,
+					snapshot: initial.snapshot,
+					degradedReason: initial.degradedReason,
 					runtime,
 				});
 				return;
 			}
-			await showCapturePlaceholder(ctx, command.view, placeholder);
+			await showUsageView(ctx, {
+				compute: () =>
+					computeUsage({
+						snapshot: buildNativeSnapshot({
+							systemPrompt: ctx.getSystemPrompt(),
+							options: ctx.getSystemPromptOptions(),
+							allTools: pi.getAllTools(),
+							activeToolNames: pi.getActiveTools(),
+						}),
+						// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
+						messages: probe.filterMessages(
+							buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
+						),
+						reported: toReportedUsage(ctx.getContextUsage()),
+						modelLabel: ctx.model?.id,
+					}),
+				degradedReason: initial.degradedReason,
+			});
 		},
 	});
 }

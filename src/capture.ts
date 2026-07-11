@@ -32,8 +32,8 @@ export interface CaptureFinalization {
 	capturedAt?: Date;
 }
 
-/** Inputs available for a degraded pi-native snapshot when probing cannot run. */
-export interface NativeFallbackInput {
+/** Inputs for an on-demand pi-native prompt/tool snapshot. */
+export interface NativeSnapshotInput {
 	systemPrompt: string;
 	options: BuildSystemPromptOptions;
 	allTools: readonly ToolInfo[];
@@ -235,7 +235,7 @@ export class SilentProbeState {
 }
 
 /** Build a view-local pi-native snapshot without freezing the main capture state. */
-export function buildNativeFallbackSnapshot(input: NativeFallbackInput): InitialSnapshot {
+export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot {
 	const options = copyPromptOptions(input.options);
 	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options);
 	const items = analyzeSystemPrompt(input.systemPrompt, options, tools);

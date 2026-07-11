@@ -6,9 +6,8 @@ import {
 	parseContextCommand,
 } from "../src/command.ts";
 
-test("parseContextCommand defaults to Injections (until Usage lands) and accepts the explicit grammar", () => {
-	// Temporary default; becomes "usage" in PLAN.md step 6.
-	assert.deepEqual(parseContextCommand(""), { type: "view", view: "injections" });
+test("parseContextCommand defaults to Usage and accepts the explicit grammar", () => {
+	assert.deepEqual(parseContextCommand(""), { type: "view", view: "usage" });
 	assert.deepEqual(parseContextCommand(" Usage "), { type: "view", view: "usage" });
 	assert.deepEqual(parseContextCommand("injections"), { type: "view", view: "injections" });
 	assert.deepEqual(parseContextCommand("runtime on"), { type: "runtime", enabled: true });

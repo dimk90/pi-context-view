@@ -66,6 +66,34 @@ export interface InitialSnapshot {
 	readonly totalTokens: number;
 }
 
+/** One estimated usage category, optionally with a constituent breakdown. */
+export interface UsageCategory {
+	/** Stable id, unique within a usage snapshot level. */
+	readonly id: string;
+	readonly label: string;
+	/** Estimated tokens (chars/4 heuristic). */
+	readonly tokens: number;
+	/** Breakdown of the parent (e.g. per tool or per customType), not additional totals. */
+	readonly children?: readonly UsageCategory[];
+}
+
+/** Pi-reported usage; tokens/percent are omitted when unknown (e.g. right after compaction). */
+export interface ReportedContextUsage {
+	readonly tokens?: number;
+	readonly contextWindow: number;
+	readonly percent?: number;
+}
+
+/** On-demand estimated context composition presented by the Usage view. */
+export interface ContextUsageSnapshot {
+	readonly computedAt: Date;
+	readonly modelLabel?: string;
+	readonly reported?: ReportedContextUsage;
+	readonly categories: readonly UsageCategory[];
+	/** Sum of the top-level category estimates. */
+	readonly estimatedTokens: number;
+}
+
 /**
  * Group measured items by source. Pi-native components come first, extension
  * sources follow by total size, and the unattributable aggregate comes last.
