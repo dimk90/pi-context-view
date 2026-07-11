@@ -1,13 +1,14 @@
 /**
  * Focused `/context usage` view: estimated context composition with a
  * proportional context-window map, pi-reported metadata, selectable category
- * rows, and an Enter-opened constituent-breakdown preview.
+ * rows, and an Enter-opened chronological content preview.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { ContextUsageSnapshot, UsageCategory } from "../model.ts";
-import { ListNavigator, PreviewScroller } from "./injections-model.ts";
+import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
+import { collectPreviewEntries } from "../usage.ts";
+import { ListNavigator, normalizePreviewText, PreviewScroller } from "./injections-model.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
@@ -24,6 +25,7 @@ const USAGE_DESCRIPTION = "The map estimates next-request usage; provider token 
 const USAGE_TAIL_LINE_COUNT = 6;
 const DETAIL_HEADER_LINE_COUNT = 4;
 const PREVIEW_FIXED_LINE_COUNT = 8;
+const PREVIEW_ENTRY_MAX_LINES = 20;
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_LEGEND_VALUE_COLUMN = 28;
 const LEGEND_VALUE_GAP = 2;
@@ -93,6 +95,8 @@ export class UsageView {
 	private readonly navigator: ListNavigator;
 	private readonly previewScroller = new PreviewScroller();
 	private previewRow: CategoryLegendRow | undefined;
+	private previewLines: string[] | undefined;
+	private previewWrapWidth: number | undefined;
 	private cachedWidth: number | undefined;
 	private cachedTerminalRows: number | undefined;
 	private cachedLines: string[] | undefined;
@@ -380,11 +384,13 @@ export class UsageView {
 		}
 	}
 
-	/** Open the selected category's breakdown; free space has no preview. */
+	/** Open the selected category's content preview; free space has no preview. */
 	private openPreview(): void {
 		const row = this.legendRows[this.navigator.selected];
 		if (row === undefined || row.type !== "category") return;
 		this.previewRow = row;
+		this.previewLines = undefined;
+		this.previewWrapWidth = undefined;
 		this.previewScroller.reset();
 		this.clearCache();
 	}
@@ -392,10 +398,12 @@ export class UsageView {
 	/** Return to the list with the same selected row. */
 	private closePreview(): void {
 		this.previewRow = undefined;
+		this.previewLines = undefined;
+		this.previewWrapWidth = undefined;
 		this.clearCache();
 	}
 
-	/** Scrollable typed constituent hierarchy for one category. */
+	/** Scrollable chronological content stream for one category. */
 	private renderPreview(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
@@ -436,17 +444,52 @@ export class UsageView {
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
-	/** Aligned breakdown rows of the previewed category, without recounting children. */
+	/** Cached wrapped entry stream: bracket headers plus capped sanitized content. */
 	private previewBodyLines(width: number, row: CategoryLegendRow): string[] {
-		const bodyRows = buildPreviewRows(row);
-		if (bodyRows.length === 0) {
-			return [this.fit(this.theme.fg("muted", `${BODY_INDENT}No constituent breakdown.`), width)];
+		const wrapWidth = Math.max(10, width - BODY_INDENT.length * 2 - 1);
+		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
+		const entries = collectPreviewEntries(row.category);
+		const lines = entries.length === 0
+			? [this.fit(this.theme.fg("muted", `${BODY_INDENT}No content captured for this category.`), width)]
+			: entries.flatMap((entry, index) => [
+				...(index === 0 ? [] : [""]),
+				this.fit(`${BODY_INDENT}${this.entryHeader(entry)}`, width),
+				...this.entryContentLines(entry, wrapWidth),
+			]);
+		this.previewLines = lines;
+		this.previewWrapWidth = wrapWidth;
+		return lines;
+	}
+
+	/** Bracketed entry header: dim datetime, muted breadcrumb cells, dim tokens. */
+	private entryHeader(entry: UsagePreviewEntry): string {
+		const theme = this.theme;
+		const cells: string[] = [];
+		if (entry.timestamp !== undefined) {
+			cells.push(theme.fg("dim", `[${formatEntryTimestamp(entry.timestamp)}]`));
 		}
-		const rowWidth = Math.max(1, width - BODY_INDENT.length);
-		const columns = this.legendColumns(bodyRows, rowWidth);
-		return bodyRows.map((child) =>
-			this.fit(`${BODY_INDENT}${this.legendLine(child, columns, rowWidth, false)}`, width)
-		);
+		for (const cell of entry.breadcrumb) {
+			cells.push(`${theme.fg("dim", "[")}${theme.fg("muted", cell)}${theme.fg("dim", "]")}`);
+		}
+		cells.push(theme.fg("dim", formatTokens(entry.tokens)));
+		return cells.join(" ");
+	}
+
+	/** Sanitized, wrapped, per-entry-capped content lines indented under the header. */
+	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number): string[] {
+		const indent = BODY_INDENT.repeat(2);
+		const lines: string[] = [];
+		let hidden = 0;
+		for (const paragraph of normalizePreviewText(entry.text).split("\n")) {
+			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
+			const paragraphLines = wrapped.length === 0 ? [""] : wrapped;
+			for (const line of paragraphLines) {
+				if (lines.length < PREVIEW_ENTRY_MAX_LINES) lines.push(line === "" ? "" : `${indent}${line}`);
+				else hidden++;
+			}
+		}
+		if (hidden === 0) return lines;
+		return [...lines, `${indent}${this.theme.fg("dim", `… +${hidden} lines`)}`];
 	}
 
 	/** Truncate one rendered line to the supplied width. */
@@ -475,15 +518,12 @@ function buildCategoryLegendRows(categories: readonly UsageCategory[]): Category
 	return rows;
 }
 
-/** Flatten one previewed category's constituent hierarchy, largest branch order preserved. */
-function buildPreviewRows(row: CategoryLegendRow): CategoryLegendRow[] {
-	const rows: CategoryLegendRow[] = [];
-	const visit = (category: UsageCategory, depth: number): void => {
-		rows.push({ type: "category", category, depth, rootId: row.rootId });
-		for (const child of category.children ?? []) visit(child, depth + 1);
-	};
-	for (const child of row.category.children ?? []) visit(child, 1);
-	return rows;
+/** Entry-header datetime: DD-MM-YYYY HH:MM:SS in local time. */
+function formatEntryTimestamp(timestamp: number): string {
+	const date = new Date(timestamp);
+	const pad = (value: number) => `${value}`.padStart(2, "0");
+	return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}` +
+		` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 /** Marker distinguishing top-level occupancy, compacted data, and nested breakdowns. */

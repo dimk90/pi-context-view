@@ -11,6 +11,7 @@ import type {
 	InjectionItem,
 	ReportedContextUsage,
 	UsageCategory,
+	UsagePreviewEntry,
 } from "./model.ts";
 
 /** Everything computeUsage needs; messages must already be synthetic-filtered. */
@@ -40,6 +41,24 @@ export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
 		categories,
 		estimatedTokens: categories.reduce((sum, category) => sum + category.tokens, 0),
 	};
+}
+
+/**
+ * Flatten one category's preview entries across its breakdown, chronologically
+ * when every entry is message-backed. Raw entry text is process-local; the
+ * caller must sanitize before rendering and never log or persist it.
+ */
+export function collectPreviewEntries(category: UsageCategory): UsagePreviewEntry[] {
+	const entries: UsagePreviewEntry[] = [];
+	const visit = (node: UsageCategory): void => {
+		entries.push(...(node.entries ?? []));
+		for (const child of node.children ?? []) visit(child);
+	};
+	visit(category);
+	if (entries.length > 1 && entries.every((entry) => entry.timestamp !== undefined)) {
+		entries.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+	}
+	return entries;
 }
 
 /** Convert pi's nullable ContextUsage to the undefined-based model shape. */
@@ -100,70 +119,142 @@ function isMcpTool(item: InjectionItem): boolean {
 	return /(^|[^a-z])mcp([^a-z]|$)/i.test(`${item.source.id} ${item.source.label}`);
 }
 
-/** Classify live session messages into estimated categories. */
+/** Classify live session messages into estimated categories with preview entries. */
 function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
-	let userTokens = 0;
-	let assistantTextChars = 0;
-	let thinkingChars = 0;
-	let toolCallChars = 0;
-	let bashTokens = 0;
-	let compactedTokens = 0;
-	const toolResults = new Map<string, number>();
-	const customMessages = new Map<string, number>();
+	const user: UsagePreviewEntry[] = [];
+	const agentText: UsagePreviewEntry[] = [];
+	const agentThinking: UsagePreviewEntry[] = [];
+	const agentToolCalls: UsagePreviewEntry[] = [];
+	const bashExecutions: UsagePreviewEntry[] = [];
+	const compacted: UsagePreviewEntry[] = [];
+	const toolResults = new Map<string, UsagePreviewEntry[]>();
+	const customMessages = new Map<string, UsagePreviewEntry[]>();
 
 	for (const message of messages) {
 		switch (message.role) {
 			case "user":
-				userTokens += estimateTokens(message);
+				user.push({
+					timestamp: message.timestamp,
+					breadcrumb: ["user"],
+					tokens: estimateTokens(message),
+					text: contentToText(message.content),
+				});
 				break;
-			case "assistant":
+			case "assistant": {
+				const texts = message.content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+				const thinkings = message.content.flatMap((block) =>
+					block.type === "thinking" ? [block.thinking] : []
+				);
+				agentText.push(...blockEntries(message.timestamp, "text", texts));
+				agentThinking.push(...blockEntries(message.timestamp, "thinking", thinkings));
 				for (const block of message.content) {
-					if (block.type === "text") assistantTextChars += block.text.length;
-					else if (block.type === "thinking") thinkingChars += block.thinking.length;
-					else if (block.type === "toolCall") {
-						toolCallChars += block.name.length + JSON.stringify(block.arguments).length;
-					}
+					if (block.type !== "toolCall") continue;
+					const args = JSON.stringify(block.arguments);
+					agentToolCalls.push({
+						timestamp: message.timestamp,
+						breadcrumb: ["assistant", block.name],
+						tokens: textTokens(block.name.length + args.length),
+						text: `${block.name}(${args})`,
+					});
 				}
 				break;
+			}
 			case "toolResult":
-				addTokens(toolResults, message.toolName, estimateTokens(message));
+				appendEntry(toolResults, message.toolName, {
+					timestamp: message.timestamp,
+					breadcrumb: [message.toolName],
+					tokens: estimateTokens(message),
+					text: contentToText(message.content),
+				});
 				break;
 			case "custom":
-				addTokens(customMessages, message.customType, estimateTokens(message));
+				appendEntry(customMessages, message.customType, {
+					timestamp: message.timestamp,
+					breadcrumb: [message.customType],
+					tokens: estimateTokens(message),
+					text: contentToText(message.content),
+				});
 				break;
 			case "bashExecution":
-				if (message.excludeFromContext !== true) bashTokens += estimateTokens(message);
+				if (message.excludeFromContext !== true) {
+					bashExecutions.push({
+						timestamp: message.timestamp,
+						breadcrumb: ["bash"],
+						tokens: estimateTokens(message),
+						text: `$ ${message.command}\n${message.output}`,
+					});
+				}
 				break;
 			case "branchSummary":
+				compacted.push({
+					timestamp: message.timestamp,
+					breadcrumb: ["branch"],
+					tokens: estimateTokens(message),
+					text: message.summary,
+				});
+				break;
 			case "compactionSummary":
-				compactedTokens += estimateTokens(message);
+				compacted.push({
+					timestamp: message.timestamp,
+					breadcrumb: ["compaction"],
+					tokens: estimateTokens(message),
+					text: message.summary,
+				});
 				break;
 		}
 	}
 
 	const toolOutput = aggregate("tool-output", "Tool Output", withoutEmpty([
 		...leavesFromMap("tool-result", toolResults),
-		leaf("bash-executions", "Bash Executions", bashTokens),
+		leaf("bash-executions", "Bash Executions", bashExecutions),
 	]));
 	return withoutEmpty([
-		leaf("user-messages", "User Messages", userTokens),
-		leaf("agent-text-messages", "Agent Text Messages", textTokens(assistantTextChars)),
-		leaf("agent-thinking-messages", "Agent Thinking Messages", textTokens(thinkingChars)),
-		leaf("agent-tool-call-messages", "Agent Tool Call Messages", textTokens(toolCallChars)),
+		leaf("user-messages", "User Messages", user),
+		leaf("agent-text-messages", "Agent Text Messages", agentText),
+		leaf("agent-thinking-messages", "Agent Thinking Messages", agentThinking),
+		leaf("agent-tool-call-messages", "Agent Tool Call Messages", agentToolCalls),
 		toolOutput,
 		aggregate("extension-messages", "Extensions", leavesFromMap("custom-message", customMessages)),
-		leaf("compacted-data", "Compacted Data", compactedTokens),
+		leaf("compacted-data", "Compacted Data", compacted),
 	]);
 }
 
-/** One category without children. */
-function leaf(id: string, label: string, tokens: number): UsageCategory {
-	return { id, label, tokens };
+/** One category whose estimate is the exact sum of its preview entries. */
+function leaf(id: string, label: string, entries: readonly UsagePreviewEntry[]): UsageCategory {
+	return {
+		id,
+		label,
+		tokens: entries.reduce((sum, entry) => sum + entry.tokens, 0),
+		entries,
+	};
 }
 
-/** Category carrying a snapshot item's label and estimate. */
+/** Category carrying a snapshot item's label, estimate, and timeless content entry. */
 function leafFromItem(item: InjectionItem): UsageCategory {
-	return leaf(`item:${item.id}`, item.label, item.tokens);
+	return {
+		id: `item:${item.id}`,
+		label: item.label,
+		tokens: item.tokens,
+		entries: [{ breadcrumb: [item.label], tokens: item.tokens, text: item.text }],
+	};
+}
+
+/** Per-block entries; the block-index cell appears only for multi-block messages. */
+function blockEntries(timestamp: number, kind: string, texts: readonly string[]): UsagePreviewEntry[] {
+	return texts.map((text, index) => ({
+		timestamp,
+		breadcrumb: texts.length > 1 ? ["assistant", `${kind} ${index + 1}/${texts.length}`] : ["assistant"],
+		tokens: textTokens(text.length),
+		text,
+	}));
+}
+
+/** Text rendering of string-or-block message content; non-text blocks become placeholders. */
+function contentToText(content: string | ReadonlyArray<{ type: string; text?: string }>): string {
+	if (typeof content === "string") return content;
+	return content
+		.map((block) => (block.type === "text" && block.text !== undefined ? block.text : `[${block.type}]`))
+		.join("\n");
 }
 
 /** Expand an aggregate snapshot item into its children, or itself when it has none. */
@@ -188,14 +279,20 @@ function withoutEmpty(categories: Array<UsageCategory | undefined>): UsageCatego
 	return categories.filter((category): category is UsageCategory => category !== undefined && category.tokens > 0);
 }
 
-/** Accumulate an estimate under a map key. */
-function addTokens(totals: Map<string, number>, key: string, tokens: number): void {
-	totals.set(key, (totals.get(key) ?? 0) + tokens);
+/** Accumulate a preview entry under a map key. */
+function appendEntry(
+	totals: Map<string, UsagePreviewEntry[]>,
+	key: string,
+	entry: UsagePreviewEntry,
+): void {
+	const entries = totals.get(key);
+	if (entries === undefined) totals.set(key, [entry]);
+	else entries.push(entry);
 }
 
-/** Sorted leaves from accumulated per-key totals. */
-function leavesFromMap(idPrefix: string, totals: Map<string, number>): UsageCategory[] {
-	return [...totals.entries()].map(([label, tokens]) => leaf(`${idPrefix}:${label}`, label, tokens));
+/** Leaves from accumulated per-key preview entries. */
+function leavesFromMap(idPrefix: string, totals: Map<string, UsagePreviewEntry[]>): UsageCategory[] {
+	return [...totals.entries()].map(([label, entries]) => leaf(`${idPrefix}:${label}`, label, entries));
 }
 
 /** Same chars/4 heuristic pi's estimateTokens uses for text content. */

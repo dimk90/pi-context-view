@@ -71,8 +71,32 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 				label: "Tool Output",
 				tokens: 5_000,
 				children: [
-					{ id: "tool-result:read", label: "read", tokens: 3_000 },
-					{ id: "tool-result:web_search", label: "web_search", tokens: 2_000 },
+					{
+						id: "tool-result:read",
+						label: "read",
+						tokens: 3_000,
+						entries: [
+							{
+								timestamp: Date.UTC(2026, 6, 11, 14, 2, 19),
+								breadcrumb: ["read"],
+								tokens: 3_000,
+								text: "read result content line\nsecond line",
+							},
+						],
+					},
+					{
+						id: "tool-result:web_search",
+						label: "web_search",
+						tokens: 2_000,
+						entries: [
+							{
+								timestamp: Date.UTC(2026, 6, 11, 14, 2, 11),
+								breadcrumb: ["web_search"],
+								tokens: 2_000,
+								text: "search result content",
+							},
+						],
+					},
 				],
 			},
 			{ id: "extension-messages", label: "Extensions", tokens: 600 },
@@ -250,7 +274,7 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 	}
 });
 
-test("UsageView opens a category breakdown preview and returns to the same row", () => {
+test("UsageView opens a category content preview and returns to the same row", () => {
 	let closed = false;
 	const view = new UsageView(createTheme(), { usage: usage() }, () => {
 		closed = true;
@@ -269,13 +293,23 @@ test("UsageView opens a category breakdown preview and returns to the same row",
 	assert.match(preview[2] ?? "", /\u001b\[38;2;1;2;3m.*Tool Output/);
 	assert.match(plain[2] ?? "", /5k tokens · 0\.5%/);
 	assert.equal(preview[3], "");
-	// Children with aligned token and percentage columns, indented two spaces, no map.
-	const readLine = plain.find((line) => line.includes("· read:"));
-	const searchLine = plain.find((line) => line.includes("· web_search:"));
-	assert.ok(readLine !== undefined && searchLine !== undefined);
-	assert.equal(readLine.indexOf("·"), 4);
-	assert.match(readLine, /· read:\s+3k\s+0\.3%/);
-	assert.equal(readLine.indexOf("3k"), searchLine.indexOf("2k"));
+
+	// Entries render chronologically: bracketed dim datetime + muted breadcrumb + dim tokens.
+	const searchHeader = plain.findIndex((line) =>
+		/^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[web_search\] 2k$/.test(line)
+	);
+	const readHeader = plain.findIndex((line) =>
+		/^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[read\] 3k$/.test(line)
+	);
+	assert.ok(searchHeader >= 0 && readHeader >= 0);
+	assert.ok(searchHeader < readHeader, "entries are chronological, not size-ordered");
+	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;16;17;18m\[\d{2}-\d{2}-\d{4}/);
+	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;7;8;9mread/);
+	// Content indented two spaces past the header; blank row between entries.
+	assert.equal(plain[searchHeader + 1], "    search result content");
+	assert.equal(plain[searchHeader + 2], "");
+	assert.equal(plain[readHeader + 1], "    read result content line");
+	assert.equal(plain[readHeader + 2], "    second line");
 	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
 	const hintIndex = plain.findIndex((line) => line.includes("↑↓ Scroll"));
 	assert.ok(hintIndex > 0);
@@ -289,11 +323,19 @@ test("UsageView opens a category breakdown preview and returns to the same row",
 	assert.equal(closed, true);
 });
 
-test("UsageView previews leaf categories, free space, and long breakdowns safely", () => {
+test("UsageView previews empty categories, free space, and long content safely", () => {
 	const tools = Array.from({ length: 30 }, (_, index) => ({
 		id: `tool-result:tool_${index + 1}`,
 		label: `tool_${index + 1}`,
 		tokens: 100,
+		entries: [
+			{
+				timestamp: Date.UTC(2026, 6, 11, 14, 0, index + 1),
+				breadcrumb: [`tool_${index + 1}`],
+				tokens: 100,
+				text: `tool_${index + 1} output`,
+			},
+		],
 	}));
 	const mixedUsage: ContextUsageSnapshot = {
 		...usage(4_000),
@@ -305,27 +347,27 @@ test("UsageView previews leaf categories, free space, and long breakdowns safely
 	};
 	const view = new UsageView(createTheme(), { usage: mixedUsage }, () => {}, () => 20);
 
-	// Leaf category: explicit empty-breakdown message instead of raw content.
+	// Category without entries: explicit empty message instead of raw content.
 	view.render(80);
 	view.handleInput("\r");
 	const leafPreview = view.render(80).map(stripSgr);
 	assert.equal(leafPreview[2]?.indexOf("User Messages"), 0);
-	assert.ok(leafPreview.some((line) => line.includes("No constituent breakdown.")));
+	assert.ok(leafPreview.some((line) => line.includes("No content captured for this category.")));
 	view.handleInput("\u001b");
 
-	// Aggregate overflow: preview scrolls and stays bounded.
+	// Aggregate overflow: entry stream scrolls and stays bounded.
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
 	const top = view.render(80).map(stripSgr);
-	assert.ok(top.some((line) => line.includes("· tool_1:")));
-	assert.ok(!top.some((line) => line.includes("· tool_30:")));
-	assert.ok(top.some((line) => /\(1\/30\)/.test(line)));
+	assert.ok(top.some((line) => line.includes("[tool_1]")));
+	assert.ok(!top.some((line) => line.includes("[tool_30]")));
+	assert.ok(top.some((line) => /\(1\/\d+\)/.test(line)));
 	view.handleInput("\u001b[4~"); // End
 	const bottom = view.render(80).map(stripSgr);
-	assert.ok(bottom.some((line) => line.includes("· tool_30:")));
-	assert.ok(!bottom.some((line) => line.includes("· tool_1:")));
+	assert.ok(bottom.some((line) => line.includes("[tool_30]")));
+	assert.ok(!bottom.some((line) => line.includes("[tool_1]")));
 	view.handleInput("\u001b[1~"); // Home
-	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("· tool_1:")));
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("[tool_1]")));
 	view.handleInput("\u001b");
 
 	// Enter on the free-space row opens nothing.
@@ -344,6 +386,66 @@ test("UsageView previews leaf categories, free space, and long breakdowns safely
 			assert.ok(visibleWidth(line) <= width, `preview line exceeds width ${width}: ${JSON.stringify(line)}`);
 		}
 	}
+});
+
+test("UsageView caps long entries, sanitizes content, and omits snapshot datetimes", () => {
+	const longText = Array.from({ length: 30 }, (_, line) => `line ${line + 1}`).join("\n");
+	const cappedUsage: ContextUsageSnapshot = {
+		...usage(2_000),
+		categories: [
+			{
+				id: "tool-output",
+				label: "Tool Output",
+				tokens: 1_000,
+				children: [
+					{
+						id: "tool-result:bash",
+						label: "bash",
+						tokens: 1_000,
+						entries: [
+							{
+								timestamp: Date.UTC(2026, 6, 11, 15, 0, 0),
+								breadcrumb: ["bash"],
+								tokens: 1_000,
+								text: `\u001b]0;evil\u0007${longText}`,
+							},
+						],
+					},
+				],
+			},
+			{
+				id: "system-prompt",
+				label: "System Prompt",
+				tokens: 1_000,
+				entries: [{ breadcrumb: ["Base Prompt"], tokens: 1_000, text: "You are pi." }],
+			},
+		],
+		estimatedTokens: 2_000,
+	};
+	const view = new UsageView(createTheme(), { usage: cappedUsage }, () => {}, () => 40);
+
+	// Tool Output: 20 content lines then a dim overflow marker; escapes stripped.
+	view.render(100);
+	view.handleInput("\r");
+	const capped = view.render(100);
+	const plainCapped = capped.map(stripSgr);
+	assert.ok(plainCapped.some((line) => line === "    line 20"));
+	assert.ok(!plainCapped.some((line) => line.includes("line 21")));
+	const marker = plainCapped.findIndex((line) => line === "    … +10 lines");
+	assert.ok(marker >= 0);
+	assert.match(capped[marker] ?? "", /\u001b\[38;2;16;17;18m… \+10 lines/);
+	assert.ok(!capped.some((line) => line.includes("\u0007") || line.includes("evil")));
+	view.handleInput("\u001b");
+
+	// Snapshot-backed category: breadcrumb-only header without a datetime cell.
+	// Two rows down: past the expanded `bash` child row to System Prompt.
+	view.handleInput("\u001b[B");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const snapshotPreview = view.render(100).map(stripSgr);
+	const header = snapshotPreview.findIndex((line) => /^  \[Base Prompt\] 1k$/.test(line));
+	assert.ok(header >= 0, "snapshot entry header has no datetime cell");
+	assert.equal(snapshotPreview[header + 1], "    You are pi.");
 });
 
 test("UsageView respects width and height changes", () => {

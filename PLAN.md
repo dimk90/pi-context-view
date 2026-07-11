@@ -342,10 +342,10 @@ The views are independent; there is no tab state or tab-switching keybinding.
 Both views share a small state machine (`list | preview`), a selected row, and
 scroll offsets. Up/Down/PgUp/PgDn/Home/End navigate; Enter opens a scrollable
 preview; Escape returns from preview to list, then closes the view. The Usage
-preview shows the selected category's typed constituent hierarchy with aligned
-token estimates and context-window proportions; the Injections preview shows
-sanitized raw injection text. In the Injections view, `r` toggles Runtime
-logging.
+preview shows the selected category's actual content as a chronological entry
+stream (bracketed datetime/breadcrumb/token headers, capped sanitized content);
+the Injections preview shows sanitized raw injection text. In the Injections
+view, `r` toggles Runtime logging.
 
 Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and proper theme invalidation. Both focused views use fullscreen
@@ -448,18 +448,26 @@ line only when scrolling is required.
     per-tool results and bash executions directly, without a `Tool Results`
     layer. Make that list independently scrollable when needed; map allocation
     continues to use top-level totals only.
-- [x] 7a. **Make Usage categories selectable and add category preview.**
+- [x] 7a. **Make Usage categories selectable and add category content preview.**
   - Add a fixed-column cursor plus arrow, Page Up/Down, Home, and End navigation
     across category rows; keep scrolling bounded and preserve selection through
     width/height reflows.
-  - Open the selected category with Enter. Preview its typed constituent
-    hierarchy with aligned token estimates and context-window proportions,
-    without counting children again. If category-specific raw content is shown,
-    keep it explicit-Enter-only, terminal-sanitized, memory-only, and unpersisted.
+  - Open the selected category with Enter. Preview its actual content as a
+    chronological entry stream, one entry per constituent block: header
+    `[DD-MM-YYYY HH:MM:SS] [breadcrumb…] tokens` (dim datetime and tokens,
+    muted bracket cells), content indented below, blank row between entries.
+  - Assistant messages produce per-block entries: tool calls get
+    `[assistant] [toolname]`, text/thinking add a `text i/n` cell only for
+    multi-block messages. Snapshot-backed categories (System Prompt/Tools,
+    Skills, Memory) omit the datetime cell and keep category order.
+  - Cap each entry at 20 wrapped lines with a dim `… +N lines` marker; full
+    content still counts in tokens. Content is explicit-Enter-only,
+    terminal-sanitized, memory-only, and unpersisted.
   - Escape returns to the same selected row; a second Escape closes the Usage
     view. Keep map colors and top-level allocation unchanged in preview mode.
-  - Cover leaf/aggregate categories, Tool Output children, empty breakdowns,
-    overflow scrolling, narrow widths, and short terminal heights in tests.
+  - Cover per-block splitting, chronological flattening, entry caps,
+    sanitization, empty categories, Tool Output children, overflow scrolling,
+    narrow widths, and short terminal heights in tests.
 - [ ] 8. **Add bounded opt-in Runtime mutation logging.**
   - The current command/view surfaces store only the toggle state; they do not
     log mutations yet and must not be treated as functional until this step.

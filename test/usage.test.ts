@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type { ContextEvent } from "@earendil-works/pi-coding-agent";
 
 import type { InitialSnapshot, InjectionItem, UsageCategory } from "../src/model.ts";
-import { computeUsage, toReportedUsage } from "../src/usage.ts";
+import { collectPreviewEntries, computeUsage, toReportedUsage } from "../src/usage.ts";
 
 /** Minimal measured item fixture. */
 function item(
@@ -190,17 +190,105 @@ test("computeUsage drops empty categories and aggregates duplicate tool/custom m
 	];
 	const usage = computeUsage({ snapshot: snapshot(), messages });
 
-	assert.deepEqual(category(usage.categories, "tool-output"), {
-		id: "tool-output",
-		label: "Tool Output",
-		tokens: 3,
-		children: [{ id: "tool-result:read", label: "read", tokens: 3 }],
-	});
-	assert.deepEqual(category(usage.categories, "extension-messages").children, [
-		{ id: "custom-message:marker", label: "marker", tokens: 3 },
-	]);
+	const toolOutput = category(usage.categories, "tool-output");
+	assert.equal(toolOutput.tokens, 3);
+	assert.deepEqual(toolOutput.children?.map((entry) => [entry.id, entry.tokens]), [["tool-result:read", 3]]);
+	assert.deepEqual(
+		category(usage.categories, "extension-messages").children?.map((entry) => [entry.id, entry.tokens]),
+		[["custom-message:marker", 3]],
+	);
+	assert.equal(category(usage.categories, "tool-result:read").entries?.length, 2);
 	assert.equal(findCategory(usage.categories, "user-messages"), undefined);
 	assert.ok(!usage.categories.some((entry) => entry.id === "compacted-data"));
+});
+
+test("computeUsage builds per-block preview entries with timestamps and breadcrumbs", () => {
+	const base = assistantMessage();
+	assert.equal(base.role, "assistant");
+	const multiBlock: ContextEvent["messages"][number] = {
+		...base,
+		content: [
+			{ type: "text", text: "first block" },
+			{ type: "text", text: "second block" },
+			{ type: "toolCall", id: "a", name: "read", arguments: { path: "x" } },
+			{ type: "toolCall", id: "b", name: "bash", arguments: { command: "ls" } },
+		],
+		timestamp: 20,
+	};
+	const messages: ContextEvent["messages"] = [
+		{ role: "user", content: "hello there", timestamp: 10 },
+		assistantMessage(),
+		multiBlock,
+		{ role: "bashExecution", command: "ls", output: "out", exitCode: 0, cancelled: false, truncated: false,
+			timestamp: 30 },
+	];
+	const usage = computeUsage({ snapshot: snapshot(), messages });
+
+	const userEntries = category(usage.categories, "user-messages").entries ?? [];
+	assert.deepEqual(userEntries.map((entry) => [entry.timestamp, [...entry.breadcrumb], entry.text]), [
+		[10, ["user"], "hello there"],
+	]);
+
+	// Single text block: no index cell. Multiple text blocks: `text i/n` cells.
+	const textEntries = category(usage.categories, "agent-text-messages").entries ?? [];
+	assert.deepEqual(textEntries.map((entry) => [...entry.breadcrumb]), [
+		["assistant"],
+		["assistant", "text 1/2"],
+		["assistant", "text 2/2"],
+	]);
+	assert.equal(textEntries[1]?.text, "first block");
+
+	// Tool calls: one entry per call with the tool name as a breadcrumb cell.
+	const callEntries = category(usage.categories, "agent-tool-call-messages").entries ?? [];
+	assert.deepEqual(callEntries.map((entry) => [entry.timestamp, [...entry.breadcrumb]]), [
+		[2, ["assistant", "read"]],
+		[20, ["assistant", "read"]],
+		[20, ["assistant", "bash"]],
+	]);
+	assert.equal(callEntries[2]?.text, 'bash({"command":"ls"})');
+	const callCategory = category(usage.categories, "agent-tool-call-messages");
+	assert.equal(callCategory.tokens, callEntries.reduce((sum, entry) => sum + entry.tokens, 0));
+
+	const bashEntries = category(usage.categories, "bash-executions").entries ?? [];
+	assert.deepEqual(bashEntries.map((entry) => [entry.timestamp, [...entry.breadcrumb], entry.text]), [
+		[30, ["bash"], "$ ls\nout"],
+	]);
+
+	// Snapshot-backed categories carry timeless content entries.
+	const promptEntries = category(usage.categories, "system-prompt").children?.flatMap(
+		(child) => child.entries ?? [],
+	) ?? [];
+	assert.ok(promptEntries.length > 0);
+	assert.ok(promptEntries.every((entry) => entry.timestamp === undefined));
+});
+
+test("collectPreviewEntries flattens aggregates chronologically", () => {
+	const messages: ContextEvent["messages"] = [
+		{
+			role: "toolResult",
+			toolCallId: "one",
+			toolName: "read",
+			content: [{ type: "text", text: "later read" }],
+			isError: false,
+			timestamp: 200,
+		},
+		{
+			role: "toolResult",
+			toolCallId: "two",
+			toolName: "bash",
+			content: [{ type: "text", text: "earlier bash" }],
+			isError: false,
+			timestamp: 100,
+		},
+	];
+	const usage = computeUsage({ snapshot: snapshot(), messages });
+
+	const flattened = collectPreviewEntries(category(usage.categories, "tool-output"));
+	assert.deepEqual(flattened.map((entry) => entry.text), ["earlier bash", "later read"]);
+
+	// Timeless snapshot entries keep category order instead of sorting.
+	const systemTools = collectPreviewEntries(category(usage.categories, "system-tools"));
+	assert.deepEqual(systemTools.map((entry) => [...entry.breadcrumb]), [["bash"], ["read"]]);
 });
 
 test("toReportedUsage preserves known values and maps unknown nullable values to undefined", () => {

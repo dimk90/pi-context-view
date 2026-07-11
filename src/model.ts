@@ -75,6 +75,20 @@ export interface UsageCategory {
 	readonly tokens: number;
 	/** Breakdown of the parent (e.g. per tool or per customType), not additional totals. */
 	readonly children?: readonly UsageCategory[];
+	/** Content entries backing the category preview; leaves only. */
+	readonly entries?: readonly UsagePreviewEntry[];
+}
+
+/** One content entry shown in a Usage category preview. */
+export interface UsagePreviewEntry {
+	/** Message time (epoch ms); absent for Initial-snapshot components. */
+	readonly timestamp?: number;
+	/** Bracket header cells, e.g. ["assistant", "read"] or ["code-style"]. */
+	readonly breadcrumb: readonly string[];
+	/** Estimated tokens for this entry alone. */
+	readonly tokens: number;
+	/** Raw content for preview. Process-local; never log or persist. */
+	readonly text: string;
 }
 
 /** Pi-reported usage; tokens/percent are omitted when unknown (e.g. right after compaction). */
