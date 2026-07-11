@@ -4,6 +4,9 @@ import { test } from "node:test";
 import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import type { InitialSnapshot, InjectionGroup, InjectionItem } from "../src/model.ts";
+import { InjectionsView, type RuntimeToggle } from "../src/ui/injections-view.ts";
+
 const FG_COLORS: ThemeColor[] = [
 	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text",
 	"thinkingText", "userMessageText", "customMessageText", "customMessageLabel", "toolTitle", "toolOutput",
@@ -23,6 +26,8 @@ function createTheme(): Theme {
 		text: "#040506",
 		muted: "#070809",
 		dim: "#101112",
+		error: "#131415",
+		mdHeading: "#161718",
 	};
 	const fgColors = Object.fromEntries(FG_COLORS.map((color) => [color, foregroundOverrides[color] ?? "#aabbcc"]));
 	const bgColors = Object.fromEntries(BG_COLORS.map((color) => [color, "#112233"]));
@@ -32,9 +37,6 @@ function createTheme(): Theme {
 		"truecolor",
 	);
 }
-
-import type { InitialSnapshot, InjectionGroup, InjectionItem } from "../src/model.ts";
-import { InjectionsView, type RuntimeToggle } from "../src/ui/injections-view.ts";
 
 function item(id: string, sourceId: string, native: boolean, tokens: number): InjectionItem {
 	return {
@@ -109,17 +111,22 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	let lines = view.render(80);
 	assert.equal(lines[1], "");
 	assert.equal(lines.at(-2), "");
-	const headerIndex = lines.findIndex((line) => stripSgr(line).includes("Context injections"));
+	const headerIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections"));
 	const initialIndex = lines.findIndex((line) => stripSgr(line).trim() === "INITIAL");
-	const totalIndex = lines.findIndex((line) => stripSgr(line).includes("TOTAL"));
-	const runtimeIndex = lines.findIndex((line) => stripSgr(line).includes("RUNTIME"));
 	assert.ok(headerIndex >= 0 && initialIndex === headerIndex + 2);
 	assert.equal(lines[headerIndex + 1], "");
-	assert.ok(totalIndex >= 0 && runtimeIndex === totalIndex + 2);
-	assert.equal(lines[totalIndex + 1], "");
+	assert.equal(stripSgr(lines[headerIndex] ?? "").indexOf("Context Injections"), 0);
+	assert.equal(stripSgr(lines[initialIndex] ?? "").indexOf("INITIAL"), 0);
+	// The INITIAL sub-header uses the theme's mdHeading color.
+	assert.match(lines[initialIndex] ?? "", /\u001b\[38;2;22;23;24mINITIAL/);
+	assert.match(stripSgr(lines[headerIndex] ?? ""), /Runtime Logging: Off/);
+	// "Runtime Logging:" is dim, "Off" is muted.
+	assert.match(lines[headerIndex] ?? "", /\u001b\[38;2;16;17;18mRuntime Logging:/);
+	assert.match(lines[headerIndex] ?? "", /\u001b\[38;2;7;8;9mOff/);
+	assert.ok(!lines.some((line) => stripSgr(line).includes("RUNTIME")));
 	const selectedGroup = lines.find((line) => stripSgr(line).includes("→ pi"));
 	assert.ok(selectedGroup !== undefined);
-	assert.equal(stripSgr(selectedGroup).indexOf("→"), 1);
+	assert.equal(stripSgr(selectedGroup).indexOf("→"), 0);
 	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m→ /);
 	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m50/);
 	assert.doesNotMatch(selectedGroup, /\u001b\[48;/);
@@ -130,23 +137,51 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.match(childLine ?? "", /\u001b\[38;2;16;17;18mchild/);
 	assert.match(childLine ?? "", /\u001b\[38;2;7;8;9m20/);
 
+	// TOTAL is a fixed summary outside the scroll area, one blank row below the
+	// sections; it sums the whole snapshot (nested children are not double-counted).
+	const totalRowIndex = lines.findIndex((line) => stripSgr(line).includes("TOTAL"));
+	const descIndex = lines.findIndex((line) => stripSgr(line).includes("Initial injections and estimated"));
+	assert.ok(totalRowIndex >= 0 && totalRowIndex < descIndex);
+	assert.equal(lines[totalRowIndex - 1], "");
+	assert.equal(stripSgr(lines[totalRowIndex] ?? "").indexOf("TOTAL"), 2);
+	assert.match(stripSgr(lines[totalRowIndex] ?? ""), /TOTAL\s+50/);
+
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	lines = view.render(80);
 	const selectedChild = lines.find((line) => stripSgr(line).includes("→     child"));
 	assert.ok(selectedChild !== undefined);
-	assert.equal(stripSgr(selectedChild).indexOf("→"), 1);
+	assert.equal(stripSgr(selectedChild).indexOf("→"), 0);
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3mchild/);
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3m20/);
 
 	const descriptionIndex = lines.findIndex((line) => stripSgr(line).includes("Initial injections and estimated"));
-	const hintsIndex = lines.findIndex((line) => stripSgr(line).includes("↑↓ navigate"));
+	const hintsIndex = lines.findIndex((line) => stripSgr(line).includes("↑↓ Navigate"));
 	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
 	assert.equal(lines[descriptionIndex - 1], "");
 	assert.equal(lines[descriptionIndex + 1], "");
-	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m Initial injections/);
+	assert.equal(stripSgr(lines[descriptionIndex] ?? "").indexOf("Initial injections"), 2);
+	assert.equal(stripSgr(lines[hintsIndex] ?? "").indexOf("↑↓"), 2);
+	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m  Initial injections/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18m↑↓/);
-	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m navigate/);
+	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Navigate/);
+	assert.match(lines[hintsIndex] ?? "", / · /);
+});
+
+test("InjectionsView tags the INITIAL header only when the capture is degraded", () => {
+	const plain = createView(4);
+	const plainInitial = plain.render(80).find((line) => stripSgr(line).includes("INITIAL"));
+	assert.ok(plainInitial !== undefined);
+	assert.equal(stripSgr(plainInitial).trim(), "INITIAL");
+
+	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
+	const degraded = createView(4, reason);
+	const degradedInitial = degraded.render(80).find((line) => stripSgr(line).includes("INITIAL"));
+	assert.ok(degradedInitial !== undefined);
+	assert.equal(stripSgr(degradedInitial).trim(), "INITIAL [Degraded: pi-native fallback used]");
+	// "Degraded:" is drawn in the error color; the brackets/detail stay dim.
+	assert.match(degradedInitial, /\u001b\[38;2;19;20;21mDegraded:/);
+	assert.match(degradedInitial, /\u001b\[38;2;16;17;18m pi-native fallback used\]/);
 });
 
 test("InjectionsView keeps every rendered line within the width", () => {
@@ -186,12 +221,14 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	const previewHeaderIndex = previewLines.findIndex((line) => stripSgr(line).includes("tokens"));
 	const firstContentIndex = previewLines.findIndex((line) => stripSgr(line).includes("preview line 0"));
 	assert.ok(previewHeaderIndex >= 0 && firstContentIndex === previewHeaderIndex + 2);
+	// Preview content is indented two spaces.
+	assert.equal(stripSgr(previewLines[firstContentIndex] ?? "").indexOf("pi-1"), 2);
 	assert.equal(previewLines[previewHeaderIndex + 1], "");
 	const descriptionIndex = previewLines.findIndex((line) => stripSgr(line).includes("Raw captured text"));
 	assert.ok(descriptionIndex > 0);
 	assert.equal(previewLines[descriptionIndex - 1], "");
 	assert.equal(previewLines[descriptionIndex + 1], "");
-	assert.match(previewLines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m Raw captured text/);
+	assert.match(previewLines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m  Raw captured text/);
 
 	// Scrolling changes the visible window; Escape returns to the unchanged list.
 	view.handleInput("\u001b[6~"); // PgDn
@@ -218,19 +255,24 @@ test("InjectionsView navigation scrolls and Escape closes", () => {
 	const initialLines = view.render(80);
 	const scrollIndicator = initialLines.find((line) => /\(1\/\d+\)/.test(stripSgr(line)));
 	assert.ok(scrollIndicator !== undefined);
-	assert.match(scrollIndicator, /\u001b\[38;2;16;17;18m \(1\/\d+\)/);
+	assert.match(scrollIndicator, /\u001b\[38;2;16;17;18m  \(1\/\d+\)/);
 	const before = initialLines.join("\n");
 	view.handleInput("\u001b[B");
 	const afterDown = view.render(80).join("\n");
 	assert.notEqual(afterDown, before);
 
 	view.handleInput("\u001b[4~"); // End
-	const atEnd = view.render(80);
-	assert.match(atEnd.join("\n"), /TOTAL/);
+	const atEnd = view.render(80).join("\n");
+	assert.match(stripSgr(atEnd), /→   ext-29/);
+	assert.match(atEnd, /TOTAL/);
 
 	view.handleInput("r");
 	assert.equal(runtime.enabled, true);
-	assert.match(view.render(80).join("\n"), /logging: on/);
+	const enabledLines = view.render(80);
+	const enabledHeader = enabledLines.find((line) => stripSgr(line).includes("Runtime Logging: On"));
+	assert.ok(enabledHeader !== undefined);
+	// "On" switches to accent.
+	assert.match(enabledHeader, /\u001b\[38;2;1;2;3mOn/);
 
 	view.handleInput("\u001b");
 	assert.equal(closed, true);

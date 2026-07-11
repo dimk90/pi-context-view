@@ -41,7 +41,7 @@ function snapshot(): InitialSnapshot {
 	};
 }
 
-test("buildInjectionRows flattens groups, items, and total in order", () => {
+test("buildInjectionRows flattens groups and items without a total row", () => {
 	const rows = buildInjectionRows(snapshot());
 
 	assert.deepEqual(
@@ -55,12 +55,11 @@ test("buildInjectionRows flattens groups, items, and total in order", () => {
 			["item", "skills", 1],
 			["group", "npm:web", 0],
 			["item", "web_search", 1],
-			["total", "TOTAL", 0],
 		],
 	);
-	assert.equal(rows.at(-1)?.tokens, 230);
-	assert.equal(rows[1]?.itemId, "base-prompt");
-	assert.equal(rows[0]?.itemId, undefined);
+	const basePromptRow = rows[1];
+	assert.equal(basePromptRow?.kind, "item");
+	if (basePromptRow?.kind === "item") assert.equal(basePromptRow.itemId, "base-prompt");
 });
 
 test("collectItemsById indexes every snapshot item including children", () => {

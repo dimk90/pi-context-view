@@ -4,20 +4,23 @@
  */
 import type { InitialSnapshot, InjectionItem } from "../model.ts";
 
-/** What one selectable list row represents. */
-export type InjectionRowKind = "group" | "item" | "total";
-
 /** One flattened list row derived from the snapshot hierarchy. */
-export interface InjectionRow {
-	readonly kind: InjectionRowKind;
-	readonly label: string;
-	readonly tokens: number;
-	/** Indentation level: 0 for groups/total, 1 for items, 2 for sub-items. */
-	readonly depth: number;
-	/** Snapshot item id; present only for `kind: "item"` (preview target). */
-	readonly itemId?: string;
-	readonly native: boolean;
-}
+export type InjectionRow =
+	| {
+		readonly kind: "group";
+		readonly label: string;
+		readonly tokens: number;
+		readonly depth: 0;
+	}
+	| {
+		readonly kind: "item";
+		readonly label: string;
+		readonly tokens: number;
+		/** One for items and two for constituent sub-items. */
+		readonly depth: 1 | 2;
+		/** Stable preview target id from the snapshot. */
+		readonly itemId: string;
+	};
 
 /** Index snapshot items (including sub-items) by id for preview lookup. */
 export function collectItemsById(snapshot: InitialSnapshot): Map<string, InjectionItem> {
@@ -36,7 +39,10 @@ export function normalizePreviewText(text: string): string {
 	return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n").replaceAll("\t", "    ");
 }
 
-/** Flatten snapshot groups into display rows, ending with a TOTAL row. */
+/**
+ * Flatten snapshot groups into scrollable display rows. The TOTAL summary is
+ * rendered separately, outside the scroll area, by the view.
+ */
 export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 	const rows: InjectionRow[] = [];
 	for (const group of snapshot.groups) {
@@ -45,7 +51,6 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 			label: group.source.label,
 			tokens: group.totalTokens,
 			depth: 0,
-			native: group.source.native,
 		});
 		for (const item of group.items) {
 			rows.push({
@@ -54,7 +59,6 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 				tokens: item.tokens,
 				depth: 1,
 				itemId: item.id,
-				native: item.source.native,
 			});
 			for (const child of item.children ?? []) {
 				rows.push({
@@ -63,12 +67,10 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 					tokens: child.tokens,
 					depth: 2,
 					itemId: child.id,
-					native: child.source.native,
 				});
 			}
 		}
 	}
-	rows.push({ kind: "total", label: "TOTAL", tokens: snapshot.totalTokens, depth: 0, native: true });
 	return rows;
 }
 

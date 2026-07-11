@@ -45,52 +45,107 @@ The old `--context-inspect` print-and-exit workflow is superseded. See
 
 ## UI sketches
 
+Both views are fullscreen with horizontal top/bottom borders, one blank padding
+row inside each border and after the dialog header, an accent title with the
+capture/summary aligned right, a `→` cursor in a fixed column, a muted
+description between blank rows above the hints, and dim key + muted description
+hints. Headers, sub-headers, and the cursor sit flush at column 0; sub-headers
+are bold and use `mdHeading`; the description, scroll counter, hint row, and
+preview body are indented two spaces. Hints are joined by ` · `. Titles, section
+names, and hint labels use Title Case
+(`Context Injections`, `Esc Close`); recognizable identifiers such as `pi` and
+tool names (`edit`, `web_search`) keep their literal casing, and longer
+descriptions stay sentence case. `(current/total)` appears only while scrolling.
+
 Default — `/context` or `/context usage`:
 
 ```text
-┌ Context usage ──────────────────────────────────────────┐
-│ estimated current/next-request composition              │
-│                                                        │
-│ system prompt                                  3,126   │
-│ active tool schemas                            2,146   │
-│ user messages                                  1,805   │
-│ assistant text                                 8,491   │
-│ thinking                                       3,102   │
-│ tool calls/results                             4,384   │
-│ summaries                                      1,227   │
-│                                                        │
-│ estimated total                              24,281   │
-│ pi usage                         24,958 / 200,000  12% │
-│                                                        │
-│ r refresh  esc close                                   │
-└────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+
+  Context Usage:
+
+  ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛁ ⛁ ⛁ ⛶ ⛶ ⛶ ⛶     Model:
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    claude-opus-4-8
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    43.8k/1m tokens (4%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    Estimated usage by category:
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ System Prompt: 3.7k tokens (0.4%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ System Tools: 11.8k tokens (1.2%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ AGENTS.md files: 1.8k tokens (0.2%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Skills: 3.2k tokens (0.3%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Messages: 23.7k tokens (2.4%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ Extensions: ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛁ ...
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶    ⛶ Free space: 955.8k (95.6%)
+  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶
+
+  R Refresh  Esc Close
+
+────────────────────────────────────────────────────────────────────────────────
 ```
 
 `/context injections`:
 
 ```text
-┌ Context injections ─────────────────────────────────────┐
-│ INITIAL                      captured: synthetic probe  │
-│  pi                                             3,126  │
-│    base system prompt                             652  │
-│    built-in tool definitions                      640  │
-│      edit                                          278  │
-│      read                                          154  │
-│      bash                                          118  │
-│      write                                          90  │
-│    ~/.pi/agent/AGENTS.md                            89  │
-│    ./AGENTS.md                                     757  │
-│    skills                                         988  │
-│  npm:pi-web-providers                           1,510  │
-│    web_search                                   1,414  │
-│    web_contents                                    96  │
-│  extensions (aggregate)                            85  │
-│                                                        │
-│ RUNTIME                         logging: off            │
-│  Press r to start logging future injections.            │
-│                                                        │
-│ ↑↓ navigate  enter preview  r logging  esc close       │
-└────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+
+Context Injections                                        Runtime Logging: Off
+
+[INITIAL]
+→ pi                                                                     3,126
+    Base Prompt                                                            652
+    Built-in Tools (4)                                                     640
+      edit                                                                 278
+      read                                                                 154
+      bash                                                                 118
+      write                                                                 90
+    Skills (6)                                                             988
+    ~/.pi/agent/AGENTS.md                                                   89
+    ./AGENTS.md                                                            757
+  npm:pi-web-providers                                                   1,510
+    web_search                                                           1,414
+    web_contents                                                            96
+  extensions (aggregate)                                                    85
+  (1/16)
+
+  TOTAL                                                                  5,038
+
+  Initial injections and estimated token counts.
+
+  ↑↓ Navigate · Enter Preview · R Toggle Runtime Logging · Esc Close
+
+────────────────────────────────────────────────────────────────────────────────
+```
+
+When capture is degraded (no model/auth or a failed probe), the `INITIAL`
+sub-header is tagged — `Degraded:` in the error color — and the specific reason
+wraps directly below it:
+
+```text
+INITIAL [Degraded: pi-native fallback used]
+  Silent probe unavailable: context-noauth has no configured authentication.
+  Extension additions were not observed.
+→ pi                                                                     3,126
+...
+```
+
+Enter on an item opens a scrolling raw-text preview:
+
+```text
+────────────────────────────────────────────────────────────────────────────────
+
+Base Prompt                                                pi · 652 tokens
+
+  You are pi, a coding agent. ...
+  ...raw captured text, wrapped to width...
+
+  (1/58)
+
+  Raw captured text; never logged or persisted.
+
+  ↑↓ Scroll · Pgup/Pgdn Page · Esc Back
+
+────────────────────────────────────────────────────────────────────────────────
 ```
 
 ## Architecture
@@ -282,14 +337,21 @@ Use pi’s injected theme/keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and proper theme invalidation. Both focused views use fullscreen
 overlays at all terminal widths; content must resize rather than clip.
 
+The Injections header shows the current runtime-logging status
+(`Runtime Logging: On|Off`) right-aligned; there is no standalone status line.
+The `RUNTIME` section is shown only once it has logged entries (step 8), so an
+empty log adds no rows.
+
 Match pi's native selector styling (`/settings`, `/model`): one blank padding
 row inside both borders and after the dialog header; keep exactly one blank row
 between the dialog header and `INITIAL`, and one before later sub-headers such as
-`RUNTIME`. Use an accent title, `→` cursor, and selected label; keep the cursor
-in a fixed column with hierarchy indentation after it; use bright `text` for main
-rows, `muted` for sub-items and values, and `dim` for sub-sub-items. Selection
+`RUNTIME` when present. Use an accent title, bold `mdHeading` sub-headers, a `→`
+cursor, and an accent selected label; keep the cursor in a fixed column with
+hierarchy indentation after it; use bright `text` for main rows, `muted` for
+sub-items and values, and `dim` for sub-sub-items. Selection
 uses `accent` for both label and value, never a full-line background. Put a
 concise muted dialog description between blank rows above the hotkey row.
+Indent descriptions, scroll counters, hints, and preview bodies two spaces.
 Format hints as dim key + muted description and show a dim `(current/total)`
 line only when scrolling is required.
 
@@ -330,7 +392,7 @@ line only when scrolling is required.
   - Use fixed-column `→` selection, foreground-only highlighting, main/sub-item
     hierarchy colors, muted values (accent when selected), dim scroll position,
     padded description + styled hotkey rows, top/bottom padding, one row after
-    the dialog header, and one row before `RUNTIME`.
+    the dialog header, and one row before `RUNTIME` when that section is shown.
   - Set it as temporary default for `/context`.
 - [x] 5. **Add injection preview mode.**
   - Enter opens `InjectionItem.text`; scrolling via arrows/PgUp/PgDn; Escape
@@ -359,7 +421,8 @@ line only when scrolling is required.
   - The current command/view surfaces store only the toggle state; they do not
     log injections yet and must not be treated as functional until this step.
   - Implement prompt/tool/message diffing, request indexing, ring-buffer
-    limits, eviction count, both toggle surfaces, and Runtime section UI.
+    limits, eviction count, both toggle surfaces, and Runtime section UI shown
+    only when the log is non-empty (header always reflects the toggle state).
   - Verify disabled overhead is only guarded event dispatch/state checks and
     `/context runtime on|off` never probes or opens a view.
 - [ ] 9. **Polish lifecycle and edge cases.**
@@ -385,18 +448,26 @@ line only when scrolling is required.
 
 ## Initial hierarchy
 
+Within the `pi` group, items use a fixed semantic order regardless of size:
+`Base Prompt`, `Built-in Tools (N)`, other tools, `Skills (K)`, then the rest
+(context files, prompt additions) by size descending. Home-directory context
+file paths are abbreviated with `~`.
+
 - pi
-  - base/custom system prompt
-  - built-in tool definitions aggregate → one breakdown child per active tool
-  - context file → one item per path
-  - skills → one child per skill if reliably separable, otherwise aggregate
+  - Base/Custom Prompt
+  - Built-in Tools (N) → one breakdown child per active built-in tool
+  - Skills (K) → one child per skill if reliably separable, otherwise aggregate
+  - context file → one item per path (`~` for home paths)
   - appended system prompt
 - each extension/tool source (`sourceInfo.source`)
   - tool → one child per active tool
   - custom message → identified by `customType` when available
 - extensions (unattributable)
   - chained prompt additions aggregate
-- TOTAL
+
+`TOTAL` is not part of the scrollable list. It renders as a fixed summary below
+the scroll area, separated from the sections above (Initial now, Runtime later)
+by one blank row, and sums the token estimates across all of them.
 
 ## Verification invariants
 

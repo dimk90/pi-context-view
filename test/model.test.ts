@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildSnapshot, groupInjections, type InjectionItem } from "../src/model.ts";
+import { buildSnapshot, groupInjections, type InjectionItem, type InjectionKind } from "../src/model.ts";
 
 /** InjectionItem fixture with sizes derived from the token count. */
 function item(
@@ -10,11 +10,12 @@ function item(
 	sourceLabel: string,
 	native: boolean,
 	tokens: number,
+	kind: InjectionKind = "message",
 ): InjectionItem {
 	return {
 		id,
 		phase: "initial",
-		kind: "message",
+		kind,
 		source: { id: sourceId, label: sourceLabel, native },
 		label: id,
 		chars: tokens * 4,
@@ -41,6 +42,21 @@ test("groupInjections creates hierarchy and totals in display order", () => {
 		["large-a", "large-b"],
 	);
 	assert.equal(groups[1]?.totalTokens, 13);
+});
+
+test("groupInjections orders pi items base, built-in tools, tools, skills, then by size", () => {
+	const [pi] = groupInjections([
+		item("context-file:./AGENTS.md", "pi", "pi", true, 30, "context-file"),
+		item("skills", "pi", "pi", true, 5, "skills"),
+		item("tool:builtin", "pi", "pi", true, 3, "tool"),
+		item("base-prompt", "pi", "pi", true, 1, "base-prompt"),
+		item("tool:pi:web_search", "pi", "pi", true, 40, "tool"),
+	]);
+
+	assert.deepEqual(
+		pi?.items.map((entry) => entry.id),
+		["base-prompt", "tool:builtin", "tool:pi:web_search", "skills", "context-file:./AGENTS.md"],
+	);
 });
 
 test("buildSnapshot owns nested input data and computes the total", () => {

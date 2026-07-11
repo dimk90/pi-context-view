@@ -18,6 +18,7 @@ import {
 const LIST_FIXED_LINE_COUNT = 13;
 const PREVIEW_FIXED_LINE_COUNT = 10;
 const MIN_LIST_LINES = 4;
+const BODY_INDENT = "  ";
 const LIST_DESCRIPTION = "Initial injections and estimated token counts.";
 const PREVIEW_DESCRIPTION = "Raw captured text; never logged or persisted.";
 
@@ -131,29 +132,28 @@ export class InjectionsView {
 
 		lines.push(this.headerLine(width));
 		lines.push("");
-		lines.push(this.fit(theme.fg("dim", ` ${"INITIAL"}`), width));
+		lines.push(this.initialHeaderLine(width));
 		lines.push(...warningLines);
 		const listLines = this.listLines(width);
-		const paddingCount = visibleRowCount - listLines.length;
-		if (paddingCount > 0 && listLines.length > 0) {
-			// Keep TOTAL adjacent to the next section; spare fullscreen rows belong
-			// inside the Initial section, before its summary.
-			lines.push(...listLines.slice(0, -1));
-			for (let pad = 0; pad < paddingCount; pad++) lines.push("");
-			lines.push(listLines[listLines.length - 1] ?? "");
-		} else {
-			lines.push(...listLines);
-		}
+		lines.push(...listLines);
 		if (this.navigator.hasOverflow) lines.push(this.scrollLine(width));
+		// Pad so the fixed TOTAL summary sits at the bottom of the scroll area.
+		const paddingCount = visibleRowCount - listLines.length;
+		for (let pad = 0; pad < paddingCount; pad++) lines.push("");
+		// TOTAL is outside the scroll area and separated from the sections above.
 		lines.push("");
-		lines.push(this.runtimeLine(width));
+		lines.push(this.totalLine(width));
 		lines.push("");
-		lines.push(this.fit(theme.fg("muted", ` ${LIST_DESCRIPTION}`), width));
+		lines.push(this.fit(theme.fg("muted", `${BODY_INDENT}${LIST_DESCRIPTION}`), width));
 		lines.push("");
 		lines.push(
 			this.fit(
-				` ${this.hint("↑↓", "navigate")}  ${this.hint("enter", "preview")}  ` +
-					`${this.hint("r", "logging")}  ${this.hint("esc", "close")}`,
+				this.hintRow([
+					["↑↓", "Navigate"],
+					["Enter", "Preview"],
+					["R", "Toggle Runtime Logging"],
+					["Esc", "Close"],
+				]),
 				width,
 			),
 		);
@@ -192,7 +192,7 @@ export class InjectionsView {
 
 	private openPreview(): void {
 		const row = this.rows[this.navigator.selected];
-		if (row?.itemId === undefined) return;
+		if (row?.kind !== "item") return;
 		const item = this.itemsById.get(row.itemId);
 		if (item === undefined) return;
 		this.previewItem = item;
@@ -217,7 +217,7 @@ export class InjectionsView {
 		this.previewScroller.setExtent(wrapped.length, visibleCount);
 
 		const lines: string[] = [border, ""];
-		const title = theme.fg("accent", theme.bold(` ${item.label}`));
+		const title = theme.fg("accent", theme.bold(item.label));
 		const meta = theme.fg("muted", `${item.source.label} · ${item.tokens.toLocaleString("en-US")} tokens `);
 		lines.push(this.spread(title, meta, width));
 		lines.push("");
@@ -229,11 +229,15 @@ export class InjectionsView {
 
 		if (this.previewScroller.hasOverflow) lines.push(this.previewScrollLine(width, wrapped.length));
 		lines.push("");
-		lines.push(this.fit(theme.fg("muted", ` ${PREVIEW_DESCRIPTION}`), width));
+		lines.push(this.fit(theme.fg("muted", `${BODY_INDENT}${PREVIEW_DESCRIPTION}`), width));
 		lines.push("");
 		lines.push(
 			this.fit(
-				` ${this.hint("↑↓", "scroll")}  ${this.hint("pgup/pgdn", "page")}  ${this.hint("esc", "back")}`,
+				this.hintRow([
+					["↑↓", "Scroll"],
+					["Pgup/Pgdn", "Page"],
+					["Esc", "Back"],
+				]),
 				width,
 			),
 		);
@@ -242,7 +246,7 @@ export class InjectionsView {
 	}
 
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
-		const wrapWidth = Math.max(10, width - 2);
+		const wrapWidth = Math.max(10, width - BODY_INDENT.length - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
 		const text = normalizePreviewText(item.text);
 		const lines: string[] = [];
@@ -252,7 +256,7 @@ export class InjectionsView {
 				lines.push("");
 				continue;
 			}
-			for (const line of wrapped) lines.push(` ${line}`);
+			for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
 		}
 		this.previewLines = lines;
 		this.previewWrapWidth = wrapWidth;
@@ -261,7 +265,10 @@ export class InjectionsView {
 
 	private previewScrollLine(width: number, totalLines: number): string {
 		if (!this.previewScroller.hasOverflow) return this.fit("", width);
-		return this.fit(this.theme.fg("dim", ` (${this.previewScroller.offset + 1}/${totalLines})`), width);
+		return this.fit(
+			this.theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.offset + 1}/${totalLines})`),
+			width,
+		);
 	}
 
 	/** Number of preview text lines that fit, reserving one row only when scrolling. */
@@ -273,11 +280,21 @@ export class InjectionsView {
 
 	private headerLine(width: number): string {
 		const theme = this.theme;
-		const title = theme.fg("accent", theme.bold(" Context injections"));
-		const origin = this.input.degradedReason === undefined
-			? this.input.snapshot.origin === "real-turn" ? "captured: first real turn" : "captured: silent probe"
-			: "captured: pi-native fallback";
-		return this.spread(title, theme.fg("muted", `${origin} `), width);
+		const title = theme.fg("accent", theme.bold("Context Injections"));
+		const enabled = this.input.runtime.isEnabled();
+		const state = enabled ? theme.fg("accent", "On") : theme.fg("muted", "Off");
+		const status = `${theme.fg("dim", "Runtime Logging:")} ${state} `;
+		return this.spread(title, status, width);
+	}
+
+	/** The `INITIAL` sub-header, tagged with the capture origin only when degraded. */
+	private initialHeaderLine(width: number): string {
+		const theme = this.theme;
+		const label = theme.fg("mdHeading", theme.bold("[INITIAL]"));
+		if (this.input.degradedReason === undefined) return this.fit(label, width);
+		const tag = `${theme.fg("dim", " [")}${theme.fg("error", "Degraded:")}` +
+			`${theme.fg("dim", " pi-native fallback used]")}`;
+		return this.fit(`${label}${tag}`, width);
 	}
 
 	private listLines(width: number): string[] {
@@ -290,13 +307,13 @@ export class InjectionsView {
 			if (row === undefined) break;
 			const selected = index === this.navigator.selected;
 			// The cursor stays in one fixed column; hierarchy indents after it.
-			const marker = selected ? theme.fg("accent", "→ ") : "  ";
-			const indent = "  ".repeat(row.depth);
+			const marker = selected ? theme.fg("accent", "→ ") : BODY_INDENT;
+			const indent = BODY_INDENT.repeat(row.depth);
 			const valueColor = selected ? "accent" : "muted";
 			const tokens = theme.fg(valueColor, row.tokens.toLocaleString("en-US"));
 			const labelWidth = Math.max(8, width - indent.length - visibleWidth(tokens) - 6);
 			const label = truncateToWidth(row.label, labelWidth, "…");
-			lines.push(this.spread(` ${marker}${indent}${this.rowLabel(row, label, selected)}`, `${tokens}  `, width));
+			lines.push(this.spread(`${marker}${indent}${this.rowLabel(row, label, selected)}`, `${tokens}  `, width));
 		}
 		return lines;
 	}
@@ -304,21 +321,31 @@ export class InjectionsView {
 	private rowLabel(row: InjectionRow, label: string, selected: boolean): string {
 		const theme = this.theme;
 		if (selected) return theme.fg("accent", label);
-		if (row.kind === "total") return theme.bold(theme.fg("text", label));
 		if (row.kind === "group") return theme.bold(theme.fg("text", label));
 		return theme.fg(row.depth > 1 ? "dim" : "muted", label);
 	}
 
-	private scrollLine(width: number): string {
-		if (!this.navigator.hasOverflow) return this.fit("", width);
-		return this.fit(this.theme.fg("dim", ` (${this.navigator.selected + 1}/${this.rows.length})`), width);
+	/** Fixed TOTAL summary across all currently rendered sections. */
+	private totalLine(width: number): string {
+		const theme = this.theme;
+		const label = theme.bold(theme.fg("text", "TOTAL"));
+		const total = this.input.snapshot.totalTokens.toLocaleString("en-US");
+		const tokens = theme.bold(theme.fg("text", total));
+		return this.spread(`${BODY_INDENT}${label}`, `${tokens}  `, width);
 	}
 
-	private runtimeLine(width: number): string {
-		const theme = this.theme;
-		const enabled = this.input.runtime.isEnabled();
-		const status = theme.fg("muted", enabled ? "logging: on" : "logging: off");
-		return this.spread(theme.fg("dim", " RUNTIME"), `${status} `, width);
+	private scrollLine(width: number): string {
+		if (!this.navigator.hasOverflow) return this.fit("", width);
+		return this.fit(
+			this.theme.fg("dim", `${BODY_INDENT}(${this.navigator.selected + 1}/${this.rows.length})`),
+			width,
+		);
+	}
+
+	/** Pi-style hint row: two-space indent, `key description` pairs joined by ` · `. */
+	private hintRow(hints: ReadonlyArray<readonly [string, string]>): string {
+		const separator = this.theme.fg("dim", " · ");
+		return `${BODY_INDENT}${hints.map(([key, description]) => this.hint(key, description)).join(separator)}`;
 	}
 
 	/** Pi-style hint: dim key, slightly brighter (muted) description. */
@@ -336,7 +363,7 @@ export class InjectionsView {
 	/** Wrapped degraded-capture warning placed after the first sub-header. */
 	private degradedWarningLines(width: number): string[] {
 		if (this.input.degradedReason === undefined) return [];
-		return wrapTextWithAnsi(this.theme.fg("warning", ` ${this.input.degradedReason}`), width);
+		return wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${this.input.degradedReason}`), width);
 	}
 
 	private spread(left: string, right: string, width: number): string {

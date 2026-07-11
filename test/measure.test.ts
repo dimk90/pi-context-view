@@ -36,8 +36,8 @@ test("analyzeSystemPrompt emits stable semantic ids and sources", () => {
 	const options: PromptOptionsSlice = {
 		cwd: CWD,
 		appendSystemPrompt: append,
-		contextFiles: [{ path: "./AGENTS.md", content: "Project rules" }],
-		skills: [{ name: "testing" }],
+		contextFilePaths: ["./AGENTS.md"],
+		skillCount: 1,
 	};
 	const tools: ToolSlice[] = [
 		{
@@ -82,11 +82,33 @@ test("analyzeSystemPrompt emits stable semantic ids and sources", () => {
 	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
 
 	const builtin = items.find((entry) => entry.id === "tool:builtin");
-	assert.equal(builtin?.label, "built-in tool definitions (2)");
+	assert.equal(builtin?.label, "Built-in Tools (2)");
 	assert.deepEqual(
 		builtin?.children?.map((child) => child.id),
 		["tool:builtin:bash", "tool:builtin:read"],
 	);
 	const childTokens = builtin?.children?.reduce((sum, child) => sum + child.tokens, 0) ?? 0;
-	assert.ok(childTokens > 0 && builtin !== undefined && Math.abs(builtin.tokens - childTokens) <= 1);
+	assert.ok(childTokens > 0);
+	assert.equal(builtin?.tokens, childTokens);
+});
+
+test("analyzeSystemPrompt abbreviates home-directory context-file labels with ~", () => {
+	const homeDir = "/home/tester";
+	const filePath = `${homeDir}/.pi/agent/AGENTS.md`;
+	const contextBlock = `<project_instructions path="${filePath}">\nGlobal rules\n</project_instructions>`;
+	const systemPrompt = [
+		"BASE PROMPT",
+		contextBlock,
+		`Current date: ${currentDate()}`,
+		`Current working directory: ${CWD}`,
+	].join("\n");
+	const options: PromptOptionsSlice = {
+		cwd: CWD,
+		homeDir,
+		contextFilePaths: [filePath],
+	};
+
+	const items = analyzeSystemPrompt(systemPrompt, options);
+	const contextFile = items.find((entry) => entry.id === `context-file:${filePath}`);
+	assert.equal(contextFile?.label, "~/.pi/agent/AGENTS.md");
 });

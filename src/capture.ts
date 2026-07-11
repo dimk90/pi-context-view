@@ -235,10 +235,11 @@ export function buildNativeFallbackSnapshot(input: NativeFallbackInput): Initial
 export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOptionsSlice {
 	return {
 		cwd: options.cwd,
+		homeDir: process.env.HOME,
 		customPrompt: options.customPrompt,
 		appendSystemPrompt: options.appendSystemPrompt,
-		contextFiles: options.contextFiles?.map((file) => ({ path: file.path, content: file.content })),
-		skills: options.skills?.map((skill) => ({ name: skill.name })),
+		contextFilePaths: options.contextFiles?.map((file) => file.path),
+		skillCount: options.skills?.length,
 	};
 }
 

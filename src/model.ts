@@ -69,8 +69,9 @@ export interface InitialSnapshot {
 /**
  * Group measured items by source. Pi-native components come first, extension
  * sources follow by total size, and the unattributable aggregate comes last.
- * Items inside each group are sorted by size descending. Returned objects own
- * all nested data; later mutation of the input cannot change the groups.
+ * Items inside each group follow a fixed semantic order (base prompt, tools,
+ * skills, then everything else by size). Returned objects own all nested data;
+ * later mutation of the input cannot change the groups.
  */
 export function groupInjections(items: readonly InjectionItem[]): InjectionGroup[] {
 	const groups = new Map<string, MutableGroup>();
@@ -85,7 +86,7 @@ export function groupInjections(items: readonly InjectionItem[]): InjectionGroup
 		group.totalTokens += item.tokens;
 	}
 	for (const group of groups.values()) {
-		group.items.sort((a, b) => b.tokens - a.tokens);
+		group.items.sort(compareItems);
 	}
 	return [...groups.values()].sort(compareGroups);
 }
@@ -119,6 +120,31 @@ function copyItem(item: InjectionItem): InjectionItem {
 		source: { ...item.source },
 		children: item.children?.map((child) => copyItem(child)),
 	};
+}
+
+/**
+ * Order items within a group: base/appended prompt first, then built-in tools,
+ * other tools, skills, and finally everything else by size descending.
+ */
+function compareItems(a: InjectionItem, b: InjectionItem): number {
+	const rankDelta = itemRank(a) - itemRank(b);
+	if (rankDelta !== 0) return rankDelta;
+	return b.tokens - a.tokens;
+}
+
+/** Fixed display rank by kind; built-in tools precede other tools. */
+function itemRank(item: InjectionItem): number {
+	switch (item.kind) {
+		case "base-prompt":
+		case "append-prompt":
+			return 0;
+		case "tool":
+			return item.id === "tool:builtin" ? 1 : 2;
+		case "skills":
+			return 3;
+		default:
+			return 4;
+	}
 }
 
 /** Order groups: pi-native first, then extensions by size, aggregate last. */

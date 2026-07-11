@@ -28,10 +28,12 @@ const AGGREGATE_SOURCE: InjectionSource = {
 /** Minimal slice of BuildSystemPromptOptions that measurement needs. */
 export interface PromptOptionsSlice {
 	cwd: string;
+	/** Home directory used to abbreviate context-file paths; omitted disables it. */
+	homeDir?: string;
 	customPrompt?: string;
 	appendSystemPrompt?: string;
-	contextFiles?: Array<{ path: string; content: string }>;
-	skills?: Array<{ name: string }>;
+	contextFilePaths?: string[];
+	skillCount?: number;
 }
 
 /** One active tool as it contributes to the initial context. */
@@ -72,8 +74,8 @@ export function analyzeSystemPrompt(
 
 	const baseLabel =
 		options.customPrompt !== undefined && options.customPrompt.length > 0
-			? "custom system prompt (--system-prompt)"
-			: "base system prompt";
+			? "Custom Prompt (--system-prompt)"
+			: "Base Prompt";
 	items.unshift(createItem("base-prompt", "base-prompt", PI_SOURCE, baseLabel, carve(base, carvedSpans)));
 
 	if (baseEnd !== -1 && baseEnd < systemPrompt.length) {
@@ -125,12 +127,10 @@ export function textTokens(text: string): number {
  * tools collapse into one aggregate pi-native item.
  */
 function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], carvedSpans: Span[]): void {
-	let builtinDefinitions = "";
 	const builtinChildren: InjectionItem[] = [];
 	for (const tool of tools) {
 		const definition = `${tool.name}: ${tool.description}\n${tool.parametersJson}`;
 		if (tool.source === "builtin") {
-			builtinDefinitions += `${definition}\n`;
 			builtinChildren.push(createItem(`tool:builtin:${tool.name}`, "tool", PI_SOURCE, tool.name, definition));
 			continue;
 		}
@@ -154,14 +154,12 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 	}
 	if (builtinChildren.length > 0) {
 		builtinChildren.sort((a, b) => b.tokens - a.tokens);
+		const label = `Built-in Tools (${builtinChildren.length})`;
+		const text = builtinChildren.map((child) => child.text).join("\n");
 		items.push({
-			...createItem(
-				"tool:builtin",
-				"tool",
-				PI_SOURCE,
-				`built-in tool definitions (${builtinChildren.length})`,
-				builtinDefinitions,
-			),
+			...createItem("tool:builtin", "tool", PI_SOURCE, label, text),
+			chars: builtinChildren.reduce((sum, child) => sum + child.chars, 0),
+			tokens: builtinChildren.reduce((sum, child) => sum + child.tokens, 0),
 			children: builtinChildren,
 		});
 	}
@@ -174,15 +172,15 @@ function measureContextFiles(
 	items: InjectionItem[],
 	carvedSpans: Span[],
 ): void {
-	for (const file of options.contextFiles ?? []) {
-		const span = findContextFileSpan(base, file.path);
+	for (const filePath of options.contextFilePaths ?? []) {
+		const span = findContextFileSpan(base, filePath);
 		if (span === undefined) continue;
 		items.push(
 			createItem(
-				`context-file:${file.path}`,
+				`context-file:${filePath}`,
 				"context-file",
 				PI_SOURCE,
-				file.path,
+				abbreviateHome(filePath, options.homeDir),
 				base.slice(span.start, span.end),
 			),
 		);
@@ -192,11 +190,11 @@ function measureContextFiles(
 
 /** Carve the skills block out of the base prompt as one aggregate item. */
 function measureSkills(base: string, options: PromptOptionsSlice, items: InjectionItem[], carvedSpans: Span[]): void {
-	const skillCount = options.skills?.length ?? 0;
+	const skillCount = options.skillCount ?? 0;
 	if (skillCount === 0) return;
 	const span = findSkillsSpan(base);
 	if (span === undefined) return;
-	items.push(createItem("skills", "skills", PI_SOURCE, `skills (${skillCount})`, base.slice(span.start, span.end)));
+	items.push(createItem("skills", "skills", PI_SOURCE, `Skills (${skillCount})`, base.slice(span.start, span.end)));
 	carvedSpans.push(span);
 }
 
@@ -238,6 +236,14 @@ function createItem(
 /** Injection source for a non-builtin tool provenance string. */
 function extensionSource(source: string): InjectionSource {
 	return { id: `tool-source:${source}`, label: source, native: false };
+}
+
+/** Replace a leading home-directory prefix with `~` for compact path labels. */
+function abbreviateHome(path: string, homeDir: string | undefined): string {
+	if (homeDir === undefined || homeDir.length === 0) return path;
+	if (path === homeDir) return "~";
+	if (path.startsWith(`${homeDir}/`)) return `~${path.slice(homeDir.length)}`;
+	return path;
 }
 
 /** Remove the given spans from text, tolerating overlaps, and return the remainder. */

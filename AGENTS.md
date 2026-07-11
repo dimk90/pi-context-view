@@ -101,12 +101,25 @@ source, kind, or parent/child relationships.
 
 TUI views follow pi's native selector style: fullscreen horizontal-border
 layout with one blank row inside top/bottom and after the dialog header, plus
-one row before later sub-headers such as `RUNTIME`; accent title and
+one row before later sub-headers such as `RUNTIME` when present; accent title,
+bold `mdHeading`-colored sub-headers (`INITIAL`, `RUNTIME`), and
 fixed-column `→` cursor; bright main rows, muted sub-items/values, and dim
 sub-sub-items. Selected
 labels and values use accent with no background. Put the muted description
 between blank rows before hints, format hints as dim key + muted description,
 and show dim `(current/total)` only on overflow.
+
+Always draw with the current theme's semantic colors via `theme.fg(...)` (and
+theme-based colorizers for borders); never hardcode hex, ANSI escapes, or named
+terminal colors so views track the user's active theme.
+
+Headers, sub-headers, and the `→` cursor sit flush at column 0; the muted
+description, `(current/total)` counter, hint row, and preview body content are
+indented two spaces. Join hints with ` · `. Titles, section names, and hint
+labels use Title Case (`Context Injections`, `Esc Close`); keep recognizable
+identifiers such as `pi`
+and tool names (`edit`, `web_search`) in their literal casing, and keep longer
+descriptions in sentence case.
 
 ## Verification
 

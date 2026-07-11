@@ -190,7 +190,7 @@ function createPlaceholderContainer(
 	capture: CapturePlaceholder,
 ): Container {
 	const container = new Container();
-	const title = view === "usage" ? "Context usage" : "Context injections";
+	const title = view === "usage" ? "Context Usage" : "Context Injections";
 	const origin = formatCaptureOrigin(capture);
 	const detail = view === "usage"
 		? "The full Usage composition view is not implemented yet."
