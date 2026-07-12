@@ -2,18 +2,24 @@
 
 ![Context usage map](doc/images/pi-context-view.png)
 
-The extension provides visualization for content in the context and allows to inspect invisible pieces: base prompt, instructions injected by extensions, etc.
+A pi extension that visualizes what fills the model's context and lets
+you inspect the parts you normally can't see: the base prompt, tool
+definitions, and instructions injected by other extensions.
 
 ## Features
 
-- **Context usage map**: Visualize occupied and free context space, grouped by categories tools, skills, messages.
-- **Context injections**: Explore the invisible pieces of the context: initial prompt, tool definitions, extension's injections.
+- **Context usage map** - visualize used and free context space, grouped by
+  category (tools, skills, messages, and more).
+
+- **Context injections** - explore the hidden pieces of the context: the
+  initial prompt, tool definitions, and extension injections.
 
 ## Commands
 
-- `/context` - short version of `/context usage`.
-- `/context usage` — open the context usage visualization.
-- `/context injections` — shows invisible content of the context at the session start/resume.
+- `/context` - shorthand for `/context usage`.
+- `/context usage` - open the context usage visualization.
+- `/context injections` - show the hidden content of the context at session
+  start or resume.
 
 ## Install
 
@@ -27,13 +33,14 @@ pi install npm:pi-context-view
 
   ![Context usage view and category preview](doc/images/context-usage.png)
 
-- Inspect invisible things in the context, e.g. tools definitions:
+- Inspect hidden parts of the context, such as tool definitions:
 
   ![Context injections view and item preview](doc/images/context-injections.png)
 
 ## Context
 
-`pi-context-view` does not add instructions or messages to the model context.
+`pi-context-view` does not add any instructions or messages to the model
+context.
 
 ## License
 
