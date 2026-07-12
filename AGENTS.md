@@ -1,45 +1,41 @@
 # pi-context-view
 
-Pi extension providing focused `/context` TUI views:
+Pi extension with two TUI-only views:
 
-- `/context` or `/context usage` — on-demand estimated context composition.
+- `/context` or `/context usage` — estimated context composition.
 - `/context injections` — frozen Initial snapshot with explicit raw-text
   previews.
 
-v0.2.0 has no tab state, Runtime logging, Runtime command, or Runtime focus; its
-Injections header contains only a dim, disabled `RUNTIME` roadmap label. The
-implementation is feature-complete and release review is next in
-[PLAN.md](PLAN.md). Do not add CLI compatibility.
+Runtime inspection is roadmap-only; see [PLAN.md](PLAN.md). The command accepts
+only `usage` and `injections`, including completions, and rejects non-TUI modes.
 
-## Current architecture
+## Capture architecture
 
-### Initial capture
+### Initial snapshot
 
-Prepare once in `before_agent_start` and finalize once in the first `context`
-event:
+Capture Initial once per extension runtime:
 
 ```text
-before_agent_start → save structured prompt options
-context            → read final system prompt, final active tools, and injected
-                     messages; freeze Initial as owned copies
+before_agent_start → own structured prompt options
+context            → read the final system prompt and active tools, then freeze
+                     prompt, tools, and injected messages as owned copies
 ```
 
-`before_agent_start` is the only point where structured system-prompt options
-are available, but its prompt and active tools are not final. Later-loaded
-handlers may still edit the prompt or call `pi.setActiveTools()`. Finalize with
-`ctx.getSystemPrompt()` and the final active-tool set in `context`, then retain
-owned copies so other extensions cannot mutate the snapshot.
+Structured prompt options are available as `event.systemPromptOptions` in
+`before_agent_start`, not `session_start`. Do not
+freeze the prompt or active tools there: later handlers may edit the prompt or
+call `pi.setActiveTools()`. Finalize in the first `context` event using
+`ctx.getSystemPrompt()` and pi's then-active tool set.
 
-Initial is the first context observable by this extension runtime. It comes
-from the first real turn or one on-demand silent probe. Never overwrite it.
-Conditional additions inactive during that run do not appear. Prompt and tool
-capture is load-order independent, but message changes made by later `context`
-handlers and provider-payload rewrites remain unobservable.
+The snapshot represents the first observable run, real or synthetic, and is
+never overwritten. Conditional additions inactive during that run are absent.
+Prompt and tool capture is load-order independent; message changes from later
+`context` handlers and provider-payload rewrites are not observable.
 
-### Silent probe
+### On-demand silent probe
 
-When Usage or Injections is requested before a real turn, use at most one
-on-demand probe:
+If a view is requested before a real turn, allow one explicit probe per
+extension runtime:
 
 ```text
 /context           → wait idle, hide working row, sendUserMessage("")
@@ -47,139 +43,74 @@ before_agent_start → prepare Initial
 turn_start         → abort before provider
 context            → finalize Initial; filter synthetic user message
 message_end        → sanitize only the synthetic aborted assistant
-agent_settled      → restore UI, resolve command, open requested view
+agent_settled      → restore UI, resolve command, open the requested view
 ```
 
-Track the exact role and timestamp of both probe messages. Filter them from all
-later model contexts and Usage without hiding genuine user aborts. Probe entries
-remain in pi's session tree, and other extensions still observe lifecycle
-events, so never probe automatically or more than once per extension runtime.
-Always restore UI state in `finally`. If probing cannot run, show the pi-native
-fallback snapshot with a precise degraded-capture reason.
+Never probe automatically. Track the synthetic user and assistant by exact
+role and timestamp; remove only those entries from later model contexts and
+Usage so genuine aborts remain visible. Probe entries remain in pi's session
+tree, and other extensions still observe the lifecycle.
 
-### Usage
+`pi.sendMessage(..., { triggerTurn: true })` cannot replace
+`sendUserMessage()` because it bypasses `before_agent_start`. Abort at
+`turn_start`; do not rely on `before_provider_request`, which some transports
+skip. Always restore UI state in `finally`. On failure or timeout, return a
+pi-native fallback with a precise degraded-capture reason.
 
-Compute Usage only when its view opens from the exported
-`buildSessionContext(session entries, leaf id).messages`; do not use
-`buildContextEntries()`, which includes non-context metadata. Filter synthetic
-probe entries and classify:
+## Usage and attribution
 
-- system prompt components, context files, skills, and extension additions;
-- active built-in, custom, and MCP tool definitions;
-- user text, assistant text/thinking/tool calls, and tool results;
-- custom extension messages, summaries, and persisted bash output.
+Compute Usage on demand from the exported
+`buildSessionContext(session entries, leaf id).messages`, after synthetic
+filtering. Do not use `buildContextEntries()`, which includes non-context
+metadata. Use `ctx.getContextUsage()` separately for pi's reported usage and
+window.
 
-Use `ctx.getContextUsage()` separately for pi's reported usage and context
-window. Category totals are estimates: provider serialization, images,
-tokenizer differences, compaction timing, later handlers, and payload rewrites
-can prevent exact reconciliation.
+Estimates need not reconcile exactly with pi or provider totals because of
+serialization, images, tokenizer differences, compaction timing, handler load
+order, and payload rewrites.
 
-### Model and privacy
+Keep source, kind, and hierarchy in typed model fields; never recover semantics
+from display labels. Further rules:
 
-Keep hierarchy and ownership in typed fields; never parse display labels to
-recover source, kind, or parent/child relationships. Tool ownership comes from
-`ToolInfo.sourceInfo`. Prompt edits that pass through the public handler chain
-are one unattributable extension aggregate. Use `customType` for injected
-message identity when present, but do not assume it is a package name.
+- tool ownership comes from `ToolInfo.sourceInfo`;
+- chained prompt edits form one unattributable extension aggregate;
+- `customType` identifies an injected message type, not necessarily its package;
+- role-only injection detection misses non-custom messages and requires
+  session-branch diffing;
+- children break down parent contributions and are not counted again in totals.
 
-Children are breakdowns of a parent contribution and must not be counted again
-in group or snapshot totals. Initial totals include only the frozen snapshot.
-Raw prompt and message content is process-local, terminal-sanitized, and shown
-only after explicit Enter preview. Never log it, persist additional copies,
-include it in notifications, or inject captured content into later requests.
+## Privacy
 
-### Commands
-
-The v0.2.0 grammar is:
-
-```text
-/context             → usage
-/context usage       → usage
-/context injections  → injections
-```
-
-Unknown or incomplete arguments show concise usage. Argument completions expose
-only `usage` and `injections`. Commands are TUI-only; guard `ctx.ui.custom()`
-with `ctx.mode === "tui"`.
-
-## API constraints
-
-- `ctx.getSystemPromptOptions()` is unavailable on `session_start` event
-  contexts.
-- Extension prompt additions are observable only inside an agent run.
-- `pi.sendMessage(..., { triggerTurn: true })` bypasses
-  `before_agent_start`; it cannot drive the capture probe.
-- Abort probes at `turn_start`; later hooks may permit a provider call.
-- Do not depend on `before_provider_request`; custom transports can skip its
-  `onPayload` path.
-- Later `context` handlers are not observable from earlier handlers.
-- Extensions may inject non-custom-role messages; role-only detection is
-  insufficient and requires session-branch diffing.
-
-## Project layout
-
-- `src/index.ts` — extension factory and event/command wiring only.
-- `src/model.ts` — semantic snapshot, injection, and usage types and grouping.
-- `src/capture.ts` — capture-once and silent-probe state machines.
-- `src/command.ts` — command parsing, completions, and capture resolution.
-- `src/measure.ts` — pure prompt/tool measurement.
-- `src/usage.ts` — pure context classification and totals.
-- `src/ui/injections-model.ts` — pure row flattening, navigation, and preview
-  normalization.
-- `src/ui/injections-view.ts` — fullscreen Injections view.
-- `src/ui/layout.ts` — shared fullscreen layout helpers.
-- `src/ui/usage-map.ts` — pure proportional-cell Usage map.
-- `src/ui/usage-view.ts` — fullscreen Usage view.
-- `test/fixtures/marker.ts` — prompt/message capture and load-order fixture.
-- `test/` — Node `node:test` tests using native TypeScript type stripping.
-- `doc/UI.md` — canonical UI and release-media specification.
-- `doc/HISTORY.md` — superseded v1 findings; reference only.
-- `PLAN.md` — remaining release work and roadmap.
+Raw prompt and message content stays process-local and is terminal-sanitized.
+Show it only after explicit Enter preview. Never log it, persist additional
+copies, include it in notifications, or inject captured content into later
+requests.
 
 ## UI
 
-Follow [doc/UI.md](doc/UI.md) for layout, interaction, styling, responsive
-behavior, preview formatting, and release-media requirements. Keep pure UI
-models separate from rendering classes.
+[doc/UI.md](doc/UI.md) is the canonical specification for rendering,
+interaction, responsive behavior, previews, and release media.
 
 ## Verification
 
-```bash
-npm run check
+Run `npm run check`. Follow the `pi-extension` skill for provider smoke tests
+and real-PTY testing. Lifecycle coverage must load `test/fixtures/marker.ts` in
+both orders and use an `after_provider_response` sentinel for probes.
 
-# normal-turn no-op
-pi --model anthropic/claude-haiku-4-5 -e ./src/index.ts --no-session \
-  -p "Say one word: ok"
-
-# interactive testing without tmux
-script -qec "pi --no-extensions -e ./src/index.ts --no-session" /tmp/context-tui.log
-```
-
-Avoid provider calls when lifecycle-only tests suffice. If a model is genuinely
-needed, use `anthropic/claude-haiku-4-5`. Test marker load order in both
-directions and use an `after_provider_response` sentinel for silent probes.
 Required invariants:
 
-- normal turns remain unchanged when inspection is not invoked;
-- no provider request or visible transcript artifact during a probe;
-- genuine user aborts remain visible;
+- normal turns are unchanged when inspection is not invoked;
+- probes make no provider request and leave no visible transcript artifact;
+- genuine aborts remain visible;
 - synthetic entries never reach later model contexts or Usage;
 - Initial freezes once per extension runtime;
-- no Runtime state, command, completion, focus, or toggle ships in v0.2.0;
+- Runtime state, commands, completions, focus, and toggles remain absent until
+  their roadmap step;
 - raw content appears only after Enter and is never logged or newly persisted;
-- every TUI line respects width, and views resize with width and height.
+- every rendered line respects width, and views reflow with width and height.
 
 ## Dependencies
 
-`@earendil-works/pi-coding-agent` is a `"*"` peer compatibility contract and an
-exact development pin matching `pi --version`. `@earendil-works/pi-tui` is also
-a `"*"` peer and exact development pin; pi supplies it at runtime. Update pins
-and run `npm install` when the installed pi version changes.
-
-## Code style
-
-Follow the `code-style`, `typescript-code`, and `pi-extension` skills. Use tabs,
-double quotes, ESM, named helper exports, no `any`, and `undefined` instead of
-`null`. Follow newspaper layout: public entry points and primary types first,
-implementation details later. Keep `index.ts` registration-only and pure logic
-or UI classes in focused modules.
+Keep `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` as `"*"`
+peer dependencies and exact development pins matching `pi --version`. Run
+`npm install` after changing the pins.
