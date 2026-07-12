@@ -1,7 +1,7 @@
 {
 	"name": "pi-context-view",
 	"version": "0.1.0",
-	"description": "Pi extension: inspect context usage and injections via /context",
+	"description": "Pi extension to visualize context token usage and inspect hidden prompt, tool, and extension injections via /context",
 	"type": "module",
 	"license": "MIT",
 	"author": "Dmitry Makarov",
