@@ -60,7 +60,7 @@ test("captureActiveTools uses the final active set", () => {
 	const tools = captureActiveTools(
 		[tool("read", "builtin"), tool("search", "npm:web")],
 		["search"],
-		{ cwd: "/tmp", toolSnippets: { search: "Search the web" } },
+		{ toolSnippets: { search: "Search the web" } },
 	);
 
 	assert.deepEqual(tools.map((entry) => entry.name), ["search"]);
@@ -96,6 +96,28 @@ test("measureInjectedMessages gives duplicate custom types stable occurrence ids
 	assert.deepEqual(items.map((entry) => entry.id), ["message:marker:0", "message:marker:1"]);
 	assert.equal(items[0]?.source.id, "message-type:marker");
 	assert.equal(items[1]?.text, "second");
+});
+
+test("InitialCaptureState owns prepared options before later handlers can mutate them", () => {
+	const state = new InitialCaptureState();
+	const options: BuildSystemPromptOptions = {
+		cwd: "/tmp",
+		toolSnippets: { search: "Original snippet" },
+	};
+	state.prepare(options);
+	if (options.toolSnippets !== undefined) options.toolSnippets.search = "Changed snippet";
+
+	const snapshot = state.finalize({
+		systemPrompt: "Base\n- search: Original snippet",
+		messages: [],
+		allTools: [tool("search", "npm:web")],
+		activeToolNames: ["search"],
+		origin: "real-turn",
+	});
+
+	assert.ok(snapshot !== undefined);
+	const search = snapshot.groups.flatMap((group) => group.items).find((entry) => entry.label === "search");
+	assert.match(search?.text ?? "", /Original snippet/);
 });
 
 test("InitialCaptureState refreshes pending options and freezes the first snapshot", () => {

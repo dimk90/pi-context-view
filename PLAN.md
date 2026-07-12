@@ -522,7 +522,7 @@ line only when scrolling is required.
     selectable-row counter, and Enter preview.
   - Update view/model/command tests for disabled Runtime rendering, Runtime
     surface removal, Initial-only totals, overflow, and narrow/short layouts.
-- [ ] 9. **Polish lifecycle and edge cases for v0.2.0.**
+- [x] 9. **Polish lifecycle and edge cases for v0.2.0.**
   - Exercise streaming command invocation, probe timeout/no model/no auth,
     zero other extensions, compaction, tree navigation, reload/new/resume/fork,
     dynamic tools, images, and conditional prompt additions.
@@ -603,6 +603,18 @@ line only when scrolling is required.
   - Leave malformed/unrecognized wrappers visible, support multiple attached
     skills in one message, and test wrapping, truncation, narrow widths, and
     skill names containing terminal-sensitive text.
+- [ ] 17. **Refine hierarchy and value scanning in the context views.**
+  - Evaluate dim border-line guides for showing hierarchy in the Initial view.
+  - Fill the space between each Usage category name and its token value with
+    dim `.` leaders while preserving aligned value and percentage columns:
+
+    ```text
+    Category:
+    → ■ System Prompt.............605     0.2%
+       ■ System Tools..............640     0.2%
+       ■ Custom Tools..............2.1k    0.6%
+       ■ Memory (AGENTS.md)........2.2k    0.6%
+    ```
 
 ## Initial hierarchy
 

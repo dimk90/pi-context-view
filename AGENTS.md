@@ -136,8 +136,7 @@ pi --model anthropic/claude-haiku-4-5 -e ./src/index.ts --no-session \
 script -qec "pi --no-extensions -e ./src/index.ts --no-session" /tmp/context-tui.log
 ```
 
-Use `script` or a Python `pty` harness; tmux is unavailable. Avoid provider
-calls when lifecycle-only tests suffice. When a test genuinely needs a model,
+Avoid provider calls when lifecycle-only tests suffice. When a test genuinely needs a model,
 use the cheapest/simple default: `anthropic/claude-haiku-4-5`.
 
 Test marker load order in both directions and use an

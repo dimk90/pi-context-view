@@ -58,6 +58,12 @@ export interface SyntheticMessageIdentity {
 	readonly timestamp: number;
 }
 
+/** Owned structured inputs prepared before later extension handlers can mutate shared event data. */
+interface CapturePreparation {
+	readonly promptOptions: PromptOptionsSlice;
+	readonly toolSnippets?: Readonly<Record<string, string>>;
+}
+
 /** Lifecycle of the single probe attempt, including ownership retained after its completion times out. */
 type ProbePhase =
 	| "idle"
@@ -74,7 +80,7 @@ type ProbePhase =
  * original snapshot unchanged.
  */
 export class InitialCaptureState {
-	private pendingOptions: BuildSystemPromptOptions | undefined;
+	private pendingPreparation: CapturePreparation | undefined;
 	private initialSnapshot: InitialSnapshot | undefined;
 
 	/** The frozen Initial snapshot, or undefined until `finalize()` succeeds. */
@@ -82,10 +88,13 @@ export class InitialCaptureState {
 		return this.initialSnapshot;
 	}
 
-	/** Stash the structured prompt options from `before_agent_start`; no-op once frozen. */
+	/** Own the structured prompt inputs from `before_agent_start`; no-op once frozen. */
 	public prepare(options: BuildSystemPromptOptions): void {
 		if (this.initialSnapshot !== undefined) return;
-		this.pendingOptions = options;
+		this.pendingPreparation = {
+			promptOptions: copyPromptOptions(options),
+			toolSnippets: options.toolSnippets === undefined ? undefined : { ...options.toolSnippets },
+		};
 	}
 
 	/**
@@ -94,16 +103,18 @@ export class InitialCaptureState {
 	 */
 	public finalize(input: CaptureFinalization): InitialSnapshot | undefined {
 		if (this.initialSnapshot !== undefined) return this.initialSnapshot;
-		if (this.pendingOptions === undefined) return undefined;
+		if (this.pendingPreparation === undefined) return undefined;
 
-		const options = copyPromptOptions(this.pendingOptions);
-		const tools = captureActiveTools(input.allTools, input.activeToolNames, this.pendingOptions);
+		const preparation = this.pendingPreparation;
+		const tools = captureActiveTools(input.allTools, input.activeToolNames, {
+			toolSnippets: preparation.toolSnippets,
+		});
 		const items = [
-			...analyzeSystemPrompt(input.systemPrompt, options, tools),
+			...analyzeSystemPrompt(input.systemPrompt, preparation.promptOptions, tools),
 			...measureInjectedMessages(input.messages),
 		];
 		this.initialSnapshot = buildSnapshot(items, input.origin, input.capturedAt ?? new Date());
-		this.pendingOptions = undefined;
+		this.pendingPreparation = undefined;
 		return this.initialSnapshot;
 	}
 }
@@ -264,7 +275,7 @@ export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOpti
 export function captureActiveTools(
 	allTools: readonly ToolInfo[],
 	activeToolNames: readonly string[],
-	options: BuildSystemPromptOptions,
+	options: { readonly toolSnippets?: Readonly<Record<string, string>> },
 ): ToolSlice[] {
 	const active = new Set(activeToolNames);
 	return allTools

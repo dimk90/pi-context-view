@@ -202,6 +202,36 @@ test("computeUsage drops empty categories and aggregates duplicate tool/custom m
 	assert.ok(!usage.categories.some((entry) => entry.id === "compacted-data"));
 });
 
+test("computeUsage estimates images while previews expose placeholders only", () => {
+	const messages: ContextEvent["messages"] = [
+		{
+			role: "user",
+			content: [
+				{ type: "text", text: "abcd" },
+				{ type: "image", data: "sensitive-base64", mimeType: "image/png" },
+			],
+			timestamp: 1,
+		},
+		{
+			role: "toolResult",
+			toolCallId: "image-call",
+			toolName: "read_image",
+			content: [{ type: "image", data: "sensitive-base64", mimeType: "image/png" }],
+			isError: false,
+			timestamp: 2,
+		},
+	];
+	const usage = computeUsage({ snapshot: snapshot(), messages });
+
+	const user = category(usage.categories, "user-messages");
+	assert.equal(user.tokens, 1_201);
+	assert.equal(user.entries?.[0]?.text, "abcd\n[image]");
+	const imageResult = category(usage.categories, "tool-result:read_image");
+	assert.equal(imageResult.tokens, 1_200);
+	assert.equal(imageResult.entries?.[0]?.text, "[image]");
+	assert.ok(!collectPreviewEntries(user).some((entry) => entry.text.includes("sensitive-base64")));
+});
+
 test("computeUsage builds per-block preview entries with timestamps and breadcrumbs", () => {
 	const base = assistantMessage();
 	assert.equal(base.role, "assistant");
