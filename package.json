@@ -1,38 +1,53 @@
 {
-	"name": "pi-context-inspect",
-	"version": "0.1.0",
-	"description": "Pi extension: report initial context injections via --context-inspect",
+	"name": "pi-context-view",
+	"version": "0.2.0",
+	"description": "Pi extension to visualize context token usage and inspect hidden prompt, tool, and extension injections via /context",
 	"type": "module",
 	"license": "MIT",
 	"author": "Dmitry Makarov",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/dimk90/pi-context-view.git"
+	},
+	"homepage": "https://github.com/dimk90/pi-context-view#readme",
+	"bugs": {
+		"url": "https://github.com/dimk90/pi-context-view/issues"
+	},
 	"keywords": [
 		"pi",
 		"pi-extension",
+		"pi-package",
 		"coding-agent",
 		"context",
 		"tokens",
-		"cli"
+		"tui"
 	],
 	"engines": {
 		"node": ">=22.19.0"
 	},
 	"files": [
 		"src",
+		"doc/images",
 		"README.md"
 	],
 	"scripts": {
-		"check": "tsc --noEmit"
+		"test": "node --test test/*.test.ts",
+		"check": "tsc --noEmit && npm test"
 	},
 	"pi": {
 		"extensions": [
 			"./src/index.ts"
-		]
+		],
+		"image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/c1ff8949d340d94d6c9b40819ad4ff78aa2114cc/doc/images/pi-context-view.png"
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "*"
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "0.80.6",
+		"@earendil-works/pi-tui": "0.80.6",
+		"@types/node": "^22.20.1",
 		"typescript": "^7.0.2"
 	}
 }

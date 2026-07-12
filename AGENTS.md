@@ -1,71 +1,116 @@
-# pi-context-inspect
+# pi-context-view
 
-Pi extension: adds a `--context-inspect` CLI flag that prints a report of
-**initial context injections** — source (pi native or extension) and size in
-estimated tokens — then exits. Startup injections only; no per-turn tracking,
-no slash command.
+Pi extension with two TUI-only views:
 
-## Architecture
+- `/context` or `/context usage` — estimated context composition.
+- `/context injections` — frozen Initial snapshot with explicit raw-text
+  previews.
 
-Capture strategy — "Option B revised", validated by PoC against pi 0.80.3
-(shutdown moved to `agent_settled` on 0.80.6):
+Runtime inspection is roadmap-only; see [PLAN.md](PLAN.md). The command accepts
+only `usage` and `injections`, including completions, and rejects non-TUI modes.
 
-```
-session_start      → pi.sendUserMessage("probe")     // always triggers a turn
-before_agent_start → capture event.systemPrompt + event.systemPromptOptions
-turn_start         → ctx.abort()                     // provider call prevented
-agent_settled      → print report, ctx.shutdown()    // run truly done (pi >= 0.80.4)
-```
+## Capture architecture
 
-Hard-won constraints (do not regress):
+### Initial snapshot
 
-- `ctx.getSystemPromptOptions` is unavailable on `session_start` event ctx;
-  extension system-prompt additions are only observable inside a turn.
-- `pi.sendMessage(..., { triggerTurn: true })` does NOT start a turn in print
-  mode without `-p`; `pi.sendUserMessage()` does.
-- `before_provider_request` never fires with custom providers whose transport
-  skips `onPayload` (e.g. pi-anthropic-oauth) — never rely on it.
-- `ctx.abort()` must happen at `turn_start`; later is too late.
-- Per-extension attribution of chained system-prompt edits is impossible via
-  the API; report extension prompt additions as one aggregate line.
+Capture Initial once per extension runtime:
 
-## Layout
-
-- `src/index.ts` — extension factory, event wiring (entry point via
-  `package.json` `pi.extensions`).
-- `src/measure.ts`, `src/report.ts` — pure logic (measurement, formatting),
-  no `pi` access, unit-testable.
-- `PLAN.md` — full development plan, PoC findings, step checkboxes. Keep the
-  checkboxes current.
-- `poc/` — throwaway PoC spikes, reference only; `poc/marker.ts` doubles as a
-  test helper that simulates an injecting extension.
-
-## Testing
-
-```bash
-# print mode (fastest check)
-pi -e ./poc/marker.ts -e ./src/index.ts --context-inspect --no-session
-
-# TUI mode (run under `script` when no tty; pi must exit by itself in ~2s)
-script -qec "pi -e ./poc/marker.ts -e ./src/index.ts --context-inspect --no-session" /tmp/tui.log
-
-# no-op check: without the flag the extension must do nothing
-pi -e ./src/index.ts --no-session -p "say hi"
+```text
+before_agent_start → own structured prompt options
+context            → read the final system prompt and active tools, then freeze
+                     prompt, tools, and injected messages as owned copies
 ```
 
-Verify after changes: no provider call during inspection (add a temporary
-`after_provider_response` sentinel if in doubt), clean self-exit in both modes.
+Structured prompt options are available as `event.systemPromptOptions` in
+`before_agent_start`, not `session_start`. Do not
+freeze the prompt or active tools there: later handlers may edit the prompt or
+call `pi.setActiveTools()`. Finalize in the first `context` event using
+`ctx.getSystemPrompt()` and pi's then-active tool set.
+
+The snapshot represents the first observable run, real or synthetic, and is
+never overwritten. Conditional additions inactive during that run are absent.
+Prompt and tool capture is load-order independent; message changes from later
+`context` handlers and provider-payload rewrites are not observable.
+
+### On-demand silent probe
+
+If a view is requested before a real turn, allow one explicit probe per
+extension runtime:
+
+```text
+/context           → wait idle, hide working row, sendUserMessage("")
+before_agent_start → prepare Initial
+turn_start         → abort before provider
+context            → finalize Initial; filter synthetic user message
+message_end        → sanitize only the synthetic aborted assistant
+agent_settled      → restore UI, resolve command, open the requested view
+```
+
+Never probe automatically. Track the synthetic user and assistant by exact
+role and timestamp; remove only those entries from later model contexts and
+Usage so genuine aborts remain visible. Probe entries remain in pi's session
+tree, and other extensions still observe the lifecycle.
+
+`pi.sendMessage(..., { triggerTurn: true })` cannot replace
+`sendUserMessage()` because it bypasses `before_agent_start`. Abort at
+`turn_start`; do not rely on `before_provider_request`, which some transports
+skip. Always restore UI state in `finally`. On failure or timeout, return a
+pi-native fallback with a precise degraded-capture reason.
+
+## Usage and attribution
+
+Compute Usage on demand from the exported
+`buildSessionContext(session entries, leaf id).messages`, after synthetic
+filtering. Do not use `buildContextEntries()`, which includes non-context
+metadata. Use `ctx.getContextUsage()` separately for pi's reported usage and
+window.
+
+Estimates need not reconcile exactly with pi or provider totals because of
+serialization, images, tokenizer differences, compaction timing, handler load
+order, and payload rewrites.
+
+Keep source, kind, and hierarchy in typed model fields; never recover semantics
+from display labels. Further rules:
+
+- tool ownership comes from `ToolInfo.sourceInfo`;
+- chained prompt edits form one unattributable extension aggregate;
+- `customType` identifies an injected message type, not necessarily its package;
+- role-only injection detection misses non-custom messages and requires
+  session-branch diffing;
+- children break down parent contributions and are not counted again in totals.
+
+## Privacy
+
+Raw prompt and message content stays process-local and is terminal-sanitized.
+Show it only after explicit Enter preview. Never log it, persist additional
+copies, include it in notifications, or inject captured content into later
+requests.
+
+## UI
+
+[doc/UI.md](doc/UI.md) is the canonical specification for rendering,
+interaction, responsive behavior, previews, and release media.
+
+## Verification
+
+Run `npm run check`. Follow the `pi-extension` skill for provider smoke tests
+and real-PTY testing. Lifecycle coverage must load `test/fixtures/marker.ts` in
+both orders and use an `after_provider_response` sentinel for probes.
+
+Required invariants:
+
+- normal turns are unchanged when inspection is not invoked;
+- probes make no provider request and leave no visible transcript artifact;
+- genuine aborts remain visible;
+- synthetic entries never reach later model contexts or Usage;
+- Initial freezes once per extension runtime;
+- Runtime state, commands, completions, focus, and toggles remain absent until
+  their roadmap step;
+- raw content appears only after Enter and is never logged or newly persisted;
+- every rendered line respects width, and views reflow with width and height.
 
 ## Dependencies
 
-`@earendil-works/pi-coding-agent` is declared twice on purpose:
-
-- `peerDependencies: "*"` — published compatibility contract (pi docs convention).
-- `devDependencies: <exact>` — local types snapshot; MUST match the installed
-  pi version. When touching this project, compare `pi --version` with the pin
-  and, on mismatch, update the pin and re-run `npm install`.
-
-## Code style
-
-Follow the `code-style` and `typescript-code` skills (tabs, double quotes,
-ESM, named exports for helpers, no `any`, `undefined` over `null`).
+Keep `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` as `"*"`
+peer dependencies and exact development pins matching `pi --version`. Run
+`npm install` after changing the pins.
