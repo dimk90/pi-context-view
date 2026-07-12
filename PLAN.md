@@ -528,7 +528,7 @@ line only when scrolling is required.
     dynamic tools, images, and conditional prompt additions.
   - Resolve only release-blocking correctness, privacy, and rendering issues;
     defer new product behavior to v0.3.0.
-- [ ] 10. **Complete automated and real-TTY testing.**
+- [x] 10. **Complete automated and real-TTY testing.**
   - Run pure measurement, grouping, capture, command, usage, map, and view
     tests; do not retain tests for removed v0.2.0 Runtime toggle behavior.
   - Run real pty tests at 60/80/120 columns; theme invalidation; fullscreen and
