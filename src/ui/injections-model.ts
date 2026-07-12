@@ -64,6 +64,11 @@ export function normalizePreviewText(text: string): string {
 		.replace(TERMINAL_CONTROL_CHARACTER, "");
 }
 
+/** Sanitize dynamic text for one terminal line and collapse embedded whitespace. */
+export function normalizeInlineText(text: string): string {
+	return normalizePreviewText(text).replace(/\s+/g, " ").trim();
+}
+
 /** Flatten snapshot groups into rows separated from the non-selectable Initial total. */
 export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 	const rows: InjectionRow[] = [];

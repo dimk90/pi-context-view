@@ -13,6 +13,7 @@ import {
 
 import { analyzeSystemPrompt, type PromptOptionsSlice, type ToolSlice } from "./measure.ts";
 import {
+	AGGREGATE_SOURCE_ID,
 	buildSnapshot,
 	type CaptureOrigin,
 	type InitialSnapshot,
@@ -21,11 +22,17 @@ import {
 } from "./model.ts";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+const AGGREGATE_SOURCE: InjectionSource = {
+	id: AGGREGATE_SOURCE_ID,
+	label: "extensions (aggregate)",
+	native: false,
+};
 
 /** Everything available when the first context event finalizes a snapshot. */
 export interface CaptureFinalization {
 	systemPrompt: string;
 	messages: ContextEvent["messages"];
+	baselineMessages: ContextEvent["messages"];
 	allTools: readonly ToolInfo[];
 	activeToolNames: readonly string[];
 	origin: CaptureOrigin;
@@ -111,7 +118,7 @@ export class InitialCaptureState {
 		});
 		const items = [
 			...analyzeSystemPrompt(input.systemPrompt, preparation.promptOptions, tools),
-			...measureInjectedMessages(input.messages),
+			...measureInjectedMessages(input.messages, input.baselineMessages),
 		];
 		this.initialSnapshot = buildSnapshot(items, input.origin, input.capturedAt ?? new Date());
 		this.pendingPreparation = undefined;
@@ -253,6 +260,22 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot
 	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
 }
 
+/** Add frozen context-only messages to a current prompt/tool snapshot for Usage. */
+export function mergeContextOnlyMessages(
+	snapshot: InitialSnapshot,
+	initial: InitialSnapshot,
+): InitialSnapshot {
+	const contextOnly = initial.groups.flatMap((group) =>
+		group.items.filter((item) => item.kind === "message" && item.contextOnly === true)
+	);
+	if (contextOnly.length === 0) return snapshot;
+	const items = [
+		...snapshot.groups.flatMap((group) => group.items),
+		...contextOnly,
+	];
+	return buildSnapshot(items, snapshot.origin, snapshot.capturedAt);
+}
+
 /** Copy the prompt-options slice used by measurement, without shared nested references. */
 export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOptionsSlice {
 	return {
@@ -290,28 +313,70 @@ export function captureActiveTools(
 		}));
 }
 
-/** Measure custom-role messages, the reliable public marker for extension messages. */
-export function measureInjectedMessages(messages: ContextEvent["messages"]): InjectionItem[] {
+/**
+ * Measure extension messages while excluding ordinary session history. Custom
+ * messages remain attributable by customType; other roles are captured only
+ * when they differ from the session-branch baseline.
+ */
+export function measureInjectedMessages(
+	messages: ContextEvent["messages"],
+	baselineMessages: ContextEvent["messages"],
+): InjectionItem[] {
+	const baseline = messageSignatureCounts(baselineMessages);
 	const occurrences = new Map<string, number>();
 	const items: InjectionItem[] = [];
 	for (const message of messages) {
-		if (message.role !== "custom") continue;
-		const occurrence = occurrences.get(message.customType) ?? 0;
-		occurrences.set(message.customType, occurrence + 1);
-		const text = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
-		const source = messageSource(message.customType);
+		const contextOnly = !consumeMessageSignature(baseline, message);
+		if (message.role !== "custom" && !contextOnly) continue;
+
+		const identity = message.role === "custom" ? message.customType : message.role;
+		const occurrence = occurrences.get(identity) ?? 0;
+		occurrences.set(identity, occurrence + 1);
+		const text = messageText(message);
 		items.push({
-			id: `message:${message.customType}:${occurrence}`,
+			id: message.role === "custom"
+				? `message:${message.customType}:${occurrence}`
+				: `message:context:${message.role}:${occurrence}`,
 			phase: "initial",
 			kind: "message",
-			source,
-			label: "message",
+			source: message.role === "custom" ? messageSource(message.customType) : AGGREGATE_SOURCE,
+			label: message.role === "custom" ? "message" : `${message.role} message`,
 			chars: text.length,
 			tokens: estimateTokens(message),
 			text,
+			contextOnly: contextOnly || undefined,
 		});
 	}
 	return items;
+}
+
+/** Count structurally identical baseline messages for order-independent diffing. */
+function messageSignatureCounts(messages: ContextEvent["messages"]): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const message of messages) {
+		const signature = JSON.stringify(message);
+		counts.set(signature, (counts.get(signature) ?? 0) + 1);
+	}
+	return counts;
+}
+
+/** Consume one matching baseline occurrence, returning false for a context-only message. */
+function consumeMessageSignature(
+	counts: Map<string, number>,
+	message: ContextEvent["messages"][number],
+): boolean {
+	const signature = JSON.stringify(message);
+	const count = counts.get(signature) ?? 0;
+	if (count === 0) return false;
+	if (count === 1) counts.delete(signature);
+	else counts.set(signature, count - 1);
+	return true;
+}
+
+/** Extract provider-bound message content for raw preview. */
+function messageText(message: ContextEvent["messages"][number]): string {
+	if (!("content" in message)) return JSON.stringify(message);
+	return typeof message.content === "string" ? message.content : JSON.stringify(message.content);
 }
 
 /** Map key uniquely identifying one probe message by role and timestamp. */

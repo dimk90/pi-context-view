@@ -455,6 +455,34 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	assert.match(view.render(100)[header] ?? "", /\u001b\[38;2;22;23;24mBase Prompt/);
 });
 
+test("UsageView invalidation rebuilds theme-colored preview lines", () => {
+	const theme = createTheme();
+	const originalFg = theme.fg.bind(theme);
+	let colorCode = 31;
+	theme.fg = (color, text) => `\u001b[${colorCode}m${originalFg(color, text)}\u001b[0m`;
+	const previewUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-11T12:00:00Z"),
+		categories: [{
+			id: "user-messages",
+			label: "User Messages",
+			tokens: 1,
+			entries: [{ breadcrumb: ["user"], tokens: 1, text: "content" }],
+		}],
+		estimatedTokens: 1,
+	};
+	const view = new UsageView(theme, { usage: previewUsage }, () => {}, () => 20);
+	view.render(80);
+	view.handleInput("\r");
+	const firstHeader = view.render(80).find((line) => stripSgr(line).includes("[user]"));
+	assert.match(firstHeader ?? "", /\u001b\[31m/);
+
+	colorCode = 32;
+	view.invalidate();
+	const secondHeader = view.render(80).find((line) => stripSgr(line).includes("[user]"));
+	assert.match(secondHeader ?? "", /\u001b\[32m/);
+	assert.doesNotMatch(secondHeader ?? "", /\u001b\[31m/);
+});
+
 test("UsageView respects width and height changes", () => {
 	let rows = 30;
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";

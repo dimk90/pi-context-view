@@ -137,6 +137,42 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	assert.equal(builtin?.tokens, childTokens);
 });
 
+test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt tool guidance", () => {
+	const filePath = "./AGENTS.md";
+	const contextBlock = [
+		"<project_context>",
+		`<project_instructions path="${filePath}">`,
+		"- search: Search the web",
+		"- Cite sources",
+		"</project_instructions>",
+		"</project_context>",
+	].join("\n");
+	const systemPrompt = [
+		"CUSTOM PROMPT",
+		contextBlock,
+		`Current date: ${currentDate()}`,
+		`Current working directory: ${CWD}`,
+	].join("\n");
+	const tools: ToolSlice[] = [{
+		name: "search",
+		description: "Search",
+		parametersJson: "{}",
+		snippet: "Search the web",
+		guidelines: ["Cite sources"],
+		source: "npm:web",
+	}];
+
+	const items = analyzeSystemPrompt(systemPrompt, {
+		cwd: CWD,
+		customPrompt: "CUSTOM PROMPT",
+		contextFilePaths: [filePath],
+	}, tools);
+	const search = items.find((entry) => entry.id === "tool:npm:web:search");
+	const base = items.find((entry) => entry.id === "base-prompt");
+	assert.equal(search?.text, "search: Search\n{}");
+	assert.equal(base?.text.trim(), "CUSTOM PROMPT");
+});
+
 test("analyzeSystemPrompt abbreviates home-directory context-file labels with ~", () => {
 	const homeDir = "/home/tester";
 	const filePath = `${homeDir}/.pi/agent/AGENTS.md`;

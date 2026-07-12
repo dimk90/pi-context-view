@@ -47,6 +47,8 @@ export interface InjectionItem {
 	readonly tokens: number;
 	/** Raw injected text for preview. Process-local; never log or persist. */
 	readonly text: string;
+	/** True when a message exists only in the transformed provider context, not the session branch. */
+	readonly contextOnly?: boolean;
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
 	readonly children?: readonly InjectionItem[];
 }

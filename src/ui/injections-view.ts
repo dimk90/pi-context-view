@@ -11,6 +11,7 @@ import {
 	collectItemsById,
 	type InjectionRow,
 	ListNavigator,
+	normalizeInlineText,
 	normalizePreviewText,
 	PreviewScroller,
 } from "./injections-model.ts";
@@ -226,8 +227,9 @@ export class InjectionsView {
 		this.previewScroller.setExtent(wrapped.length, viewport.visibleCount);
 
 		const lines: string[] = [border, ""];
-		const title = theme.fg("accent", theme.bold(item.label));
-		const meta = theme.fg("muted", `${item.source.label} · ${item.tokens.toLocaleString("en-US")} tokens `);
+		const title = theme.fg("accent", theme.bold(normalizeInlineText(item.label)));
+		const source = normalizeInlineText(item.source.label);
+		const meta = theme.fg("muted", `${source} · ${item.tokens.toLocaleString("en-US")} tokens `);
 		lines.push(this.spread(title, meta, width));
 		lines.push("");
 
@@ -308,7 +310,7 @@ export class InjectionsView {
 				? theme.bold(theme.fg("text", value))
 				: theme.fg(selected ? "accent" : "muted", value);
 			const labelWidth = Math.max(8, width - indent.length - visibleWidth(tokens) - 6);
-			const label = truncateToWidth(row.label, labelWidth, "…");
+			const label = truncateToWidth(normalizeInlineText(row.label), labelWidth, "…");
 			lines.push(this.spread(`${marker}${indent}${this.rowLabel(row, label, selected)}`, `${tokens}  `, width));
 		}
 		return lines;
@@ -335,7 +337,10 @@ export class InjectionsView {
 	/** Wrapped degraded-capture reason placed below the dialog header. */
 	private degradedWarningLines(width: number): string[] {
 		if (this.input.degradedReason === undefined) return [];
-		const reason = this.theme.fg("warning", `${BODY_INDENT}${this.input.degradedReason}`);
+		const reason = this.theme.fg(
+			"warning",
+			`${BODY_INDENT}${normalizeInlineText(this.input.degradedReason)}`,
+		);
 		return wrapTextWithAnsi(reason, width);
 	}
 

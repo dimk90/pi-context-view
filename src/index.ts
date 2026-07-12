@@ -12,7 +12,12 @@ import {
 	reportCommandMessage,
 	resolveInitialCapture,
 } from "./command.ts";
-import { buildNativeSnapshot, InitialCaptureState, SilentProbeState } from "./capture.ts";
+import {
+	buildNativeSnapshot,
+	InitialCaptureState,
+	mergeContextOnlyMessages,
+	SilentProbeState,
+} from "./capture.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
 import { showUsageView } from "./ui/usage-view.ts";
 import { computeUsage, toReportedUsage } from "./usage.ts";
@@ -45,9 +50,13 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("context", (event, ctx) => {
 		const messages = probe.filterMessages(event.messages);
+		const baselineMessages = probe.filterMessages(
+			buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
+		);
 		capture.finalize({
 			systemPrompt: ctx.getSystemPrompt(),
 			messages,
+			baselineMessages,
 			allTools: pi.getAllTools(),
 			activeToolNames: pi.getActiveTools(),
 			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
@@ -87,14 +96,15 @@ export default function (pi: ExtensionAPI) {
 				});
 				return;
 			}
+			const current = buildNativeSnapshot({
+				systemPrompt: ctx.getSystemPrompt(),
+				options: ctx.getSystemPromptOptions(),
+				allTools: pi.getAllTools(),
+				activeToolNames: pi.getActiveTools(),
+			});
 			await showUsageView(ctx, {
 				usage: computeUsage({
-					snapshot: buildNativeSnapshot({
-						systemPrompt: ctx.getSystemPrompt(),
-						options: ctx.getSystemPromptOptions(),
-						allTools: pi.getAllTools(),
-						activeToolNames: pi.getActiveTools(),
-					}),
+					snapshot: mergeContextOnlyMessages(current, initial.snapshot),
 					// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
 					messages: probe.filterMessages(
 						buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,

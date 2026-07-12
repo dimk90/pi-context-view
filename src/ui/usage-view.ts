@@ -8,7 +8,12 @@ import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works
 
 import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
 import { collectPreviewEntries } from "../usage.ts";
-import { ListNavigator, normalizePreviewText, PreviewScroller } from "./injections-model.ts";
+import {
+	ListNavigator,
+	normalizeInlineText,
+	normalizePreviewText,
+	PreviewScroller,
+} from "./injections-model.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
@@ -166,6 +171,8 @@ export class UsageView {
 
 	/** Invalidate theme-dependent rendered output. */
 	public invalidate(): void {
+		this.previewLines = undefined;
+		this.previewWrapWidth = undefined;
 		this.clearCache();
 	}
 
@@ -252,7 +259,7 @@ export class UsageView {
 			visibleRows.push(this.fit(`${cursor}${this.legendLine(row, columns, rowWidth, selected)}`, width));
 		}
 		return [
-			`${theme.fg("dim", "Model:")} ${theme.fg("muted", this.usage.modelLabel ?? "Unavailable")}`,
+			`${theme.fg("dim", "Model:")} ${theme.fg("muted", normalizeInlineText(this.usage.modelLabel ?? "Unavailable"))}`,
 			this.reportedSummary(width),
 			"",
 			counter === "" ? heading : spreadLine(heading, counter, width),
@@ -324,7 +331,7 @@ export class UsageView {
 	private plainLegendLabel(row: LegendRow): string {
 		if (row.type === "free") return `${FREE_CELL} Free Space:`;
 		const indent = "  ".repeat(row.depth);
-		return `${indent}${categoryMarker(row.category.id, row.depth)} ${row.category.label}:`;
+		return `${indent}${categoryMarker(row.category.id, row.depth)} ${normalizeInlineText(row.category.label)}:`;
 	}
 
 	/** Themed hierarchy label; the marker keeps its map color even when selected. */
@@ -336,7 +343,7 @@ export class UsageView {
 		const color = categoryColor(row.rootId);
 		const marker = this.theme.fg(color, categoryMarker(row.category.id, row.depth));
 		const labelColor = selected ? "accent" : row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
-		return `${indent}${marker} ${this.theme.fg(labelColor, `${row.category.label}:`)}`;
+		return `${indent}${marker} ${this.theme.fg(labelColor, `${normalizeInlineText(row.category.label)}:`)}`;
 	}
 
 	/** Percentage text used by the independently aligned rightmost column. */
@@ -358,7 +365,8 @@ export class UsageView {
 	/** Wrapped degraded-capture warning placed above the dashboard. */
 	private degradedWarningLines(width: number): string[] {
 		if (this.input.degradedReason === undefined) return [];
-		return wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${this.input.degradedReason}`), width);
+		const reason = normalizeInlineText(this.input.degradedReason);
+		return wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${reason}`), width);
 	}
 
 	// === Preview mode ===
@@ -412,7 +420,7 @@ export class UsageView {
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
 
 		const lines: string[] = [border, ""];
-		const title = theme.fg("accent", theme.bold(row.category.label));
+		const title = theme.fg("accent", theme.bold(normalizeInlineText(row.category.label)));
 		const percent = this.plainLegendPercent(row.category.tokens);
 		const meta = theme.fg(
 			"muted",
@@ -472,7 +480,9 @@ export class UsageView {
 		}
 		entry.breadcrumb.forEach((cell, index) => {
 			const color: ThemeColor = index === 0 ? "mdHeading" : "muted";
-			cells.push(`${theme.fg("dim", "[")}${theme.fg(color, cell)}${theme.fg("dim", "]")}`);
+			cells.push(
+				`${theme.fg("dim", "[")}${theme.fg(color, normalizeInlineText(cell))}${theme.fg("dim", "]")}`,
+			);
 		});
 		cells.push(theme.fg("dim", formatTokens(entry.tokens)));
 		return cells.join(" ");

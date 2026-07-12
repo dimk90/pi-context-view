@@ -12,8 +12,10 @@ import {
 	copyPromptOptions,
 	InitialCaptureState,
 	measureInjectedMessages,
+	mergeContextOnlyMessages,
 	SilentProbeState,
 } from "../src/capture.ts";
+import { buildSnapshot, type InjectionItem } from "../src/model.ts";
 
 /** Minimal custom-role message fixture. */
 function customMessage(customType: string, content: string, timestamp: number): ContextEvent["messages"][number] {
@@ -87,15 +89,47 @@ test("copyPromptOptions owns decomposition metadata and keeps only visible skill
 	]);
 });
 
-test("measureInjectedMessages gives duplicate custom types stable occurrence ids", () => {
-	const items = measureInjectedMessages([
-		customMessage("marker", "first", 1),
-		customMessage("marker", "second", 2),
-	]);
+test("measureInjectedMessages attributes custom and context-only messages without session history", () => {
+	const ordinaryUser = { role: "user", content: "ordinary", timestamp: 1 } satisfies ContextEvent["messages"][number];
+	const sessionCustom = customMessage("marker", "session", 2);
+	const contextCustom = customMessage("marker", "context only", 3);
+	const injectedUser = { role: "user", content: "injected", timestamp: 4 } satisfies ContextEvent["messages"][number];
+	const items = measureInjectedMessages(
+		[ordinaryUser, sessionCustom, contextCustom, injectedUser],
+		[ordinaryUser, sessionCustom],
+	);
 
-	assert.deepEqual(items.map((entry) => entry.id), ["message:marker:0", "message:marker:1"]);
+	assert.deepEqual(
+		items.map((entry) => entry.id),
+		["message:marker:0", "message:marker:1", "message:context:user:0"],
+	);
 	assert.equal(items[0]?.source.id, "message-type:marker");
-	assert.equal(items[1]?.text, "second");
+	assert.equal(items[0]?.contextOnly, undefined);
+	assert.equal(items[1]?.contextOnly, true);
+	assert.equal(items[2]?.source.id, "aggregate:extensions");
+	assert.equal(items[2]?.text, "injected");
+});
+
+test("mergeContextOnlyMessages carries only provider-context mutations into Usage snapshots", () => {
+	const source = { id: "aggregate:extensions", label: "extensions (aggregate)", native: false };
+	const contextMessage = {
+		id: "context-message",
+		phase: "initial",
+		kind: "message",
+		source,
+		label: "user message",
+		chars: 8,
+		tokens: 2,
+		text: "injected",
+		contextOnly: true,
+	} satisfies InjectionItem;
+	const sessionMessage = { ...contextMessage, id: "session-message", contextOnly: undefined };
+	const current = buildSnapshot([], "synthetic-probe", new Date("2026-07-10T12:00:00Z"));
+	const initial = buildSnapshot([contextMessage, sessionMessage], "real-turn", new Date());
+
+	const merged = mergeContextOnlyMessages(current, initial);
+	assert.deepEqual(merged.groups.flatMap((group) => group.items).map((entry) => entry.id), ["context-message"]);
+	assert.equal(merged.capturedAt.toISOString(), "2026-07-10T12:00:00.000Z");
 });
 
 test("InitialCaptureState owns prepared options before later handlers can mutate them", () => {
@@ -110,6 +144,7 @@ test("InitialCaptureState owns prepared options before later handlers can mutate
 	const snapshot = state.finalize({
 		systemPrompt: "Base\n- search: Original snippet",
 		messages: [],
+		baselineMessages: [],
 		allTools: [tool("search", "npm:web")],
 		activeToolNames: ["search"],
 		origin: "real-turn",
@@ -132,6 +167,7 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 	const first = state.finalize({
 		systemPrompt: "CUSTOM",
 		messages: [message],
+		baselineMessages: [message],
 		allTools: [],
 		activeToolNames: [],
 		origin: "real-turn",
@@ -147,6 +183,7 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 	const second = state.finalize({
 		systemPrompt: "DIFFERENT",
 		messages: [],
+		baselineMessages: [],
 		allTools: [],
 		activeToolNames: [],
 		origin: "synthetic-probe",
@@ -163,6 +200,7 @@ test("InitialCaptureState does not finalize before prepare", () => {
 		state.finalize({
 			systemPrompt: "prompt",
 			messages: [],
+			baselineMessages: [],
 			allTools: [],
 			activeToolNames: [],
 			origin: "real-turn",

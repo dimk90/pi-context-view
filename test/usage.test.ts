@@ -167,6 +167,35 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.ok(!usage.categories.some((entry) => entry.tokens === 99));
 });
 
+test("computeUsage includes frozen context-only messages without recounting session-backed injections", () => {
+	const initial = snapshot();
+	const contextOnly = {
+		...item("context-user", "message", 8, false),
+		source: { id: "aggregate:extensions", label: "extensions (aggregate)", native: false },
+		label: "user message",
+		text: "context-only content",
+		contextOnly: true,
+	} satisfies InjectionItem;
+	const contextGroup = {
+		source: contextOnly.source,
+		items: [contextOnly],
+		totalTokens: contextOnly.tokens,
+	};
+	const usage = computeUsage({
+		snapshot: {
+			...initial,
+			groups: [...initial.groups, contextGroup],
+			totalTokens: initial.totalTokens + contextOnly.tokens,
+		},
+		messages: [],
+	});
+
+	const extensions = category(usage.categories, "extension-messages");
+	assert.equal(extensions.tokens, 8);
+	assert.deepEqual(extensions.children?.map((entry) => entry.label), ["extensions (aggregate)"]);
+	assert.equal(collectPreviewEntries(extensions)[0]?.text, "context-only content");
+});
+
 test("computeUsage drops empty categories and aggregates duplicate tool/custom message sources", () => {
 	const messages: ContextEvent["messages"] = [
 		{

@@ -74,15 +74,13 @@ export function analyzeSystemPrompt(
 	const footer = findBasePromptFooter(systemPrompt, options.cwd);
 	const base = footer === undefined ? systemPrompt : systemPrompt.slice(0, footer.start);
 
-	measureTools(base, tools, items, carvedSpans);
+	const usesCustomPrompt = options.customPrompt !== undefined && options.customPrompt.length > 0;
+	measureTools(usesCustomPrompt ? "" : base, tools, items, carvedSpans);
 	measureContextFiles(base, options, items, carvedSpans);
 	measureSkills(base, options, items, carvedSpans);
 	measureAppendedPrompt(base, options, items, carvedSpans);
 
-	const baseLabel =
-		options.customPrompt !== undefined && options.customPrompt.length > 0
-			? "Custom Prompt (--system-prompt)"
-			: "Base Prompt";
+	const baseLabel = usesCustomPrompt ? "Custom Prompt (--system-prompt)" : "Base Prompt";
 	items.unshift(createItem("base-prompt", "base-prompt", PI_SOURCE, baseLabel, carve(base, carvedSpans)));
 
 	if (footer !== undefined && footer.end < systemPrompt.length) {
@@ -210,7 +208,12 @@ function measureAppendedPrompt(
 ): void {
 	const append = options.appendSystemPrompt;
 	if (append === undefined || append.length === 0) return;
-	const start = base.indexOf(append);
+	const generatedStarts = [findContextSectionSpan(base)?.start, findSkillsSpan(base)?.start]
+		.filter((start): start is number => start !== undefined);
+	const generatedStart = generatedStarts.length === 0 ? base.length : Math.min(...generatedStarts);
+	const beforeGeneratedSections = Math.max(0, generatedStart - append.length);
+	const expectedStart = base.lastIndexOf(append, beforeGeneratedSections);
+	const start = expectedStart === -1 ? base.lastIndexOf(append) : expectedStart;
 	if (start === -1) return;
 	items.push(createItem("append-prompt", "append-prompt", PI_SOURCE, "appended system prompt", append));
 	carvedSpans.push({ start, end: start + append.length });
@@ -271,7 +274,7 @@ function carve(text: string, spans: Span[]): string {
 	let remainder = "";
 	let cursor = 0;
 	for (const span of spans) {
-		remainder += text.slice(cursor, span.start);
+		if (span.start > cursor) remainder += text.slice(cursor, span.start);
 		cursor = Math.max(cursor, span.end);
 	}
 	return remainder + text.slice(cursor);

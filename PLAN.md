@@ -9,7 +9,7 @@
 
 ## v0.2.0 release
 
-- [ ] 13. **Perform a release code review.**
+- [x] 13. **Perform a release code review.**
   - Review capture/probe safety, synthetic-message filtering, owned-copy
     freezing, terminal sanitization, explicit-Enter privacy, command grammar,
     responsive layout, theme invalidation, and package/API compatibility.

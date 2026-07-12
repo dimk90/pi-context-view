@@ -32,7 +32,7 @@ export interface UsageInputs {
 export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
 	const categories = [
 		...classifyPromptCategories(inputs.snapshot),
-		...classifyMessages(inputs.messages),
+		...classifyMessages(inputs.messages, contextOnlyMessages(inputs.snapshot)),
 	].filter((category) => category.tokens > 0);
 	return {
 		computedAt: inputs.computedAt ?? new Date(),
@@ -119,8 +119,18 @@ function isMcpTool(item: InjectionItem): boolean {
 	return /(^|[^a-z])mcp([^a-z]|$)/i.test(`${item.source.id} ${item.source.label}`);
 }
 
-/** Classify live session messages into estimated categories with preview entries. */
-function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
+/** Collect frozen messages that existed only in the transformed provider context. */
+function contextOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
+	return snapshot.groups.flatMap((group) =>
+		group.items.filter((item) => item.kind === "message" && item.contextOnly === true)
+	);
+}
+
+/** Classify live session messages and frozen context-only injections with preview entries. */
+function classifyMessages(
+	messages: ContextEvent["messages"],
+	contextOnly: readonly InjectionItem[],
+): UsageCategory[] {
 	const user: UsagePreviewEntry[] = [];
 	const agentText: UsagePreviewEntry[] = [];
 	const agentThinking: UsagePreviewEntry[] = [];
@@ -130,6 +140,13 @@ function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
 	const toolResults = new Map<string, UsagePreviewEntry[]>();
 	const customMessages = new Map<string, UsagePreviewEntry[]>();
 
+	for (const item of contextOnly) {
+		appendEntry(customMessages, item.source.label, {
+			breadcrumb: [item.label],
+			tokens: item.tokens,
+			text: item.text,
+		});
+	}
 	for (const message of messages) {
 		switch (message.role) {
 			case "user":
