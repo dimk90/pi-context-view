@@ -92,7 +92,7 @@ Context Usage
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶     ▦ Compacted Data:       ...    ...
   ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶     ⛶ Free Space:        955.8k  95.6%
 
-  The map estimates next-request usage; provider token counts may differ.
+  Estimated context for the next model request; actual token counts may differ.
 
   ↑↓ Navigate · Enter Preview · Esc Close
 

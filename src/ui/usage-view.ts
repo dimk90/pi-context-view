@@ -21,7 +21,7 @@ import {
 } from "./layout.ts";
 import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 
-const USAGE_DESCRIPTION = "The map estimates next-request usage; provider token counts may differ.";
+const USAGE_DESCRIPTION = "Estimated context for the next model request; actual token counts may differ.";
 const USAGE_TAIL_LINE_COUNT = 6;
 const DETAIL_HEADER_LINE_COUNT = 4;
 const PREVIEW_FIXED_LINE_COUNT = 8;

@@ -168,10 +168,10 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.equal(new Set(percentColumns).size, 1);
 	const memoryLine = plain.find((line) => line.includes("Memory (AGENTS.md):"));
 	assert.match(memoryLine ?? "", /Memory \(AGENTS\.md\):\s+1\.5k/);
-	const descriptionIndex = plain.findIndex((line) => line.includes("The map estimates next-request usage"));
+	const descriptionIndex = plain.findIndex((line) => line.includes("Estimated context for the next model request"));
 	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
 	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
-	assert.equal(plain[descriptionIndex]?.indexOf("The map"), 2);
+	assert.equal(plain[descriptionIndex]?.indexOf("Estimated context"), 2);
 	assert.equal(plain[hintsIndex]?.indexOf("↑↓"), 2);
 	assert.match(plain[hintsIndex] ?? "", /↑↓ Navigate · Enter Preview · Esc Close/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mEsc/);
