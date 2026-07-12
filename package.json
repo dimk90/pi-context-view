@@ -1,13 +1,14 @@
 {
 	"name": "pi-context-view",
 	"version": "0.1.0",
-	"description": "Pi extension: inspect context injections and usage via /context",
+	"description": "Pi extension: inspect context usage and injections via /context",
 	"type": "module",
 	"license": "MIT",
 	"author": "Dmitry Makarov",
 	"keywords": [
 		"pi",
 		"pi-extension",
+		"pi-package",
 		"coding-agent",
 		"context",
 		"tokens",
@@ -18,6 +19,7 @@
 	},
 	"files": [
 		"src",
+		"media",
 		"README.md"
 	],
 	"scripts": {
@@ -27,7 +29,8 @@
 	"pi": {
 		"extensions": [
 			"./src/index.ts"
-		]
+		],
+		"image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/c1ff8949d340d94d6c9b40819ad4ff78aa2114cc/doc/images/pi-context-view.png"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"

@@ -536,19 +536,13 @@ line only when scrolling is required.
     inspector; no-provider-call sentinel.
   - Re-run `npm run check` and the normal-turn no-op smoke test after fixes.
 - [ ] 11. **Write v0.2.0 documentation and release media.**
-  - Create a README that explains what pi injects into context, what this
-    extension observes, every shipped slash-command form, CLI install/load/test
-    commands, Usage as the default, Initial preview behavior and privacy, and
-    why estimates can differ from provider accounting.
-  - State that Runtime is a disabled v0.3.0 roadmap label; do not document
-    Runtime logging, bounds, status, toggles, or commands as shipped behavior.
-  - Follow pi package guidance: include the `pi-package` keyword, document
-    `pi install`, `pi list`, temporary `pi -e`, trust implications, and add
-    gallery `pi.image` or MP4 `pi.video` metadata if release media is hosted.
-  - Capture themed Usage and Injections examples plus a package thumbnail.
-    Choose and document source dimensions/aspect ratios after checking the
-    target README and pi gallery rendering; keep text legible at thumbnail size
-    and store reproducible capture instructions.
+  - [x] Document context inputs, observation limits, every shipped command,
+    install/load/test commands, defaults, privacy, and estimate caveats.
+  - [x] Describe `RUNTIME` only as a disabled v0.3.0 roadmap label.
+  - [x] Add the `pi-package` keyword, pi package commands, trust warning, and
+    release-media dimensions/capture instructions.
+  - [ ] Replace the per-command and thumbnail placeholders with sanitized
+    captures, host the gallery thumbnail, and add `pi.image` metadata.
 - [ ] 12. **Remove redundant development artifacts and clean the plan.**
   - Review `poc/`, temporary reports/renderers, obsolete v1 files, stale tests,
     unused exports/dependencies/scripts, and superseded comments. Delete only
