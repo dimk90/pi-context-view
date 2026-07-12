@@ -1,21 +1,20 @@
 # pi-context-view
 
-Pi extension in migration from the superseded `--context-inspect` CLI workflow
-to focused `/context` TUI views:
+Pi extension replacing the superseded `--context-inspect` CLI workflow with
+focused `/context` TUI views:
 
 - `/context` or `/context usage` — on-demand estimated context composition.
-- `/context injections` — frozen Initial snapshot + optional bounded Runtime
-  log; Enter previews raw injection text.
-- `/context runtime on|off` — toggle future logging without a view or probe.
+- `/context injections` — frozen Initial snapshot; Enter previews raw injection
+  text. Its header includes a dim, disabled `RUNTIME` v0.3.0 roadmap label.
 
-There are no tabs. No raw injection content is logged or persisted.
+There is no tab state, Runtime logging, or Runtime command in v0.2.0. No raw
+injection content is logged or persisted.
 
 The v1 CLI lifecycle has been removed. Passive capture, the one-shot silent
-probe, command grammar, the Injections/Initial view with item preview, and its
-review hardening, the Usage view, its context map, and Usage category
-selection/preview are implemented (PLAN.md steps 1–7a). `/context` defaults to
-Usage. Hidden Runtime mutation logging (step 8) is next. Do not
-preserve CLI compatibility during the migration.
+probe, command grammar, both fullscreen views and previews, review hardening,
+release testing, documentation, media, and artifact cleanup are implemented
+(PLAN.md steps 1–12). `/context` defaults to Usage. Release review (step 13) is
+next. Do not preserve CLI compatibility.
 
 ## Target architecture
 
@@ -35,7 +34,7 @@ handlers may still edit the prompt or call `pi.setActiveTools()`. Freeze
 owned copies only; shared references can be mutated by other extensions.
 
 If Usage or Injections is requested before a real turn, use one on-demand
-silent probe. Runtime toggle subcommands never probe:
+silent probe:
 
 ```text
 /context           → wait idle, hide working row, sendUserMessage("")
@@ -47,13 +46,12 @@ agent_settled      → restore UI, resolve command, open requested view
 ```
 
 The probe entries remain in the session tree. Track their exact role+timestamp
-and filter them from later model context, Runtime logging, and Usage.
+and filter them from later model context and Usage.
 Other extensions still observe probe lifecycle events; never probe
 automatically or more than once per extension runtime.
 
-Runtime injection logging is disabled by default, memory-only, and bounded
-(initial target: 200 entries / 1 MiB). Usage is computed on demand from
-`ctx.sessionManager.buildSessionContext().messages`; use
+Runtime injection logging is deferred to v0.3.0. Usage is computed on demand
+from `ctx.sessionManager.buildSessionContext().messages`; use
 `ctx.getContextUsage()` separately for pi’s overall usage/window values.
 
 ## API constraints
@@ -87,14 +85,15 @@ Target modules (created incrementally per PLAN.md):
 - `src/ui/injections-model.ts` — pure row flattening, list navigation, and
   preview scrolling/normalization.
 - `src/ui/injections-view.ts` — fullscreen Injections view with preview state.
-- `src/runtime.ts` — bounded optional Runtime log.
+- `src/runtime.ts` — deferred v0.3.0 bounded optional Runtime log.
 - `src/measure.ts` — pure prompt/tool measurement.
 - `src/usage.ts` — pure context classification and totals.
 - `src/ui/usage-map.ts` — pure proportional-cell model for the Usage graph.
 - `src/ui/usage-view.ts` — fullscreen Usage view.
 - `PLAN.md` — current decisions and step checkboxes; keep them current.
 - `HISTORY.md` — superseded v1 findings; reference only.
-- `poc/` — throwaway/reference spikes; `marker.ts` is also a test injector.
+- `test/fixtures/marker.ts` — lifecycle verification injector for prompt/message
+  capture and load order.
 - `test/` — Node `node:test` pure tests (native TypeScript type stripping).
 
 Keep hierarchy in typed model fields. Never parse labels in UI code to recover
@@ -147,7 +146,8 @@ Test marker load order in both directions and use an
 - genuine user aborts remain visible;
 - synthetic entries never reach later model contexts or Usage;
 - Initial freezes once per extension runtime;
-- Runtime is off and bounded by default;
+- no Runtime logging state, command, completion, focus, or toggle ships in
+  v0.2.0;
 - raw injection content appears only after explicit Enter preview and is never
   included in notifications/reports, logged by the extension, or persisted;
 - all TUI lines respect the supplied width and fullscreen views resize with
@@ -161,8 +161,8 @@ Test marker load order in both directions and use an
 - exact `devDependencies` pin — local type snapshot. It MUST match
   `pi --version`; update the pin and run `npm install` on mismatch.
 
-`@earendil-works/pi-tui` is also pinned exactly in `devDependencies` for local
-TUI types; pi supplies it to extensions at runtime.
+`@earendil-works/pi-tui` is declared as a `"*"` peer and pinned exactly in
+`devDependencies` for local TUI types; pi supplies it to extensions at runtime.
 
 ## Code style
 

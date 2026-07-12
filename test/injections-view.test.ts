@@ -186,7 +186,7 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	assert.match(degradedDescription, /\u001b\[38;2;170;187;204m  \[Degraded: pi-native fallback used\]/);
 });
 
-test("InjectionsView keeps Runtime inactive when tab-switch keys are pressed", () => {
+test("InjectionsView keeps Runtime inactive when label-switch keys are pressed", () => {
 	const view = createView(4);
 	const initial = view.render(80);
 

@@ -7,12 +7,12 @@ Add a `/context` slash command to pi with two focused surfaces:
 - `/context` or `/context usage` — open an estimated map of current context
   usage by data type: system instructions, tool schemas, user/assistant
   messages, thinking, tool calls/results, summaries, and extension messages.
-- `/context injections` — open the tabbed injection explorer:
+- `/context injections` — open the injection explorer:
   - **Initial** — the first observable provider-bound context in the current
     extension runtime: pi prompt components, active tool definitions,
     extension prompt additions, and injected messages.
-  - **Runtime** — a future optional, bounded log of hidden provider-bound
-    context mutations observed after the initial snapshot.
+  - **Runtime** — a disabled header label reserved for a future optional,
+    bounded log of hidden provider-bound context mutations.
 
 Release scope:
 
@@ -32,9 +32,10 @@ The old `--context-inspect` print-and-exit workflow is superseded. See
 - `/context` is TUI-only in v2. Non-TUI invocation reports that TUI mode is
   required; it does not preserve the old plain-table workflow.
 - `/context` defaults to `/context usage`. Usage and Injections remain separate
-  focused fullscreen overlays; only Injections has a tab bar.
+  focused fullscreen overlays; only Injections has `INITIAL`/`RUNTIME` header
+  labels.
 - In v0.2.0, `INITIAL` is active and `RUNTIME` is a dim disabled roadmap label.
-  Runtime cannot receive focus, and there is no tab-switching keybinding.
+  Runtime cannot receive focus, and there is no label-switching keybinding.
 - Unknown arguments show concise command usage. v0.2.0 argument completions
   offer only `usage` and `injections`; v0.3.0 restores `runtime on|off`.
 - Initial means the first context observable by this extension instance. It
@@ -68,8 +69,8 @@ names, and hint labels use Title Case
 tool names (`edit`, `web_search`) keep their literal casing, and longer
 descriptions stay sentence case. `(current/total)` appears only while scrolling.
 
-Default Usage view — `/context` or `/context usage` (a separate view, not an
-Injections tab in v0.2.0):
+Default Usage view — `/context` or `/context usage` (separate from the
+Injections view):
 
 ```text
 ────────────────────────────────────────────────────────────────────────────────
@@ -143,7 +144,7 @@ Context Injections · [INITIAL]  RUNTIME
 ────────────────────────────────────────────────────────────────────────────────
 ```
 
-`INITIAL` uses the active-tab treatment. `RUNTIME` is dim and cannot receive
+`INITIAL` uses the active-label treatment. `RUNTIME` is dim and cannot receive
 focus in v0.2.0; the labels are not switchable. `TOTAL` is preceded by one empty
 table row and is the final non-selectable row
 in the Initial table. It uses only the frozen Initial snapshot, participates in
@@ -351,14 +352,18 @@ only after explicit Enter selection in the Injections view.
 ### Source layout target
 
 - `src/index.ts` — extension factory and event/command wiring only.
-- `src/model.ts` — semantic capture/report types.
-- `src/capture.ts` — initial snapshot and silent-probe state machine.
-- `src/runtime.ts` — bounded runtime diff log (v0.3.0).
+- `src/model.ts` — semantic capture and usage types.
+- `src/capture.ts` — initial snapshot and silent-probe state machines.
+- `src/command.ts` — command parsing, completions, and capture resolution.
 - `src/measure.ts` — pure prompt/tool measurement.
 - `src/usage.ts` — pure message classification and usage totals.
-- `src/ui/usage-view.ts` — focused Usage overlay.
+- `src/ui/injections-model.ts` — pure injection rows, navigation, and preview normalization.
+- `src/ui/injections-view.ts` — Initial explorer and preview state.
+- `src/ui/layout.ts` — shared fullscreen layout helpers.
 - `src/ui/usage-map.ts` — pure proportional-cell model for the Usage graph.
-- `src/ui/injections-view.ts` — Initial/Runtime explorer and preview state.
+- `src/ui/usage-view.ts` — focused Usage overlay.
+- `src/runtime.ts` — deferred bounded Runtime diff log (v0.3.0).
+- `test/fixtures/marker.ts` — prompt/message injection and load-order fixture.
 
 ### Command and view behavior
 
@@ -371,13 +376,13 @@ One command handler parses the v0.2.0 grammar:
 ```
 
 Provide argument completion for this grammar. Unknown or incomplete arguments
-show concise usage rather than silently choosing a view. The current placeholder
+show concise usage rather than silently choosing a view. The
 `/context runtime on|off` shell and its completions are removed for v0.2.0;
 v0.3.0 restores them when Runtime logging is functional.
 
-The Usage and Injections views are independent. Usage has no tabs. Injections
-shows `INITIAL | RUNTIME`, but only Initial is focusable in v0.2.0, so there is
-no tab state or switching keybinding. Both functional surfaces share a small
+The Usage and Injections views are independent. Usage has no mode labels.
+Injections shows `INITIAL | RUNTIME`, but only Initial is active in v0.2.0, so
+there is no tab state or switching keybinding. Both functional surfaces share a small
 state machine (`list | preview`), a selected row, and scroll offsets.
 Up/Down/PgUp/PgDn/Home/End navigate; Enter opens a scrollable preview; Escape
 returns from preview to list, then closes the view. The Usage preview shows the
@@ -391,7 +396,7 @@ overlays at all terminal widths; content must resize rather than clip.
 
 The v0.2.0 Injections header has no Runtime logging status. It renders
 `Context Injections · [INITIAL]  RUNTIME`, with `INITIAL` active in `mdHeading`
-and disabled `RUNTIME` in `dim`. The hint row has no tab switching or Runtime
+and disabled `RUNTIME` in `dim`. The hint row has no label switching or Runtime
 toggle. v0.3.0 may add
 status/toggle affordances only when the Runtime implementation lands.
 
@@ -408,6 +413,14 @@ Indent descriptions, scroll counters, hints, and preview bodies two spaces.
 Format hints as dim key + muted description and show a dim `(current/total)`
 line only when scrolling is required.
 
+## Release media
+
+Keep sanitized captures under `doc/images/` in Git LFS. The current gallery
+thumbnail is 1224×574; the Usage and Injections command captures are
+3041×1227 and 3054×1232. Capture from a no-session TUI, remove project paths,
+credentials, and private prompt/message content, verify the README renders all
+three images, and verify the absolute `pi.image` URL before release.
+
 ## Development steps
 
 ### v0.2.0
@@ -420,7 +433,7 @@ line only when scrolling is required.
     only) and finalization in `context`: final `ctx.getSystemPrompt()`, final
     active tool set, injected messages — all frozen as owned copies.
   - Keep normal prompts behaviorally unchanged; no automatic probe.
-  - Keep `measure.ts` and the temporary `report.ts` while capture is verified.
+  - Retain the reusable pure measurement logic in `measure.ts`.
   - Update package description/keywords after the CLI code is gone.
   - Verify `npx tsc --noEmit`, a normal prompt, and marker capture with both
     extension load orders; verify tool-set mutations from a later-loaded
@@ -433,11 +446,10 @@ line only when scrolling is required.
   - Add the guarded state machine described above; verify the partial PoC
     findings in production wiring.
   - Register the explicit command grammar and argument completions:
-    `/context` → usage, `/context usage`, `/context injections`, and
-    `/context runtime on|off`.
+    `/context` → usage, `/context usage`, and `/context injections`.
   - Usage/Injections before the first real turn: probe once, await
-    `agent_settled`, then show a minimal placeholder for the requested view;
-    Runtime toggles never probe. On failure show degraded data.
+    `agent_settled`, then open the requested view; on failure show degraded
+    data.
   - Verify no provider call, no transcript artifacts, no model-context
     pollution, exact filtering of only synthetic entries, repeated command
     idempotency, and genuine user abort rendering.
@@ -448,7 +460,7 @@ line only when scrolling is required.
     hierarchy colors, muted values (accent when selected), dim scroll position,
     padded description + styled hotkey rows, top/bottom padding, one row after
     the dialog header, and one row before `RUNTIME` when that section is shown.
-  - Set it as temporary default for `/context`.
+  - Wire it to `/context injections`.
 - [x] 5. **Add injection preview mode.**
   - Enter opens `InjectionItem.text`; scrolling via arrows/PgUp/PgDn; Escape
     returns to the same selected list row.
@@ -510,7 +522,7 @@ line only when scrolling is required.
   - Cover per-block splitting, chronological flattening, entry caps,
     sanitization, empty categories, Tool Output children, overflow scrolling,
     narrow widths, and short terminal heights in tests.
-- [x] 8. **Finalize the v0.2.0 Injections tabs and scope.**
+- [x] 8. **Finalize the v0.2.0 Injections header labels and scope.**
   - Put `INITIAL | RUNTIME` in the dialog header after a ` · ` separator. Keep
     Initial fully functional; render Runtime dim and disabled with no focus or
     switching keybinding.
@@ -535,18 +547,18 @@ line only when scrolling is required.
     height-only resize behavior; both focused views; marker before/after
     inspector; no-provider-call sentinel.
   - Re-run `npm run check` and the normal-turn no-op smoke test after fixes.
-- [ ] 11. **Write v0.2.0 documentation and release media.**
+- [x] 11. **Write v0.2.0 documentation and release media.**
   - [x] Document context inputs, observation limits, every shipped command,
     install/load/test commands, defaults, privacy, and estimate caveats.
   - [x] Describe `RUNTIME` only as a disabled v0.3.0 roadmap label.
   - [x] Add the `pi-package` keyword, pi package commands, trust warning, and
     release-media dimensions/capture instructions.
-  - [ ] Replace the per-command and thumbnail placeholders with sanitized
+  - [x] Replace the per-command and thumbnail placeholders with sanitized
     captures, host the gallery thumbnail, and add `pi.image` metadata.
-- [ ] 12. **Remove redundant development artifacts and clean the plan.**
-  - Review `poc/`, temporary reports/renderers, obsolete v1 files, stale tests,
-    unused exports/dependencies/scripts, and superseded comments. Delete only
-    artifacts no longer needed for shipped behavior or regression coverage.
+- [x] 12. **Remove redundant development artifacts and clean the plan.**
+  - Review obsolete PoCs, temporary reports/renderers, obsolete v1 files, stale
+    tests, unused exports/dependencies/scripts, and superseded comments. Delete
+    only artifacts no longer needed for shipped behavior or regression coverage.
   - Preserve any lifecycle probe/marker fixtures still needed by verification;
     move historical findings to `HISTORY.md` rather than leaving dead code.
   - Reconcile `PLAN.md` with the final v0.2.0 scope: remove stale temporary
