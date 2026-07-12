@@ -5,7 +5,7 @@
 The first implementation added a `--context-inspect` flag that synthesized a
 turn, measured startup context, printed a plain-text table, and exited. It was
 fully implemented and manually tested through commit `e23c264`, then retired
-in favor of the interactive `/context` design in PLAN.md.
+in favor of the interactive `/context` design in [PLAN.md](../PLAN.md).
 
 The pure prompt/tool measurement work remains useful. The automatic
 probe/abort/report/shutdown lifecycle does not.
