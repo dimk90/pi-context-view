@@ -1,10 +1,18 @@
 {
 	"name": "pi-context-view",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Pi extension to visualize context token usage and inspect hidden prompt, tool, and extension injections via /context",
 	"type": "module",
 	"license": "MIT",
 	"author": "Dmitry Makarov",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/dimk90/pi-context-view.git"
+	},
+	"homepage": "https://github.com/dimk90/pi-context-view#readme",
+	"bugs": {
+		"url": "https://github.com/dimk90/pi-context-view/issues"
+	},
 	"keywords": [
 		"pi",
 		"pi-extension",

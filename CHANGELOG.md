@@ -1,6 +1,6 @@
 # Changelog
 
-## `[v0.2.0]` - Unreleased
+## `[v0.2.0]` - 13.07.2026
 
 ### New
 * `[usage]` Add `/context` and `/context usage` fullscreen views with estimated token usage by context category.

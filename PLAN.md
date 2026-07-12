@@ -18,7 +18,7 @@
     scope.
   - Resolve findings, then repeat `npm run check`, real-TTY coverage, and the
     no-provider-call and normal-turn smoke tests.
-- [ ] 14. **Release v0.2.0.**
+- [x] 14. **Release v0.2.0.**
   - Set the package version to `0.2.0`; add repository, homepage, bugs, and
     gallery metadata; verify development pins match `pi --version`.
   - Inspect the npm package, then verify installation with `pi install`,
