@@ -5,6 +5,7 @@
 ### Changed
 * `[usage]` Compact complete attached-skill expansions into pi-themed badges in User Message previews.
 * `[usage]` Refine the Usage dashboard with responsive header totals, a full/part map key, and dim dot leaders.
+* `[injections]` Clarify injection hierarchy with tree connectors, nearby aligned token values, and dim dot leaders.
 
 ### Fixed
 * `[usage]` Add fallback (`≈`) calculation of context usage after compaction and pi estimation is not available.

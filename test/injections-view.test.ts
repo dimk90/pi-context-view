@@ -92,7 +92,8 @@ function stripSgr(text: string): string {
 test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	const child = item("child", "pi", true, 20);
 	const parent: InjectionItem = { ...item("parent", "pi", true, 50), children: [child] };
-	const piGroup = group("pi", true, [parent]);
+	const sibling = item("sibling", "pi", true, 10);
+	const piGroup = group("pi", true, [parent, sibling]);
 	const styledSnapshot: InitialSnapshot = {
 		origin: "real-turn",
 		capturedAt: new Date("2026-07-10T12:00:00Z"),
@@ -118,14 +119,34 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.ok(selectedGroup !== undefined);
 	assert.equal(stripSgr(selectedGroup).indexOf("→"), 0);
 	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m→ /);
-	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m50/);
+	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m60/);
+	assert.match(stripSgr(selectedGroup), /→ pi \.{2,}\s+60/);
 	assert.doesNotMatch(selectedGroup, /\u001b\[48;/);
 	const parentLine = lines.find((line) => stripSgr(line).includes("parent with a moderately"));
 	const childLine = lines.find((line) => stripSgr(line).includes("child with a moderately"));
+	assert.match(stripSgr(parentLine ?? ""), /^  ├─ parent/);
+	assert.match(parentLine ?? "", /\u001b\[38;2;16;17;18m├─ /);
 	assert.match(parentLine ?? "", /\u001b\[38;2;7;8;9mparent/);
 	assert.match(parentLine ?? "", /\u001b\[38;2;7;8;9m50/);
+	assert.match(stripSgr(childLine ?? ""), /^  │  └─ child/);
+	assert.match(childLine ?? "", /\u001b\[38;2;16;17;18m│  └─ /);
 	assert.match(childLine ?? "", /\u001b\[38;2;16;17;18mchild/);
 	assert.match(childLine ?? "", /\u001b\[38;2;7;8;9m20/);
+	const siblingLine = lines.find((line) => stripSgr(line).includes("sibling with a moderately"));
+	assert.match(stripSgr(siblingLine ?? ""), /^  └─ sibling/);
+
+	const alignedValues = [
+		["→ pi", "60"],
+		["parent with", "50"],
+		["child with", "20"],
+		["sibling with", "10"],
+	].map(([label, value]) => {
+		const line = lines.map(stripSgr).find((candidate) => candidate.includes(label));
+		assert.ok(line !== undefined);
+		return line.lastIndexOf(value);
+	});
+	assert.equal(new Set(alignedValues).size, 1);
+	assert.ok((alignedValues[0] ?? 80) < 64, "the capped token column stays near the hierarchy");
 
 	// TOTAL is the final table row and sums the snapshot without double-counting children.
 	const totalRowIndex = lines.findIndex((line) => stripSgr(line).includes("TOTAL"));
@@ -133,15 +154,16 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.ok(totalRowIndex >= 0 && totalRowIndex < descIndex);
 	assert.equal(lines[totalRowIndex - 1], "");
 	assert.equal(stripSgr(lines[totalRowIndex] ?? "").indexOf("TOTAL"), 2);
-	assert.match(stripSgr(lines[totalRowIndex] ?? ""), /TOTAL\s+50/);
+	assert.match(stripSgr(lines[totalRowIndex] ?? ""), /TOTAL \.{2,}\s+60/);
 	assert.doesNotMatch(stripSgr(lines[totalRowIndex] ?? ""), /→/);
 
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	lines = view.render(80);
-	const selectedChild = lines.find((line) => stripSgr(line).includes("→     child"));
+	const selectedChild = lines.find((line) => stripSgr(line).includes("→ │  └─ child"));
 	assert.ok(selectedChild !== undefined);
 	assert.equal(stripSgr(selectedChild).indexOf("→"), 0);
+	assert.match(selectedChild, /\u001b\[38;2;16;17;18m│  └─ /);
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3mchild/);
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3m20/);
 
@@ -198,10 +220,19 @@ test("InjectionsView keeps Runtime inactive when label-switch keys are pressed",
 });
 
 test("InjectionsView keeps every rendered line within the width", () => {
-	for (const width of [24, 40, 66, 120]) {
+	for (const width of [24, 40, 60, 80, 120]) {
 		const view = createView(8, "Silent probe unavailable: no model is selected. Extension additions were not observed.");
-		for (const line of view.render(width)) {
+		const listLines = view.render(width);
+		for (const line of listLines) {
 			assert.ok(visibleWidth(line) <= width, `line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+		if (width === 24) {
+			const plain = listLines.map(stripSgr);
+			const titleIndex = plain.indexOf("Context Injections");
+			const tabsIndex = plain.indexOf("[INITIAL]  RUNTIME");
+			assert.ok(titleIndex >= 0 && tabsIndex === titleIndex + 2);
+			assert.equal(plain[titleIndex + 1], "");
+			assert.equal(plain[tabsIndex + 1], "");
 		}
 		view.handleInput("\u001b[B"); // select first item row
 		view.handleInput("\r"); // open preview
@@ -303,7 +334,7 @@ test("InjectionsView navigation scrolls the non-selectable total and Escape clos
 
 	view.handleInput("\u001b[4~"); // End
 	const atEnd = view.render(80).join("\n");
-	assert.match(stripSgr(atEnd), /→   ext-29/);
+	assert.match(stripSgr(atEnd), /→ └─ ext-29/);
 	assert.match(atEnd, /TOTAL/);
 	assert.doesNotMatch(stripSgr(atEnd), /→ TOTAL/);
 

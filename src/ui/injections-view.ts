@@ -3,7 +3,7 @@
  * a disabled Runtime roadmap label.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { InitialSnapshot, InjectionItem } from "../model.ts";
 import {
@@ -29,11 +29,19 @@ import {
 const LIST_FIXED_LINE_COUNT = 10;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const LIST_DESCRIPTION = "Injections into the model context for the first turn, with token estimates.";
+const CURSOR_COLUMN_WIDTH = 2;
+const MAX_TOKEN_VALUE_COLUMN = 54;
+const TOKEN_LEADER_GAP = 4;
 
 /** Everything the Injections view renders. */
 export interface InjectionsViewInput {
 	readonly snapshot: InitialSnapshot;
 	readonly degradedReason?: string;
+}
+
+/** Shared token-value column measured after the fixed cursor column. */
+interface InjectionColumns {
+	readonly value: number;
 }
 
 /** Open the Injections view as a fullscreen overlay. */
@@ -136,16 +144,14 @@ export class InjectionsView {
 		}
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
+		const headerLines = this.headerLines(width);
 		const warningLines = this.degradedWarningLines(width);
 		const degradedDescriptionLine = this.degradedDescriptionLine(width);
-		const extraLineCount = warningLines.length + (degradedDescriptionLine === undefined ? 0 : 1);
+		const extraLineCount = headerLines.length - 1 + warningLines.length +
+			(degradedDescriptionLine === undefined ? 0 : 1);
 		const viewport = calculateViewport(this.rows.length, terminalRows, LIST_FIXED_LINE_COUNT, extraLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
-		const lines: string[] = [border, ""];
-
-		lines.push(this.headerLine(width));
-		lines.push("");
-		lines.push(...warningLines);
+		const lines: string[] = [border, "", ...headerLines, "", ...warningLines];
 		const listLines = this.listLines(width);
 		lines.push(...listLines);
 		if (viewport.showScroll) lines.push(this.scrollLine(width));
@@ -280,18 +286,25 @@ export class InjectionsView {
 		);
 	}
 
-	private headerLine(width: number): string {
+	/** Keep title/tabs together when possible; give narrow tabs their own breathing room. */
+	private headerLines(width: number): string[] {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold("Context Injections"));
 		const separator = theme.fg("dim", " · ");
 		const initial = theme.fg("mdHeading", theme.bold("[INITIAL]"));
 		const runtime = theme.fg("dim", "RUNTIME");
-		return this.fit(`${title}${separator}${initial}  ${runtime}`, width);
+		const tabs = `${initial}  ${runtime}`;
+		const combined = `${title}${separator}${tabs}`;
+		if (visibleWidth(combined) <= width) return [this.fit(combined, width)];
+		return [this.fit(title, width), "", this.fit(tabs, width)];
 	}
 
+	/** Render the current hierarchy viewport against one stable, nearby value column. */
 	private listLines(width: number): string[] {
 		const theme = this.theme;
 		const lines: string[] = [];
+		const contentWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
+		const columns = this.injectionColumns(contentWidth);
 		const start = this.navigator.offset;
 		const end = start + this.navigator.windowSize;
 		for (let index = start; index < end; index++) {
@@ -302,25 +315,74 @@ export class InjectionsView {
 				continue;
 			}
 			const selected = row.kind !== "total" && index === this.navigator.selected;
-			// The cursor stays in one fixed column; hierarchy indents after it.
-			const marker = selected ? theme.fg("accent", "→ ") : BODY_INDENT;
-			const indent = BODY_INDENT.repeat(row.depth);
-			const value = row.tokens.toLocaleString("en-US");
-			const tokens = row.kind === "total"
-				? theme.bold(theme.fg("text", value))
-				: theme.fg(selected ? "accent" : "muted", value);
-			const labelWidth = Math.max(8, width - indent.length - visibleWidth(tokens) - 6);
-			const label = truncateToWidth(normalizeInlineText(row.label), labelWidth, "…");
-			lines.push(this.spread(`${marker}${indent}${this.rowLabel(row, label, selected)}`, `${tokens}  `, width));
+			const cursor = selected ? theme.fg("accent", "→ ") : BODY_INDENT;
+			const content = this.injectionLine(row, columns, contentWidth, selected);
+			lines.push(this.fit(`${cursor}${content}`, width));
 		}
 		return lines;
 	}
 
-	private rowLabel(row: InjectionRow, label: string, selected: boolean): string {
+	/** Choose the earliest useful shared value column, capped on wide terminals. */
+	private injectionColumns(width: number): InjectionColumns {
+		const contentRows = this.rows.filter((row) => row.kind !== "separator");
+		const labelWidth = Math.max(1, ...contentRows.map((row) => visibleWidth(this.plainRowLabel(row))));
+		const tokenWidth = Math.max(
+			1,
+			...contentRows.map((row) => row.tokens.toLocaleString("en-US").length),
+		);
+		const idealValue = Math.min(MAX_TOKEN_VALUE_COLUMN, labelWidth + TOKEN_LEADER_GAP);
+		return { value: Math.max(1, Math.min(idealValue, width - tokenWidth)) };
+	}
+
+	/** One hierarchy row with dim leaders and a full token estimate when width permits. */
+	private injectionLine(
+		row: Exclude<InjectionRow, { readonly kind: "separator" }>,
+		columns: InjectionColumns,
+		width: number,
+		selected: boolean,
+	): string {
+		const labelWidth = Math.max(1, columns.value - 1);
+		const left = fitLine(this.styledRowLabel(row, selected), labelWidth);
+		const leader = this.tokenLeader(columns.value - visibleWidth(left));
+		const value = row.tokens.toLocaleString("en-US");
+		const tokens = row.kind === "total"
+			? this.theme.bold(this.theme.fg("text", value))
+			: this.theme.fg(selected ? "accent" : "muted", value);
+		return fitLine(`${left}${leader}${tokens}`, width);
+	}
+
+	/** Fill a label/value gap with dim dots, retaining spaces at both ends. */
+	private tokenLeader(width: number): string {
+		if (width < 3) return " ".repeat(Math.max(0, width));
+		return ` ${this.theme.fg("dim", ".".repeat(width - 2))} `;
+	}
+
+	/** Unstyled hierarchy label used to keep the value column stable while scrolling. */
+	private plainRowLabel(row: Exclude<InjectionRow, { readonly kind: "separator" }>): string {
+		const label = normalizeInlineText(row.label);
+		return row.kind === "item" ? `${this.treePrefix(row)}${label}` : label;
+	}
+
+	/** Themed hierarchy label with connectors intentionally dim even on selection. */
+	private styledRowLabel(
+		row: Exclude<InjectionRow, { readonly kind: "separator" }>,
+		selected: boolean,
+	): string {
 		const theme = this.theme;
-		if (selected) return theme.fg("accent", label);
-		if (row.kind === "group" || row.kind === "total") return theme.bold(theme.fg("text", label));
-		return theme.fg(row.depth > 1 ? "dim" : "muted", label);
+		const label = normalizeInlineText(row.label);
+		if (row.kind === "group" || row.kind === "total") {
+			return theme.bold(theme.fg(selected ? "accent" : "text", label));
+		}
+		const prefix = theme.fg("dim", this.treePrefix(row));
+		const color = selected ? "accent" : row.depth === 1 ? "muted" : "dim";
+		return `${prefix}${theme.fg(color, label)}`;
+	}
+
+	/** Tree branch and ancestor continuation prefix for one item row. */
+	private treePrefix(row: Extract<InjectionRow, { readonly kind: "item" }>): string {
+		const branch = row.isLast ? "└─ " : "├─ ";
+		if (row.depth === 1) return branch;
+		return `${row.parentContinues === true ? "│  " : "   "}${branch}`;
 	}
 
 	private scrollLine(width: number): string {

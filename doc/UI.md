@@ -134,7 +134,9 @@ Context Injections · [INITIAL]  RUNTIME
 ```
 
 `INITIAL` uses the active `mdHeading` treatment. `RUNTIME` is dim, disabled, and
-cannot receive focus in v0.2.0. There is no switching key or Runtime status.
+cannot receive focus in v0.2.0. There is no switching key or Runtime status. If
+the combined header does not fit, put the title and tabs on separate lines with
+one empty row before and after the tabs.
 
 Present Initial contributions in this order:
 
@@ -154,6 +156,12 @@ prompt additions by size. Children break down parent contributions and do not
 increase totals. Measurements and previews exclude transport wrappers,
 section-introduction scaffolding, and the dynamic date/working-directory
 footer.
+
+Use dim `├─`, `└─`, and `│` connectors to show source, item, and constituent
+hierarchy. Align every token estimate to one shared column capped near the tree
+on wide terminals, leaving unused space to the right. Fill label/value gaps with
+dim dot leaders. As width shrinks, shorten or remove leaders before truncating
+labels or token values, and retain tree connectors where space permits.
 
 Place one empty row before `TOTAL`. It is the last row in the scrollable Initial
 list, counts only the frozen Initial snapshot, and is not selectable. Cursor

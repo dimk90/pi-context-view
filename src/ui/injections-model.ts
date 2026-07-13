@@ -24,6 +24,10 @@ export type InjectionRow =
 		readonly tokens: number;
 		/** One for items and two for constituent sub-items. */
 		readonly depth: 1 | 2;
+		/** Whether this row is the final sibling at its depth. */
+		readonly isLast: boolean;
+		/** Whether a depth-two row's parent has a following sibling. */
+		readonly parentContinues?: boolean;
 		/** Stable preview target id from the snapshot. */
 		readonly itemId: string;
 	}
@@ -79,24 +83,29 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 			tokens: group.totalTokens,
 			depth: 0,
 		});
-		for (const item of group.items) {
+		group.items.forEach((item, itemIndex) => {
+			const isLastItem = itemIndex === group.items.length - 1;
 			rows.push({
 				kind: "item",
 				label: item.label,
 				tokens: item.tokens,
 				depth: 1,
+				isLast: isLastItem,
 				itemId: item.id,
 			});
-			for (const child of item.children ?? []) {
+			const children = item.children ?? [];
+			children.forEach((child, childIndex) => {
 				rows.push({
 					kind: "item",
 					label: child.label,
 					tokens: child.tokens,
 					depth: 2,
+					isLast: childIndex === children.length - 1,
+					parentContinues: !isLastItem,
 					itemId: child.id,
 				});
-			}
-		}
+			});
+		});
 	}
 	rows.push({ kind: "separator", label: "", tokens: 0, depth: 0 });
 	rows.push({ kind: "total", label: "TOTAL", tokens: snapshot.totalTokens, depth: 0 });

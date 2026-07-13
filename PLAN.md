@@ -27,6 +27,12 @@
   - Add a separate full/part key to the map legend.
   - Prepare and approve the responsive UI sketch before implementation.
 
+- [x] 4. **Refine context injection view.**
+  - Move token values closer to the items but keep it aligned;
+  - Add dots between item and values in the same way as in context view;
+  - Add some symbols to show joerarchy between items more clearly: "·", border lines, etc?
+  - Show me UI sketch before implementation;
+
 ## v0.2.2
 
 - [ ] 1. **Preserve silent-probe filtering across extension runtimes.**
