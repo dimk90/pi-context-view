@@ -45,11 +45,6 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 1. Review and validate the release tree:
 
    ```bash
-   git diff --check
-   git diff
-   ```
-
-   ```bash
    npm run check
    npm pack --dry-run
    ```

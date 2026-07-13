@@ -1,6 +1,6 @@
 # Changelog
 
-## `[v0.2.1]` - Unreleased
+## `[v0.2.1]` - 13.07.2026
 
 ### Changed
 * `[usage]` Compact complete attached-skill expansions into pi-themed badges in User Message previews.
