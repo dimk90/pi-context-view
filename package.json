@@ -38,7 +38,7 @@
 		"extensions": [
 			"./src/index.ts"
 		],
-		"image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/c1ff8949d340d94d6c9b40819ad4ff78aa2114cc/doc/images/pi-context-view.png"
+		"image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/pi-context-view.png"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",
