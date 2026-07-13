@@ -1,6 +1,6 @@
 # UI specification
 
-This is the canonical UI reference for pi-context-view v0.2.0. Both `/context`
+This is the canonical UI reference for pi-context-view v0.2.1. Both `/context`
 views are focused fullscreen TUI overlays. Usage and Injections are separate
 views; there is no tab state.
 
@@ -10,7 +10,7 @@ Follow pi's native selector style (`/settings`, `/model`):
 
 - horizontal top and bottom borders with one blank row inside each;
 - one blank row after the dialog header;
-- accent title and right-aligned summary where present;
+- accent title and responsive summary alignment as specified by each view;
 - fixed-column `→` cursor flush at column 0;
 - muted description between blank rows above the hints;
 - dim key plus muted description hints joined by ` · `;
@@ -54,11 +54,37 @@ The overview contains a proportional 14×14 map and an interactive category
 legend. Cells use themed `■` for full occupancy, `◧` for partial occupancy, `▦`
 for compacted data, and dim `⛶` for free space. Allocate occupied cells from
 estimated category totals against the context window; display pi-reported usage
-separately because the values may differ.
+separately because the values may differ. A dedicated `Map: ■ Full · ◧ Part`
+key appears beside the map, followed by one empty detail row before `Category:`.
+Compacted and free glyphs need no key because their category rows identify them.
+
+At map widths, render the header as:
+
+```text
+Context Usage                         model · used/window (percent)
+```
+
+Omit the model completely if the full metadata does not fit; never abbreviate
+it. Keep the usage summary right-aligned. Below 52 columns, hide the model and
+render the header, summary, and category heading flush at column 0, with one
+blank row before and after the summary:
+
+```text
+Context Usage
+
+used/window (percent)
+
+Category:
+```
+
+Do not append the redundant word `tokens` to Usage header or category-preview
+summaries. Preserve `≈` when the usage total is estimated.
 
 The legend uses a distinct semantic theme color for each top-level category,
-except the intentionally shared System Prompt/System Tools color. Token and
-percentage values align in separate columns. Categories include:
+except the intentionally shared System Prompt/System Tools color. Category
+names have no trailing colons. Fill the gap before values with `dim` dot
+leaders; shorten or remove leaders before truncating labels or values. Token
+and percentage values align in separate columns. Categories include:
 
 - System Prompt, System Tools, Custom Tools, and MCP Tools;
 - Memory (`AGENTS.md`) and Skills;
@@ -72,8 +98,9 @@ and bash executions appear directly and scroll independently. Map allocation
 always uses top-level totals.
 
 At widths of 72 columns and above, map cells have spacing. From 52–71 columns,
-remove inter-cell spacing. Below 52 columns, hide the map and keep the selectable
-category list. Height-only resizing must also reflow and clamp the viewport.
+remove inter-cell spacing. Below 52 columns, hide the map and its fill key while
+keeping the selectable category list. Height-only resizing must also reflow and
+clamp the viewport.
 
 ### Usage preview
 

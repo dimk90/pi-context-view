@@ -29,12 +29,13 @@ import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 
 const USAGE_DESCRIPTION = "Estimated context for the next model request; actual token counts may differ.";
 const USAGE_TAIL_LINE_COUNT = 6;
-const DETAIL_HEADER_LINE_COUNT = 4;
+const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const PREVIEW_ENTRY_MAX_LINES = 20;
 const CURSOR_COLUMN_WIDTH = 2;
-const MAX_LEGEND_VALUE_COLUMN = 28;
+const MAX_LEGEND_VALUE_COLUMN = 32;
 const LEGEND_VALUE_GAP = 2;
+const LEGEND_LEADER_GAP = 4;
 const MAP_SIDE_BY_SIDE_MIN_WIDTH = 52;
 const SPACED_MAP_MIN_WIDTH = 72;
 const MAP_COLUMN_GAP = 2;
@@ -183,7 +184,7 @@ export class UsageView {
 	private renderDashboard(width: number, terminalRows: number): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const prefix = [border, "", this.headerLine(width), "", ...this.degradedWarningLines(width)];
+		const prefix = [border, "", ...this.headerLines(width), "", ...this.degradedWarningLines(width)];
 		const availableDashboardRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_LINE_COUNT);
 		const dashboard = this.dashboardLines(width, availableDashboardRows).slice(0, availableDashboardRows);
 		while (dashboard.length < availableDashboardRows) dashboard.push("");
@@ -205,17 +206,34 @@ export class UsageView {
 		return fitToTerminalHeight([...prefix, ...dashboard, ...tail], terminalRows, border);
 	}
 
-	/** Accent title at the top of the fullscreen view. */
-	private headerLine(width: number): string {
-		return this.fit(this.theme.fg("accent", this.theme.bold("Context Usage")), width);
+	/** Accent title with responsive model and current total/window usage metadata. */
+	private headerLines(width: number): string[] {
+		const theme = this.theme;
+		const title = theme.fg("accent", theme.bold("Context Usage"));
+		const summary = this.reportedSummary();
+		if (width < MAP_SIDE_BY_SIDE_MIN_WIDTH) {
+			return [this.fit(title, width), "", this.fit(summary, width)];
+		}
+
+		const normalizedModel = normalizeInlineText(this.usage.modelLabel ?? "");
+		const separator = theme.fg("dim", " · ");
+		const fullMetadata = normalizedModel === ""
+			? summary
+			: `${theme.fg("muted", normalizedModel)}${separator}${summary}`;
+		if (visibleWidth(title) + 1 + visibleWidth(fullMetadata) <= width) {
+			return [spreadLine(title, fullMetadata, width)];
+		}
+		if (visibleWidth(title) + 1 + visibleWidth(summary) <= width) {
+			return [spreadLine(title, summary, width)];
+		}
+		return [this.fit(title, width), "", this.fit(summary, width)];
 	}
 
 	/** Render the map and legend side by side, or only details when width/window data is insufficient. */
 	private dashboardLines(width: number, rows: number): string[] {
 		const map = buildUsageMap(this.usage);
 		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) {
-			const detailWidth = Math.max(1, width - BODY_INDENT.length);
-			return this.detailLines(detailWidth, rows).map((line) => this.fit(`${BODY_INDENT}${line}`, width));
+			return this.detailLines(width, rows, false).map((line) => this.fit(line, width));
 		}
 
 		const spaced = width >= SPACED_MAP_MIN_WIDTH;
@@ -228,7 +246,7 @@ export class UsageView {
 		const mapWidth = BODY_INDENT.length + map.columns + (spaced ? map.columns - 1 : 0);
 		const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
 		const detailWidth = Math.max(1, width - mapWidth - gap);
-		const details = this.detailLines(detailWidth, rows);
+		const details = this.detailLines(detailWidth, rows, true);
 		const lineCount = Math.max(mapLines.length, details.length);
 		return Array.from({ length: lineCount }, (_, index) => {
 			const mapLine = mapLines[index] ?? " ".repeat(mapWidth);
@@ -237,10 +255,12 @@ export class UsageView {
 		});
 	}
 
-	/** Model/usage metadata plus the selectable category legend viewport. */
-	private detailLines(width: number, rows: number): string[] {
+	/** Map-fill key, category heading, and selectable category legend viewport. */
+	private detailLines(width: number, rows: number, includeMapKey: boolean): string[] {
 		const theme = this.theme;
-		const viewportRows = Math.max(1, rows - DETAIL_HEADER_LINE_COUNT);
+		const showMapKey = includeMapKey && rows >= 4;
+		const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT + (showMapKey ? 2 : 0);
+		const viewportRows = Math.max(1, rows - headerLineCount);
 		this.navigator.setVisibleCount(viewportRows);
 
 		const heading = theme.fg("mdHeading", theme.bold("Category:"));
@@ -260,34 +280,36 @@ export class UsageView {
 			visibleRows.push(this.fit(`${cursor}${this.legendLine(row, columns, rowWidth, selected)}`, width));
 		}
 		return [
-			`${theme.fg("dim", "Model:")} ${theme.fg("muted", normalizeInlineText(this.usage.modelLabel ?? "Unavailable"))}`,
-			this.reportedSummary(width),
-			"",
+			...(showMapKey ? [this.mapKeyLine(width), ""] : []),
 			counter === "" ? heading : spreadLine(heading, counter, width),
 			...visibleRows,
 		].slice(0, rows);
 	}
 
+	/** Explain only the map's full and partial occupancy glyphs. */
+	private mapKeyLine(width: number): string {
+		const theme = this.theme;
+		const heading = theme.fg("mdHeading", theme.bold("Map:"));
+		const separator = theme.fg("dim", " · ");
+		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " Full")}`;
+		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Part")}`;
+		return this.fit(`${heading} ${full}${separator}${partial}`, width);
+	}
+
 	/** Pi-reported usage/window metadata, with a marked estimate when current usage is unknown. */
-	private reportedSummary(width: number): string {
+	private reportedSummary(): string {
 		const reported = this.usage.reported;
-		if (reported === undefined) return this.fit(this.theme.fg("muted", "Context usage unavailable."), width);
+		if (reported === undefined) return this.theme.fg("muted", "Context usage unavailable.");
 		const contextWindow = formatTokens(reported.contextWindow);
 		if (reported.tokens === undefined) {
 			const percent = formatPercent(this.usage.estimatedTokens / reported.contextWindow);
-			return this.fit(
-				this.theme.fg(
-					"text",
-					`≈${formatTokens(this.usage.estimatedTokens)}/${contextWindow} tokens (${percent})`,
-				),
-				width,
+			return this.theme.fg(
+				"text",
+				`≈${formatTokens(this.usage.estimatedTokens)}/${contextWindow} (${percent})`,
 			);
 		}
 		const percent = reported.percent === undefined ? "" : ` (${formatPercent(reported.percent / 100)})`;
-		return this.fit(
-			this.theme.fg("text", `${formatTokens(reported.tokens)}/${contextWindow} tokens${percent}`),
-			width,
-		);
+		return this.theme.fg("text", `${formatTokens(reported.tokens)}/${contextWindow}${percent}`);
 	}
 
 	/** All navigable legend rows: top-level categories, Tool Output children, free space. */
@@ -311,17 +333,18 @@ export class UsageView {
 		const tokenWidth = Math.max(1, ...rows.map((row) => formatTokens(legendTokens(row)).length));
 		const percentWidth = Math.max(0, ...rows.map((row) => this.plainLegendPercent(legendTokens(row)).length));
 		const rightWidth = tokenWidth + (percentWidth > 0 ? LEGEND_VALUE_GAP + percentWidth : 0);
-		const idealValue = Math.min(MAX_LEGEND_VALUE_COLUMN, labelWidth + LEGEND_VALUE_GAP);
+		const idealValue = Math.min(MAX_LEGEND_VALUE_COLUMN, labelWidth + LEGEND_LEADER_GAP);
 		return {
 			value: Math.max(1, Math.min(idealValue, width - rightWidth)),
 			tokenWidth,
 		};
 	}
 
-	/** One aligned hierarchy row with independent token and percentage columns. */
+	/** One aligned hierarchy row with dim leaders and independent token/percentage columns. */
 	private legendLine(row: LegendRow, columns: LegendColumns, width: number, selected: boolean): string {
-		const left = fitLine(this.styledLegendLabel(row, selected), columns.value);
-		const leftPadding = " ".repeat(Math.max(0, columns.value - visibleWidth(left)));
+		const labelWidth = Math.max(1, columns.value - 1);
+		const left = fitLine(this.styledLegendLabel(row, selected), labelWidth);
+		const leader = this.legendLeader(columns.value - visibleWidth(left));
 		const tokens = formatTokens(legendTokens(row));
 		const valueColor = selected ? "accent" : row.type === "category" && row.depth > 1 ? "dim" : "muted";
 		const tokenPadding = " ".repeat(Math.max(0, columns.tokenWidth - tokens.length));
@@ -330,28 +353,34 @@ export class UsageView {
 			? ""
 			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "dim", percent)}`;
 		return fitLine(
-			`${left}${leftPadding}${this.theme.fg(valueColor, tokens)}${tokenPadding}${percentPart}`,
+			`${left}${leader}${this.theme.fg(valueColor, tokens)}${tokenPadding}${percentPart}`,
 			width,
 		);
 	}
 
+	/** Fill a label/value gap with dim dots, retaining spaces at both ends. */
+	private legendLeader(width: number): string {
+		if (width < 3) return " ".repeat(Math.max(0, width));
+		return ` ${this.theme.fg("dim", ".".repeat(width - 2))} `;
+	}
+
 	/** Unstyled hierarchy label used to choose the shared value column. */
 	private plainLegendLabel(row: LegendRow): string {
-		if (row.type === "free") return `${FREE_CELL} Free Space:`;
+		if (row.type === "free") return `${FREE_CELL} Free Space`;
 		const indent = "  ".repeat(row.depth);
-		return `${indent}${categoryMarker(row.category.id, row.depth)} ${normalizeInlineText(row.category.label)}:`;
+		return `${indent}${categoryMarker(row.category.id, row.depth)} ${normalizeInlineText(row.category.label)}`;
 	}
 
 	/** Themed hierarchy label; the marker keeps its map color even when selected. */
 	private styledLegendLabel(row: LegendRow, selected: boolean): string {
 		if (row.type === "free") {
-			return `${this.theme.fg("dim", FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space:")}`;
+			return `${this.theme.fg("dim", FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
 		}
 		const indent = "  ".repeat(row.depth);
 		const color = categoryColor(row.rootId);
 		const marker = this.theme.fg(color, categoryMarker(row.category.id, row.depth));
 		const labelColor = selected ? "accent" : row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
-		return `${indent}${marker} ${this.theme.fg(labelColor, `${normalizeInlineText(row.category.label)}:`)}`;
+		return `${indent}${marker} ${this.theme.fg(labelColor, normalizeInlineText(row.category.label))}`;
 	}
 
 	/** Percentage text used by the independently aligned rightmost column. */
@@ -432,7 +461,7 @@ export class UsageView {
 		const percent = this.plainLegendPercent(row.category.tokens);
 		const meta = theme.fg(
 			"muted",
-			`${formatTokens(row.category.tokens)} tokens${percent === "" ? "" : ` · ${percent}`} `,
+			`${formatTokens(row.category.tokens)}${percent === "" ? "" : ` · ${percent}`} `,
 		);
 		lines.push(spreadLine(title, meta, width));
 		lines.push("");

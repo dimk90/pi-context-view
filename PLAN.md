@@ -19,13 +19,13 @@
   - Preserve stored/model content and token estimates; leave malformed wrappers
     visible and test multiple skills, wrapping, and unsafe names.
 
-- [ ] 3. **Refine context usage view.**
+- [x] 3. **Refine context usage view.**
   - Add dim dot leaders between Usage category names and aligned values without
     weakening narrow-width behavior.
-  - **Usage View**: Move model name and total tokens (166.5k/372k tokens (45%))
-    to the dialog header and alight to the right.
-  - Add full and part icons to the map legend.
-  - Prepare UI sketch and ask my option before implementation it.
+  - Move the model and total (`166.5k/372k (45%)`) into the dialog header;
+    omit the model and stack the total flush left in the narrow fallback.
+  - Add a separate full/part key to the map legend.
+  - Prepare and approve the responsive UI sketch before implementation.
 
 ## v0.2.2
 
