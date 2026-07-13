@@ -100,7 +100,8 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 		groups: [piGroup],
 		totalTokens: piGroup.totalTokens,
 	};
-	const view = new InjectionsView(createTheme(), { snapshot: styledSnapshot }, () => {});
+	const theme = createTheme();
+	const view = new InjectionsView(theme, { snapshot: styledSnapshot }, () => {});
 
 	let lines = view.render(80);
 	assert.equal(lines[1], "");
@@ -111,8 +112,8 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(lines[headerIndex + 1], "");
 	assert.equal(stripSgr(lines[headerIndex] ?? "").indexOf("Context Injections"), 0);
 	assert.equal(stripSgr(lines[tabIndex] ?? ""), "Context Injections · [INITIAL]  RUNTIME");
-	// Initial is active in mdHeading; Runtime is dim and inactive.
-	assert.match(lines[tabIndex] ?? "", /\u001b\[38;2;22;23;24m\[INITIAL\]/);
+	// Chalk emits bold SGR only on capable terminals, so derive the environment-specific nested style.
+	assert.ok((lines[tabIndex] ?? "").includes(theme.fg("mdHeading", theme.bold("[INITIAL]"))));
 	assert.match(lines[tabIndex] ?? "", /\u001b\[38;2;16;17;18mRUNTIME/);
 	assert.ok(!lines.some((line) => stripSgr(line).includes("Runtime Logging:")));
 	const selectedGroup = lines.find((line) => stripSgr(line).includes("→ pi"));
