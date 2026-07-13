@@ -1,5 +1,10 @@
 # Changelog
 
+## `[v0.2.1]` - Unreleased
+
+### Fixed
+* `[usage]` Add fallback (`≈`) calculation of context usage after compaction and pi estimation is not available.
+
 ## `[v0.2.0]` - 13.07.2026
 
 ### New

@@ -267,13 +267,20 @@ export class UsageView {
 		].slice(0, rows);
 	}
 
-	/** Pi-reported usage/window metadata, including the unknown-after-compaction state. */
+	/** Pi-reported usage/window metadata, with a marked estimate when current usage is unknown. */
 	private reportedSummary(width: number): string {
 		const reported = this.usage.reported;
 		if (reported === undefined) return this.fit(this.theme.fg("muted", "Context usage unavailable."), width);
 		const contextWindow = formatTokens(reported.contextWindow);
 		if (reported.tokens === undefined) {
-			return this.fit(this.theme.fg("muted", `Usage unknown · ${contextWindow} token window`), width);
+			const percent = formatPercent(this.usage.estimatedTokens / reported.contextWindow);
+			return this.fit(
+				this.theme.fg(
+					"text",
+					`≈${formatTokens(this.usage.estimatedTokens)}/${contextWindow} tokens (${percent})`,
+				),
+				width,
+			);
 		}
 		const percent = reported.percent === undefined ? "" : ` (${formatPercent(reported.percent / 100)})`;
 		return this.fit(

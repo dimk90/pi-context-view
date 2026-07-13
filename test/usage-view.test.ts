@@ -187,7 +187,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
-test("UsageView reports unknown post-compaction usage and closes on Escape", () => {
+test("UsageView falls back to estimated post-compaction usage and closes on Escape", () => {
 	let closed = false;
 	const view = new UsageView(
 		createTheme(),
@@ -206,7 +206,8 @@ test("UsageView reports unknown post-compaction usage and closes on Escape", () 
 	);
 
 	const rendered = stripSgr(view.render(80).join("\n"));
-	assert.match(rendered, /Usage unknown · 1m token window/);
+	const summaryLine = rendered.split("\n").find((line) => line.includes("≈"));
+	assert.match(summaryLine ?? "", /≈50k\/1m tokens \(5%\)$/);
 	assert.match(rendered, /■ User Messages:\s+50k/);
 	assert.match(rendered, /⛶ Free Space:\s+950k/);
 
