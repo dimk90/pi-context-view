@@ -90,10 +90,13 @@ category order. Assistant messages split into constituent text, thinking, and
 tool-call entries; tool calls include the tool name. Add a `text i/n` cell only
 for multi-block text or thinking content.
 
-Indent content by two spaces and separate entries with one blank row. Cap each
-entry at 20 wrapped lines and append a dim `… +N lines` marker. The full content
-still contributes to token estimates. Empty categories and unknown usage after
-compaction must have explicit preview states.
+Indent content by two spaces and separate entries with one blank row. In User
+Messages only, replace complete attached `<skill name="…">…</skill>` expansions
+with pi-colored `[skill] name` badges; leave malformed wrappers visible. This is
+a preview-only transformation, and the full content still contributes to token
+estimates. Cap each entry at 20 wrapped lines and append a dim `… +N lines`
+marker. Empty categories and unknown usage after compaction must have explicit
+preview states.
 
 ## Injections view
 

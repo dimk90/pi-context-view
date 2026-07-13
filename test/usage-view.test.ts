@@ -456,6 +456,93 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	assert.match(view.render(100)[header] ?? "", /\u001b\[38;2;22;23;24mBase Prompt/);
 });
 
+test("UsageView compacts attached skills into pi-colored badges only in user previews", () => {
+	const longUnsafeName = `unsafe-${"very-long-".repeat(3)}skill`;
+	const rawText = [
+		'<skill name="code-style" location="/skills/code-style/SKILL.md">',
+		"complete first expansion must be hidden",
+		"</skill>",
+		"",
+		`<skill name="\u001b[31m${longUnsafeName}\u001b[0m" location="/skills/unsafe/SKILL.md">`,
+		"complete second expansion must be hidden",
+		"</skill>",
+		"",
+		"Keep this user request visible.",
+		'<skill name="broken" location="/skills/broken/SKILL.md">',
+		"Malformed expansion stays visible.",
+	].join("\n");
+	const userEntry = {
+		timestamp: Date.UTC(2026, 6, 13, 12, 0, 0),
+		breadcrumb: ["user"],
+		tokens: 777,
+		text: rawText,
+	};
+	const userUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-13T12:00:00Z"),
+		categories: [{
+			id: "user-messages",
+			label: "User Messages",
+			tokens: userEntry.tokens,
+			entries: [userEntry],
+		}],
+		estimatedTokens: userEntry.tokens,
+	};
+	const view = new UsageView(createTheme(), { usage: userUsage }, () => {}, () => 40);
+
+	view.render(100);
+	view.handleInput("\r");
+	const wide = view.render(100);
+	const plain = wide.map(stripSgr);
+	const firstBadge = wide.find((line) => stripSgr(line).includes("[skill] code-style"));
+	assert.ok(firstBadge !== undefined);
+	assert.match(firstBadge, /\u001b\[38;2;31;32;33m.*\[skill\]/);
+	assert.match(firstBadge, /\u001b\[38;2;170;187;204mcode-style/);
+	assert.ok(plain.some((line) => line.includes(`[skill] ${longUnsafeName}`)));
+	assert.ok(plain.some((line) => line.includes("Keep this user request visible.")));
+	assert.ok(plain.some((line) => line.includes('<skill name="broken"')));
+	assert.ok(plain.some((line) => line.includes("Malformed expansion stays visible.")));
+	assert.ok(!plain.some((line) => line.includes("complete first expansion")));
+	assert.ok(!plain.some((line) => line.includes("complete second expansion")));
+	assert.ok(!wide.some((line) => line.includes("\u001b[31munsafe")));
+	assert.equal(userEntry.text, rawText, "preview rendering does not mutate stored/model content");
+	assert.ok(plain.some((line) => /\[user\] 777$/.test(line)), "the original token estimate remains visible");
+
+	const narrow = view.render(24);
+	for (const line of narrow) {
+		assert.ok(visibleWidth(line) <= 24, `skill preview line exceeds width: ${JSON.stringify(line)}`);
+	}
+	const narrowPlain = narrow.map(stripSgr);
+	assert.ok(narrowPlain.some((line) => line.includes("[skill]")));
+	assert.ok(narrowPlain.some((line) => line.includes("unsafe-very-long-")));
+	assert.ok(!narrowPlain.some((line) => line.includes(longUnsafeName)), "long badge name wraps across lines");
+});
+
+test("UsageView leaves skill-shaped content unchanged outside User Messages", () => {
+	const rawText = [
+		'<skill name="tool-doc" location="/skills/tool-doc/SKILL.md">',
+		"tool output body",
+		"</skill>",
+	].join("\n");
+	const toolUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-13T12:00:00Z"),
+		categories: [{
+			id: "tool-output",
+			label: "Tool Output",
+			tokens: 10,
+			entries: [{ breadcrumb: ["read"], tokens: 10, text: rawText }],
+		}],
+		estimatedTokens: 10,
+	};
+	const view = new UsageView(createTheme(), { usage: toolUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const plain = view.render(80).map(stripSgr);
+	assert.ok(plain.some((line) => line.includes('<skill name="tool-doc"')));
+	assert.ok(plain.some((line) => line.includes("tool output body")));
+	assert.ok(!plain.some((line) => line.includes("[skill] tool-doc")));
+});
+
 test("UsageView invalidation rebuilds theme-colored preview lines", () => {
 	const theme = createTheme();
 	const originalFg = theme.fg.bind(theme);

@@ -13,7 +13,7 @@
   - Fall back to the category-total estimate, marked with `≈`, when pi cannot
     report post-compaction usage.
 
-- [ ] 2. **Compact attached skills in User Message previews.**
+- [x] 2. **Compact attached skills in User Message previews.**
   - Replace complete `<skill name="…">…</skill>` expansions with themed
     skill-name badges in previews only.
   - Preserve stored/model content and token estimates; leave malformed wrappers

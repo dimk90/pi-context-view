@@ -24,6 +24,7 @@ import {
 	normalizeTerminalRows,
 	spreadLine,
 } from "./layout.ts";
+import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 
 const USAGE_DESCRIPTION = "Estimated context for the next model request; actual token counts may differ.";
@@ -466,12 +467,13 @@ export class UsageView {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length * 2 - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
 		const entries = collectPreviewEntries(row.category);
+		const compactSkills = row.rootId === "user-messages";
 		const lines = entries.length === 0
 			? [this.fit(this.theme.fg("muted", `${BODY_INDENT}No content captured for this category.`), width)]
 			: entries.flatMap((entry, index) => [
 				...(index === 0 ? [] : [""]),
 				this.fit(`${BODY_INDENT}${this.entryHeader(entry)}`, width),
-				...this.entryContentLines(entry, wrapWidth),
+				...this.entryContentLines(entry, wrapWidth, compactSkills),
 			]);
 		this.previewLines = lines;
 		this.previewWrapWidth = wrapWidth;
@@ -496,11 +498,11 @@ export class UsageView {
 	}
 
 	/** Sanitized, wrapped, per-entry-capped content lines indented under the header. */
-	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number): string[] {
+	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
 		const indent = BODY_INDENT.repeat(2);
 		const lines: string[] = [];
 		let hidden = 0;
-		for (const paragraph of normalizePreviewText(entry.text).split("\n")) {
+		for (const paragraph of this.entryPreviewText(entry.text, compactSkills).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			const paragraphLines = wrapped.length === 0 ? [""] : wrapped;
 			for (const line of paragraphLines) {
@@ -510,6 +512,23 @@ export class UsageView {
 		}
 		if (hidden === 0) return lines;
 		return [...lines, `${indent}${this.theme.fg("dim", `… +${hidden} lines`)}`];
+	}
+
+	/** Sanitize raw entry text and replace complete attached skills with pi-colored badges. */
+	private entryPreviewText(text: string, compactSkills: boolean): string {
+		const sanitized = normalizePreviewText(text);
+		if (!compactSkills) return sanitized;
+		return splitSkillPreview(sanitized)
+			.map((segment) => segment.type === "text" ? segment.text : this.skillBadge(segment.name))
+			.join("");
+	}
+
+	/** Render the same collapsed skill label/name colors used by pi's transcript component. */
+	private skillBadge(name: string): string {
+		const label = this.theme.fg("customMessageLabel", this.theme.bold("[skill]"));
+		const safeName = normalizeInlineText(name);
+		if (safeName === "") return label;
+		return `${label} ${this.theme.fg("customMessageText", safeName)}`;
 	}
 
 	/** Truncate one rendered line to the supplied width. */
