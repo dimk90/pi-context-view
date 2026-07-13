@@ -1,6 +1,8 @@
 # pi-context-view
 
-![Context usage map](doc/images/pi-context-view.png)
+<h1 align="center">
+    <img src="https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/pi-context-view.png" width="350">
+</h1>
 
 A pi extension that visualizes what fills the model's context and lets
 you inspect the parts you normally can't see: the base prompt, tool
@@ -31,11 +33,11 @@ pi install npm:pi-context-view
 
 - Inspect context composition after compaction:
 
-  ![Context usage view and category preview](doc/images/context-usage.png)
+  ![Context usage view and category preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/context-usage.png)
 
 - Inspect hidden parts of the context, such as tool definitions:
 
-  ![Context injections view and item preview](doc/images/context-injections.png)
+  ![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/context-injections.png)
 
 ## Context
 
