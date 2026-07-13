@@ -1,5 +1,16 @@
 # Changelog
 
+## `[v0.2.1]` - 13.07.2026
+
+### Changed
+* `[usage]` Compact complete attached-skill expansions into pi-themed badges in User Message previews.
+* `[usage]` Refine the Usage dashboard with responsive header totals, a full/part map key, and dim dot leaders.
+* `[injections]` Clarify injection hierarchy with tree connectors, nearby aligned token values, and dim dot leaders.
+
+### Fixed
+* `[usage]` Add fallback (`≈`) calculation of context usage after compaction and pi estimation is not available.
+* `[ui]` Wrap dialog descriptions onto indented continuation lines instead of truncating them in narrow terminals.
+
 ## `[v0.2.0]` - 13.07.2026
 
 ### New

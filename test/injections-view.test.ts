@@ -92,14 +92,16 @@ function stripSgr(text: string): string {
 test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	const child = item("child", "pi", true, 20);
 	const parent: InjectionItem = { ...item("parent", "pi", true, 50), children: [child] };
-	const piGroup = group("pi", true, [parent]);
+	const sibling = item("sibling", "pi", true, 10);
+	const piGroup = group("pi", true, [parent, sibling]);
 	const styledSnapshot: InitialSnapshot = {
 		origin: "real-turn",
 		capturedAt: new Date("2026-07-10T12:00:00Z"),
 		groups: [piGroup],
 		totalTokens: piGroup.totalTokens,
 	};
-	const view = new InjectionsView(createTheme(), { snapshot: styledSnapshot }, () => {});
+	const theme = createTheme();
+	const view = new InjectionsView(theme, { snapshot: styledSnapshot }, () => {});
 
 	let lines = view.render(80);
 	assert.equal(lines[1], "");
@@ -110,22 +112,42 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(lines[headerIndex + 1], "");
 	assert.equal(stripSgr(lines[headerIndex] ?? "").indexOf("Context Injections"), 0);
 	assert.equal(stripSgr(lines[tabIndex] ?? ""), "Context Injections · [INITIAL]  RUNTIME");
-	// Initial is active in mdHeading; Runtime is dim and inactive.
-	assert.match(lines[tabIndex] ?? "", /\u001b\[38;2;22;23;24m\[INITIAL\]/);
+	// Chalk emits bold SGR only on capable terminals, so derive the environment-specific nested style.
+	assert.ok((lines[tabIndex] ?? "").includes(theme.fg("mdHeading", theme.bold("[INITIAL]"))));
 	assert.match(lines[tabIndex] ?? "", /\u001b\[38;2;16;17;18mRUNTIME/);
 	assert.ok(!lines.some((line) => stripSgr(line).includes("Runtime Logging:")));
 	const selectedGroup = lines.find((line) => stripSgr(line).includes("→ pi"));
 	assert.ok(selectedGroup !== undefined);
 	assert.equal(stripSgr(selectedGroup).indexOf("→"), 0);
 	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m→ /);
-	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m50/);
+	assert.match(selectedGroup, /\u001b\[38;2;1;2;3m60/);
+	assert.match(stripSgr(selectedGroup), /→ pi \.{2,}\s+60/);
 	assert.doesNotMatch(selectedGroup, /\u001b\[48;/);
 	const parentLine = lines.find((line) => stripSgr(line).includes("parent with a moderately"));
 	const childLine = lines.find((line) => stripSgr(line).includes("child with a moderately"));
+	assert.match(stripSgr(parentLine ?? ""), /^  ├─ parent/);
+	assert.match(parentLine ?? "", /\u001b\[38;2;16;17;18m├─ /);
 	assert.match(parentLine ?? "", /\u001b\[38;2;7;8;9mparent/);
 	assert.match(parentLine ?? "", /\u001b\[38;2;7;8;9m50/);
+	assert.match(stripSgr(childLine ?? ""), /^  │  └─ child/);
+	assert.match(childLine ?? "", /\u001b\[38;2;16;17;18m│  └─ /);
 	assert.match(childLine ?? "", /\u001b\[38;2;16;17;18mchild/);
 	assert.match(childLine ?? "", /\u001b\[38;2;7;8;9m20/);
+	const siblingLine = lines.find((line) => stripSgr(line).includes("sibling with a moderately"));
+	assert.match(stripSgr(siblingLine ?? ""), /^  └─ sibling/);
+
+	const alignedValues = [
+		["→ pi", "60"],
+		["parent with", "50"],
+		["child with", "20"],
+		["sibling with", "10"],
+	].map(([label, value]) => {
+		const line = lines.map(stripSgr).find((candidate) => candidate.includes(label));
+		assert.ok(line !== undefined);
+		return line.lastIndexOf(value);
+	});
+	assert.equal(new Set(alignedValues).size, 1);
+	assert.ok((alignedValues[0] ?? 80) < 64, "the capped token column stays near the hierarchy");
 
 	// TOTAL is the final table row and sums the snapshot without double-counting children.
 	const totalRowIndex = lines.findIndex((line) => stripSgr(line).includes("TOTAL"));
@@ -133,15 +155,16 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.ok(totalRowIndex >= 0 && totalRowIndex < descIndex);
 	assert.equal(lines[totalRowIndex - 1], "");
 	assert.equal(stripSgr(lines[totalRowIndex] ?? "").indexOf("TOTAL"), 2);
-	assert.match(stripSgr(lines[totalRowIndex] ?? ""), /TOTAL\s+50/);
+	assert.match(stripSgr(lines[totalRowIndex] ?? ""), /TOTAL \.{2,}\s+60/);
 	assert.doesNotMatch(stripSgr(lines[totalRowIndex] ?? ""), /→/);
 
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	lines = view.render(80);
-	const selectedChild = lines.find((line) => stripSgr(line).includes("→     child"));
+	const selectedChild = lines.find((line) => stripSgr(line).includes("→ │  └─ child"));
 	assert.ok(selectedChild !== undefined);
 	assert.equal(stripSgr(selectedChild).indexOf("→"), 0);
+	assert.match(selectedChild, /\u001b\[38;2;16;17;18m│  └─ /);
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3mchild/);
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3m20/);
 
@@ -158,6 +181,23 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.doesNotMatch(stripSgr(lines[hintsIndex] ?? ""), /Switch Tabs|←→\/Tab/);
 	assert.match(lines[hintsIndex] ?? "", / · /);
 	assert.doesNotMatch(stripSgr(lines[hintsIndex] ?? ""), /Toggle Runtime|\bR\b/);
+});
+
+test("InjectionsView wraps narrow descriptions instead of truncating them", () => {
+	const lines = createView(4).render(40).map(stripSgr);
+	const descriptionStart = lines.findIndex((line) => line.includes("Injections into the model context"));
+	const hintsIndex = lines.findIndex((line) => line.includes("↑↓ Navigate"));
+
+	assert.ok(descriptionStart >= 0 && hintsIndex > descriptionStart);
+	assert.equal(lines[hintsIndex - 1], "");
+	const descriptionLines = lines.slice(descriptionStart, hintsIndex - 1);
+	assert.ok(descriptionLines.length > 1);
+	assert.ok(descriptionLines.every((line) => line.startsWith("  ")));
+	assert.equal(
+		descriptionLines.map((line) => line.trim()).join(" "),
+		"Injections into the model context for the first turn, with token estimates.",
+	);
+	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
 });
 
 test("InjectionsView adds degraded INITIAL capture to the dialog description", () => {
@@ -184,6 +224,18 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	const degradedDescription = degradedLines[descriptionIndex + 1] ?? "";
 	assert.equal(stripSgr(degradedDescription), "  [Degraded: pi-native fallback used]");
 	assert.match(degradedDescription, /\u001b\[38;2;170;187;204m  \[Degraded: pi-native fallback used\]/);
+
+	const narrowLines = degraded.render(24).map(stripSgr);
+	const degradedStart = narrowLines.findIndex((line) => line.includes("[Degraded:"));
+	const hintsIndex = narrowLines.findIndex((line) => line.includes("↑↓ Navigate"));
+	assert.ok(degradedStart >= 0 && hintsIndex > degradedStart);
+	const wrappedDegradedLines = narrowLines.slice(degradedStart, hintsIndex - 1);
+	assert.ok(wrappedDegradedLines.length > 1);
+	assert.equal(
+		wrappedDegradedLines.map((line) => line.trim()).join(" "),
+		"[Degraded: pi-native fallback used]",
+	);
+	assert.doesNotMatch(wrappedDegradedLines.join("\n"), /…/);
 });
 
 test("InjectionsView keeps Runtime inactive when label-switch keys are pressed", () => {
@@ -198,10 +250,19 @@ test("InjectionsView keeps Runtime inactive when label-switch keys are pressed",
 });
 
 test("InjectionsView keeps every rendered line within the width", () => {
-	for (const width of [24, 40, 66, 120]) {
+	for (const width of [24, 40, 60, 80, 120]) {
 		const view = createView(8, "Silent probe unavailable: no model is selected. Extension additions were not observed.");
-		for (const line of view.render(width)) {
+		const listLines = view.render(width);
+		for (const line of listLines) {
 			assert.ok(visibleWidth(line) <= width, `line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+		if (width === 24) {
+			const plain = listLines.map(stripSgr);
+			const titleIndex = plain.indexOf("Context Injections");
+			const tabsIndex = plain.indexOf("[INITIAL]  RUNTIME");
+			assert.ok(titleIndex >= 0 && tabsIndex === titleIndex + 2);
+			assert.equal(plain[titleIndex + 1], "");
+			assert.equal(plain[tabsIndex + 1], "");
 		}
 		view.handleInput("\u001b[B"); // select first item row
 		view.handleInput("\r"); // open preview
@@ -303,7 +364,7 @@ test("InjectionsView navigation scrolls the non-selectable total and Escape clos
 
 	view.handleInput("\u001b[4~"); // End
 	const atEnd = view.render(80).join("\n");
-	assert.match(stripSgr(atEnd), /→   ext-29/);
+	assert.match(stripSgr(atEnd), /→ └─ ext-29/);
 	assert.match(atEnd, /TOTAL/);
 	assert.doesNotMatch(stripSgr(atEnd), /→ TOTAL/);
 

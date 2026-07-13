@@ -62,7 +62,25 @@ test("buildInjectionRows flattens groups and separates the Initial total", () =>
 	);
 	const basePromptRow = rows[1];
 	assert.equal(basePromptRow?.kind, "item");
-	if (basePromptRow?.kind === "item") assert.equal(basePromptRow.itemId, "base-prompt");
+	if (basePromptRow?.kind === "item") {
+		assert.equal(basePromptRow.itemId, "base-prompt");
+		assert.equal(basePromptRow.isLast, false);
+	}
+	const firstToolChild = rows[3];
+	assert.equal(firstToolChild?.kind, "item");
+	if (firstToolChild?.kind === "item") {
+		assert.equal(firstToolChild.isLast, false);
+		assert.equal(firstToolChild.parentContinues, true);
+	}
+	const finalToolChild = rows[4];
+	assert.equal(finalToolChild?.kind, "item");
+	if (finalToolChild?.kind === "item") {
+		assert.equal(finalToolChild.isLast, true);
+		assert.equal(finalToolChild.parentContinues, true);
+	}
+	const finalPiItem = rows[5];
+	assert.equal(finalPiItem?.kind, "item");
+	if (finalPiItem?.kind === "item") assert.equal(finalPiItem.isLast, true);
 	assert.equal(rows.at(-1)?.tokens, 230);
 });
 

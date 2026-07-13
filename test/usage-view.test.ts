@@ -117,18 +117,20 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const plain = lines.map(stripSgr);
 
 	assert.equal(lines.length, 30);
-	assert.equal(plain[2], "Context Usage");
+	assert.match(plain[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1m \(4\.4%\)$/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;1;2;3m.*Context Usage/);
-	const modelIndex = plain.findIndex((line) => line.includes("Model:"));
-	assert.equal(modelIndex, 4);
-	assert.match(plain[modelIndex] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Model:/);
+	assert.match(lines[2] ?? "", /\u001b\[38;2;7;8;9mclaude-opus-4-8/);
+	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
+	const mapKeyIndex = plain.findIndex((line) => line.includes("Map: ■ Full · ◧ Part"));
+	assert.equal(mapKeyIndex, 4);
+	assert.match(plain[mapKeyIndex] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Map: ■ Full · ◧ Part$/);
+	assert.match(plain[mapKeyIndex + 1] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s*$/);
+	assert.match(plain[mapKeyIndex + 2] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Category:/);
+	assert.doesNotMatch(plain[mapKeyIndex] ?? "", /Compacted|Free/);
 	assert.equal(plain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){13}/.test(line)).length, 14);
-	assert.ok(plain.some((line) => line.includes("claude-opus-4-8")));
-	assert.ok(plain.some((line) => line.includes("43.8k/1m tokens (4.4%)")));
-	assert.ok(plain.some((line) => line.includes("Category:")));
-	assert.ok(plain.some((line) => /■ System Prompt:\s+3.7k\s+0.4%/.test(line)));
-	assert.ok(plain.some((line) => /■ Tool Output:\s+5k\s+0.5%/.test(line)));
-	assert.ok(plain.some((line) => /⛶ Free Space:\s+956.2k\s+96%/.test(line)));
+	assert.ok(plain.some((line) => /■ System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
+	assert.ok(plain.some((line) => /■ Tool Output \.{2,}\s+5k\s+0\.5%/.test(line)));
+	assert.ok(plain.some((line) => /⛶ Free Space \.{2,}\s+956\.2k\s+96%/.test(line)));
 	const categoryColors: Array<readonly [string, string]> = [
 		["22;23;24", "■"], // System Prompt and System Tools intentionally share one color.
 		["1;2;3", "■"],
@@ -155,7 +157,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 		["Tool Output", "5k"],
 		["Free Space", "956.2k"],
 	].map(([label, value]) => {
-		const line = plain.find((candidate) => candidate.includes(`${label}:`));
+		const line = plain.find((candidate) => candidate.includes(label));
 		assert.ok(line !== undefined);
 		return line.indexOf(value);
 	});
@@ -166,8 +168,8 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 		return line.indexOf(percent);
 	});
 	assert.equal(new Set(percentColumns).size, 1);
-	const memoryLine = plain.find((line) => line.includes("Memory (AGENTS.md):"));
-	assert.match(memoryLine ?? "", /Memory \(AGENTS\.md\):\s+1\.5k/);
+	const memoryLine = plain.find((line) => line.includes("Memory (AGENTS.md)"));
+	assert.match(memoryLine ?? "", /Memory \(AGENTS\.md\) \.{2,}\s+1\.5k/);
 	const descriptionIndex = plain.findIndex((line) => line.includes("Estimated context for the next model request"));
 	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
 	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
@@ -180,14 +182,33 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	// The first category row starts selected: fixed-column accent cursor and accent label/values.
 	const selectedRow = lines.find((line) => stripSgr(line).includes("→ "));
 	assert.ok(selectedRow !== undefined);
-	assert.match(stripSgr(selectedRow), /→ ■ System Prompt:/);
+	assert.match(stripSgr(selectedRow), /→ ■ System Prompt \.{2,}/);
 	assert.match(selectedRow, /\u001b\[38;2;1;2;3m→ /);
-	assert.match(selectedRow, /\u001b\[38;2;1;2;3mSystem Prompt:/);
+	assert.match(selectedRow, /\u001b\[38;2;1;2;3mSystem Prompt/);
+	assert.match(selectedRow, /\u001b\[38;2;16;17;18m\.+/);
 	assert.match(selectedRow, /\u001b\[38;2;1;2;3m3\.7k/);
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
-test("UsageView reports unknown post-compaction usage and closes on Escape", () => {
+test("UsageView wraps narrow descriptions instead of truncating them", () => {
+	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	const lines = view.render(40).map(stripSgr);
+	const descriptionStart = lines.findIndex((line) => line.includes("Estimated context"));
+	const hintsIndex = lines.findIndex((line) => line.includes("↑↓ Navigate"));
+
+	assert.ok(descriptionStart >= 0 && hintsIndex > descriptionStart);
+	assert.equal(lines[hintsIndex - 1], "");
+	const descriptionLines = lines.slice(descriptionStart, hintsIndex - 1);
+	assert.ok(descriptionLines.length > 1);
+	assert.ok(descriptionLines.every((line) => line.startsWith("  ")));
+	assert.equal(
+		descriptionLines.map((line) => line.trim()).join(" "),
+		"Estimated context for the next model request; actual token counts may differ.",
+	);
+	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
+});
+
+test("UsageView falls back to estimated post-compaction usage and closes on Escape", () => {
 	let closed = false;
 	const view = new UsageView(
 		createTheme(),
@@ -206,9 +227,10 @@ test("UsageView reports unknown post-compaction usage and closes on Escape", () 
 	);
 
 	const rendered = stripSgr(view.render(80).join("\n"));
-	assert.match(rendered, /Usage unknown · 1m token window/);
-	assert.match(rendered, /■ User Messages:\s+50k/);
-	assert.match(rendered, /⛶ Free Space:\s+950k/);
+	const summaryLine = rendered.split("\n").find((line) => line.includes("≈"));
+	assert.match(summaryLine ?? "", /≈50k\/1m \(5%\)$/);
+	assert.match(rendered, /■ User Messages \.{2,}\s+50k/);
+	assert.match(rendered, /⛶ Free Space \.{2,}\s+950k/);
 
 	view.handleInput("\u001b");
 	assert.equal(closed, true);
@@ -235,16 +257,16 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	};
 	const view = new UsageView(createTheme(), { usage: nestedUsage }, () => {}, () => 24);
 	const initial = view.render(80).map(stripSgr);
-	assert.ok(initial.some((line) => /· tool_1:\s+100\s+0%/.test(line)));
-	assert.ok(!initial.some((line) => line.includes("tool_15:")));
+	assert.ok(initial.some((line) => /· tool_1 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(!initial.some((line) => line.includes("tool_15")));
 	assert.ok(!initial.some((line) => line.includes("read should stay collapsed")));
 	assert.ok(!initial.some((line) => line.includes("Tool Results:")));
 	assert.ok(initial.some((line) => /\(1\/\d+\)/.test(line)));
 
 	view.handleInput("\u001b[4~"); // End
 	const ending = view.render(80).map(stripSgr);
-	assert.ok(ending.some((line) => /· tool_15:\s+100\s+0%/.test(line)));
-	assert.ok(ending.some((line) => /→ ⛶ Free Space:\s+998\.4k\s+100%/.test(line)));
+	assert.ok(ending.some((line) => /· tool_15 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(ending.some((line) => /→ ⛶ Free Space \.{2,}\s+998\.4k\s+100%/.test(line)));
 });
 
 test("UsageView keeps the selection inside the viewport across height reflows", () => {
@@ -263,14 +285,17 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 
 	view.render(80);
 	for (let step = 0; step < 9; step++) view.handleInput("\u001b[B");
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9:/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
 
 	rows = 16;
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9:/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
 	rows = 24;
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9:/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
 	for (const width of [40, 60, 120]) {
-		assert.ok(view.render(width).some((line) => /→\s+· tool_9:/.test(stripSgr(line))), `width ${width}`);
+		assert.ok(
+			view.render(width).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))),
+			`width ${width}`,
+		);
 	}
 });
 
@@ -284,14 +309,15 @@ test("UsageView opens a category content preview and returns to the same row", (
 	view.render(80);
 	for (let step = 0; step < 10; step++) view.handleInput("\u001b[B");
 	const listBefore = view.render(80).join("\n");
-	assert.match(stripSgr(listBefore), /→ ■ Tool Output:/);
+	assert.match(stripSgr(listBefore), /→ ■ Tool Output \.{2,}/);
 
 	view.handleInput("\r");
 	const preview = view.render(80);
 	const plain = preview.map(stripSgr);
 	assert.equal(plain[2]?.indexOf("Tool Output"), 0);
 	assert.match(preview[2] ?? "", /\u001b\[38;2;1;2;3m.*Tool Output/);
-	assert.match(plain[2] ?? "", /5k tokens · 0\.5%/);
+	assert.match(plain[2] ?? "", /5k · 0\.5%/);
+	assert.doesNotMatch(plain[2] ?? "", /\btokens\b/);
 	assert.equal(preview[3], "");
 
 	// Entries render chronologically: bracketed dim datetime + mdHeading lead breadcrumb + dim tokens.
@@ -374,7 +400,7 @@ test("UsageView previews empty categories, free space, and long content safely",
 	// Enter on the free-space row opens nothing.
 	view.handleInput("\u001b[4~"); // End → Free Space
 	const freeSelected = view.render(80).join("\n");
-	assert.match(stripSgr(freeSelected), /→ ⛶ Free Space:/);
+	assert.match(stripSgr(freeSelected), /→ ⛶ Free Space \.{2,}/);
 	view.handleInput("\r");
 	assert.equal(view.render(80).join("\n"), freeSelected);
 
@@ -455,6 +481,93 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	assert.match(view.render(100)[header] ?? "", /\u001b\[38;2;22;23;24mBase Prompt/);
 });
 
+test("UsageView compacts attached skills into pi-colored badges only in user previews", () => {
+	const longUnsafeName = `unsafe-${"very-long-".repeat(3)}skill`;
+	const rawText = [
+		'<skill name="code-style" location="/skills/code-style/SKILL.md">',
+		"complete first expansion must be hidden",
+		"</skill>",
+		"",
+		`<skill name="\u001b[31m${longUnsafeName}\u001b[0m" location="/skills/unsafe/SKILL.md">`,
+		"complete second expansion must be hidden",
+		"</skill>",
+		"",
+		"Keep this user request visible.",
+		'<skill name="broken" location="/skills/broken/SKILL.md">',
+		"Malformed expansion stays visible.",
+	].join("\n");
+	const userEntry = {
+		timestamp: Date.UTC(2026, 6, 13, 12, 0, 0),
+		breadcrumb: ["user"],
+		tokens: 777,
+		text: rawText,
+	};
+	const userUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-13T12:00:00Z"),
+		categories: [{
+			id: "user-messages",
+			label: "User Messages",
+			tokens: userEntry.tokens,
+			entries: [userEntry],
+		}],
+		estimatedTokens: userEntry.tokens,
+	};
+	const view = new UsageView(createTheme(), { usage: userUsage }, () => {}, () => 40);
+
+	view.render(100);
+	view.handleInput("\r");
+	const wide = view.render(100);
+	const plain = wide.map(stripSgr);
+	const firstBadge = wide.find((line) => stripSgr(line).includes("[skill] code-style"));
+	assert.ok(firstBadge !== undefined);
+	assert.match(firstBadge, /\u001b\[38;2;31;32;33m.*\[skill\]/);
+	assert.match(firstBadge, /\u001b\[38;2;170;187;204mcode-style/);
+	assert.ok(plain.some((line) => line.includes(`[skill] ${longUnsafeName}`)));
+	assert.ok(plain.some((line) => line.includes("Keep this user request visible.")));
+	assert.ok(plain.some((line) => line.includes('<skill name="broken"')));
+	assert.ok(plain.some((line) => line.includes("Malformed expansion stays visible.")));
+	assert.ok(!plain.some((line) => line.includes("complete first expansion")));
+	assert.ok(!plain.some((line) => line.includes("complete second expansion")));
+	assert.ok(!wide.some((line) => line.includes("\u001b[31munsafe")));
+	assert.equal(userEntry.text, rawText, "preview rendering does not mutate stored/model content");
+	assert.ok(plain.some((line) => /\[user\] 777$/.test(line)), "the original token estimate remains visible");
+
+	const narrow = view.render(24);
+	for (const line of narrow) {
+		assert.ok(visibleWidth(line) <= 24, `skill preview line exceeds width: ${JSON.stringify(line)}`);
+	}
+	const narrowPlain = narrow.map(stripSgr);
+	assert.ok(narrowPlain.some((line) => line.includes("[skill]")));
+	assert.ok(narrowPlain.some((line) => line.includes("unsafe-very-long-")));
+	assert.ok(!narrowPlain.some((line) => line.includes(longUnsafeName)), "long badge name wraps across lines");
+});
+
+test("UsageView leaves skill-shaped content unchanged outside User Messages", () => {
+	const rawText = [
+		'<skill name="tool-doc" location="/skills/tool-doc/SKILL.md">',
+		"tool output body",
+		"</skill>",
+	].join("\n");
+	const toolUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-13T12:00:00Z"),
+		categories: [{
+			id: "tool-output",
+			label: "Tool Output",
+			tokens: 10,
+			entries: [{ breadcrumb: ["read"], tokens: 10, text: rawText }],
+		}],
+		estimatedTokens: 10,
+	};
+	const view = new UsageView(createTheme(), { usage: toolUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const plain = view.render(80).map(stripSgr);
+	assert.ok(plain.some((line) => line.includes('<skill name="tool-doc"')));
+	assert.ok(plain.some((line) => line.includes("tool output body")));
+	assert.ok(!plain.some((line) => line.includes("[skill] tool-doc")));
+});
+
 test("UsageView invalidation rebuilds theme-colored preview lines", () => {
 	const theme = createTheme();
 	const originalFg = theme.fg.bind(theme);
@@ -483,6 +596,20 @@ test("UsageView invalidation rebuilds theme-colored preview lines", () => {
 	assert.doesNotMatch(secondHeader ?? "", /\u001b\[31m/);
 });
 
+test("UsageView hides model metadata instead of abbreviating it", () => {
+	const modelLabel = `provider/${"very-long-model-name-".repeat(4)}`;
+	const view = new UsageView(
+		createTheme(),
+		{ usage: { ...usage(), modelLabel } },
+		() => {},
+		() => 30,
+	);
+
+	const header = stripSgr(view.render(60)[2] ?? "");
+	assert.match(header, /^Context Usage\s+43\.8k\/1m \(4\.4%\)$/);
+	assert.doesNotMatch(header, /provider|very-long|…| · /);
+});
+
 test("UsageView respects width and height changes", () => {
 	let rows = 30;
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
@@ -494,9 +621,16 @@ test("UsageView respects width and height changes", () => {
 		}
 	}
 	const compactMap = view.render(60).map(stripSgr);
-	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Model:/.test(line)));
+	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Map: ■ Full · ◧ Part$/.test(line)));
+	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1m \(4\.4%\)$/);
 	const categoryOnly = view.render(40).map(stripSgr);
-	assert.ok(categoryOnly.some((line) => /^  Model: claude-opus-4-8$/.test(line)));
+	assert.equal(categoryOnly[2], "Context Usage");
+	assert.equal(categoryOnly[3], "");
+	assert.equal(categoryOnly[4], "43.8k/1m (4.4%)");
+	assert.ok(categoryOnly.some((line) => line.startsWith("Category:")));
+	assert.ok(categoryOnly.some((line) => line.startsWith("→ ■ System")));
+	assert.ok(!categoryOnly.some((line) => line.includes("claude-opus-4-8")));
+	assert.ok(!categoryOnly.some((line) => line.includes("Map: ■ Full · ◧ Part")));
 	assert.ok(!categoryOnly.some((line) => /[■◧▦⛶]{14}/.test(line)));
 
 	const tall = view.render(40);

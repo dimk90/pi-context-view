@@ -3,8 +3,8 @@
  * terminal-height viewport math, width fitting, and hint-row formatting used
  * by the Usage and Injections views. Pure string/number logic — no pi access.
  */
-import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 /** Two-space indent for descriptions, counters, hints, and body content. */
 export const BODY_INDENT = "  ";
@@ -46,6 +46,22 @@ export function normalizeTerminalRows(rows: number): number {
 /** Truncate one rendered line to the supplied width. */
 export function fitLine(line: string, width: number): string {
 	return truncateToWidth(line, width, "…");
+}
+
+/** Wrap plain dialog-description text with semantic color and an indented continuation column. */
+export function wrapDescriptionLines(
+	theme: Theme,
+	text: string,
+	color: ThemeColor,
+	width: number,
+): string[] {
+	const indentWidth = Math.min(BODY_INDENT.length, Math.max(0, width - 1));
+	const indent = BODY_INDENT.slice(0, indentWidth);
+	const contentWidth = Math.max(1, width - indentWidth);
+	const wrapped = wrapTextWithAnsi(text, contentWidth);
+	return (wrapped.length === 0 ? [""] : wrapped).map((line) =>
+		truncateToWidth(theme.fg(color, `${indent}${line}`), width, "")
+	);
 }
 
 /** Spread left and right content across the width, truncating the left side on overlap. */
