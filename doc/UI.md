@@ -12,7 +12,8 @@ Follow pi's native selector style (`/settings`, `/model`):
 - one blank row after the dialog header;
 - accent title and responsive summary alignment as specified by each view;
 - fixed-column `→` cursor flush at column 0;
-- muted description between blank rows above the hints;
+- muted description wrapped onto indented continuation lines, never ellipsized,
+  between blank rows above the hints;
 - dim key plus muted description hints joined by ` · `;
 - dim `(current/total)` shown only when content overflows.
 

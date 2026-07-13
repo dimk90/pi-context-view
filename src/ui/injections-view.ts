@@ -24,6 +24,7 @@ import {
 	hintRow,
 	normalizeTerminalRows,
 	spreadLine,
+	wrapDescriptionLines,
 } from "./layout.ts";
 
 const LIST_FIXED_LINE_COUNT = 10;
@@ -146,9 +147,8 @@ export class InjectionsView {
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const headerLines = this.headerLines(width);
 		const warningLines = this.degradedWarningLines(width);
-		const degradedDescriptionLine = this.degradedDescriptionLine(width);
-		const extraLineCount = headerLines.length - 1 + warningLines.length +
-			(degradedDescriptionLine === undefined ? 0 : 1);
+		const descriptionLines = this.descriptionLines(width);
+		const extraLineCount = headerLines.length - 1 + warningLines.length + descriptionLines.length - 1;
 		const viewport = calculateViewport(this.rows.length, terminalRows, LIST_FIXED_LINE_COUNT, extraLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 		const lines: string[] = [border, "", ...headerLines, "", ...warningLines];
@@ -158,8 +158,7 @@ export class InjectionsView {
 		const paddingCount = viewport.visibleCount - listLines.length;
 		for (let pad = 0; pad < paddingCount; pad++) lines.push("");
 		lines.push("");
-		lines.push(this.fit(theme.fg("muted", `${BODY_INDENT}${LIST_DESCRIPTION}`), width));
-		if (degradedDescriptionLine !== undefined) lines.push(degradedDescriptionLine);
+		lines.push(...descriptionLines);
 		lines.push("");
 		lines.push(
 			this.fit(
@@ -406,13 +405,18 @@ export class InjectionsView {
 		return wrapTextWithAnsi(reason, width);
 	}
 
-	/** Degraded-capture indicator shown as part of the dialog description. */
-	private degradedDescriptionLine(width: number): string | undefined {
-		if (this.input.degradedReason === undefined) return undefined;
-		return this.fit(
-			this.theme.fg("warning", `${BODY_INDENT}[Degraded: pi-native fallback used]`),
-			width,
-		);
+	/** Wrapped dialog description, including the degraded-capture indicator when needed. */
+	private descriptionLines(width: number): string[] {
+		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "muted", width);
+		if (this.input.degradedReason !== undefined) {
+			lines.push(...wrapDescriptionLines(
+				this.theme,
+				"[Degraded: pi-native fallback used]",
+				"warning",
+				width,
+			));
+		}
+		return lines;
 	}
 
 	private spread(left: string, right: string, width: number): string {

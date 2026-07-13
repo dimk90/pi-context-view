@@ -23,12 +23,13 @@ import {
 	hintRow,
 	normalizeTerminalRows,
 	spreadLine,
+	wrapDescriptionLines,
 } from "./layout.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 
 const USAGE_DESCRIPTION = "Estimated context for the next model request; actual token counts may differ.";
-const USAGE_TAIL_LINE_COUNT = 6;
+const USAGE_TAIL_FIXED_LINE_COUNT = 5;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const PREVIEW_ENTRY_MAX_LINES = 20;
@@ -185,12 +186,16 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const prefix = [border, "", ...this.headerLines(width), "", ...this.degradedWarningLines(width)];
-		const availableDashboardRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_LINE_COUNT);
+		const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, "muted", width);
+		const availableDashboardRows = Math.max(
+			1,
+			terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT - descriptionLines.length,
+		);
 		const dashboard = this.dashboardLines(width, availableDashboardRows).slice(0, availableDashboardRows);
 		while (dashboard.length < availableDashboardRows) dashboard.push("");
 		const tail = [
 			"",
-			this.fit(theme.fg("muted", `${BODY_INDENT}${USAGE_DESCRIPTION}`), width),
+			...descriptionLines,
 			"",
 			this.fit(
 				hintRow(theme, [

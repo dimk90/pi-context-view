@@ -190,6 +190,24 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
+test("UsageView wraps narrow descriptions instead of truncating them", () => {
+	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	const lines = view.render(40).map(stripSgr);
+	const descriptionStart = lines.findIndex((line) => line.includes("Estimated context"));
+	const hintsIndex = lines.findIndex((line) => line.includes("↑↓ Navigate"));
+
+	assert.ok(descriptionStart >= 0 && hintsIndex > descriptionStart);
+	assert.equal(lines[hintsIndex - 1], "");
+	const descriptionLines = lines.slice(descriptionStart, hintsIndex - 1);
+	assert.ok(descriptionLines.length > 1);
+	assert.ok(descriptionLines.every((line) => line.startsWith("  ")));
+	assert.equal(
+		descriptionLines.map((line) => line.trim()).join(" "),
+		"Estimated context for the next model request; actual token counts may differ.",
+	);
+	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
+});
+
 test("UsageView falls back to estimated post-compaction usage and closes on Escape", () => {
 	let closed = false;
 	const view = new UsageView(

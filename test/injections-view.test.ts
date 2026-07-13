@@ -182,6 +182,23 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.doesNotMatch(stripSgr(lines[hintsIndex] ?? ""), /Toggle Runtime|\bR\b/);
 });
 
+test("InjectionsView wraps narrow descriptions instead of truncating them", () => {
+	const lines = createView(4).render(40).map(stripSgr);
+	const descriptionStart = lines.findIndex((line) => line.includes("Injections into the model context"));
+	const hintsIndex = lines.findIndex((line) => line.includes("↑↓ Navigate"));
+
+	assert.ok(descriptionStart >= 0 && hintsIndex > descriptionStart);
+	assert.equal(lines[hintsIndex - 1], "");
+	const descriptionLines = lines.slice(descriptionStart, hintsIndex - 1);
+	assert.ok(descriptionLines.length > 1);
+	assert.ok(descriptionLines.every((line) => line.startsWith("  ")));
+	assert.equal(
+		descriptionLines.map((line) => line.trim()).join(" "),
+		"Injections into the model context for the first turn, with token estimates.",
+	);
+	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
+});
+
 test("InjectionsView adds degraded INITIAL capture to the dialog description", () => {
 	const plain = createView(4);
 	const plainLines = plain.render(80);
@@ -206,6 +223,18 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	const degradedDescription = degradedLines[descriptionIndex + 1] ?? "";
 	assert.equal(stripSgr(degradedDescription), "  [Degraded: pi-native fallback used]");
 	assert.match(degradedDescription, /\u001b\[38;2;170;187;204m  \[Degraded: pi-native fallback used\]/);
+
+	const narrowLines = degraded.render(24).map(stripSgr);
+	const degradedStart = narrowLines.findIndex((line) => line.includes("[Degraded:"));
+	const hintsIndex = narrowLines.findIndex((line) => line.includes("↑↓ Navigate"));
+	assert.ok(degradedStart >= 0 && hintsIndex > degradedStart);
+	const wrappedDegradedLines = narrowLines.slice(degradedStart, hintsIndex - 1);
+	assert.ok(wrappedDegradedLines.length > 1);
+	assert.equal(
+		wrappedDegradedLines.map((line) => line.trim()).join(" "),
+		"[Degraded: pi-native fallback used]",
+	);
+	assert.doesNotMatch(wrappedDegradedLines.join("\n"), /…/);
 });
 
 test("InjectionsView keeps Runtime inactive when label-switch keys are pressed", () => {

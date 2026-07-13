@@ -9,6 +9,7 @@
 
 ### Fixed
 * `[usage]` Add fallback (`≈`) calculation of context usage after compaction and pi estimation is not available.
+* `[ui]` Wrap dialog descriptions onto indented continuation lines instead of truncating them in narrow terminals.
 
 ## `[v0.2.0]` - 13.07.2026
 
