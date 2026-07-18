@@ -15,7 +15,7 @@
     contexts and Usage.
   - Do not identify probes from empty content; preserve genuine empty messages
     and aborts without persisting raw captured content.
-- [ ] 2. **Exclude "Free Space" in context usage form selectable items**.
+- [x] 2. **Exclude "Free Space" in context usage form selectable items**.
   - Skip "Free Space" category when scroll cursor: nothing to preview in this category.
 
 ## v0.3.0

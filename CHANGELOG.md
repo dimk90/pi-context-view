@@ -2,6 +2,9 @@
 
 ## `[v0.2.2]` - Not released yet
 
+### Changed
+* `[usage]` Skip the preview-less Free Space row during category navigation in the Usage view.
+
 ### Fixed
 * `[context]` Persist silent-probe message identities as a session custom entry
               so probe entries stay excluded from model contexts across resume, reload, and fork.
