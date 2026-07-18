@@ -1,5 +1,11 @@
 # Changelog
 
+## `[v0.2.2]` - Not released yet
+
+### Fixed
+* `[context]` Persist silent-probe message identities as a session custom entry
+              so probe entries stay excluded from model contexts across resume, reload, and fork.
+
 ## `[v0.2.1]` - 13.07.2026
 
 ### Changed

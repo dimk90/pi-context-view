@@ -13,6 +13,7 @@ import {
 	InitialCaptureState,
 	measureInjectedMessages,
 	mergeContextOnlyMessages,
+	parsePersistedIdentities,
 	SilentProbeState,
 } from "../src/capture.ts";
 import { buildSnapshot, type InjectionItem } from "../src/model.ts";
@@ -256,6 +257,53 @@ test("SilentProbeState sanitizes and filters only exact probe identities", async
 	assert.deepEqual(await attempt.completion, { status: "captured" });
 	assert.equal(state.start().started, false);
 	assert.equal(state.sanitizeAssistant(probeAssistant), undefined);
+});
+
+test("SilentProbeState filters restored identities without consuming the probe attempt", () => {
+	const previousRuntime = new SilentProbeState();
+	previousRuntime.start(1_000);
+	previousRuntime.observeInput("extension", "");
+	assert.equal(previousRuntime.beginRun(""), true);
+	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
+	previousRuntime.recordMessage(probeUser);
+	previousRuntime.settle(true);
+
+	const state = new SilentProbeState();
+	state.restoreIdentities(previousRuntime.syntheticMessages);
+
+	const emptyRealUser = { role: "user", content: [], timestamp: 11 } satisfies ContextEvent["messages"][number];
+	assert.deepEqual(state.filterMessages([probeUser, emptyRealUser]), [emptyRealUser]);
+	assert.deepEqual(state.syntheticMessages, [{ role: "user", timestamp: 10 }]);
+
+	// Restoration must not consume this runtime's single probe attempt.
+	assert.equal(state.isCurrentRun, false);
+	const attempt = state.start(1_000);
+	assert.equal(attempt.started, true);
+	state.fail("cleanup");
+});
+
+test("parsePersistedIdentities accepts only exact role/timestamp records", () => {
+	assert.deepEqual(
+		parsePersistedIdentities({
+			messages: [
+				{ role: "user", timestamp: 10 },
+				{ role: "assistant", timestamp: 12 },
+				{ role: "custom", timestamp: 13 },
+				{ role: "user", timestamp: "10" },
+				{ role: "user" },
+				"garbage",
+				null,
+			],
+		}),
+		[
+			{ role: "user", timestamp: 10 },
+			{ role: "assistant", timestamp: 12 },
+		],
+	);
+	assert.deepEqual(parsePersistedIdentities(undefined), []);
+	assert.deepEqual(parsePersistedIdentities(null), []);
+	assert.deepEqual(parsePersistedIdentities({ messages: "not-an-array" }), []);
+	assert.deepEqual(parsePersistedIdentities([]), []);
 });
 
 test("SilentProbeState keeps a timed-out running probe abortable until settlement", async () => {

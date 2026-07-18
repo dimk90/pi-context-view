@@ -21,6 +21,9 @@ import {
 	type InjectionSource,
 } from "./model.ts";
 
+/** Session custom-entry type persisting probe message identities across extension runtimes. */
+export const PROBE_IDENTITIES_CUSTOM_TYPE = "pi-context-view:probe-identities";
+
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
 const AGGREGATE_SOURCE: InjectionSource = {
 	id: AGGREGATE_SOURCE_ID,
@@ -150,6 +153,18 @@ export class SilentProbeState {
 	}
 
 	/**
+	 * Merge probe identities persisted by an earlier extension runtime so prior
+	 * probe messages stay excluded after resume/reload/fork. Restoration only
+	 * seeds the identity map; it neither consumes this runtime's single probe
+	 * attempt nor associates any run with the probe.
+	 */
+	public restoreIdentities(identities: readonly SyntheticMessageIdentity[]): void {
+		for (const identity of identities) {
+			this.identities.set(identityKey(identity), { role: identity.role, timestamp: identity.timestamp });
+		}
+	}
+
+	/**
 	 * Begin the one allowed probe attempt with a failure timeout. Repeat calls
 	 * return the original attempt's completion with `started: false`.
 	 */
@@ -250,6 +265,25 @@ export class SilentProbeState {
 		this.resolveCompletion = undefined;
 		resolve?.(outcome);
 	}
+}
+
+/**
+ * Parse one persisted probe-identities entry payload. Malformed or foreign
+ * records are ignored so a corrupt entry can never suppress genuine messages.
+ */
+export function parsePersistedIdentities(data: unknown): SyntheticMessageIdentity[] {
+	if (typeof data !== "object" || data === null) return [];
+	const messages = (data as { messages?: unknown }).messages;
+	if (!Array.isArray(messages)) return [];
+	const identities: SyntheticMessageIdentity[] = [];
+	for (const message of messages) {
+		if (typeof message !== "object" || message === null) continue;
+		const { role, timestamp } = message as { role?: unknown; timestamp?: unknown };
+		if ((role === "user" || role === "assistant") && typeof timestamp === "number" && Number.isFinite(timestamp)) {
+			identities.push({ role, timestamp });
+		}
+	}
+	return identities;
 }
 
 /** Build a view-local pi-native snapshot without freezing the main capture state. */
