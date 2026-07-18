@@ -17,10 +17,10 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 2. Confirm npm access and make sure the version has not already been published:
 
    ```bash
-   npm whoami
+   pnpm whoami
    ```
    ```bash
-   npm view pi-context-view dist-tags --json
+   pnpm view pi-context-view dist-tags --json
    ```
 
 3. Confirm that the exact pi development pins in `package.json` match the local
@@ -41,27 +41,27 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 5. Check that README image links and the absolute `pi.image` URL resolve to the
    intended immutable image revisions.
 
-6. Bump both `package.json` and `package-lock.json` without letting npm create a
-   commit or tag:
+6. Bump `package.json` (pnpm keeps `pnpm-lock.yaml` in sync) without letting
+   pnpm create a commit or tag:
 
    ```bash
-   npm version "v0.2.1" --no-git-tag-version
+   pnpm version "v0.2.1"
    ```
 
 7. Review and validate the release tree:
 
    ```bash
-   npm run check
+   pnpm check
    ```
    ```bash
-   npm pack --dry-run
+   pnpm pack --dry-run
    ```
 
 8. Commit only the reviewed release files, following the repository's release
    commit convention. Add doc/images files only if their reviewed captures changed.
 
    ```bash
-   git add CHANGELOG.md PLAN.md package.json package-lock.json README.md doc/RELEASE.md
+   git add CHANGELOG.md PLAN.md package.json pnpm-lock.yaml README.md doc/RELEASE.md
    ```
    ```bash
    git commit -m "[doc] Release v0.2.1"
@@ -91,7 +91,7 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 
 11. Verify the version, tag target, and clean worktree:
       ```bash
-      npm pkg get version
+      pnpm pkg get version
       ```
 
 12. Push both branches and the tag together. Do not publish anything if this
@@ -107,7 +107,7 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 13. Publish only from the clean commit identified by the pushed tag:
 
       ```bash
-      npm publish --access public
+      pnpm publish --access public
       ```
 
 14. Return back to develop branch:

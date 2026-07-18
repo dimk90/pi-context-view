@@ -97,7 +97,7 @@ interaction, responsive behavior, previews, and release media.
 
 ## Verification
 
-Run `npm run check`. Follow the `pi-extension` skill for provider smoke tests
+Run `pnpm check`. Follow the `pi-extension` skill for provider smoke tests
 and real-PTY testing. Lifecycle coverage must load `test/fixtures/marker.ts` in
 both orders and use an `after_provider_response` sentinel for probes.
 
@@ -117,4 +117,4 @@ Required invariants:
 
 Keep `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` as `"*"`
 peer dependencies and exact development pins matching `pi --version`. Run
-`npm install` after changing the pins.
+`pnpm install` after changing the pins.
