@@ -30,6 +30,7 @@ set -euo pipefail
 # Leave FONT_FAMILY empty to use agg's built-in default fonts.
 : "${FONT_FAMILY:=}"
 : "${FONT_SIZE:=28}"
+: "${LINE_HEIGHT:=1.2}"
 
 # Set PAD_COLOR to override automatic detection from the GIF's top-left pixel.
 # PAD_FALLBACK_COLOR is used when only ffmpeg is available.
@@ -232,8 +233,9 @@ render() {
     local font_args=()
     [[ -n $FONT_FAMILY ]] && font_args+=(--font-family "$FONT_FAMILY")
 
-    agg "${font_args[@]}"        \
-        --font-size "$FONT_SIZE" \
+    agg "${font_args[@]}"            \
+        --font-size "$FONT_SIZE"     \
+        --line-height "$LINE_HEIGHT" \
         "$CAST" "$GIF"
 
     if [[ -n $padding ]]; then
