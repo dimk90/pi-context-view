@@ -24,7 +24,7 @@ set -euo pipefail
 # Terminal geometry is in cells, not pixels; pixel size ~= cells x glyph size
 # at FONT_SIZE.
 : "${COLS:=100}"
-: "${ROWS:=30}"
+: "${ROWS:=40}"
 
 : "${FONT_FAMILY:=Iosevka Term}"
 : "${FONT_SIZE:=28}"
@@ -38,7 +38,7 @@ set -euo pipefail
 : "${DEMO_SHELL:=fish}"
 
 # Default delay between simulated keystrokes (VHS TypingSpeed).
-: "${TYPE_DELAY:=0.07}"
+: "${TYPE_DELAY:=0.1}"
 # Default pause after a key press.
 : "${KEY_DELAY:=0.0}"
 
