@@ -14,8 +14,10 @@ GIF=doc/images/context-usage.gif
 
 COLS=80
 ROWS=30
-PADDING=40
-FONT_SIZE=24
+PADDING=10
+
+FONT_SIZE=28
+FONT_FAMILY="Iosevka Term"
 
 source "$SCRIPT_DIR/vhs.sh"
 
