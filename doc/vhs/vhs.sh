@@ -27,7 +27,8 @@ set -euo pipefail
 : "${COLS:=100}"
 : "${ROWS:=40}"
 
-: "${FONT_FAMILY:=Iosevka Term}"
+# Leave FONT_FAMILY empty to use agg's built-in default fonts.
+: "${FONT_FAMILY:=}"
 : "${FONT_SIZE:=28}"
 
 # Set PAD_COLOR to override automatic detection from the GIF's top-left pixel.
@@ -228,8 +229,11 @@ render() {
     fi
     REC_PID=
 
-    agg --font-family "$FONT_FAMILY" \
-        --font-size "$FONT_SIZE"     \
+    local font_args=()
+    [[ -n $FONT_FAMILY ]] && font_args+=(--font-family "$FONT_FAMILY")
+
+    agg "${font_args[@]}"        \
+        --font-size "$FONT_SIZE" \
         "$CAST" "$GIF"
 
     if [[ -n $padding ]]; then
