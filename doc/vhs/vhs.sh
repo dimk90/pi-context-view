@@ -29,6 +29,11 @@ set -euo pipefail
 : "${FONT_FAMILY:=Iosevka Term}"
 : "${FONT_SIZE:=28}"
 
+# Set PAD_COLOR to override automatic detection from the GIF's top-left pixel.
+# PAD_FALLBACK_COLOR is used when only ffmpeg is available.
+: "${PAD_COLOR:=}"
+: "${PAD_FALLBACK_COLOR:=#121314}"
+
 # Shell to run inside the tmux session.
 : "${DEMO_SHELL:=fish}"
 
@@ -119,6 +124,7 @@ stop_recording() {
 }
 
 # End the recording (killing the session detaches the recorder) and render.
+# Usage: render [padding-pixels].
 render() {
 	local clean_end=
 	[[ -n $REC_PID ]] && clean_end=$(wc -c < "$CAST")
@@ -135,7 +141,39 @@ render() {
 		--font-size "$FONT_SIZE"     \
 		"$CAST" "$GIF"
 
+	if [[ -n ${1:-} ]]; then
+		pad_gif "$1"
+	fi
+
 	echo "Wrote $GIF"
+}
+
+# Add uniform pixel padding around the rendered GIF (like VHS's Set Padding).
+# Prefers magick, falls back to ffmpeg, and warns when neither is installed.
+# Usage: pad_gif <pixels>.
+pad_gif() {
+	local pad=$1
+	local pad_color=${PAD_COLOR:-}
+	echo "::: adding ${pad}px padding"
+	if command -v magick >/dev/null 2>&1; then
+		if [[ -z $pad_color ]]; then
+			pad_color="#$(magick "${GIF}[0]" -format '%[hex:p{0,0}]' info:)"
+		fi
+		# Coalesce first: border on frame-diffed GIFs misplaces frames.
+		magick "$GIF" -coalesce -bordercolor "$pad_color" -border "$pad" \
+			-layers optimize "$GIF"
+	elif command -v ffmpeg >/dev/null 2>&1; then
+		local tmp="${GIF%.gif}-pad.gif"
+		pad_color=${pad_color:-$PAD_FALLBACK_COLOR}
+		# Regenerate the palette, otherwise ffmpeg falls back to a dithered
+		# generic 256-color palette.
+		ffmpeg -loglevel error -y -i "$GIF" -filter_complex \
+			"pad=iw+2*${pad}:ih+2*${pad}:${pad}:${pad}:${pad_color/\#/0x},split[a][b];[a]palettegen[p];[b][p]paletteuse" \
+			"$tmp"
+		mv -- "$tmp" "$GIF"
+	else
+		echo "warning: neither magick nor ffmpeg found; skipping ${pad}px padding" >&2
+	fi
 }
 
 cleanup() {
