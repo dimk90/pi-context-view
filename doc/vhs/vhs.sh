@@ -70,21 +70,6 @@ start_session() {
 ## Input
 
 
-send() {
-    #
-    # Send keys to the demo session (thin wrapper over tmux send-keys).
-    #
-    # Parameters:
-    #   $@ - arguments passed through to tmux send-keys.
-    #
-    # Example:
-    #   send -l 'ls'
-    #   send Enter
-    #
-    tmux send-keys -t "$SESSION" "$@"
-}
-
-
 run_off_record() {
     #
     # Run a command in the session while no recorder is attached.
@@ -99,8 +84,8 @@ run_off_record() {
     local command_line="$1"
     local settle="${2:-2}"
 
-    send -l "$command_line"
-    send Enter
+    _send -l "$command_line"
+    _send Enter
     sleep "$settle"
 }
 
@@ -119,7 +104,7 @@ key() {
     local key_name="$1"
     local pause="${2:-$KEY_DELAY}"
 
-    send "$key_name"
+    _send "$key_name"
     sleep "$pause"
 }
 
@@ -140,7 +125,7 @@ type_text() {
     local idx
 
     for ((idx = 0; idx < ${#text}; idx++)); do
-        send -l "${text:idx:1}"
+        _send -l "${text:idx:1}"
         sleep "$delay"
     done
 }
@@ -248,14 +233,32 @@ render() {
         "$CAST" "$GIF"
 
     if [[ -n $padding ]]; then
-        pad_gif "$padding"
+        _pad_gif "$padding"
     fi
 
     printf 'Wrote %s\n' "$GIF"
 }
 
 
-pad_gif() {
+## Internal
+
+
+_send() {
+    #
+    # Send keys to the demo session (thin wrapper over tmux send-keys).
+    #
+    # Parameters:
+    #   $@ - arguments passed through to tmux send-keys.
+    #
+    # Example:
+    #   _send -l 'ls'
+    #   _send Enter
+    #
+    tmux send-keys -t "$SESSION" "$@"
+}
+
+
+_pad_gif() {
     #
     # Add uniform pixel padding around the rendered GIF (like VHS's
     # Set Padding). Prefers magick, falls back to ffmpeg, and warns when
@@ -265,7 +268,7 @@ pad_gif() {
     #   $1 - pad - padding in pixels.
     #
     # Example:
-    #   pad_gif 40
+    #   _pad_gif 40
     #
     local pad="$1"
 
@@ -295,10 +298,7 @@ pad_gif() {
 }
 
 
-## Cleanup
-
-
-cleanup() {
+_cleanup() {
     #
     # Kill the demo session and recorder on exit; safe to call when neither
     # is alive.
@@ -308,4 +308,9 @@ cleanup() {
         kill "$REC_PID" 2> /dev/null || true
     fi
 }
-trap cleanup EXIT
+
+
+# Installed in the sourcing script's shell, so any exit — including a
+# set -e failure mid-recording — tears down the tmux session and recorder
+# instead of leaving them running in the background.
+trap _cleanup EXIT
