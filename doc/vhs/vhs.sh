@@ -44,6 +44,22 @@ RECORDED=
 ## Functions
 
 
+# Fresh session, isolated from personal tmux config (no status bar).
+start_session() {
+	tmux -f /dev/null new-session -d -s "$SESSION" -x "$COLS" -y "$ROWS" "$DEMO_SHELL"
+	tmux set -g extended-keys on
+	tmux set -g extended-keys-format csi-u
+	tmux set-option -t "$SESSION" status off
+}
+
+# Run a command in the session while no recorder is attached (VHS Hide).
+# Usage: run_off_record <command> [settle-seconds].
+run_off_record() {
+	send -l "$1"
+	send Enter
+	sleep "${2:-2}"
+}
+
 send() {
 	tmux send-keys -t "$SESSION" "$@";
 }
@@ -55,8 +71,8 @@ key() {
 }
 
 # Type text one character at a time, like VHS's TypingSpeed.
-# Usage: type_slow <text> [delay-seconds]; defaults to TYPE_DELAY.
-type_slow() {
+# Usage: type_text <text> [delay-seconds]; defaults to TYPE_DELAY.
+type_text() {
 	local s=$1
 	local delay=${2:-$TYPE_DELAY}
 	local i
@@ -64,14 +80,6 @@ type_slow() {
 		send -l "${s:i:1}"
 		sleep "$delay"
 	done
-}
-
-# Run a command in the session while no recorder is attached (VHS Hide).
-# Usage: run_off_record <command> [settle-seconds].
-run_off_record() {
-	send -l "$1"
-	send Enter
-	sleep "${2:-2}"
 }
 
 # Poll the visible pane until a pattern appears, instead of guessing sleeps.
@@ -104,14 +112,6 @@ stop_recording() {
 	tmux detach-client -s "$SESSION"
 	wait "$REC_PID"
 	REC_PID=
-}
-
-# Fresh session, isolated from personal tmux config (no status bar).
-start_session() {
-	tmux -f /dev/null new-session -d -s "$SESSION" -x "$COLS" -y "$ROWS" "$DEMO_SHELL"
-	tmux set -g extended-keys on
-	tmux set -g extended-keys-format csi-u
-	tmux set-option -t "$SESSION" status off
 }
 
 # End the recording (killing the session detaches the recorder) and render.

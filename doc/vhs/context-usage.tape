@@ -27,7 +27,7 @@ record
 ## Open the Usage view (silent probe captures the Initial snapshot).
 sleep 1
 
-type_slow "/context"
+type_text "/context"
 sleep 1
 
 key Enter
