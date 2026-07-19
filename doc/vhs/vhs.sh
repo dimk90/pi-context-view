@@ -33,7 +33,7 @@ set -euo pipefail
 : "${DEMO_SHELL:=fish}"
 
 # Default delay between simulated keystrokes (VHS TypingSpeed).
-: "${TYPE_DELAY:=0.06}"
+: "${TYPE_DELAY:=0.07}"
 # Default pause after a key press.
 : "${KEY_DELAY:=0.0}"
 
@@ -100,7 +100,7 @@ wait_for() {
 # later calls append to the same cast (VHS Show).
 record() {
 	asciinema rec --overwrite ${RECORDED:+--append} \
-		--window-size "${COLS}x${ROWS}" \
+		--window-size "${COLS}x${ROWS}"             \
 		-c "tmux attach -t $SESSION" "$CAST" &
 	REC_PID=$!
 	RECORDED=1
@@ -109,19 +109,30 @@ record() {
 
 # Stop recording without disturbing the session (VHS Hide).
 stop_recording() {
+	local clean_end
+	clean_end=$(wc -c < "$CAST")
+
 	tmux detach-client -s "$SESSION"
 	wait "$REC_PID"
+	truncate -s "$clean_end" -- "$CAST"
 	REC_PID=
 }
 
 # End the recording (killing the session detaches the recorder) and render.
 render() {
+	local clean_end=
+	[[ -n $REC_PID ]] && clean_end=$(wc -c < "$CAST")
+
 	tmux kill-session -t "$SESSION"
-	[[ -n $REC_PID ]] && wait "$REC_PID"
+
+	if [[ -n $REC_PID ]]; then
+		wait "$REC_PID"
+		truncate -s "$clean_end" -- "$CAST"
+	fi
 	REC_PID=
 
 	agg --font-family "$FONT_FAMILY" \
-		--font-size "$FONT_SIZE" \
+		--font-size "$FONT_SIZE"     \
 		"$CAST" "$GIF"
 
 	echo "Wrote $GIF"
