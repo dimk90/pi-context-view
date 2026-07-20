@@ -1,9 +1,9 @@
 # Changelog
 
-## `[v0.2.2]` - Not released yet
+## `[v0.2.2]` - 20.07.2026
 
 ### Changed
-* `[usage]` Skip the preview-less Free Space row during category navigation in the Usage view.
+* `[usage]` Skip the preview-less "Free Space" row during category navigation in the Usage view.
 
 ### Fixed
 * `[context]` Persist silent-probe message identities as a session custom entry

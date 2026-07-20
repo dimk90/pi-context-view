@@ -41,12 +41,7 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 5. Check that README image links and the absolute `pi.image` URL resolve to the
    intended immutable image revisions.
 
-6. Bump `package.json` (pnpm keeps `pnpm-lock.yaml` in sync) without letting
-   pnpm create a commit or tag:
-
-   ```bash
-   pnpm version "v0.2.1"
-   ```
+6. Bump version number in `package.json`.
 
 7. Review and validate the release tree:
 
