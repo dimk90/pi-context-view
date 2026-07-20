@@ -1,5 +1,10 @@
 # Changelog
 
+## `[v0.2.3]` - 20.07.2026
+
+### Fixed
+* `[doc]` Update broken links in README.
+
 ## `[v0.2.2]` - 20.07.2026
 
 ### Changed
