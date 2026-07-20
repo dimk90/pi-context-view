@@ -1,7 +1,7 @@
 # Release Instructions
 
 Release from `develop`, merge the reviewed release commit into `master`, and tag
-the resulting `master` merge commit. The examples below use `v0.2.1`.
+the resulting `master` merge commit.
 
 1. Update both local release branches and confirm that the worktree is clean:
    ```bash
@@ -59,7 +59,7 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
    git add CHANGELOG.md PLAN.md package.json pnpm-lock.yaml README.md doc/RELEASE.md
    ```
    ```bash
-   git commit -m "[doc] Release v0.2.1"
+   git commit -m "[doc] Release v0.?.?"
    ```
    ```bash
    git push origin develop
@@ -81,7 +81,7 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 
 1. Tag the tested `master`:
       ```bash
-      git tag v0.2.1
+      git tag v0.?.?
       ```
 
 11. Verify the version, tag target, and clean worktree:
@@ -102,7 +102,7 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 13. Publish only from the clean commit identified by the pushed tag:
 
       ```bash
-      pnpm publish --access public
+      pnpm publish --no-git-checks --access public
       ```
 
 14. Return back to develop branch:
