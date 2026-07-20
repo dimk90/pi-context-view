@@ -1,20 +1,9 @@
 # Release Instructions
 
 Release from `develop`, merge the reviewed release commit into `master`, and tag
-the resulting `master` merge commit. The examples below use `v0.2.1`.
+the resulting `master` merge commit.
 
-1. Update both local release branches and confirm that the worktree is clean:
-   ```bash
-   git fetch --prune origin
-   ```
-   ```bash
-   git switch develop
-   ```
-   ```bash
-   git pull --ff-only origin develop
-   ```
-
-2. Confirm npm access and make sure the version has not already been published:
+1. Confirm npm access and make sure the version has not already been published:
 
    ```bash
    pnpm whoami
@@ -23,14 +12,14 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
    pnpm view pi-context-view dist-tags --json
    ```
 
-3. Confirm that the exact pi development pins in `package.json` match the local
+1. Confirm that the exact pi development pins in `package.json` match the local
    pi version:
 
    ```bash
    pi --version
    ```
 
-4. Finalize the release documentation:
+1. Finalize the release documentation:
    - replace `Unreleased` for the version in `CHANGELOG.md` with the release
      date in `DD.MM.YYYY` format;
    - make the changelog entries match the user-visible release notes;
@@ -38,12 +27,12 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
      in the roadmap;
    - verify that README commands, screenshots, and package metadata are current.
 
-5. Check that README image links and the absolute `pi.image` URL resolve to the
+1. Check that README image links and the absolute `pi.image` URL resolve to the
    intended immutable image revisions.
 
-6. Bump version number in `package.json`.
+1. Bump version number in `package.json`.
 
-7. Review and validate the release tree:
+1. Review and validate the release tree:
 
    ```bash
    pnpm check
@@ -52,20 +41,20 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
    pnpm pack --dry-run
    ```
 
-8. Commit only the reviewed release files, following the repository's release
+1. Commit only the reviewed release files, following the repository's release
    commit convention. Add doc/images files only if their reviewed captures changed.
 
    ```bash
    git add CHANGELOG.md PLAN.md package.json pnpm-lock.yaml README.md doc/RELEASE.md
    ```
    ```bash
-   git commit -m "[doc] Release v0.2.1"
+   git commit -m "[doc] Release v0.?.?"
    ```
    ```bash
    git push origin develop
    ```
 
-9. Update `master`, merge `develop`, and validate the exact release tree again:
+1. Update `master`, merge `develop`, and validate the exact release tree again:
 
    ```bash
    git switch master
@@ -81,15 +70,15 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 
 1. Tag the tested `master`:
       ```bash
-      git tag v0.2.1
+      git tag v0.?.?
       ```
 
-11. Verify the version, tag target, and clean worktree:
+1. Verify the version, tag target, and clean worktree:
       ```bash
       pnpm pkg get version
       ```
 
-12. Push both branches and the tag together. Do not publish anything if this
+1. Push both branches and the tag together. Do not publish anything if this
     push fails:
       ```bash
       git push origin master
@@ -102,7 +91,7 @@ the resulting `master` merge commit. The examples below use `v0.2.1`.
 13. Publish only from the clean commit identified by the pushed tag:
 
       ```bash
-      pnpm publish --access public
+      pnpm publish --no-git-checks --access public
       ```
 
 14. Return back to develop branch:
