@@ -265,8 +265,9 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 
 	view.handleInput("\u001b[4~"); // End
 	const ending = view.render(80).map(stripSgr);
-	assert.ok(ending.some((line) => /· tool_15 \.{2,}\s+100\s+0%/.test(line)));
-	assert.ok(ending.some((line) => /→ ⛶ Free Space \.{2,}\s+998\.4k\s+100%/.test(line)));
+	assert.ok(ending.some((line) => /→\s+· tool_15 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(ending.some((line) => /⛶ Free Space \.{2,}\s+998\.4k\s+100%/.test(line)));
+	assert.ok(!ending.some((line) => /→\s+⛶ Free Space/.test(line)), "Free Space is never selected");
 });
 
 test("UsageView keeps the selection inside the viewport across height reflows", () => {
@@ -397,12 +398,14 @@ test("UsageView previews empty categories, free space, and long content safely",
 	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("[tool_1]")));
 	view.handleInput("\u001b");
 
-	// Enter on the free-space row opens nothing.
-	view.handleInput("\u001b[4~"); // End → Free Space
-	const freeSelected = view.render(80).join("\n");
-	assert.match(stripSgr(freeSelected), /→ ⛶ Free Space \.{2,}/);
-	view.handleInput("\r");
-	assert.equal(view.render(80).join("\n"), freeSelected);
+	// Free Space is not selectable: End stops on the last category and Down does not move past it.
+	view.handleInput("\u001b[4~"); // End → last Tool Output child
+	const endSelected = view.render(80).join("\n");
+	assert.match(stripSgr(endSelected), /→\s+· tool_30 \.{2,}/);
+	assert.match(stripSgr(endSelected), /⛶ Free Space \.{2,}/);
+	assert.doesNotMatch(stripSgr(endSelected), /→\s+⛶ Free Space/);
+	view.handleInput("\u001b[B");
+	assert.equal(view.render(80).join("\n"), endSelected);
 
 	// Preview lines respect narrow widths and short terminals.
 	view.handleInput("\u001b[1~");

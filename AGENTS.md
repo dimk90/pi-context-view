@@ -49,7 +49,11 @@ agent_settled      → restore UI, resolve command, open the requested view
 Never probe automatically. Track the synthetic user and assistant by exact
 role and timestamp; remove only those entries from later model contexts and
 Usage so genuine aborts remain visible. Probe entries remain in pi's session
-tree, and other extensions still observe the lifecycle.
+tree, and other extensions still observe the lifecycle. Identities (role and
+timestamp only, never content) are persisted as a
+`pi-context-view:probe-identities` custom entry on `agent_settled` and
+`session_shutdown`, then restored on `session_start`, so filtering survives
+resume, reload, and fork without identifying probes by empty content.
 
 `pi.sendMessage(..., { triggerTurn: true })` cannot replace
 `sendUserMessage()` because it bypasses `before_agent_start`. Abort at
@@ -93,7 +97,7 @@ interaction, responsive behavior, previews, and release media.
 
 ## Verification
 
-Run `npm run check`. Follow the `pi-extension` skill for provider smoke tests
+Run `pnpm check`. Follow the `pi-extension` skill for provider smoke tests
 and real-PTY testing. Lifecycle coverage must load `test/fixtures/marker.ts` in
 both orders and use an `after_provider_response` sentinel for probes.
 
@@ -113,4 +117,4 @@ Required invariants:
 
 Keep `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` as `"*"`
 peer dependencies and exact development pins matching `pi --version`. Run
-`npm install` after changing the pins.
+`pnpm install` after changing the pins.

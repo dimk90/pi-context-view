@@ -30,26 +30,33 @@ definitions, and instructions injected by other extensions.
 - `/context injections` - show the hidden content of the context at session
   start or resume.
 
+## Usage Examples
+
+
+### `/context`
+
+See what fills your context.
+For example, check what remains after compaction:
+
+<img width="700" alt="Context usage view showing estimated context composition" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/4001d9d38c47959b9564a2f224d99fe66028a3e9/doc/images/context-usage.gif">
+
+
+### `/context injections`
+
+Inspect hidden parts of the context, such as tool definitions:
+
+<img width="700" alt="Context injections view and item preview" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/fe6da5953ec64c760a29d4838a12bd5122c67dfc/doc/images/context-injections.gif">
+
+
 ## Install
 
 ```bash
 pi install npm:pi-context-view
 ```
 
-### Usage Examples
-
-- Inspect context composition after compaction:
-
-  ![Context usage view and category preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/context-usage.png)
-
-- Inspect hidden parts of the context, such as tool definitions:
-
-  ![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/context-injections.png)
-
 ## Context
 
-`pi-context-view` does not add any instructions or messages to the model
-context.
+`pi-context-view` does not add any instructions or messages to the model context.
 
 ## License
 

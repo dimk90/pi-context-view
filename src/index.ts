@@ -16,6 +16,8 @@ import {
 	buildNativeSnapshot,
 	InitialCaptureState,
 	mergeContextOnlyMessages,
+	parsePersistedIdentities,
+	PROBE_IDENTITIES_CUSTOM_TYPE,
 	SilentProbeState,
 } from "./capture.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
@@ -25,6 +27,27 @@ import { computeUsage, toReportedUsage } from "./usage.ts";
 export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
 	const probe = new SilentProbeState();
+	let persistedIdentityCount = 0;
+
+	/** Persist identities (role and timestamp only, never content) not yet written this runtime. */
+	function persistProbeIdentities(): void {
+		const identities = probe.syntheticMessages;
+		if (identities.length <= persistedIdentityCount) return;
+		pi.appendEntry(PROBE_IDENTITIES_CUSTOM_TYPE, { messages: identities });
+		persistedIdentityCount = identities.length;
+	}
+
+	pi.on("session_start", (_event, ctx) => {
+		// Rehydrate probe identities from all prior runtimes so persisted probe
+		// messages stay out of later model contexts and Usage after resume,
+		// reload, or fork. Restored identities are already persisted.
+		for (const entry of ctx.sessionManager.getEntries()) {
+			if (entry.type === "custom" && entry.customType === PROBE_IDENTITIES_CUSTOM_TYPE) {
+				probe.restoreIdentities(parsePersistedIdentities(entry.data));
+			}
+		}
+		persistedIdentityCount = probe.syntheticMessages.length;
+	});
 
 	pi.on("input", (event) => {
 		probe.observeInput(event.source, event.text);
@@ -68,9 +91,13 @@ export default function (pi: ExtensionAPI) {
 		if (!probe.isCurrentRun) return;
 		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
 		probe.settle(capture.snapshot !== undefined);
+		persistProbeIdentities();
 	});
 
 	pi.on("session_shutdown", () => {
+		// A shutdown mid-probe can leave probe messages already persisted in the
+		// session; write their identities so the next runtime keeps filtering them.
+		persistProbeIdentities();
 		probe.fail("Session ended before the silent probe completed.");
 	});
 

@@ -7,16 +7,18 @@
 - [doc/HISTORY.md](doc/HISTORY.md) - legacy, superseded designs and architecture decisions;
 - [CHANGELOG.md](CHANGELOG.md) for completed work.
 
-## v0.2.2
-
-- [ ] 1. **Preserve silent-probe filtering across extension runtimes.**
-  - Retain exact synthetic user and assistant role/timestamp identities across
-    resume and reload so prior probe entries remain excluded from later model
-    contexts and Usage.
-  - Do not identify probes from empty content; preserve genuine empty messages
-    and aborts without persisting raw captured content.
-
 ## v0.3.0
+
+- [ ] 1. **Icon and category for auto-compat buffer**.
+  - Add "Auto-compat Buffer" category shows tokens which will be never occupied
+    because compaction will be triggered before it.
+  - The "Auto-compat Buffer" category should be showed before "Free Space" category.
+  - The "Auto-compat Buffer" icons should be showed at the end of the usage map.
+  - The "Auto-compat Buffer" category is not selectable item.
+  - Add empty line after "Free Space" and "Auto-compat Buffer".
+
+
+## v0.4.0
 
 - [ ] 1. **Add bounded opt-in Runtime mutation logging.**
   - Enable the Runtime view and restore `/context runtime on|off`.
@@ -27,5 +29,5 @@
 
 ## Open question
 
-- For v0.3.0 context-only message mutations, should the Runtime view explain
+- For v0.4.0 context-only message mutations, should the Runtime view explain
   chain-position visibility limits inline or leave that detail to documentation?

@@ -122,7 +122,9 @@ export class UsageView {
 		this.getTerminalRows = getTerminalRows;
 		this.usage = input.usage;
 		this.legendRows = this.buildLegendRows();
-		this.navigator = new ListNavigator(this.legendRows.length, 1);
+		// Free Space has no preview: it trails the list and scrolls, but is never selectable.
+		const selectableCount = this.legendRows.filter((row) => row.type === "category").length;
+		this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
 	}
 
 	/** Handle category navigation, preview opening, and close keys. */
@@ -270,7 +272,7 @@ export class UsageView {
 
 		const heading = theme.fg("mdHeading", theme.bold("Category:"));
 		const counter = this.navigator.hasOverflow
-			? theme.fg("dim", `(${this.navigator.selected + 1}/${this.legendRows.length})`)
+			? theme.fg("dim", `(${this.navigator.selectedOrdinal + 1}/${this.navigator.selectableCount})`)
 			: "";
 		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
 		const columns = this.legendColumns(this.legendRows, rowWidth);
@@ -317,7 +319,7 @@ export class UsageView {
 		return this.theme.fg("text", `${formatTokens(reported.tokens)}/${contextWindow}${percent}`);
 	}
 
-	/** All navigable legend rows: top-level categories, Tool Output children, free space. */
+	/** All legend rows: top-level categories, Tool Output children, trailing free space. */
 	private buildLegendRows(): LegendRow[] {
 		const rows: LegendRow[] = buildCategoryLegendRows(this.usage.categories);
 		const freeTokens = this.freeSpaceTokens();
