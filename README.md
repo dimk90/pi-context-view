@@ -1,7 +1,7 @@
 # pi-context-view
 
 <h1 align="center">
-    <img src="https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/pi-context-view.png" width="400">
+    <img width="400" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/pi-context-view.png">
 </h1>
 
 <br>
@@ -38,15 +38,14 @@ definitions, and instructions injected by other extensions.
 See what fills your context.
 For example, check what remains after compaction:
 
-<img width="700" alt="Context usage view showing estimated context composition" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/4001d9d38c47959b9564a2f224d99fe66028a3e9/doc/images/context-usage.gif">
+![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/4001d9d38c47959b9564a2f224d99fe66028a3e9/doc/images/context-usage.gif)
 
 
 ### `/context injections`
 
 Inspect hidden parts of the context, such as tool definitions:
 
-<img width="700" alt="Context injections view and item preview" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/fe6da5953ec64c760a29d4838a12bd5122c67dfc/doc/images/context-injections.gif">
-
+![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/fe6da5953ec64c760a29d4838a12bd5122c67dfc/doc/images/context-injections.gif)
 
 ## Install
 
