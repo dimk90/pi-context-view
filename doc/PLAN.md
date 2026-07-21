@@ -27,6 +27,12 @@
     growth and unchanged context.
   - Keep logging disabled by default, memory-only, and bounded to 200 entries
     and 1 MiB, with request indexing and eviction reporting.
+- [ ] 2. **Drop pi 0.80 compatibility.**
+  - Remove the legacy date+CWD footer form from `src/measure.ts`
+    base-prompt boundary detection; recognize only the 0.81
+    `Current working directory: <cwd>` footer.
+  - Remove the corresponding 0.80 footer fixtures and regression tests
+    from `test/measure.test.ts`.
 
 ## Open question
 

@@ -14,9 +14,8 @@ GIF=doc/images/context-injections.gif
 
 COLS=80
 ROWS=33
-PADDING=10
 
-FONT_SIZE=28
+FONT_SIZE=19
 FONT_FAMILY="Iosevka Term"
 
 source "$SCRIPT_DIR/vhs.sh"
@@ -60,4 +59,4 @@ key Escape
 sleep 3
 
 # Stop recording and render result
-render "$PADDING"
+render

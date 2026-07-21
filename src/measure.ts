@@ -3,11 +3,12 @@
  * and estimate token sizes. No pi API access — unit-testable.
  *
  * Splitting relies on structural markers that pi's buildSystemPrompt() emits
- * deterministically (verified against pi 0.80.6 dist/core/system-prompt.js):
+ * deterministically (verified against pi 0.81.1 dist/core/system-prompt.js):
  *
  * - context files: <project_instructions path="...">...</project_instructions>
  * - skills block: "The following skills provide..." through </available_skills>
- * - base prompt ends before the "Current date/Current working directory" footer
+ * - base prompt ends before the "Current working directory" footer (pi 0.81),
+ *   optionally preceded by a "Current date" line (pi 0.80)
  *   → anything after that footer was appended by before_agent_start handlers.
  */
 import {
@@ -286,16 +287,25 @@ interface Span {
 	end: number;
 }
 
-/** Locate pi's dynamic date/CWD footer so it can be excluded from Base Prompt and extension additions. */
+/**
+ * Locate pi's dynamic CWD footer so it can be excluded from Base Prompt and
+ * extension additions. Pi 0.81 emits only the "Current working directory"
+ * line; pi 0.80 preceded it with a "Current date" line, still recognized for
+ * compatibility. The CWD line must match the exact resolved cwd on a complete
+ * line (preceded by "\n", followed by "\n" or end of prompt) so ordinary
+ * prompt text mentioning the cwd is not mistaken for the footer.
+ */
 function findBasePromptFooter(systemPrompt: string, cwd: string): Span | undefined {
 	const promptCwd = cwd.replace(/\\/g, "/");
 	const cwdLine = `\nCurrent working directory: ${promptCwd}`;
 	let cwdStart = systemPrompt.lastIndexOf(cwdLine);
 	while (cwdStart !== -1) {
-		const dateStart = systemPrompt.lastIndexOf("\nCurrent date: ", cwdStart);
-		const dateLine = dateStart === -1 ? "" : systemPrompt.slice(dateStart, cwdStart);
-		if (/^\nCurrent date: \d{4}-\d{2}-\d{2}$/.test(dateLine)) {
-			return { start: dateStart, end: cwdStart + cwdLine.length };
+		const end = cwdStart + cwdLine.length;
+		if (end === systemPrompt.length || systemPrompt[end] === "\n") {
+			const dateStart = systemPrompt.lastIndexOf("\nCurrent date: ", cwdStart);
+			const dateLine = dateStart === -1 ? "" : systemPrompt.slice(dateStart, cwdStart);
+			const start = /^\nCurrent date: \d{4}-\d{2}-\d{2}$/.test(dateLine) ? dateStart : cwdStart;
+			return { start, end };
 		}
 		cwdStart = systemPrompt.lastIndexOf(cwdLine, cwdStart - 1);
 	}

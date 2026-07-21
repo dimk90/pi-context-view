@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+// Deep import bypasses the package barrel, which does not re-export buildSystemPrompt.
+import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import { analyzeSystemPrompt, type PromptOptionsSlice, type ToolSlice } from "../src/measure.ts";
 
 const CWD = "/tmp/context-project";
@@ -171,6 +173,58 @@ test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.equal(search?.text, "search: Search\n{}");
 	assert.equal(base?.text.trim(), "CUSTOM PROMPT");
+});
+
+test("analyzeSystemPrompt recognizes the pi 0.81 CWD-only footer", () => {
+	const extensionAddition = "\nEXTENSION INSTRUCTION";
+	const systemPrompt = [
+		"BASE PROMPT",
+		`Current working directory: ${CWD}`,
+	].join("\n") + extensionAddition;
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD });
+	const base = items.find((entry) => entry.id === "base-prompt");
+	assert.equal(base?.text, "BASE PROMPT");
+	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
+});
+
+test("analyzeSystemPrompt rejects CWD lines that are not the exact footer line", () => {
+	const systemPrompt = [
+		"BASE PROMPT",
+		// Prefix of a longer path: not followed by a line boundary.
+		`Current working directory: ${CWD}/subdir`,
+		// Different cwd entirely.
+		"Current working directory: /tmp/other-project",
+		"TRAILING BASE TEXT",
+	].join("\n");
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD });
+	assert.equal(items.length, 1);
+	assert.equal(items[0]?.id, "base-prompt");
+	assert.equal(items[0]?.text, systemPrompt);
+});
+
+test("analyzeSystemPrompt finds the footer in real buildSystemPrompt output", () => {
+	const append = "APPENDED INSTRUCTION";
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		appendSystemPrompt: append,
+		contextFiles: [{ path: "./AGENTS.md", content: "Project rules" }],
+	});
+	const extensionAddition = "\nEXTENSION INSTRUCTION";
+	const options: PromptOptionsSlice = {
+		cwd: CWD,
+		appendSystemPrompt: append,
+		contextFilePaths: ["./AGENTS.md"],
+	};
+
+	const items = analyzeSystemPrompt(systemPrompt + extensionAddition, options);
+	const base = items.find((entry) => entry.id === "base-prompt");
+	assert.ok(base !== undefined);
+	assert.doesNotMatch(base.text, /Current working directory/);
+	assert.equal(items.find((entry) => entry.id === "context-file:./AGENTS.md")?.text, "Project rules");
+	assert.equal(items.find((entry) => entry.id === "append-prompt")?.text, append);
+	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
 });
 
 test("analyzeSystemPrompt abbreviates home-directory context-file labels with ~", () => {

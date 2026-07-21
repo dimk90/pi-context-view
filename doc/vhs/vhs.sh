@@ -31,6 +31,8 @@ set -euo pipefail
 : "${FONT_FAMILY:=}"
 : "${FONT_SIZE:=28}"
 : "${LINE_HEIGHT:=1.2}"
+# Headless recording cannot inspect the host theme; pin rendering instead.
+: "${AGG_THEME:=kanagawa}"
 
 # Set PAD_COLOR to override automatic detection from the GIF's top-left pixel.
 # PAD_FALLBACK_COLOR is used when only ffmpeg is available.
@@ -174,8 +176,8 @@ record() {
     # Expands to nothing on the first call; must stay unquoted so an empty
     # value adds no argument.
     # shellcheck disable=SC2086
-    asciinema rec --overwrite ${RECORDED:+--append}      \
-                  --window-size "${COLS}x${ROWS}"        \
+    asciinema rec --headless --overwrite ${RECORDED:+--append} \
+                  --window-size "${COLS}x${ROWS}"              \
                   -c "tmux attach -t $SESSION" "$CAST" &
     REC_PID=$!
     RECORDED=1
@@ -236,6 +238,7 @@ render() {
     agg "${font_args[@]}"            \
         --font-size "$FONT_SIZE"     \
         --line-height "$LINE_HEIGHT" \
+        --theme "$AGG_THEME"         \
         "$CAST" "$GIF"
 
     if [[ -n $padding ]]; then
