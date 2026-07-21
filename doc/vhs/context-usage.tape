@@ -14,9 +14,8 @@ GIF=doc/images/context-usage.gif
 
 COLS=80
 ROWS=30
-PADDING=10
 
-FONT_SIZE=28
+FONT_SIZE=19
 FONT_FAMILY="Iosevka Term"
 
 source "$SCRIPT_DIR/vhs.sh"
@@ -68,4 +67,4 @@ key Escape
 sleep 4
 
 # Stop recording and render result
-render "$PADDING"
+render
