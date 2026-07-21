@@ -9,7 +9,7 @@
 
 ## v0.2.4
 
-- [ ] 1. **Fix base-prompt boundary detection for pi 0.81.**
+- [x] 1. **Fix base-prompt boundary detection for pi 0.81.**
   - Pi 0.81 removed the `Current date: YYYY-MM-DD` line from the system
     prompt; the native footer is now only
     `Current working directory: <cwd>`.
@@ -39,6 +39,9 @@
   - The "Auto-compat Buffer" category is not selectable item.
   - Add empty line after "Free Space" and "Auto-compat Buffer".
 - [ ] 2. **Change a dialog description color to dim**.
+- [ ] 3. Rescale images to suitable resolution for pi.dev.
+  - Use 700x resolutions for GIF.
+  - Record it outside of VSCode.
 
 
 ## v0.4.0
