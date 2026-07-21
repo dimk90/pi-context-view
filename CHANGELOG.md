@@ -1,5 +1,11 @@
 # Changelog
 
+## `[v0.2.4]` - 22.07.2026
+
+### Fixed
+* `[measure]` Fix base-prompt boundary detection for the Pi 0.81.
+
+
 ## `[v0.2.3]` - 20.07.2026
 
 ### Fixed
