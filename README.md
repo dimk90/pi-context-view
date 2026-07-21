@@ -38,14 +38,14 @@ definitions, and instructions injected by other extensions.
 See what fills your context.
 For example, check what remains after compaction:
 
-![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/4001d9d38c47959b9564a2f224d99fe66028a3e9/doc/images/context-usage.gif)
+![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/25354f89671cc42e4da0157cb8dfb45d0866da88/doc/images/context-usage.gif)
 
 
 ### `/context injections`
 
 Inspect hidden parts of the context, such as tool definitions:
 
-![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/fe6da5953ec64c760a29d4838a12bd5122c67dfc/doc/images/context-injections.gif)
+![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/25354f89671cc42e4da0157cb8dfb45d0866da88/doc/images/context-injections.gif)
 
 ## Install
 
