@@ -174,6 +174,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
 	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
 	assert.equal(plain[descriptionIndex]?.indexOf("Estimated context"), 2);
+	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;16;17;18m  Estimated context/);
 	assert.equal(plain[hintsIndex]?.indexOf("↑↓"), 2);
 	assert.match(plain[hintsIndex] ?? "", /↑↓ Navigate · Enter Preview · Esc Close/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mEsc/);

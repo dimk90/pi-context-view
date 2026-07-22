@@ -5,6 +5,7 @@
 ### Changed
 * `[package]` Exclude demo images and GIFs from the npm package.
 * `[usage]` Use full-size bullets for Tool Output breakdown rows.
+* `[ui]` Render dialog descriptions with dim styling.
 
 ## `[v0.2.4]` - 22.07.2026
 

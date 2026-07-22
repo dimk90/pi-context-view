@@ -407,7 +407,7 @@ export class InjectionsView {
 
 	/** Wrapped dialog description, including the degraded-capture indicator when needed. */
 	private descriptionLines(width: number): string[] {
-		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "muted", width);
+		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "dim", width);
 		if (this.input.degradedReason !== undefined) {
 			lines.push(...wrapDescriptionLines(
 				this.theme,

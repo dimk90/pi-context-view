@@ -175,7 +175,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(lines[descriptionIndex + 1], "");
 	assert.equal(stripSgr(lines[descriptionIndex] ?? "").indexOf("Injections into"), 2);
 	assert.equal(stripSgr(lines[hintsIndex] ?? "").indexOf("↑↓"), 2);
-	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m  Injections into/);
+	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;16;17;18m  Injections into/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18m↑↓/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Navigate/);
 	assert.doesNotMatch(stripSgr(lines[hintsIndex] ?? ""), /Switch Tabs|←→\/Tab/);

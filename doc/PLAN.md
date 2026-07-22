@@ -16,7 +16,7 @@
   - The "Auto-compat Buffer" icons (⛝) should be showed at the end of the usage map.
   - The "Auto-compat Buffer" category is not selectable item.
   - Add empty line after "Free Space" and "Auto-compat Buffer".
-- [ ] 2. **Change a dialog description color to dim**.
+- [x] 2. **Change a dialog description color to dim**.
 
 
 ## v0.4.0

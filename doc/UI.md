@@ -12,14 +12,15 @@ Follow pi's native selector style (`/settings`, `/model`):
 - one blank row after the dialog header;
 - accent title and responsive summary alignment as specified by each view;
 - fixed-column `→` cursor flush at column 0;
-- muted description wrapped onto indented continuation lines, never ellipsized,
+- dim description wrapped onto indented continuation lines, never ellipsized,
   between blank rows above the hints;
 - dim key plus muted description hints joined by ` · `;
 - dim `(current/total)` shown only when content overflows.
 
 Headers, subheaders, and the cursor start at column 0. Indent descriptions,
-scroll counters, hint rows, and preview bodies by two spaces. Use bright `text`
-for primary rows, `muted` for subordinate rows and values, and `dim` for deeper
+scroll counters, hint rows, and preview bodies by two spaces. Use `dim` for dialog
+descriptions and bright `text` for primary rows, `muted` for subordinate rows and
+values, and `dim` for deeper
 breakdowns. Selected labels and values use `accent` with no background.
 Subheaders are bold and use `mdHeading`.
 

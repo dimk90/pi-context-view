@@ -189,7 +189,7 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const prefix = [border, "", ...this.headerLines(width), "", ...this.degradedWarningLines(width)];
-		const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, "muted", width);
+		const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, "dim", width);
 		const availableDashboardRows = Math.max(
 			1,
 			terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT - descriptionLines.length,
