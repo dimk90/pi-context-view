@@ -9,6 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)](https://opensource.org/licenses/MIT)
 [![npm version](https://img.shields.io/npm/v/pi-context-view?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/pi-context-view)
 [![Pi Package](https://img.shields.io/badge/Pi-Package-6366F1?style=flat)](https://pi.dev/packages/pi-context-view)
+[![npm](https://img.shields.io/npm/dm/pi-context-view)](https://www.npmjs.com/package/pi-context-view)
 
 
 Pi extension that visualizes what fills the model's context and lets
