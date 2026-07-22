@@ -1,5 +1,10 @@
 # Changelog
 
+## `[v0.3.0]` - Unreleased
+
+### Changed
+* `[package]` Exclude demo images and GIFs from the npm package.
+
 ## `[v0.2.4]` - 22.07.2026
 
 ### Fixed

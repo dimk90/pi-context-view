@@ -27,7 +27,6 @@
 	},
 	"files": [
 		"src",
-		"doc/images",
 		"README.md"
 	],
 	"scripts": {
