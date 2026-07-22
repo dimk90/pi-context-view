@@ -94,11 +94,12 @@ and percentage values align in separate columns. Categories include:
 - Tool Output and Extensions;
 - Compacted Data and Free Space.
 
-Keep aggregate breakdowns collapsed except Tool Output, whose per-tool results
-and bash executions appear directly and scroll independently. Map allocation
-always uses top-level totals. Free Space has nothing to preview: it trails the
-legend and scrolls with it but is skipped by cursor navigation and excluded
-from the selectable-row counter.
+Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
+the smaller middle dot `·`. Keep aggregate breakdowns collapsed except
+Tool Output, whose per-tool results and bash executions appear directly and
+scroll independently. Map allocation always uses top-level totals. Free Space
+has nothing to preview: it trails the legend and scrolls with it but is skipped
+by cursor navigation and excluded from the selectable-row counter.
 
 At widths of 72 columns and above, map cells have spacing. From 52–71 columns,
 remove inter-cell spacing. Below 52 columns, hide the map and its fill key while

@@ -257,7 +257,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	};
 	const view = new UsageView(createTheme(), { usage: nestedUsage }, () => {}, () => 24);
 	const initial = view.render(80).map(stripSgr);
-	assert.ok(initial.some((line) => /· tool_1 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(initial.some((line) => /• tool_1 \.{2,}\s+100\s+0%/.test(line)));
 	assert.ok(!initial.some((line) => line.includes("tool_15")));
 	assert.ok(!initial.some((line) => line.includes("read should stay collapsed")));
 	assert.ok(!initial.some((line) => line.includes("Tool Results:")));
@@ -265,7 +265,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 
 	view.handleInput("\u001b[4~"); // End
 	const ending = view.render(80).map(stripSgr);
-	assert.ok(ending.some((line) => /→\s+· tool_15 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(ending.some((line) => /→\s+• tool_15 \.{2,}\s+100\s+0%/.test(line)));
 	assert.ok(ending.some((line) => /⛶ Free Space \.{2,}\s+998\.4k\s+100%/.test(line)));
 	assert.ok(!ending.some((line) => /→\s+⛶ Free Space/.test(line)), "Free Space is never selected");
 });
@@ -286,15 +286,15 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 
 	view.render(80);
 	for (let step = 0; step < 9; step++) view.handleInput("\u001b[B");
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+• tool_9(?:\s|\.)/.test(stripSgr(line))));
 
 	rows = 16;
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+• tool_9(?:\s|\.)/.test(stripSgr(line))));
 	rows = 24;
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+• tool_9(?:\s|\.)/.test(stripSgr(line))));
 	for (const width of [40, 60, 120]) {
 		assert.ok(
-			view.render(width).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))),
+			view.render(width).some((line) => /→\s+• tool_9(?:\s|\.)/.test(stripSgr(line))),
 			`width ${width}`,
 		);
 	}
@@ -401,7 +401,7 @@ test("UsageView previews empty categories, free space, and long content safely",
 	// Free Space is not selectable: End stops on the last category and Down does not move past it.
 	view.handleInput("\u001b[4~"); // End → last Tool Output child
 	const endSelected = view.render(80).join("\n");
-	assert.match(stripSgr(endSelected), /→\s+· tool_30 \.{2,}/);
+	assert.match(stripSgr(endSelected), /→\s+• tool_30 \.{2,}/);
 	assert.match(stripSgr(endSelected), /⛶ Free Space \.{2,}/);
 	assert.doesNotMatch(stripSgr(endSelected), /→\s+⛶ Free Space/);
 	view.handleInput("\u001b[B");

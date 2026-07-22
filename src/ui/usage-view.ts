@@ -45,6 +45,7 @@ const FULL_CELL = "■";
 const PARTIAL_CELL = "◧";
 const COMPACTED_CELL = "▦";
 const FREE_CELL = "⛶";
+const BREAKDOWN_MARKER = "•";
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -603,7 +604,7 @@ function formatEntryTimestamp(timestamp: number): string {
 
 /** Marker distinguishing top-level occupancy, compacted data, and nested breakdowns. */
 function categoryMarker(categoryId: string, depth: number): string {
-	if (depth > 0) return "·";
+	if (depth > 0) return BREAKDOWN_MARKER;
 	return categoryId === "compacted-data" ? COMPACTED_CELL : FULL_CELL;
 }
 
