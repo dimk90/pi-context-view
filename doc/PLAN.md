@@ -18,23 +18,31 @@
   - Add empty line after "Free Space" and "Auto-compat Buffer".
 - [x] 2. **Change a dialog description color to dim**.
 
-
 ## v0.4.0
 
-- [ ] 1. **Add bounded opt-in Runtime mutation logging.**
+- [ ] **Different Icon Styles for the usage map**.
+  - Default icon style is "Square" = "⛝⛶◧■▩".
+  - Add hotkey to cycle icons styles in context usage view.
+    - The hotkey should be aligned to the right.
+  - All icon styles should be listed in config file for extension.
+  - Current icon style should be in the config.
+  - The icon style hotkey should change style in persistent way (save in the config).
+  - Other styles:
+    - "Claude"="⛝⛶⛀⛁⛃";
+    - "Nerd"="󰅗󰆼";
+    - "Circle"="⮾·◕●♼";
+
+
+## v0.5.0
+
+- [ ] **Add bounded opt-in Runtime mutation logging.**
   - Enable the Runtime view and restore `/context runtime on|off`.
   - Record only hidden provider-bound mutations; exclude normal transcript
     growth and unchanged context.
   - Keep logging disabled by default, memory-only, and bounded to 200 entries
     and 1 MiB, with request indexing and eviction reporting.
-- [ ] 2. **Drop pi 0.80 compatibility.**
-  - Remove the legacy date+CWD footer form from `src/measure.ts`
-    base-prompt boundary detection; recognize only the 0.81
-    `Current working directory: <cwd>` footer.
-  - Remove the corresponding 0.80 footer fixtures and regression tests
-    from `test/measure.test.ts`.
 
 ## Open question
 
-- For v0.4.0 context-only message mutations, should the Runtime view explain
+- For v0.5.0 context-only message mutations, should the Runtime view explain
   chain-position visibility limits inline or leave that detail to documentation?
