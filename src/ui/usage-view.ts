@@ -44,6 +44,7 @@ const SPACED_MAP_COLUMN_GAP = 3;
 const FULL_CELL = "■";
 const PARTIAL_CELL = "◧";
 const COMPACTED_CELL = "▦";
+const BUFFER_CELL = "⛝";
 const FREE_CELL = "⛶";
 const BREAKDOWN_MARKER = "•";
 
@@ -60,12 +61,17 @@ interface CategoryLegendRow {
 	readonly rootId: string;
 }
 
+interface BufferLegendRow {
+	readonly type: "buffer";
+	readonly tokens: number;
+}
+
 interface FreeLegendRow {
 	readonly type: "free";
 	readonly tokens: number;
 }
 
-type LegendRow = CategoryLegendRow | FreeLegendRow;
+type LegendRow = CategoryLegendRow | BufferLegendRow | FreeLegendRow;
 
 interface LegendColumns {
 	readonly value: number;
@@ -123,7 +129,7 @@ export class UsageView {
 		this.getTerminalRows = getTerminalRows;
 		this.usage = input.usage;
 		this.legendRows = this.buildLegendRows();
-		// Free Space has no preview: it trails the list and scrolls, but is never selectable.
+		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable.
 		const selectableCount = this.legendRows.filter((row) => row.type === "category").length;
 		this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
 	}
@@ -276,7 +282,7 @@ export class UsageView {
 			? theme.fg("dim", `(${this.navigator.selectedOrdinal + 1}/${this.navigator.selectableCount})`)
 			: "";
 		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
-		const columns = this.legendColumns(this.legendRows, rowWidth);
+		const columns = this.legendColumns(rowWidth);
 		const visibleRows: string[] = [];
 		const start = this.navigator.offset;
 		for (let index = start; index < start + this.navigator.windowSize; index++) {
@@ -320,23 +326,37 @@ export class UsageView {
 		return this.theme.fg("text", `${formatTokens(reported.tokens)}/${contextWindow}${percent}`);
 	}
 
-	/** All legend rows: top-level categories, Tool Output children, trailing free space. */
+	/**
+	 * All legend rows: top-level categories, Tool Output children, then the
+	 * non-selectable auto-compact buffer and free space.
+	 */
 	private buildLegendRows(): LegendRow[] {
 		const rows: LegendRow[] = buildCategoryLegendRows(this.usage.categories);
+		const bufferTokens = this.bufferTokens();
+		if (bufferTokens > 0) rows.push({ type: "buffer", tokens: bufferTokens });
 		const freeTokens = this.freeSpaceTokens();
 		if (freeTokens !== undefined) rows.push({ type: "free", tokens: freeTokens });
 		return rows;
 	}
 
-	/** Estimated remaining space, or undefined without a usable context window. */
+	/** Tokens auto-compaction keeps unoccupied; zero when disabled or without a context window. */
+	private bufferTokens(): number {
+		const contextWindow = this.usage.reported?.contextWindow;
+		const reserve = this.usage.autoCompactReserveTokens;
+		if (contextWindow === undefined || contextWindow <= 0 || reserve === undefined) return 0;
+		return Math.min(reserve, Math.max(0, contextWindow - this.usage.estimatedTokens));
+	}
+
+	/** Estimated remaining space before the buffer, or undefined without a usable context window. */
 	private freeSpaceTokens(): number | undefined {
 		const contextWindow = this.usage.reported?.contextWindow;
 		if (contextWindow === undefined || contextWindow <= 0) return undefined;
-		return Math.max(0, contextWindow - this.usage.estimatedTokens);
+		return Math.max(0, contextWindow - this.usage.estimatedTokens - this.bufferTokens());
 	}
 
 	/** Earliest shared token column plus the width needed to align percentages. */
-	private legendColumns(rows: readonly LegendRow[], width: number): LegendColumns {
+	private legendColumns(width: number): LegendColumns {
+		const rows = this.legendRows;
 		const labelWidth = Math.max(1, ...rows.map((row) => this.plainLegendLabel(row).length));
 		const tokenWidth = Math.max(1, ...rows.map((row) => formatTokens(legendTokens(row)).length));
 		const percentWidth = Math.max(0, ...rows.map((row) => this.plainLegendPercent(legendTokens(row)).length));
@@ -374,6 +394,7 @@ export class UsageView {
 
 	/** Unstyled hierarchy label used to choose the shared value column. */
 	private plainLegendLabel(row: LegendRow): string {
+		if (row.type === "buffer") return `${BUFFER_CELL} Auto-Compact Buffer`;
 		if (row.type === "free") return `${FREE_CELL} Free Space`;
 		const indent = "  ".repeat(row.depth);
 		return `${indent}${categoryMarker(row.category.id, row.depth)} ${normalizeInlineText(row.category.label)}`;
@@ -381,6 +402,9 @@ export class UsageView {
 
 	/** Themed hierarchy label; the marker keeps its map color even when selected. */
 	private styledLegendLabel(row: LegendRow, selected: boolean): string {
+		if (row.type === "buffer") {
+			return `${this.theme.fg("dim", BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
+		}
 		if (row.type === "free") {
 			return `${this.theme.fg("dim", FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
 		}
@@ -398,8 +422,9 @@ export class UsageView {
 		return formatPercent(tokens / contextWindow);
 	}
 
-	/** Colored occupied/partial/free glyph for one map cell. */
+	/** Colored occupied/partial/buffer/free glyph for one map cell. */
 	private mapCell(cell: UsageMapCell): string {
+		if (cell.fill === "buffer") return this.theme.fg("dim", BUFFER_CELL);
 		if (cell.fill === "free") return this.theme.fg("dim", FREE_CELL);
 		const glyph = cell.categoryId === "compacted-data"
 			? COMPACTED_CELL
@@ -608,7 +633,7 @@ function categoryMarker(categoryId: string, depth: number): string {
 	return categoryId === "compacted-data" ? COMPACTED_CELL : FULL_CELL;
 }
 
-/** Token estimate carried by either category or free-space legend rows. */
+/** Token estimate carried by category, buffer, or free-space legend rows. */
 function legendTokens(row: LegendRow): number {
 	return row.type === "category" ? row.category.tokens : row.tokens;
 }

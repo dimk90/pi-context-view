@@ -54,11 +54,19 @@ after explicit Enter selection.
 
 The overview contains a proportional 14×14 map and an interactive category
 legend. Cells use themed `■` for full occupancy, `◧` for partial occupancy, `▦`
-for compacted data, and dim `⛶` for free space. Allocate occupied cells from
-estimated category totals against the context window; display pi-reported usage
-separately because the values may differ. A dedicated `Map: ■ Full · ◧ Part`
-key appears beside the map, followed by one empty detail row before `Category:`.
-Compacted and free glyphs need no key because their category rows identify them.
+for compacted data, dim `⛝` for the auto-compact buffer, and dim `⛶` for free
+space. Allocate occupied cells from estimated category totals against the
+context window; display pi-reported usage separately because the values may
+differ. A dedicated `Map: ■ Full · ◧ Part` key appears beside the map, followed
+by one empty detail row before `Category:`. Compacted, buffer, and free glyphs
+need no key because their category rows identify them.
+
+When auto-compaction is enabled, the tail of the map shows the settings
+`reserveTokens` reserve as `⛝` cells after the free cells: tokens that content
+will never occupy because compaction triggers first. The buffer shrinks once
+estimated content grows into the reserve and disappears when auto-compaction is
+disabled or settings are unreadable. Read the reserve from pi's merged
+global/project settings at view-open time, honoring project trust.
 
 At map widths, render the header as:
 
@@ -98,9 +106,12 @@ and percentage values align in separate columns. Categories include:
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
 the smaller middle dot `·`. Keep aggregate breakdowns collapsed except
 Tool Output, whose per-tool results and bash executions appear directly and
-scroll independently. Map allocation always uses top-level totals. Free Space
-has nothing to preview: it trails the legend and scrolls with it but is skipped
-by cursor navigation and excluded from the selectable-row counter.
+scroll independently. Map allocation always uses top-level totals. The trailing `⛝ Auto-Compact
+Buffer` (when enabled) and `⛶ Free Space` rows directly follow the last
+category. Free Space excludes the buffer so all rows still sum to the context
+window. Neither row has anything to preview: they trail the legend and scroll
+with it but are skipped by cursor navigation and excluded from the
+selectable-row counter.
 
 At widths of 72 columns and above, map cells have spacing. From 52–71 columns,
 remove inter-cell spacing. Below 52 columns, hide the map and its fill key while

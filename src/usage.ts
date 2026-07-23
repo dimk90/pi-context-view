@@ -21,6 +21,8 @@ export interface UsageInputs {
 	reported?: ReportedContextUsage;
 	modelLabel?: string;
 	computedAt?: Date;
+	/** Auto-compaction reserve (settings `reserveTokens`); omit when auto-compaction is disabled. */
+	autoCompactReserveTokens?: number;
 }
 
 /**
@@ -40,6 +42,7 @@ export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
 		reported: inputs.reported,
 		categories,
 		estimatedTokens: categories.reduce((sum, category) => sum + category.tokens, 0),
+		autoCompactReserveTokens: inputs.autoCompactReserveTokens,
 	};
 }
 

@@ -9,13 +9,13 @@
 
 ## v0.3.0
 
-- [ ] 1. **Icon and category for auto-compat buffer**.
-  - Add "Auto-compat Buffer" category shows tokens which will be never occupied
+- [x] 1. **Icon and category for Auto-Compact buffer**.
+  - Add "Auto-Compact Buffer" category shows tokens which will be never occupied
     because compaction will be triggered before it.
-  - The "Auto-compat Buffer" category should be showed before "Free Space" category.
-  - The "Auto-compat Buffer" icons (⛝) should be showed at the end of the usage map.
-  - The "Auto-compat Buffer" category is not selectable item.
-  - Add empty line after "Free Space" and "Auto-compat Buffer".
+  - The "Auto-Compact Buffer" category should be showed before "Free Space" category.
+  - The "Auto-Compact Buffer" icons (⛝) should be showed at the end of the usage map.
+  - The "Auto-Compact Buffer" category is not selectable item.
+  - Hide the buffer entirely when auto-compaction is disabled in settings.
 - [x] 2. **Change a dialog description color to dim**.
 
 ## v0.4.0

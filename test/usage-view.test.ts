@@ -191,6 +191,48 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
+test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space", () => {
+	const bufferUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
+	const view = new UsageView(createTheme(), { usage: bufferUsage }, () => {}, () => 34);
+	const lines = view.render(80);
+	const plain = lines.map(stripSgr);
+
+	const bufferIndex = plain.findIndex((line) => line.includes("⛝ Auto-Compact Buffer"));
+	const freeIndex = plain.findIndex((line) => line.includes("⛶ Free Space"));
+	const compactedIndex = plain.findIndex((line) => line.includes("Compacted Data"));
+	assert.ok(bufferIndex > compactedIndex && freeIndex === bufferIndex + 1, "buffer row precedes free space");
+	assert.match(plain[bufferIndex] ?? "", /⛝ Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/);
+	// The reserve is carved out of Free Space: 1m − 43.8k − 16.4k.
+	assert.match(plain[freeIndex] ?? "", /⛶ Free Space \.{2,}\s+939\.8k\s+94%/);
+	// The buffer row directly follows the last category without a blank separator.
+	assert.match(plain[bufferIndex - 1] ?? "", /Compacted Data/);
+
+	// The map's tail cells use the buffer glyph after the free cells.
+	const mapRows = plain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
+	const mapCells = mapRows.flatMap((line) => line.slice(2, 2 + 14 * 2 - 1).split(" "));
+	assert.equal(mapCells.length, 196);
+	const lastBuffer = mapCells.lastIndexOf("⛝");
+	assert.ok(lastBuffer === 195, "buffer cells sit at the very end of the map");
+	const firstBuffer = mapCells.indexOf("⛝");
+	assert.ok(mapCells.slice(firstBuffer).every((cell) => cell === "⛝"), "buffer cells are contiguous");
+	assert.equal(mapCells[firstBuffer - 1], "⛶", "free cells precede the buffer");
+
+	// End stops on the last category; the buffer and free rows are never selected.
+	view.handleInput("\u001b[4~");
+	const ending = view.render(80).map(stripSgr);
+	assert.ok(ending.some((line) => /→ ▦ Compacted Data/.test(line)));
+	assert.ok(!ending.some((line) => /→ [⛝⛶]/.test(line)));
+});
+
+test("UsageView hides the Auto-Compact Buffer when no reserve is provided", () => {
+	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 34);
+	const plain = view.render(80).map(stripSgr);
+
+	assert.ok(!plain.some((line) => line.includes("Auto-Compact Buffer")));
+	assert.ok(!plain.some((line) => line.includes("⛝")));
+	assert.ok(plain.some((line) => /⛶ Free Space \.{2,}\s+956\.2k\s+96%/.test(line)));
+});
+
 test("UsageView wraps narrow descriptions instead of truncating them", () => {
 	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	const lines = view.render(40).map(stripSgr);

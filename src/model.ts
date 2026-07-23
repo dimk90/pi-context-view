@@ -108,6 +108,8 @@ export interface ContextUsageSnapshot {
 	readonly categories: readonly UsageCategory[];
 	/** Sum of the top-level category estimates. */
 	readonly estimatedTokens: number;
+	/** Auto-compaction reserve (settings `reserveTokens`); absent when auto-compaction is disabled. */
+	readonly autoCompactReserveTokens?: number;
 }
 
 /**
