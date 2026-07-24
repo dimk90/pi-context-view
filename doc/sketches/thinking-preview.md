@@ -7,8 +7,10 @@ step is implemented.
 Entry headers carry both numbers: the visible-text estimate first, then the
 invisible (encoded) reasoning estimate. `≈` marks a provider-reported
 (`usage.reasoning`) derivation; `≤` marks a chars/4 upper bound over the
-encrypted blob when the provider reports no reasoning breakdown. Entries
-without a `thinkingSignature` render the header unchanged.
+encrypted blobs (`thinkingSignature` on thinking blocks plus
+`thoughtSignature` on tool-call blocks) when the provider reports no
+reasoning breakdown. Entries without either signature render the header
+unchanged.
 
 One dim dialog description explains the encoded part once, placed after the
 scrollable entry area and before the hotkeys row. No per-entry marker rows.
