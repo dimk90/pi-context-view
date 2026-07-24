@@ -11,10 +11,9 @@
 [![Pi Package](https://img.shields.io/badge/Pi-Package-6366F1?style=flat)](https://pi.dev/packages/pi-context-view)
 [![npm](https://img.shields.io/npm/dm/pi-context-view)](https://www.npmjs.com/package/pi-context-view)
 
-
-Pi extension that visualizes what fills the model's context and lets
-you inspect the parts you normally can't see: the base prompt, tool
-definitions, and instructions injected by other extensions.
+Pi extension to visualizes context usage and lets you inspect the parts you
+normally can't see: the base prompt, tool definitions, and instructions
+injected by other extensions.
 
 ## Features
 
