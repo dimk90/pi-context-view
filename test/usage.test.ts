@@ -321,6 +321,108 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	assert.ok(promptEntries.every((entry) => entry.timestamp === undefined));
 });
 
+test("computeUsage uses provider reasoning per message and keeps signature estimates out of raw previews", () => {
+	const base = assistantMessage();
+	assert.equal(base.role, "assistant");
+	const messages: ContextEvent["messages"] = [
+		{
+			...base,
+			timestamp: 10,
+			content: [
+				{ type: "thinking", thinking: "abcde", thinkingSignature: "signature-one" },
+				{ type: "thinking", thinking: "fghij", thinkingSignature: "signature-two" },
+				{
+					type: "toolCall",
+					id: "call",
+					name: "read",
+					arguments: { path: "x" },
+					thoughtSignature: "tool-signature",
+				},
+			],
+			usage: { ...base.usage, reasoning: 11 },
+		},
+		{
+			...base,
+			timestamp: 20,
+			content: [
+				{ type: "thinking", thinking: "12345678", thinkingSignature: "123456789" },
+				{
+					type: "toolCall",
+					id: "fallback-call",
+					name: "bash",
+					arguments: { command: "ls" },
+					thoughtSignature: "1234567",
+				},
+			],
+		},
+		{
+			...base,
+			timestamp: 30,
+			content: [{ type: "thinking", thinking: "1234567890123456", thinkingSignature: "blob" }],
+			usage: { ...base.usage, reasoning: 2 },
+		},
+		{
+			...base,
+			timestamp: 40,
+			content: [{ type: "thinking", thinking: "abcd" }],
+			usage: { ...base.usage, reasoning: 6 },
+		},
+	];
+
+	const usage = computeUsage({ snapshot: snapshot(), messages });
+	const thinking = category(usage.categories, "agent-thinking-messages");
+	const entries = thinking.entries ?? [];
+
+	// Per-message totals are max(visible chars/4, reported reasoning): 11 + 2 + 4 + 6.
+	assert.equal(thinking.tokens, 23);
+	assert.equal(thinking.tokens, entries.reduce((sum, entry) => sum + entry.tokens, 0));
+	assert.deepEqual(entries.map((entry) => entry.tokens), [10, 1, 2, 4, 6]);
+	assert.deepEqual(entries.map((entry) => entry.visibleTokens), [2, undefined, 2, undefined, 1]);
+	assert.deepEqual(entries.map((entry) => entry.invisibleReasoning), [
+		{ tokens: 8, basis: "provider-reported", encoded: true },
+		undefined,
+		{ tokens: 4, basis: "signature-upper-bound", encoded: true },
+		undefined,
+		{ tokens: 5, basis: "provider-reported", encoded: false },
+	]);
+	assert.deepEqual(entries.slice(0, 2).map((entry) => [...entry.breadcrumb]), [
+		["assistant", "thinking 1/2"],
+		["assistant", "thinking 2/2"],
+	]);
+	assert.deepEqual(
+		entries.map((entry) => entry.text),
+		["abcde", "fghij", "12345678", "1234567890123456", "abcd"],
+	);
+	assert.ok(!entries.some((entry) => entry.text.includes("signature")));
+});
+
+test("computeUsage represents encoded-only reasoning without retaining its signature", () => {
+	const base = assistantMessage();
+	assert.equal(base.role, "assistant");
+	const messages: ContextEvent["messages"] = [{
+		...base,
+		content: [{
+			type: "toolCall",
+			id: "call",
+			name: "read",
+			arguments: { path: "x" },
+			thoughtSignature: "opaque-reasoning-payload",
+		}],
+		usage: { ...base.usage, reasoning: 7 },
+	}];
+
+	const usage = computeUsage({ snapshot: snapshot(), messages });
+	const entries = category(usage.categories, "agent-thinking-messages").entries ?? [];
+	assert.deepEqual(entries, [{
+		timestamp: 2,
+		breadcrumb: ["assistant"],
+		tokens: 7,
+		visibleTokens: 0,
+		invisibleReasoning: { tokens: 7, basis: "provider-reported", encoded: true },
+		text: "",
+	}]);
+});
+
 test("collectPreviewEntries flattens aggregates chronologically", () => {
 	const messages: ContextEvent["messages"] = [
 		{

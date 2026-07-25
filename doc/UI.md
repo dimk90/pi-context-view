@@ -133,6 +133,19 @@ category order. Assistant messages split into constituent text, thinking, and
 tool-call entries; tool calls include the tool name. Add a `text i/n` cell only
 for multi-block text or thinking content.
 
+For Agent Thinking Messages, estimate each assistant message as the greater of
+the visible-thinking chars/4 estimate and provider-reported `usage.reasoning`
+when available. If the message carries an opaque `thinkingSignature` or
+`thoughtSignature`, append `+ Encoded ≈N (≈T)` to one entry header for a
+positive provider-reported invisible share, or `+ Encoded ≤N (≤T)` for a
+signature-chars/4 upper bound when no reasoning breakdown is available; `T` is
+the visible-plus-invisible message total. Without a captured signature, show a
+positive provider-reported invisible share as `+ Reasoning ≈N (≈T)`; omit
+zero-size shares. Keep one wrapped dim explanation after the scrollable entries
+and before the hints; it opens with the schematic header pattern
+`[DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total)`, then defines
+`≈`, `≤`, and `Encoded`. Never render, preview, or log raw signature bytes.
+
 Indent content by two spaces and separate entries with one blank row. In User
 Messages only, replace complete attached `<skill name="…">…</skill>` expansions
 with pi-colored `[skill] name` badges; leave malformed wrappers visible. This is

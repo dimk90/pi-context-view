@@ -17,11 +17,11 @@
   - The "Auto-Compact Buffer" category is not selectable item.
   - Hide the buffer entirely when auto-compaction is disabled in settings.
 - [x] 2. **Change a dialog description color to dim**.
-- [ ] 3. **Better token estimation for Agent Thinking Messages**.
+- [x] 3. **Better token estimation for Agent Thinking Messages**.
   - Some providers (e.g. `gpt-5.6-sol`) return only a short visible thinking
     summary while the full reasoning travels as an opaque encrypted blob in the
-    untyped `thinkingSignature` field on thinking blocks — or, for
-    Gemini-style providers, in the typed `ToolCall.thoughtSignature` field on
+    optional `thinkingSignature` field on thinking blocks — or, for
+    Gemini-style providers, in the `ToolCall.thoughtSignature` field on
     tool-call blocks. The chars/4 heuristic sees only the summary and badly
     undercounts; chars/4 over the blob overcounts (~3×). The provider-reported
     `usage.reasoning` (typed, subset of `output`) is the accurate measurement
@@ -54,10 +54,14 @@
     - visible thinking content renders exactly as before (same wrapping and
       20-line cap);
     - entry headers of messages carrying a `thinkingSignature` or
-      `thoughtSignature` append an `· encoded ≈N` (or `≤N` for the chars/4
-      upper bound) cell next to the visible token count;
+      `thoughtSignature` append a `+ Encoded ≈N (≈T)` (or `≤N (≤T)` for the
+      chars/4 upper bound) cell next to the visible token count, where `T` is
+      the visible-plus-invisible message total;
+    - when provider-reported reasoning exceeds the visible estimate without a
+      captured signature, append `+ Reasoning ≈N (≈T)` so the extra counted
+      tokens remain explicit; omit zero-size invisible shares;
     - one dim dialog description — after the scrollable entry area, before
-      the hotkeys row — explains the encoded part and the estimation method;
+      the hotkeys row — explains the invisible part and the estimation method;
       no per-entry repetition. Raw signature bytes are never rendered,
       previewed, or logged.
   - UI sketch: [doc/sketches/thinking-preview.md](doc/sketches/thinking-preview.md).

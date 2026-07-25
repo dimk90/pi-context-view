@@ -7,6 +7,7 @@ import { type ContextEvent, type ContextUsage, estimateTokens } from "@earendil-
 
 import type {
 	ContextUsageSnapshot,
+	InvisibleReasoningEstimate,
 	InitialSnapshot,
 	InjectionItem,
 	ReportedContextUsage,
@@ -162,11 +163,8 @@ function classifyMessages(
 				break;
 			case "assistant": {
 				const texts = message.content.flatMap((block) => (block.type === "text" ? [block.text] : []));
-				const thinkings = message.content.flatMap((block) =>
-					block.type === "thinking" ? [block.thinking] : []
-				);
 				agentText.push(...blockEntries(message.timestamp, "text", texts));
-				agentThinking.push(...blockEntries(message.timestamp, "thinking", thinkings));
+				agentThinking.push(...thinkingEntries(message));
 				for (const block of message.content) {
 					if (block.type !== "toolCall") continue;
 					const args = JSON.stringify(block.arguments);
@@ -257,6 +255,114 @@ function leafFromItem(item: InjectionItem): UsageCategory {
 		tokens: item.tokens,
 		entries: [{ breadcrumb: [item.label], tokens: item.tokens, text: item.text }],
 	};
+}
+
+/** Assistant-message shape narrowed out of the context event union. */
+type AssistantContextMessage = Extract<ContextEvent["messages"][number], { role: "assistant" }>;
+
+/**
+ * Build thinking previews while accounting once per assistant message. Provider-reported
+ * reasoning replaces a smaller visible-text estimate; signature-only estimates stay upper-bound metadata.
+ */
+function thinkingEntries(message: AssistantContextMessage): UsagePreviewEntry[] {
+	const texts = message.content.flatMap((block) => (block.type === "thinking" ? [block.thinking] : []));
+	const visibleTokens = textTokens(texts.reduce((sum, text) => sum + text.length, 0));
+	const reportedTokens = reportedReasoningTokens(message);
+	const countedTokens = Math.max(visibleTokens, reportedTokens ?? 0);
+	const signatureChars = message.content.reduce((sum, block) => {
+		if (block.type === "thinking") return sum + stringLength(block.thinkingSignature);
+		if (block.type === "toolCall") return sum + stringLength(block.thoughtSignature);
+		return sum;
+	}, 0);
+	const invisibleReasoning = createInvisibleReasoningEstimate(signatureChars, visibleTokens, reportedTokens);
+
+	if (texts.length === 0) {
+		if (countedTokens === 0 && invisibleReasoning === undefined) return [];
+		return [{
+			timestamp: message.timestamp,
+			breadcrumb: ["assistant"],
+			tokens: countedTokens,
+			...(invisibleReasoning === undefined ? {} : { visibleTokens: 0, invisibleReasoning }),
+			text: "",
+		}];
+	}
+
+	const allocations = allocateTextTokens(texts);
+	const entries = texts.map((text, index): UsagePreviewEntry => ({
+		timestamp: message.timestamp,
+		breadcrumb: texts.length > 1
+			? ["assistant", `thinking ${index + 1}/${texts.length}`]
+			: ["assistant"],
+		tokens: allocations[index] ?? 0,
+		text,
+	}));
+	const first = entries[0];
+	if (first !== undefined) {
+		const countedInvisibleTokens = countedTokens - visibleTokens;
+		entries[0] = {
+			...first,
+			tokens: first.tokens + countedInvisibleTokens,
+			...(invisibleReasoning === undefined
+				? {}
+				: { visibleTokens: first.tokens, invisibleReasoning }),
+		};
+	}
+	return entries;
+}
+
+/** Describe a positive invisible share or signature-only upper bound without retaining its source bytes. */
+function createInvisibleReasoningEstimate(
+	signatureChars: number,
+	visibleTokens: number,
+	reportedTokens: number | undefined,
+): InvisibleReasoningEstimate | undefined {
+	if (reportedTokens !== undefined) {
+		const tokens = Math.max(0, reportedTokens - visibleTokens);
+		if (tokens === 0) return undefined;
+		return {
+			tokens,
+			basis: "provider-reported",
+			encoded: signatureChars > 0,
+		};
+	}
+	if (signatureChars === 0) return undefined;
+	return {
+		tokens: textTokens(signatureChars),
+		basis: "signature-upper-bound",
+		encoded: true,
+	};
+}
+
+/** Accept only a finite, non-negative provider reasoning count from possibly old session data. */
+function reportedReasoningTokens(message: AssistantContextMessage): number | undefined {
+	const usage: unknown = message.usage;
+	if (typeof usage !== "object" || usage === null) return undefined;
+	const reasoning = (usage as { reasoning?: unknown }).reasoning;
+	return typeof reasoning === "number" && Number.isFinite(reasoning) && reasoning >= 0
+		? reasoning
+		: undefined;
+}
+
+/** Pool chars/4 rounding across all blocks while retaining one preview entry per block. */
+function allocateTextTokens(texts: readonly string[]): number[] {
+	const allocations = texts.map((text) => Math.floor(text.length / 4));
+	const target = textTokens(texts.reduce((sum, text) => sum + text.length, 0));
+	let remainder = target - allocations.reduce((sum, tokens) => sum + tokens, 0);
+	const rankedIndexes = texts
+		.map((text, index) => ({ index, remainder: text.length % 4 }))
+		.filter((candidate) => candidate.remainder > 0)
+		.sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+	for (const candidate of rankedIndexes) {
+		if (remainder === 0) break;
+		allocations[candidate.index] = (allocations[candidate.index] ?? 0) + 1;
+		remainder--;
+	}
+	return allocations;
+}
+
+/** String length from an optional or untyped signature field without exposing its contents. */
+function stringLength(value: unknown): number {
+	return typeof value === "string" ? value.length : 0;
 }
 
 /** Per-block entries; the block-index cell appears only for multi-block messages. */

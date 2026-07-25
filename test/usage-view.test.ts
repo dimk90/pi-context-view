@@ -393,6 +393,82 @@ test("UsageView opens a category content preview and returns to the same row", (
 	assert.equal(closed, true);
 });
 
+test("UsageView explains invisible reasoning once and keeps its estimates distinct", () => {
+	const thinkingUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-24T12:00:00Z"),
+		reported: { tokens: 1_352, contextWindow: 10_000, percent: 13.52 },
+		categories: [{
+			id: "agent-thinking-messages",
+			label: "Agent Thinking Messages",
+			tokens: 1_352,
+			entries: [
+				{
+					timestamp: Date.UTC(2026, 6, 24, 17, 15, 2),
+					breadcrumb: ["assistant"],
+					tokens: 1_141,
+					visibleTokens: 594,
+					invisibleReasoning: { tokens: 547, basis: "provider-reported", encoded: true },
+					text: "Visible reasoning summary.",
+				},
+				{
+					timestamp: Date.UTC(2026, 6, 24, 17, 16, 48),
+					breadcrumb: ["assistant"],
+					tokens: 131,
+					visibleTokens: 131,
+					invisibleReasoning: { tokens: 1_126, basis: "signature-upper-bound", encoded: true },
+					text: "Another visible summary.",
+				},
+				{
+					timestamp: Date.UTC(2026, 6, 24, 17, 18, 3),
+					breadcrumb: ["assistant"],
+					tokens: 80,
+					visibleTokens: 50,
+					invisibleReasoning: { tokens: 30, basis: "provider-reported", encoded: false },
+					text: "Reasoning without a replay signature.",
+				},
+			],
+		}],
+		estimatedTokens: 1_352,
+	};
+	const view = new UsageView(createTheme(), { usage: thinkingUsage }, () => {}, () => 40);
+
+	view.render(80);
+	view.handleInput("\r");
+	const rendered = view.render(80);
+	const plain = rendered.map(stripSgr);
+	const reportedHeader = plain.findIndex((line) =>
+		/\[assistant\] 594 \+ Encoded ≈547 \(≈1\.1k\)$/.test(line)
+	);
+	const boundedHeader = plain.findIndex((line) =>
+		/\[assistant\] 131 \+ Encoded ≤1\.1k \(≤1\.3k\)$/.test(line)
+	);
+	const unsignedHeader = plain.findIndex((line) => /\[assistant\] 50 \+ Reasoning ≈30 \(≈80\)$/.test(line));
+	assert.ok(reportedHeader >= 0 && boundedHeader > reportedHeader && unsignedHeader > boundedHeader);
+	assert.match(rendered[reportedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ≈547 \(≈1\.1k\)/);
+	assert.match(rendered[boundedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ≤1\.1k \(≤1\.3k\)/);
+	assert.match(rendered[unsignedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Reasoning ≈30 \(≈80\)/);
+
+	const descriptionStart = plain.findIndex((line) => line.includes("Entry headers read:"));
+	const hintsIndex = plain.findIndex((line) => line.includes("↑↓ Scroll"));
+	assert.ok(descriptionStart > unsignedHeader && hintsIndex > descriptionStart);
+	assert.equal(plain[hintsIndex - 1], "");
+	assert.equal(
+		plain.slice(descriptionStart, hintsIndex - 1).map((line) => line.trim()).filter(Boolean).join(" "),
+		"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
+			"≈ is a provider-reported count; ≤ is a chars/4 upper bound shown when no breakdown is " +
+			"reported and excluded from category totals. " +
+			"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.",
+	);
+	assert.match(rendered[descriptionStart] ?? "", /\u001b\[38;2;16;17;18m  Entry headers read:/);
+	assert.equal(plain.filter((line) => line.includes("Entry headers read:")).length, 1);
+
+	for (const width of [40, 60, 80, 120]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `encoded preview line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+	}
+});
+
 test("UsageView previews empty categories, free space, and long content safely", () => {
 	const tools = Array.from({ length: 30 }, (_, index) => ({
 		id: `tool-result:tool_${index + 1}`,

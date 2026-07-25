@@ -29,6 +29,11 @@ import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 
 const USAGE_DESCRIPTION = "Estimated context for the next model request; actual token counts may differ.";
+const INVISIBLE_REASONING_DESCRIPTION =
+	"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
+	"≈ is a provider-reported count; ≤ is a chars/4 upper bound shown when no breakdown is " +
+	"reported and excluded from category totals. " +
+	"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.";
 const USAGE_TAIL_FIXED_LINE_COUNT = 5;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
@@ -110,6 +115,7 @@ export class UsageView {
 	private readonly navigator: ListNavigator;
 	private readonly previewScroller = new PreviewScroller();
 	private previewRow: CategoryLegendRow | undefined;
+	private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
 	private previewLines: string[] | undefined;
 	private previewWrapWidth: number | undefined;
 	private cachedWidth: number | undefined;
@@ -467,6 +473,7 @@ export class UsageView {
 		const row = this.legendRows[this.navigator.selected];
 		if (row === undefined || row.type !== "category") return;
 		this.previewRow = row;
+		this.cachedPreviewEntries = undefined;
 		this.previewLines = undefined;
 		this.previewWrapWidth = undefined;
 		this.previewScroller.reset();
@@ -476,6 +483,7 @@ export class UsageView {
 	/** Return to the list with the same selected row. */
 	private closePreview(): void {
 		this.previewRow = undefined;
+		this.cachedPreviewEntries = undefined;
 		this.previewLines = undefined;
 		this.previewWrapWidth = undefined;
 		this.clearCache();
@@ -486,7 +494,14 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const body = this.previewBodyLines(width, row);
-		const viewport = calculateViewport(body.length, terminalRows, PREVIEW_FIXED_LINE_COUNT);
+		const descriptionLines = this.previewDescriptionLines(width, row);
+		const descriptionLineCount = descriptionLines.length === 0 ? 0 : descriptionLines.length + 1;
+		const viewport = calculateViewport(
+			body.length,
+			terminalRows,
+			PREVIEW_FIXED_LINE_COUNT,
+			descriptionLineCount,
+		);
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
 
 		const lines: string[] = [border, ""];
@@ -509,6 +524,7 @@ export class UsageView {
 				this.fit(theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${body.length})`), width),
 			);
 		}
+		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(
 			this.fit(
@@ -528,7 +544,7 @@ export class UsageView {
 	private previewBodyLines(width: number, row: CategoryLegendRow): string[] {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length * 2 - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-		const entries = collectPreviewEntries(row.category);
+		const entries = this.previewEntries(row);
 		const compactSkills = row.rootId === "user-messages";
 		const lines = entries.length === 0
 			? [this.fit(this.theme.fg("muted", `${BODY_INDENT}No content captured for this category.`), width)]
@@ -542,7 +558,13 @@ export class UsageView {
 		return lines;
 	}
 
-	/** Bracketed entry header: dim datetime, mdHeading lead breadcrumb cell, muted rest, dim tokens. */
+	/** Collect and cache the immutable entries shared by preview body and description rendering. */
+	private previewEntries(row: CategoryLegendRow): readonly UsagePreviewEntry[] {
+		this.cachedPreviewEntries ??= collectPreviewEntries(row.category);
+		return this.cachedPreviewEntries;
+	}
+
+	/** Bracketed entry header: dim datetime, breadcrumbs, visible tokens, and optional invisible reasoning. */
 	private entryHeader(entry: UsagePreviewEntry): string {
 		const theme = this.theme;
 		const cells: string[] = [];
@@ -555,8 +577,27 @@ export class UsageView {
 				`${theme.fg("dim", "[")}${theme.fg(color, normalizeInlineText(cell))}${theme.fg("dim", "]")}`,
 			);
 		});
-		cells.push(theme.fg("dim", formatTokens(entry.tokens)));
+		cells.push(theme.fg("dim", formatTokens(entry.visibleTokens ?? entry.tokens)));
+		if (entry.invisibleReasoning !== undefined) {
+			const { tokens, basis, encoded } = entry.invisibleReasoning;
+			const marker = basis === "provider-reported" ? "≈" : "≤";
+			const label = encoded ? "Encoded" : "Reasoning";
+			const total = (entry.visibleTokens ?? entry.tokens) + tokens;
+			cells.push(
+				theme.fg("dim", `+ ${label} ${marker}${formatTokens(tokens)} (${marker}${formatTokens(total)})`),
+			);
+		}
 		return cells.join(" ");
+	}
+
+	/** Fixed explanation shown only when the thinking preview contains invisible-reasoning metadata. */
+	private previewDescriptionLines(width: number, row: CategoryLegendRow): string[] {
+		if (row.rootId !== "agent-thinking-messages") return [];
+		const hasInvisibleReasoning = this.previewEntries(row)
+			.some((entry) => entry.invisibleReasoning !== undefined);
+		return hasInvisibleReasoning
+			? wrapDescriptionLines(this.theme, INVISIBLE_REASONING_DESCRIPTION, "dim", width)
+			: [];
 	}
 
 	/** Sanitized, wrapped, per-entry-capped content lines indented under the header. */
