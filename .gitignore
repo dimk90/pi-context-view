@@ -1,3 +1,3 @@
-test/usage-logs/*.log
 node_modules/
 *:Zone.Identifier
+*.log

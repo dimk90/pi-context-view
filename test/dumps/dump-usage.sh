@@ -34,7 +34,7 @@ set -euo pipefail
 : "${SESSION:=context-usage-dump}"
 : "${COLS:=120}"
 : "${ROWS:=45}"
-: "${OUT_DIR:=test/usage-logs}"
+: "${OUT_DIR:=test/dumps}"
 : "${SESSIONS_DIR:=$HOME/.pi/agent/sessions}"
 : "${NAME_PATTERN:=[Test]}"
 
@@ -45,6 +45,16 @@ set -euo pipefail
 # Seconds to wait for pi to start and for the view to render.
 : "${STARTUP_TIMEOUT:=60}"
 : "${VIEW_TIMEOUT:=90}"
+
+# How long to wait for pi to react to a typed command, and how many times to
+# retype it. Loading a large session can drop keystrokes for a while, so the
+# product of the two is the real budget.
+: "${INPUT_TIMEOUT:=6}"
+: "${INPUT_ATTEMPTS:=10}"
+
+# The `usage` row of pi's slash-command completion popup: the proof that pi,
+# not the shell, received the typed command.
+: "${COMPLETION_PATTERN:=Show estimated context usage}"
 
 # Temp copy of the session, set by main and removed by the EXIT trap. Global
 # because the trap runs after main's locals are gone.
@@ -70,8 +80,36 @@ start_pi() {
     tmux kill-session -t "$SESSION" 2> /dev/null || true # leftover from an aborted run
     tmux new-session -d -s "$SESSION" -x "$COLS" -y "$ROWS" -c "$PWD"
     tmux send-keys -t "$SESSION" "pi -e . --session $session_file" Enter
-    wait_for '^~' "$STARTUP_TIMEOUT" # footer with the session cwd
-    sleep 2 # the footer renders before the editor accepts input
+    wait_for_pi "$STARTUP_TIMEOUT"
+}
+
+
+wait_for_pi() {
+    #
+    # Poll until pi is the foreground process of the pane. Return 1 on timeout.
+    #
+    # Pane text cannot gate startup: the shell prompt is already drawn before
+    # pi runs, so a text pattern can match the prompt and return immediately.
+    # Readiness for input is established separately, by open_usage_view waiting
+    # for pi's completion popup.
+    #
+    # Parameters:
+    #   $1 - timeout - (optional) - seconds before giving up (default: 30).
+    #
+    # Example:
+    #   wait_for_pi 60
+    #
+    local timeout="${1:-30}"
+
+    local deadline=$((SECONDS + timeout))
+
+    until [[ $(tmux display-message -p -t "$SESSION" '#{pane_current_command}') == 'pi' ]]; do
+        if ((SECONDS >= deadline)); then
+            printf 'timeout waiting for pi to start\n' >&2
+            return 1
+        fi
+        sleep 0.5
+    done
 }
 
 
@@ -85,19 +123,34 @@ open_usage_view() {
     #
     local command_line="/context:$COMMAND_INDEX usage"
 
-    tmux send-keys -t "$SESSION" "$command_line"
-    # Early keystrokes can be dropped while pi finishes loading; retype until
-    # the editor shows the full command.
+    # Keystrokes are dropped while pi loads the session, and a large session
+    # takes longer than any fixed grace period. Retype until pi reacts; C-u
+    # first so a partially accepted earlier attempt does not leave the line
+    # garbled.
+    #
+    # The gate is the completion popup, not the typed text: keys sent before pi
+    # takes over the terminal are echoed by the shell, so the command appears
+    # on screen while pi has never seen it. Only pi can draw the popup.
     local attempt
-    for ((attempt = 0; attempt < 5; attempt++)); do
-        wait_for "$command_line" 5 2> /dev/null && break
+    for ((attempt = 0; attempt < INPUT_ATTEMPTS; attempt++)); do
         tmux send-keys -t "$SESSION" C-u
         tmux send-keys -t "$SESSION" "$command_line"
+        wait_for "$COMPLETION_PATTERN" "$INPUT_TIMEOUT" 2> /dev/null && break
     done
+
+    # Without this the Enters below are sent into an unknown state, and the
+    # failure only surfaces as a confusing 'Context Usage' timeout.
+    if ! tmux capture-pane -p -t "$SESSION" | grep -q "$COMPLETION_PATTERN"; then
+        printf 'editor did not accept %s after %s attempts\n' "$command_line" "$INPUT_ATTEMPTS" >&2
+        return 1
+    fi
+
     tmux send-keys -t "$SESSION" Enter # accept the command completion
     sleep 1
     tmux send-keys -t "$SESSION" Enter # run it
-    wait_for 'Context Usage' "$VIEW_TIMEOUT"
+    # Without the explicit return the trailing sleep would become the function's
+    # exit code, and a timed-out view would still be captured as a success.
+    wait_for 'Context Usage' "$VIEW_TIMEOUT" || return 1
     sleep 1 # let the first frame settle before capturing
 }
 
@@ -233,8 +286,13 @@ dump_session() {
     WORK_DIR="$(mktemp -d)"
     cp -- "$session_file" "$WORK_DIR/"
 
-    start_pi "$WORK_DIR/$(basename "$session_file")"
-    open_usage_view
+    # No capture is written when the view never renders, so a stale log from an
+    # earlier run can never be mistaken for this one.
+    if ! start_pi "$WORK_DIR/$(basename "$session_file")" || ! open_usage_view; then
+        _cleanup
+        printf 'FAILED %s\n' "$session_file" >&2
+        return 1
+    fi
 
     mkdir -p "$OUT_DIR"
     {
@@ -301,10 +359,18 @@ main() {
 
     printf 'Using /context:%s (%s)\n' "$COMMAND_INDEX" "$(describe_command_index)"
 
+    # One unrenderable session must not hide the remaining ones; the exit code
+    # still reports that something failed.
     local session_file
+    local failed=0
     for session_file in "${sessions[@]}"; do
-        dump_session "$session_file"
+        dump_session "$session_file" || failed=$((failed + 1))
     done
+
+    if ((failed > 0)); then
+        printf '%s of %s session(s) failed\n' "$failed" "${#sessions[@]}" >&2
+        return 1
+    fi
 }
 
 
