@@ -107,14 +107,15 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(lines[1], "");
 	assert.equal(lines.at(-2), "");
 	const headerIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections"));
-	const tabIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections · [INITIAL]  RUNTIME"));
+	const tabIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections · [INITIAL]"));
 	assert.ok(headerIndex >= 0 && tabIndex === headerIndex);
 	assert.equal(lines[headerIndex + 1], "");
 	assert.equal(stripSgr(lines[headerIndex] ?? "").indexOf("Context Injections"), 0);
-	assert.equal(stripSgr(lines[tabIndex] ?? ""), "Context Injections · [INITIAL]  RUNTIME");
+	assert.equal(stripSgr(lines[tabIndex] ?? ""), "Context Injections · [INITIAL]");
 	// Chalk emits bold SGR only on capable terminals, so derive the environment-specific nested style.
 	assert.ok((lines[tabIndex] ?? "").includes(theme.fg("mdHeading", theme.bold("[INITIAL]"))));
-	assert.match(lines[tabIndex] ?? "", /\u001b\[38;2;16;17;18mRUNTIME/);
+	// Runtime stays hidden until the runtime-inspection roadmap step.
+	assert.ok(!lines.some((line) => stripSgr(line).includes("RUNTIME")));
 	assert.ok(!lines.some((line) => stripSgr(line).includes("Runtime Logging:")));
 	const selectedGroup = lines.find((line) => stripSgr(line).includes("→ pi"));
 	assert.ok(selectedGroup !== undefined);
@@ -175,7 +176,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(lines[descriptionIndex + 1], "");
 	assert.equal(stripSgr(lines[descriptionIndex] ?? "").indexOf("Injections into"), 2);
 	assert.equal(stripSgr(lines[hintsIndex] ?? "").indexOf("↑↓"), 2);
-	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;7;8;9m  Injections into/);
+	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;16;17;18m  Injections into/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18m↑↓/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Navigate/);
 	assert.doesNotMatch(stripSgr(lines[hintsIndex] ?? ""), /Switch Tabs|←→\/Tab/);
@@ -205,7 +206,7 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	const plainLines = plain.render(80);
 	const plainInitialIndex = plainLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
 	assert.ok(plainInitialIndex >= 0);
-	assert.equal(stripSgr(plainLines[plainInitialIndex] ?? ""), "Context Injections · [INITIAL]  RUNTIME");
+	assert.equal(stripSgr(plainLines[plainInitialIndex] ?? ""), "Context Injections · [INITIAL]");
 	assert.ok(!plainLines.some((line) => stripSgr(line).includes("Degraded:")));
 
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
@@ -213,7 +214,7 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	const degradedLines = degraded.render(80);
 	const degradedInitialIndex = degradedLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
 	assert.ok(degradedInitialIndex >= 0);
-	assert.equal(stripSgr(degradedLines[degradedInitialIndex] ?? ""), "Context Injections · [INITIAL]  RUNTIME");
+	assert.equal(stripSgr(degradedLines[degradedInitialIndex] ?? ""), "Context Injections · [INITIAL]");
 	assert.equal(degradedLines[degradedInitialIndex + 1], "");
 	assert.match(stripSgr(degradedLines[degradedInitialIndex + 2] ?? ""), /Silent probe unavailable/);
 
@@ -246,7 +247,8 @@ test("InjectionsView keeps Runtime inactive when label-switch keys are pressed",
 		view.handleInput(key);
 		assert.equal(view.render(80), initial);
 	}
-	assert.ok(initial.some((line) => stripSgr(line).includes("Context Injections · [INITIAL]  RUNTIME")));
+	assert.ok(initial.some((line) => stripSgr(line).includes("Context Injections · [INITIAL]")));
+	assert.ok(!initial.some((line) => stripSgr(line).includes("RUNTIME")));
 });
 
 test("InjectionsView keeps every rendered line within the width", () => {
@@ -259,7 +261,7 @@ test("InjectionsView keeps every rendered line within the width", () => {
 		if (width === 24) {
 			const plain = listLines.map(stripSgr);
 			const titleIndex = plain.indexOf("Context Injections");
-			const tabsIndex = plain.indexOf("[INITIAL]  RUNTIME");
+			const tabsIndex = plain.indexOf("[INITIAL]");
 			assert.ok(titleIndex >= 0 && tabsIndex === titleIndex + 2);
 			assert.equal(plain[titleIndex + 1], "");
 			assert.equal(plain[tabsIndex + 1], "");

@@ -155,12 +155,13 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.equal(category(usage.categories, "agent-text-messages").tokens, 1);
 	assert.equal(category(usage.categories, "agent-thinking-messages").tokens, 2);
 	assert.equal(category(usage.categories, "agent-tool-call-messages").tokens, 4);
-	assert.equal(category(usage.categories, "tool-output").tokens, 4);
+	assert.equal(category(usage.categories, "tool-output").tokens, 8);
 	assert.equal(category(usage.categories, "tool-result:read").tokens, 2);
 	assert.equal(findCategory(usage.categories, "tool-results"), undefined);
 	assert.equal(category(usage.categories, "extension-messages").tokens, 1);
-	assert.equal(category(usage.categories, "bash-executions").tokens, 2);
-	assert.equal(category(usage.categories, "compacted-data").tokens, 3);
+	// Bash and summary estimates cover pi's LLM-transform text, not just command/output/summary.
+	assert.equal(category(usage.categories, "bash-executions").tokens, 6);
+	assert.equal(category(usage.categories, "compacted-data").tokens, 55);
 	assert.equal(usage.estimatedTokens, usage.categories.reduce((sum, entry) => sum + entry.tokens, 0));
 	assert.equal(usage.modelLabel, "test-model");
 	assert.equal(usage.computedAt.toISOString(), "2026-07-11T13:00:00.000Z");
@@ -319,6 +320,152 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	) ?? [];
 	assert.ok(promptEntries.length > 0);
 	assert.ok(promptEntries.every((entry) => entry.timestamp === undefined));
+});
+
+test("computeUsage counts pi's LLM-transform text for bash executions and summaries", () => {
+	const messages: ContextEvent["messages"] = [
+		{ role: "bashExecution", command: "ls", output: "123456", exitCode: 0, cancelled: false, truncated: false,
+			timestamp: 1 },
+		{ role: "bashExecution", command: "ls", output: "", exitCode: 0, cancelled: false, truncated: false,
+			timestamp: 2 },
+		{ role: "bashExecution", command: "ls", output: "err", exitCode: 2, cancelled: false, truncated: false,
+			timestamp: 3 },
+		{ role: "bashExecution", command: "ls", output: "partial", exitCode: undefined, cancelled: true,
+			truncated: false, timestamp: 4 },
+		{ role: "bashExecution", command: "ls", output: "12345678", exitCode: 0, cancelled: false, truncated: true,
+			fullOutputPath: "/tmp/out.txt", timestamp: 5 },
+		{ role: "bashExecution", command: "ls", output: "hidden", exitCode: 0, cancelled: false, truncated: false,
+			excludeFromContext: true, timestamp: 6 },
+		{ role: "compactionSummary", summary: "abcdefgh", tokensBefore: 1_000, timestamp: 7 },
+		{ role: "branchSummary", summary: "abcd", fromId: "old", timestamp: 8 },
+	];
+
+	const usage = computeUsage({ snapshot: snapshot(), messages });
+
+	// "Ran `ls`" plus output fences or "(no output)", cancellation, exit code, and truncation notice.
+	const bash = category(usage.categories, "bash-executions");
+	assert.deepEqual(bash.entries?.map((entry) => [entry.timestamp, entry.tokens]), [
+		[1, 6],
+		[2, 5],
+		[3, 12],
+		[4, 12],
+		[5, 18],
+	]);
+	assert.equal(bash.tokens, 53);
+	// `!!` bash executions never reach the provider and are excluded entirely.
+	assert.ok(!bash.entries?.some((entry) => entry.text.includes("hidden")));
+
+	// Summary prefix plus <summary> tags: 96 + 8 + 11 and 89 + 4 + 10 characters.
+	const compacted = category(usage.categories, "compacted-data");
+	assert.deepEqual(compacted.entries?.map((entry) => [...entry.breadcrumb, entry.tokens]), [
+		["compaction", 29],
+		["branch", 26],
+	]);
+	assert.equal(compacted.tokens, 55);
+	// Previews still show only the bare summary text, without the transform wrapper.
+	assert.deepEqual(compacted.entries?.map((entry) => entry.text), ["abcdefgh", "abcd"]);
+});
+
+test("computeUsage uses provider reasoning per message and keeps signature estimates out of raw previews", () => {
+	const base = assistantMessage();
+	assert.equal(base.role, "assistant");
+	const messages: ContextEvent["messages"] = [
+		{
+			...base,
+			timestamp: 10,
+			content: [
+				{ type: "thinking", thinking: "abcde", thinkingSignature: "signature-one" },
+				{ type: "thinking", thinking: "fghij", thinkingSignature: "signature-two" },
+				{
+					type: "toolCall",
+					id: "call",
+					name: "read",
+					arguments: { path: "x" },
+					thoughtSignature: "tool-signature",
+				},
+			],
+			usage: { ...base.usage, reasoning: 11 },
+		},
+		{
+			...base,
+			timestamp: 20,
+			content: [
+				{ type: "thinking", thinking: "12345678", thinkingSignature: "123456789" },
+				{
+					type: "toolCall",
+					id: "fallback-call",
+					name: "bash",
+					arguments: { command: "ls" },
+					thoughtSignature: "1234567",
+				},
+			],
+		},
+		{
+			...base,
+			timestamp: 30,
+			content: [{ type: "thinking", thinking: "1234567890123456", thinkingSignature: "blob" }],
+			usage: { ...base.usage, reasoning: 2 },
+		},
+		{
+			...base,
+			timestamp: 40,
+			content: [{ type: "thinking", thinking: "abcd" }],
+			usage: { ...base.usage, reasoning: 6 },
+		},
+	];
+
+	const usage = computeUsage({ snapshot: snapshot(), messages });
+	const thinking = category(usage.categories, "agent-thinking-messages");
+	const entries = thinking.entries ?? [];
+
+	// Per-message totals are max(visible chars/4, reported reasoning): 11 + 2 + 4 + 6.
+	assert.equal(thinking.tokens, 23);
+	assert.equal(thinking.tokens, entries.reduce((sum, entry) => sum + entry.tokens, 0));
+	assert.deepEqual(entries.map((entry) => entry.tokens), [10, 1, 2, 4, 6]);
+	assert.deepEqual(entries.map((entry) => entry.visibleTokens), [2, undefined, 2, undefined, 1]);
+	assert.deepEqual(entries.map((entry) => entry.invisibleReasoning), [
+		{ tokens: 8, basis: "provider-reported", encoded: true },
+		undefined,
+		{ tokens: 4, basis: "signature-proxy", encoded: true },
+		undefined,
+		{ tokens: 5, basis: "provider-reported", encoded: false },
+	]);
+	assert.deepEqual(entries.slice(0, 2).map((entry) => [...entry.breadcrumb]), [
+		["assistant", "thinking 1/2"],
+		["assistant", "thinking 2/2"],
+	]);
+	assert.deepEqual(
+		entries.map((entry) => entry.text),
+		["abcde", "fghij", "12345678", "1234567890123456", "abcd"],
+	);
+	assert.ok(!entries.some((entry) => entry.text.includes("signature")));
+});
+
+test("computeUsage represents encoded-only reasoning without retaining its signature", () => {
+	const base = assistantMessage();
+	assert.equal(base.role, "assistant");
+	const messages: ContextEvent["messages"] = [{
+		...base,
+		content: [{
+			type: "toolCall",
+			id: "call",
+			name: "read",
+			arguments: { path: "x" },
+			thoughtSignature: "opaque-reasoning-payload",
+		}],
+		usage: { ...base.usage, reasoning: 7 },
+	}];
+
+	const usage = computeUsage({ snapshot: snapshot(), messages });
+	const entries = category(usage.categories, "agent-thinking-messages").entries ?? [];
+	assert.deepEqual(entries, [{
+		timestamp: 2,
+		breadcrumb: ["assistant"],
+		tokens: 7,
+		visibleTokens: 0,
+		invisibleReasoning: { tokens: 7, basis: "provider-reported", encoded: true },
+		text: "",
+	}]);
 });
 
 test("collectPreviewEntries flattens aggregates chronologically", () => {

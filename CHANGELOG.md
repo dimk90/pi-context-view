@@ -1,5 +1,21 @@
 # Changelog
 
+## `[v0.3.0]` - 26.07.2026
+
+### New
+* `[usage]` Show the auto-compaction reserve as "Auto-Compact Buffer" row (`⛝`).
+* `[usage]` Use provider-reported reasoning for thinking category estimates (to include encoded-signatures).
+
+### Changed
+* `[usage]` Show the category scroll counter below the last legend row.
+* `[usage]` Use full-size bullets (•) for Tool Output breakdown rows.
+
+### Fixed
+* `[usage]` Count the text pi's LLM transform adds to bash executions and compaction/branch summaries.
+* `[usage]` Use an uppercase "M" for millions in compact token counts instead of "m".
+* `[package]` Exclude demo images and GIFs from the npm package.
+
+
 ## `[v0.2.4]` - 22.07.2026
 
 ### Fixed

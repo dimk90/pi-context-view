@@ -28,7 +28,13 @@ import {
 import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 
-const USAGE_DESCRIPTION = "Estimated context for the next model request; actual token counts may differ.";
+const USAGE_DESCRIPTION = "Estimated context for the next model request. " +
+	"Token counts are approximate and may differ from the provider's estimate.";
+const INVISIBLE_REASONING_DESCRIPTION =
+	"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
+	"≈ is a provider-reported count; ~ is a rough approximation when no breakdown " +
+	"is reported and excluded from category totals. " +
+	"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.";
 const USAGE_TAIL_FIXED_LINE_COUNT = 5;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
@@ -44,7 +50,9 @@ const SPACED_MAP_COLUMN_GAP = 3;
 const FULL_CELL = "■";
 const PARTIAL_CELL = "◧";
 const COMPACTED_CELL = "▦";
+const BUFFER_CELL = "⛝";
 const FREE_CELL = "⛶";
+const BREAKDOWN_MARKER = "•";
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -59,12 +67,17 @@ interface CategoryLegendRow {
 	readonly rootId: string;
 }
 
+interface BufferLegendRow {
+	readonly type: "buffer";
+	readonly tokens: number;
+}
+
 interface FreeLegendRow {
 	readonly type: "free";
 	readonly tokens: number;
 }
 
-type LegendRow = CategoryLegendRow | FreeLegendRow;
+type LegendRow = CategoryLegendRow | BufferLegendRow | FreeLegendRow;
 
 interface LegendColumns {
 	readonly value: number;
@@ -103,6 +116,7 @@ export class UsageView {
 	private readonly navigator: ListNavigator;
 	private readonly previewScroller = new PreviewScroller();
 	private previewRow: CategoryLegendRow | undefined;
+	private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
 	private previewLines: string[] | undefined;
 	private previewWrapWidth: number | undefined;
 	private cachedWidth: number | undefined;
@@ -122,7 +136,7 @@ export class UsageView {
 		this.getTerminalRows = getTerminalRows;
 		this.usage = input.usage;
 		this.legendRows = this.buildLegendRows();
-		// Free Space has no preview: it trails the list and scrolls, but is never selectable.
+		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable.
 		const selectableCount = this.legendRows.filter((row) => row.type === "category").length;
 		this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
 	}
@@ -188,7 +202,7 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const prefix = [border, "", ...this.headerLines(width), "", ...this.degradedWarningLines(width)];
-		const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, "muted", width);
+		const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, "dim", width);
 		const availableDashboardRows = Math.max(
 			1,
 			terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT - descriptionLines.length,
@@ -262,20 +276,18 @@ export class UsageView {
 		});
 	}
 
-	/** Map-fill key, category heading, and selectable category legend viewport. */
+	/** Map-fill key, category heading, selectable category legend viewport, and scroll counter. */
 	private detailLines(width: number, rows: number, includeMapKey: boolean): string[] {
 		const theme = this.theme;
 		const showMapKey = includeMapKey && rows >= 4;
 		const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT + (showMapKey ? 2 : 0);
-		const viewportRows = Math.max(1, rows - headerLineCount);
-		this.navigator.setVisibleCount(viewportRows);
+		// The counter sits below the last legend row, so it consumes one of the available rows.
+		const viewport = calculateViewport(this.legendRows.length, rows, headerLineCount);
+		this.navigator.setVisibleCount(viewport.visibleCount);
 
 		const heading = theme.fg("mdHeading", theme.bold("Category:"));
-		const counter = this.navigator.hasOverflow
-			? theme.fg("dim", `(${this.navigator.selectedOrdinal + 1}/${this.navigator.selectableCount})`)
-			: "";
 		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
-		const columns = this.legendColumns(this.legendRows, rowWidth);
+		const columns = this.legendColumns(rowWidth);
 		const visibleRows: string[] = [];
 		const start = this.navigator.offset;
 		for (let index = start; index < start + this.navigator.windowSize; index++) {
@@ -286,10 +298,17 @@ export class UsageView {
 			const cursor = selected ? theme.fg("accent", "→ ") : "  ";
 			visibleRows.push(this.fit(`${cursor}${this.legendLine(row, columns, rowWidth, selected)}`, width));
 		}
+		const counterLines = viewport.showScroll
+			? [this.fit(
+				theme.fg("dim", `${BODY_INDENT}(${this.navigator.visibleEnd}/${this.legendRows.length})`),
+				width,
+			)]
+			: [];
 		return [
 			...(showMapKey ? [this.mapKeyLine(width), ""] : []),
-			counter === "" ? heading : spreadLine(heading, counter, width),
+			heading,
 			...visibleRows,
+			...counterLines,
 		].slice(0, rows);
 	}
 
@@ -319,23 +338,37 @@ export class UsageView {
 		return this.theme.fg("text", `${formatTokens(reported.tokens)}/${contextWindow}${percent}`);
 	}
 
-	/** All legend rows: top-level categories, Tool Output children, trailing free space. */
+	/**
+	 * All legend rows: top-level categories, Tool Output children, then the
+	 * non-selectable auto-compact buffer and free space.
+	 */
 	private buildLegendRows(): LegendRow[] {
 		const rows: LegendRow[] = buildCategoryLegendRows(this.usage.categories);
+		const bufferTokens = this.bufferTokens();
+		if (bufferTokens > 0) rows.push({ type: "buffer", tokens: bufferTokens });
 		const freeTokens = this.freeSpaceTokens();
 		if (freeTokens !== undefined) rows.push({ type: "free", tokens: freeTokens });
 		return rows;
 	}
 
-	/** Estimated remaining space, or undefined without a usable context window. */
+	/** Tokens auto-compaction keeps unoccupied; zero when disabled or without a context window. */
+	private bufferTokens(): number {
+		const contextWindow = this.usage.reported?.contextWindow;
+		const reserve = this.usage.autoCompactReserveTokens;
+		if (contextWindow === undefined || contextWindow <= 0 || reserve === undefined) return 0;
+		return Math.min(reserve, Math.max(0, contextWindow - this.usage.estimatedTokens));
+	}
+
+	/** Estimated remaining space before the buffer, or undefined without a usable context window. */
 	private freeSpaceTokens(): number | undefined {
 		const contextWindow = this.usage.reported?.contextWindow;
 		if (contextWindow === undefined || contextWindow <= 0) return undefined;
-		return Math.max(0, contextWindow - this.usage.estimatedTokens);
+		return Math.max(0, contextWindow - this.usage.estimatedTokens - this.bufferTokens());
 	}
 
 	/** Earliest shared token column plus the width needed to align percentages. */
-	private legendColumns(rows: readonly LegendRow[], width: number): LegendColumns {
+	private legendColumns(width: number): LegendColumns {
+		const rows = this.legendRows;
 		const labelWidth = Math.max(1, ...rows.map((row) => this.plainLegendLabel(row).length));
 		const tokenWidth = Math.max(1, ...rows.map((row) => formatTokens(legendTokens(row)).length));
 		const percentWidth = Math.max(0, ...rows.map((row) => this.plainLegendPercent(legendTokens(row)).length));
@@ -373,6 +406,7 @@ export class UsageView {
 
 	/** Unstyled hierarchy label used to choose the shared value column. */
 	private plainLegendLabel(row: LegendRow): string {
+		if (row.type === "buffer") return `${BUFFER_CELL} Auto-Compact Buffer`;
 		if (row.type === "free") return `${FREE_CELL} Free Space`;
 		const indent = "  ".repeat(row.depth);
 		return `${indent}${categoryMarker(row.category.id, row.depth)} ${normalizeInlineText(row.category.label)}`;
@@ -380,6 +414,9 @@ export class UsageView {
 
 	/** Themed hierarchy label; the marker keeps its map color even when selected. */
 	private styledLegendLabel(row: LegendRow, selected: boolean): string {
+		if (row.type === "buffer") {
+			return `${this.theme.fg("dim", BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
+		}
 		if (row.type === "free") {
 			return `${this.theme.fg("dim", FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
 		}
@@ -397,8 +434,9 @@ export class UsageView {
 		return formatPercent(tokens / contextWindow);
 	}
 
-	/** Colored occupied/partial/free glyph for one map cell. */
+	/** Colored occupied/partial/buffer/free glyph for one map cell. */
 	private mapCell(cell: UsageMapCell): string {
+		if (cell.fill === "buffer") return this.theme.fg("dim", BUFFER_CELL);
 		if (cell.fill === "free") return this.theme.fg("dim", FREE_CELL);
 		const glyph = cell.categoryId === "compacted-data"
 			? COMPACTED_CELL
@@ -441,6 +479,7 @@ export class UsageView {
 		const row = this.legendRows[this.navigator.selected];
 		if (row === undefined || row.type !== "category") return;
 		this.previewRow = row;
+		this.cachedPreviewEntries = undefined;
 		this.previewLines = undefined;
 		this.previewWrapWidth = undefined;
 		this.previewScroller.reset();
@@ -450,6 +489,7 @@ export class UsageView {
 	/** Return to the list with the same selected row. */
 	private closePreview(): void {
 		this.previewRow = undefined;
+		this.cachedPreviewEntries = undefined;
 		this.previewLines = undefined;
 		this.previewWrapWidth = undefined;
 		this.clearCache();
@@ -460,7 +500,14 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const body = this.previewBodyLines(width, row);
-		const viewport = calculateViewport(body.length, terminalRows, PREVIEW_FIXED_LINE_COUNT);
+		const descriptionLines = this.previewDescriptionLines(width, row);
+		const descriptionLineCount = descriptionLines.length === 0 ? 0 : descriptionLines.length + 1;
+		const viewport = calculateViewport(
+			body.length,
+			terminalRows,
+			PREVIEW_FIXED_LINE_COUNT,
+			descriptionLineCount,
+		);
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
 
 		const lines: string[] = [border, ""];
@@ -483,6 +530,7 @@ export class UsageView {
 				this.fit(theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${body.length})`), width),
 			);
 		}
+		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(
 			this.fit(
@@ -502,7 +550,7 @@ export class UsageView {
 	private previewBodyLines(width: number, row: CategoryLegendRow): string[] {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length * 2 - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-		const entries = collectPreviewEntries(row.category);
+		const entries = this.previewEntries(row);
 		const compactSkills = row.rootId === "user-messages";
 		const lines = entries.length === 0
 			? [this.fit(this.theme.fg("muted", `${BODY_INDENT}No content captured for this category.`), width)]
@@ -516,7 +564,13 @@ export class UsageView {
 		return lines;
 	}
 
-	/** Bracketed entry header: dim datetime, mdHeading lead breadcrumb cell, muted rest, dim tokens. */
+	/** Collect and cache the immutable entries shared by preview body and description rendering. */
+	private previewEntries(row: CategoryLegendRow): readonly UsagePreviewEntry[] {
+		this.cachedPreviewEntries ??= collectPreviewEntries(row.category);
+		return this.cachedPreviewEntries;
+	}
+
+	/** Bracketed entry header: dim datetime, breadcrumbs, visible tokens, and optional invisible reasoning. */
 	private entryHeader(entry: UsagePreviewEntry): string {
 		const theme = this.theme;
 		const cells: string[] = [];
@@ -529,8 +583,27 @@ export class UsageView {
 				`${theme.fg("dim", "[")}${theme.fg(color, normalizeInlineText(cell))}${theme.fg("dim", "]")}`,
 			);
 		});
-		cells.push(theme.fg("dim", formatTokens(entry.tokens)));
+		cells.push(theme.fg("dim", formatTokens(entry.visibleTokens ?? entry.tokens)));
+		if (entry.invisibleReasoning !== undefined) {
+			const { tokens, basis, encoded } = entry.invisibleReasoning;
+			const marker = basis === "provider-reported" ? "≈" : "~";
+			const label = encoded ? "Encoded" : "Reasoning";
+			const total = (entry.visibleTokens ?? entry.tokens) + tokens;
+			cells.push(
+				theme.fg("dim", `+ ${label} ${marker}${formatTokens(tokens)} (${marker}${formatTokens(total)})`),
+			);
+		}
 		return cells.join(" ");
+	}
+
+	/** Fixed explanation shown only when the thinking preview contains invisible-reasoning metadata. */
+	private previewDescriptionLines(width: number, row: CategoryLegendRow): string[] {
+		if (row.rootId !== "agent-thinking-messages") return [];
+		const hasInvisibleReasoning = this.previewEntries(row)
+			.some((entry) => entry.invisibleReasoning !== undefined);
+		return hasInvisibleReasoning
+			? wrapDescriptionLines(this.theme, INVISIBLE_REASONING_DESCRIPTION, "dim", width)
+			: [];
 	}
 
 	/** Sanitized, wrapped, per-entry-capped content lines indented under the header. */
@@ -603,11 +676,11 @@ function formatEntryTimestamp(timestamp: number): string {
 
 /** Marker distinguishing top-level occupancy, compacted data, and nested breakdowns. */
 function categoryMarker(categoryId: string, depth: number): string {
-	if (depth > 0) return "·";
+	if (depth > 0) return BREAKDOWN_MARKER;
 	return categoryId === "compacted-data" ? COMPACTED_CELL : FULL_CELL;
 }
 
-/** Token estimate carried by either category or free-space legend rows. */
+/** Token estimate carried by category, buffer, or free-space legend rows. */
 function legendTokens(row: LegendRow): number {
 	return row.type === "category" ? row.category.tokens : row.tokens;
 }
@@ -645,11 +718,11 @@ function categoryColor(categoryId: string | undefined): ThemeColor {
 	}
 }
 
-/** Compact token count: 951, 3.7k, 43.8k, 1m. */
+/** Compact token count: 951, 3.7k, 43.8k, 1M. */
 export function formatTokens(tokens: number): string {
 	if (tokens < 1_000) return `${tokens}`;
 	if (tokens < 1_000_000) return `${trimTrailingZero((tokens / 1_000).toFixed(1))}k`;
-	return `${trimTrailingZero((tokens / 1_000_000).toFixed(1))}m`;
+	return `${trimTrailingZero((tokens / 1_000_000).toFixed(1))}M`;
 }
 
 /** Percentage with one decimal below 10%: 0.4%, 4.2%, 96%. */

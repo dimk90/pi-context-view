@@ -1,7 +1,7 @@
 {
 	"name": "pi-context-view",
-	"version": "0.2.4",
-	"description": "Pi extension to visualize context token usage and inspect hidden prompt, tool, and extension injections",
+	"version": "0.3.0",
+	"description": "Pi extension to visualize context usage and inspect the hidden parts: base prompt, tools defs, and extension injections",
 	"type": "module",
 	"license": "MIT",
 	"author": "Dmitry Makarov",
@@ -27,7 +27,6 @@
 	},
 	"files": [
 		"src",
-		"doc/images",
 		"README.md"
 	],
 	"scripts": {
@@ -38,15 +37,15 @@
 		"extensions": [
 			"./src/index.ts"
 		],
-		"image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/pi-context-view.png"
+		"image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/c69c44d9ed0ee245183c3f82de11d8da312ba129/doc/images/pi-context-view.png"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-coding-agent": "0.81.1",
-		"@earendil-works/pi-tui": "0.81.1",
+		"@earendil-works/pi-coding-agent": "0.82.1",
+		"@earendil-works/pi-tui": "0.82.1",
 		"@types/node": "^22.20.1",
 		"typescript": "^7.0.2"
 	}

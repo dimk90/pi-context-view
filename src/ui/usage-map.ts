@@ -9,10 +9,10 @@ import type { ContextUsageSnapshot } from "../model.ts";
 export const DEFAULT_MAP_COLUMNS = 14;
 export const DEFAULT_MAP_ROWS = 14;
 
-/** One visual map cell assigned to a category or remaining free space. */
+/** One visual map cell assigned to a category, the auto-compact buffer, or remaining free space. */
 export interface UsageMapCell {
 	readonly categoryId?: string;
-	readonly fill: "full" | "partial" | "free";
+	readonly fill: "full" | "partial" | "buffer" | "free";
 }
 
 /** Rectangular context-usage map in row-major order. */
@@ -42,9 +42,16 @@ export function buildUsageMap(
 
 	const cellCount = Math.floor(columns) * Math.floor(rows);
 	const estimatedTotal = usage.categories.reduce((sum, category) => sum + category.tokens, 0);
-	const occupiedCells = clamp(estimatedTotal, 0, contextWindow) / contextWindow * cellCount;
+	const occupiedTokens = clamp(estimatedTotal, 0, contextWindow);
+	const occupiedCells = occupiedTokens / contextWindow * cellCount;
+	// The buffer marks tokens auto-compaction will never let content occupy; it shrinks as content grows.
+	const bufferTokens = clamp(usage.autoCompactReserveTokens ?? 0, 0, contextWindow - occupiedTokens);
+	const bufferStart = cellCount - bufferTokens / contextWindow * cellCount;
 	const segments = createSegments(usage, estimatedTotal, occupiedCells);
-	const cells = Array.from({ length: cellCount }, (_, index) => createCell(index, occupiedCells, segments));
+	const cells = Array.from(
+		{ length: cellCount },
+		(_, index) => createCell(index, occupiedCells, bufferStart, segments),
+	);
 	return { columns: Math.floor(columns), rows: Math.floor(rows), cells };
 }
 
@@ -66,9 +73,17 @@ function createSegments(
 }
 
 /** Assign one map cell to its largest category overlap and classify its fill. */
-function createCell(index: number, occupiedCells: number, segments: readonly MapSegment[]): UsageMapCell {
+function createCell(
+	index: number,
+	occupiedCells: number,
+	bufferStart: number,
+	segments: readonly MapSegment[],
+): UsageMapCell {
 	const occupiedOverlap = overlap(index, index + 1, 0, occupiedCells);
-	if (occupiedOverlap <= 0) return { fill: "free" };
+	if (occupiedOverlap <= 0) {
+		// An unoccupied cell belongs to the buffer when at least half of it lies past the trigger point.
+		return overlap(index, index + 1, bufferStart, index + 1) >= 0.5 ? { fill: "buffer" } : { fill: "free" };
+	}
 
 	let categoryId: string | undefined;
 	let categoryOverlap = 0;

@@ -68,12 +68,22 @@ export interface InitialSnapshot {
 	readonly totalTokens: number;
 }
 
+/** How an invisible reasoning-token estimate was derived without retaining raw signature bytes. */
+export interface InvisibleReasoningEstimate {
+	/** Invisible-token estimate; signature-size proxies are not added to category totals. */
+	readonly tokens: number;
+	/** Whether the estimate came from a provider usage breakdown or opaque signature length. */
+	readonly basis: "provider-reported" | "signature-proxy";
+	/** Whether the message carries an opaque replay signature. */
+	readonly encoded: boolean;
+}
+
 /** One estimated usage category, optionally with a constituent breakdown. */
 export interface UsageCategory {
 	/** Stable id, unique within a usage snapshot level. */
 	readonly id: string;
 	readonly label: string;
-	/** Estimated tokens (chars/4 heuristic). */
+	/** Estimated tokens (chars/4 heuristic unless provider-reported reasoning is available). */
 	readonly tokens: number;
 	/** Breakdown of the parent (e.g. per tool or per customType), not additional totals. */
 	readonly children?: readonly UsageCategory[];
@@ -87,8 +97,12 @@ export interface UsagePreviewEntry {
 	readonly timestamp?: number;
 	/** Bracket header cells, e.g. ["assistant", "read"] or ["code-style"]. */
 	readonly breadcrumb: readonly string[];
-	/** Estimated tokens for this entry alone. */
+	/** Tokens this entry contributes to its category, including any counted invisible reasoning. */
 	readonly tokens: number;
+	/** Visible-text share shown before invisible reasoning metadata. */
+	readonly visibleTokens?: number;
+	/** Message-level invisible reasoning metadata, attached once without retaining raw signature bytes. */
+	readonly invisibleReasoning?: InvisibleReasoningEstimate;
 	/** Raw content for preview. Process-local; never log or persist. */
 	readonly text: string;
 }
@@ -108,6 +122,8 @@ export interface ContextUsageSnapshot {
 	readonly categories: readonly UsageCategory[];
 	/** Sum of the top-level category estimates. */
 	readonly estimatedTokens: number;
+	/** Auto-compaction reserve (settings `reserveTokens`); absent when auto-compaction is disabled. */
+	readonly autoCompactReserveTokens?: number;
 }
 
 /**

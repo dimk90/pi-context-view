@@ -117,7 +117,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const plain = lines.map(stripSgr);
 
 	assert.equal(lines.length, 30);
-	assert.match(plain[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1m \(4\.4%\)$/);
+	assert.match(plain[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;1;2;3m.*Context Usage/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;7;8;9mclaude-opus-4-8/);
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
@@ -172,8 +172,10 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.match(memoryLine ?? "", /Memory \(AGENTS\.md\) \.{2,}\s+1\.5k/);
 	const descriptionIndex = plain.findIndex((line) => line.includes("Estimated context for the next model request"));
 	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
-	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
+	assert.ok(descriptionIndex > 0 && hintsIndex > descriptionIndex);
+	assert.equal(plain[hintsIndex - 1], "");
 	assert.equal(plain[descriptionIndex]?.indexOf("Estimated context"), 2);
+	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;16;17;18m  Estimated context/);
 	assert.equal(plain[hintsIndex]?.indexOf("↑↓"), 2);
 	assert.match(plain[hintsIndex] ?? "", /↑↓ Navigate · Enter Preview · Esc Close/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mEsc/);
@@ -190,6 +192,48 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
+test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space", () => {
+	const bufferUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
+	const view = new UsageView(createTheme(), { usage: bufferUsage }, () => {}, () => 34);
+	const lines = view.render(80);
+	const plain = lines.map(stripSgr);
+
+	const bufferIndex = plain.findIndex((line) => line.includes("⛝ Auto-Compact Buffer"));
+	const freeIndex = plain.findIndex((line) => line.includes("⛶ Free Space"));
+	const compactedIndex = plain.findIndex((line) => line.includes("Compacted Data"));
+	assert.ok(bufferIndex > compactedIndex && freeIndex === bufferIndex + 1, "buffer row precedes free space");
+	assert.match(plain[bufferIndex] ?? "", /⛝ Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/);
+	// The reserve is carved out of Free Space: 1M − 43.8k − 16.4k.
+	assert.match(plain[freeIndex] ?? "", /⛶ Free Space \.{2,}\s+939\.8k\s+94%/);
+	// The buffer row directly follows the last category without a blank separator.
+	assert.match(plain[bufferIndex - 1] ?? "", /Compacted Data/);
+
+	// The map's tail cells use the buffer glyph after the free cells.
+	const mapRows = plain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
+	const mapCells = mapRows.flatMap((line) => line.slice(2, 2 + 14 * 2 - 1).split(" "));
+	assert.equal(mapCells.length, 196);
+	const lastBuffer = mapCells.lastIndexOf("⛝");
+	assert.ok(lastBuffer === 195, "buffer cells sit at the very end of the map");
+	const firstBuffer = mapCells.indexOf("⛝");
+	assert.ok(mapCells.slice(firstBuffer).every((cell) => cell === "⛝"), "buffer cells are contiguous");
+	assert.equal(mapCells[firstBuffer - 1], "⛶", "free cells precede the buffer");
+
+	// End stops on the last category; the buffer and free rows are never selected.
+	view.handleInput("\u001b[4~");
+	const ending = view.render(80).map(stripSgr);
+	assert.ok(ending.some((line) => /→ ▦ Compacted Data/.test(line)));
+	assert.ok(!ending.some((line) => /→ [⛝⛶]/.test(line)));
+});
+
+test("UsageView hides the Auto-Compact Buffer when no reserve is provided", () => {
+	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 34);
+	const plain = view.render(80).map(stripSgr);
+
+	assert.ok(!plain.some((line) => line.includes("Auto-Compact Buffer")));
+	assert.ok(!plain.some((line) => line.includes("⛝")));
+	assert.ok(plain.some((line) => /⛶ Free Space \.{2,}\s+956\.2k\s+96%/.test(line)));
+});
+
 test("UsageView wraps narrow descriptions instead of truncating them", () => {
 	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	const lines = view.render(40).map(stripSgr);
@@ -203,7 +247,7 @@ test("UsageView wraps narrow descriptions instead of truncating them", () => {
 	assert.ok(descriptionLines.every((line) => line.startsWith("  ")));
 	assert.equal(
 		descriptionLines.map((line) => line.trim()).join(" "),
-		"Estimated context for the next model request; actual token counts may differ.",
+		"Estimated context for the next model request. Token counts are approximate and may differ from the provider's estimate.",
 	);
 	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
 });
@@ -228,7 +272,7 @@ test("UsageView falls back to estimated post-compaction usage and closes on Esca
 
 	const rendered = stripSgr(view.render(80).join("\n"));
 	const summaryLine = rendered.split("\n").find((line) => line.includes("≈"));
-	assert.match(summaryLine ?? "", /≈50k\/1m \(5%\)$/);
+	assert.match(summaryLine ?? "", /≈50k\/1M \(5%\)$/);
 	assert.match(rendered, /■ User Messages \.{2,}\s+50k/);
 	assert.match(rendered, /⛶ Free Space \.{2,}\s+950k/);
 
@@ -257,15 +301,21 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	};
 	const view = new UsageView(createTheme(), { usage: nestedUsage }, () => {}, () => 24);
 	const initial = view.render(80).map(stripSgr);
-	assert.ok(initial.some((line) => /· tool_1 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(initial.some((line) => /• tool_1 \.{2,}\s+100\s+0%/.test(line)));
 	assert.ok(!initial.some((line) => line.includes("tool_15")));
 	assert.ok(!initial.some((line) => line.includes("read should stay collapsed")));
 	assert.ok(!initial.some((line) => line.includes("Tool Results:")));
-	assert.ok(initial.some((line) => /\(1\/\d+\)/.test(line)));
+	// The overflow counter sits below the last visible legend row and counts every legend row.
+	const counterIndex = initial.findIndex((line) => /\(\d+\/18\)$/.test(line));
+	const lastRowIndex = initial.findLastIndex((line) => /• tool_\d+ \.{2,}/.test(line));
+	assert.ok(counterIndex >= 0 && counterIndex === lastRowIndex + 1, "counter follows the last legend row");
+	assert.match(initial[counterIndex] ?? "", /\s{2,}\(9\/18\)$/);
+	assert.ok(!initial.some((line) => /Category:.*\(\d+\/\d+\)/.test(line)), "no counter beside the heading");
 
 	view.handleInput("\u001b[4~"); // End
 	const ending = view.render(80).map(stripSgr);
-	assert.ok(ending.some((line) => /→\s+· tool_15 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(ending.some((line) => /→\s+• tool_15 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(ending.some((line) => /\(18\/18\)$/.test(line)), "counter reaches the total at the end");
 	assert.ok(ending.some((line) => /⛶ Free Space \.{2,}\s+998\.4k\s+100%/.test(line)));
 	assert.ok(!ending.some((line) => /→\s+⛶ Free Space/.test(line)), "Free Space is never selected");
 });
@@ -286,15 +336,15 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 
 	view.render(80);
 	for (let step = 0; step < 9; step++) view.handleInput("\u001b[B");
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+• tool_9(?:\s|\.)/.test(stripSgr(line))));
 
 	rows = 16;
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+• tool_9(?:\s|\.)/.test(stripSgr(line))));
 	rows = 24;
-	assert.ok(view.render(80).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))));
+	assert.ok(view.render(80).some((line) => /→\s+• tool_9(?:\s|\.)/.test(stripSgr(line))));
 	for (const width of [40, 60, 120]) {
 		assert.ok(
-			view.render(width).some((line) => /→\s+· tool_9(?:\s|\.)/.test(stripSgr(line))),
+			view.render(width).some((line) => /→\s+• tool_9(?:\s|\.)/.test(stripSgr(line))),
 			`width ${width}`,
 		);
 	}
@@ -350,6 +400,82 @@ test("UsageView opens a category content preview and returns to the same row", (
 	assert.equal(closed, true);
 });
 
+test("UsageView explains invisible reasoning once and keeps its estimates distinct", () => {
+	const thinkingUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-24T12:00:00Z"),
+		reported: { tokens: 1_352, contextWindow: 10_000, percent: 13.52 },
+		categories: [{
+			id: "agent-thinking-messages",
+			label: "Agent Thinking Messages",
+			tokens: 1_352,
+			entries: [
+				{
+					timestamp: Date.UTC(2026, 6, 24, 17, 15, 2),
+					breadcrumb: ["assistant"],
+					tokens: 1_141,
+					visibleTokens: 594,
+					invisibleReasoning: { tokens: 547, basis: "provider-reported", encoded: true },
+					text: "Visible reasoning summary.",
+				},
+				{
+					timestamp: Date.UTC(2026, 6, 24, 17, 16, 48),
+					breadcrumb: ["assistant"],
+					tokens: 131,
+					visibleTokens: 131,
+					invisibleReasoning: { tokens: 1_126, basis: "signature-proxy", encoded: true },
+					text: "Another visible summary.",
+				},
+				{
+					timestamp: Date.UTC(2026, 6, 24, 17, 18, 3),
+					breadcrumb: ["assistant"],
+					tokens: 80,
+					visibleTokens: 50,
+					invisibleReasoning: { tokens: 30, basis: "provider-reported", encoded: false },
+					text: "Reasoning without a replay signature.",
+				},
+			],
+		}],
+		estimatedTokens: 1_352,
+	};
+	const view = new UsageView(createTheme(), { usage: thinkingUsage }, () => {}, () => 40);
+
+	view.render(80);
+	view.handleInput("\r");
+	const rendered = view.render(80);
+	const plain = rendered.map(stripSgr);
+	const reportedHeader = plain.findIndex((line) =>
+		/\[assistant\] 594 \+ Encoded ≈547 \(≈1\.1k\)$/.test(line)
+	);
+	const proxyHeader = plain.findIndex((line) =>
+		/\[assistant\] 131 \+ Encoded ~1\.1k \(~1\.3k\)$/.test(line)
+	);
+	const unsignedHeader = plain.findIndex((line) => /\[assistant\] 50 \+ Reasoning ≈30 \(≈80\)$/.test(line));
+	assert.ok(reportedHeader >= 0 && proxyHeader > reportedHeader && unsignedHeader > proxyHeader);
+	assert.match(rendered[reportedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ≈547 \(≈1\.1k\)/);
+	assert.match(rendered[proxyHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ~1\.1k \(~1\.3k\)/);
+	assert.match(rendered[unsignedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Reasoning ≈30 \(≈80\)/);
+
+	const descriptionStart = plain.findIndex((line) => line.includes("Entry headers read:"));
+	const hintsIndex = plain.findIndex((line) => line.includes("↑↓ Scroll"));
+	assert.ok(descriptionStart > unsignedHeader && hintsIndex > descriptionStart);
+	assert.equal(plain[hintsIndex - 1], "");
+	assert.equal(
+		plain.slice(descriptionStart, hintsIndex - 1).map((line) => line.trim()).filter(Boolean).join(" "),
+		"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
+			"≈ is a provider-reported count; ~ is a rough approximation when no breakdown is reported " +
+			"and excluded from category totals. " +
+			"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.",
+	);
+	assert.match(rendered[descriptionStart] ?? "", /\u001b\[38;2;16;17;18m  Entry headers read:/);
+	assert.equal(plain.filter((line) => line.includes("Entry headers read:")).length, 1);
+
+	for (const width of [40, 60, 80, 120]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `encoded preview line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+	}
+});
+
 test("UsageView previews empty categories, free space, and long content safely", () => {
 	const tools = Array.from({ length: 30 }, (_, index) => ({
 		id: `tool-result:tool_${index + 1}`,
@@ -401,7 +527,7 @@ test("UsageView previews empty categories, free space, and long content safely",
 	// Free Space is not selectable: End stops on the last category and Down does not move past it.
 	view.handleInput("\u001b[4~"); // End → last Tool Output child
 	const endSelected = view.render(80).join("\n");
-	assert.match(stripSgr(endSelected), /→\s+· tool_30 \.{2,}/);
+	assert.match(stripSgr(endSelected), /→\s+• tool_30 \.{2,}/);
 	assert.match(stripSgr(endSelected), /⛶ Free Space \.{2,}/);
 	assert.doesNotMatch(stripSgr(endSelected), /→\s+⛶ Free Space/);
 	view.handleInput("\u001b[B");
@@ -609,7 +735,7 @@ test("UsageView hides model metadata instead of abbreviating it", () => {
 	);
 
 	const header = stripSgr(view.render(60)[2] ?? "");
-	assert.match(header, /^Context Usage\s+43\.8k\/1m \(4\.4%\)$/);
+	assert.match(header, /^Context Usage\s+43\.8k\/1M \(4\.4%\)$/);
 	assert.doesNotMatch(header, /provider|very-long|…| · /);
 });
 
@@ -625,11 +751,11 @@ test("UsageView respects width and height changes", () => {
 	}
 	const compactMap = view.render(60).map(stripSgr);
 	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Map: ■ Full · ◧ Part$/.test(line)));
-	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1m \(4\.4%\)$/);
+	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	const categoryOnly = view.render(40).map(stripSgr);
 	assert.equal(categoryOnly[2], "Context Usage");
 	assert.equal(categoryOnly[3], "");
-	assert.equal(categoryOnly[4], "43.8k/1m (4.4%)");
+	assert.equal(categoryOnly[4], "43.8k/1M (4.4%)");
 	assert.ok(categoryOnly.some((line) => line.startsWith("Category:")));
 	assert.ok(categoryOnly.some((line) => line.startsWith("→ ■ System")));
 	assert.ok(!categoryOnly.some((line) => line.includes("claude-opus-4-8")));
@@ -650,7 +776,7 @@ test("formatTokens and formatPercent keep compact readable precision", () => {
 	assert.equal(formatTokens(951), "951");
 	assert.equal(formatTokens(3_700), "3.7k");
 	assert.equal(formatTokens(50_000), "50k");
-	assert.equal(formatTokens(1_000_000), "1m");
+	assert.equal(formatTokens(1_000_000), "1M");
 	assert.equal(formatPercent(0.004), "0.4%");
 	assert.equal(formatPercent(0.042), "4.2%");
 	assert.equal(formatPercent(0.956), "96%");

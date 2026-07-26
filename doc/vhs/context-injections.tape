@@ -15,7 +15,7 @@ GIF=doc/images/context-injections.gif
 COLS=80
 ROWS=33
 
-FONT_SIZE=19
+FONT_SIZE=21
 FONT_FAMILY="Iosevka Term"
 
 source "$SCRIPT_DIR/vhs.sh"
@@ -42,7 +42,7 @@ sleep 1
 key Enter
 key Enter
 wait_for "Context Injections"
-sleep 1
+sleep 3
 
 # Walk items
 for ((idx = 0; idx < 19; idx++)); do

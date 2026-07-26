@@ -8,12 +8,14 @@ import { buildUsageMap } from "../src/ui/usage-map.ts";
 function usage(
 	categories: UsageCategory[],
 	reported: ContextUsageSnapshot["reported"],
+	autoCompactReserveTokens?: number,
 ): ContextUsageSnapshot {
 	return {
 		computedAt: new Date("2026-07-11T12:00:00Z"),
 		reported,
 		categories,
 		estimatedTokens: categories.reduce((sum, category) => sum + category.tokens, 0),
+		autoCompactReserveTokens,
 	};
 }
 
@@ -63,6 +65,52 @@ test("buildUsageMap works when pi usage is unknown", () => {
 		{ categoryId: "messages", fill: "partial" },
 	]);
 	assert.ok(map.cells.slice(5).every((cell) => cell.fill === "free"));
+});
+
+test("buildUsageMap marks trailing auto-compact buffer cells after free space", () => {
+	const map = buildUsageMap(
+		usage([{ id: "messages", label: "Messages", tokens: 40 }], { contextWindow: 100 }, 20),
+		10,
+		1,
+	);
+
+	assert.ok(map !== undefined);
+	assert.deepEqual(map.cells.map((cell) => cell.fill), [
+		"full",
+		"full",
+		"full",
+		"full",
+		"free",
+		"free",
+		"free",
+		"free",
+		"buffer",
+		"buffer",
+	]);
+	assert.ok(map.cells.slice(8).every((cell) => cell.categoryId === undefined));
+});
+
+test("buildUsageMap shrinks the buffer when content grows into the reserve", () => {
+	// 90 occupied + 20 reserve overflows the window: only the remaining 10 tokens can be buffer.
+	const map = buildUsageMap(
+		usage([{ id: "messages", label: "Messages", tokens: 90 }], { contextWindow: 100 }, 20),
+		10,
+		1,
+	);
+
+	assert.ok(map !== undefined);
+	assert.deepEqual(map.cells.slice(8).map((cell) => cell.fill), ["full", "buffer"]);
+});
+
+test("buildUsageMap omits buffer cells when auto-compaction is disabled", () => {
+	const map = buildUsageMap(
+		usage([{ id: "messages", label: "Messages", tokens: 40 }], { contextWindow: 100 }),
+		10,
+		1,
+	);
+
+	assert.ok(map !== undefined);
+	assert.ok(map.cells.every((cell) => cell.fill !== "buffer"));
 });
 
 test("buildUsageMap clamps over-capacity usage and rejects unusable dimensions", () => {

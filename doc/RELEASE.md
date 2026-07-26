@@ -9,14 +9,19 @@ the resulting `master` merge commit.
    pnpm whoami
    ```
    ```bash
-   pnpm view pi-context-view dist-tags --json
+   pnpm view pi-context-view
    ```
 
-1. Confirm that the exact pi development pins in `package.json` match the local
-   pi version:
+1. Check the local pi version and update the exact
+   `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` development
+   pins in `package.json` to match it. Keep both peer dependencies as `"*"`,
+   then refresh `pnpm-lock.yaml`:
 
    ```bash
    pi --version
+   ```
+   ```bash
+   pnpm install
    ```
 
 1. Finalize the release documentation:

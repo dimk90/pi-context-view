@@ -1,6 +1,6 @@
 # UI specification
 
-This is the canonical UI reference for pi-context-view v0.2.1. Both `/context`
+This is the canonical UI reference for pi-context-view v0.3.0. Both `/context`
 views are focused fullscreen TUI overlays. Usage and Injections are separate
 views; there is no tab state.
 
@@ -12,14 +12,15 @@ Follow pi's native selector style (`/settings`, `/model`):
 - one blank row after the dialog header;
 - accent title and responsive summary alignment as specified by each view;
 - fixed-column `→` cursor flush at column 0;
-- muted description wrapped onto indented continuation lines, never ellipsized,
+- dim description wrapped onto indented continuation lines, never ellipsized,
   between blank rows above the hints;
 - dim key plus muted description hints joined by ` · `;
 - dim `(current/total)` shown only when content overflows.
 
 Headers, subheaders, and the cursor start at column 0. Indent descriptions,
-scroll counters, hint rows, and preview bodies by two spaces. Use bright `text`
-for primary rows, `muted` for subordinate rows and values, and `dim` for deeper
+scroll counters, hint rows, and preview bodies by two spaces. Use `dim` for dialog
+descriptions and bright `text` for primary rows, `muted` for subordinate rows and
+values, and `dim` for deeper
 breakdowns. Selected labels and values use `accent` with no background.
 Subheaders are bold and use `mdHeading`.
 
@@ -53,11 +54,19 @@ after explicit Enter selection.
 
 The overview contains a proportional 14×14 map and an interactive category
 legend. Cells use themed `■` for full occupancy, `◧` for partial occupancy, `▦`
-for compacted data, and dim `⛶` for free space. Allocate occupied cells from
-estimated category totals against the context window; display pi-reported usage
-separately because the values may differ. A dedicated `Map: ■ Full · ◧ Part`
-key appears beside the map, followed by one empty detail row before `Category:`.
-Compacted and free glyphs need no key because their category rows identify them.
+for compacted data, dim `⛝` for the auto-compact buffer, and dim `⛶` for free
+space. Allocate occupied cells from estimated category totals against the
+context window; display pi-reported usage separately because the values may
+differ. A dedicated `Map: ■ Full · ◧ Part` key appears beside the map, followed
+by one empty detail row before `Category:`. Compacted, buffer, and free glyphs
+need no key because their category rows identify them.
+
+When auto-compaction is enabled, the tail of the map shows the settings
+`reserveTokens` reserve as `⛝` cells after the free cells: tokens that content
+will never occupy because compaction triggers first. The buffer shrinks once
+estimated content grows into the reserve and disappears when auto-compaction is
+disabled or settings are unreadable. Read the reserve from pi's merged
+global/project settings at view-open time, honoring project trust.
 
 At map widths, render the header as:
 
@@ -94,11 +103,20 @@ and percentage values align in separate columns. Categories include:
 - Tool Output and Extensions;
 - Compacted Data and Free Space.
 
-Keep aggregate breakdowns collapsed except Tool Output, whose per-tool results
-and bash executions appear directly and scroll independently. Map allocation
-always uses top-level totals. Free Space has nothing to preview: it trails the
-legend and scrolls with it but is skipped by cursor navigation and excluded
-from the selectable-row counter.
+Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
+the smaller middle dot `·`. Keep aggregate breakdowns collapsed except
+Tool Output, whose per-tool results and bash executions appear directly and
+scroll independently. Map allocation always uses top-level totals. The trailing `⛝ Auto-Compact
+Buffer` (when enabled) and `⛶ Free Space` rows directly follow the last
+category. Free Space excludes the buffer so all rows still sum to the context
+window. Neither row has anything to preview: they trail the legend and scroll
+with it but are skipped by cursor navigation.
+
+When the legend overflows its viewport, show the dim `(current/total)` counter
+on the row directly below the last visible legend row, indented two spaces, and
+never beside the `Category:` heading. It counts every legend row, including the
+trailing buffer and free-space rows, and its left number is the last visible
+row, so scrolling to the end reaches the total.
 
 At widths of 72 columns and above, map cells have spacing. From 52–71 columns,
 remove inter-cell spacing. Below 52 columns, hide the map and its fill key while
@@ -120,6 +138,20 @@ category order. Assistant messages split into constituent text, thinking, and
 tool-call entries; tool calls include the tool name. Add a `text i/n` cell only
 for multi-block text or thinking content.
 
+For Agent Thinking Messages, estimate each assistant message as the greater of
+the visible-thinking chars/4 estimate and provider-reported `usage.reasoning`
+when available. If the message carries an opaque `thinkingSignature` or
+`thoughtSignature`, append `+ Encoded ≈N (≈T)` to one entry header for a
+positive provider-reported invisible share, or `+ Encoded ~N (~T)` for a
+signature-chars/4 proxy when no reasoning breakdown is available; `T` is
+the visible-plus-invisible message total. The proxy is not an upper bound and
+must never be rendered as one. Without a captured signature, show a
+positive provider-reported invisible share as `+ Reasoning ≈N (≈T)`; omit
+zero-size shares. Keep one wrapped dim explanation after the scrollable entries
+and before the hints; it opens with the schematic header pattern
+`[DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total)`, then defines
+`≈`, `~`, and `Encoded`. Never render, preview, or log raw signature bytes.
+
 Indent content by two spaces and separate entries with one blank row. In User
 Messages only, replace complete attached `<skill name="…">…</skill>` expansions
 with pi-colored `[skill] name` badges; leave malformed wrappers visible. This is
@@ -133,13 +165,13 @@ preview states.
 `/context injections` opens **Context Injections**. Its header is:
 
 ```text
-Context Injections · [INITIAL]  RUNTIME
+Context Injections · [INITIAL]
 ```
 
-`INITIAL` uses the active `mdHeading` treatment. `RUNTIME` is dim, disabled, and
-cannot receive focus in v0.2.0. There is no switching key or Runtime status. If
-the combined header does not fit, put the title and tabs on separate lines with
-one empty row before and after the tabs.
+`INITIAL` uses the active `mdHeading` treatment. Runtime inspection is
+roadmap-only, so no Runtime label, switching key, or Runtime status is rendered
+until that step lands. If the combined header does not fit, put the title and
+label on separate lines with one empty row before and after the label.
 
 Present Initial contributions in this order:
 

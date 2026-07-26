@@ -1,7 +1,7 @@
 # pi-context-view
 
 <h1 align="center">
-    <img width="400" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/pi-context-view.png">
+    <img width="400" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/c69c44d9ed0ee245183c3f82de11d8da312ba129/doc/images/pi-context-view.png">
 </h1>
 
 <br>
@@ -9,11 +9,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)](https://opensource.org/licenses/MIT)
 [![npm version](https://img.shields.io/npm/v/pi-context-view?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/pi-context-view)
 [![Pi Package](https://img.shields.io/badge/Pi-Package-6366F1?style=flat)](https://pi.dev/packages/pi-context-view)
+[![npm](https://img.shields.io/npm/dm/pi-context-view)](https://www.npmjs.com/package/pi-context-view)
 
-
-Pi extension that visualizes what fills the model's context and lets
-you inspect the parts you normally can't see: the base prompt, tool
-definitions, and instructions injected by other extensions.
+Pi extension to visualizes context usage and lets you inspect the parts you
+normally can't see: the base prompt, tool definitions, and instructions
+injected by other extensions.
 
 ## Features
 
@@ -38,14 +38,14 @@ definitions, and instructions injected by other extensions.
 See what fills your context.
 For example, check what remains after compaction:
 
-![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/25354f89671cc42e4da0157cb8dfb45d0866da88/doc/images/context-usage.gif)
+![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/bcc870a458f5de4a3890284a0e1589b85002198f/doc/images/context-usage.gif)
 
 
 ### `/context injections`
 
 Inspect hidden parts of the context, such as tool definitions:
 
-![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/25354f89671cc42e4da0157cb8dfb45d0866da88/doc/images/context-injections.gif)
+![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/bcc870a458f5de4a3890284a0e1589b85002198f/doc/images/context-injections.gif)
 
 ## Install
 

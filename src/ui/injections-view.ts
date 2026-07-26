@@ -1,6 +1,6 @@
 /**
- * Focused `/context injections` view: hierarchical Initial snapshot rows and
- * a disabled Runtime roadmap label.
+ * Focused `/context injections` view: hierarchical Initial snapshot rows. The
+ * Runtime label stays hidden until the runtime-inspection roadmap step.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
@@ -285,14 +285,13 @@ export class InjectionsView {
 		);
 	}
 
-	/** Keep title/tabs together when possible; give narrow tabs their own breathing room. */
+	/** Keep title/label together when possible; give the narrow label its own breathing room. */
 	private headerLines(width: number): string[] {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold("Context Injections"));
 		const separator = theme.fg("dim", " · ");
-		const initial = theme.fg("mdHeading", theme.bold("[INITIAL]"));
-		const runtime = theme.fg("dim", "RUNTIME");
-		const tabs = `${initial}  ${runtime}`;
+		// Runtime remains unimplemented, so only the Initial label is shown.
+		const tabs = theme.fg("mdHeading", theme.bold("[INITIAL]"));
 		const combined = `${title}${separator}${tabs}`;
 		if (visibleWidth(combined) <= width) return [this.fit(combined, width)];
 		return [this.fit(title, width), "", this.fit(tabs, width)];
@@ -407,7 +406,7 @@ export class InjectionsView {
 
 	/** Wrapped dialog description, including the degraded-capture indicator when needed. */
 	private descriptionLines(width: number): string[] {
-		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "muted", width);
+		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "dim", width);
 		if (this.input.degradedReason !== undefined) {
 			lines.push(...wrapDescriptionLines(
 				this.theme,
