@@ -172,7 +172,8 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.match(memoryLine ?? "", /Memory \(AGENTS\.md\) \.{2,}\s+1\.5k/);
 	const descriptionIndex = plain.findIndex((line) => line.includes("Estimated context for the next model request"));
 	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
-	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
+	assert.ok(descriptionIndex > 0 && hintsIndex > descriptionIndex);
+	assert.equal(plain[hintsIndex - 1], "");
 	assert.equal(plain[descriptionIndex]?.indexOf("Estimated context"), 2);
 	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;16;17;18m  Estimated context/);
 	assert.equal(plain[hintsIndex]?.indexOf("↑↓"), 2);
@@ -246,7 +247,7 @@ test("UsageView wraps narrow descriptions instead of truncating them", () => {
 	assert.ok(descriptionLines.every((line) => line.startsWith("  ")));
 	assert.equal(
 		descriptionLines.map((line) => line.trim()).join(" "),
-		"Estimated context for the next model request; actual token counts may differ.",
+		"Estimated context for the next model request. Token counts are approximate and may differ from the provider's estimate.",
 	);
 	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
 });
@@ -308,7 +309,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	const counterIndex = initial.findIndex((line) => /\(\d+\/18\)$/.test(line));
 	const lastRowIndex = initial.findLastIndex((line) => /• tool_\d+ \.{2,}/.test(line));
 	assert.ok(counterIndex >= 0 && counterIndex === lastRowIndex + 1, "counter follows the last legend row");
-	assert.match(initial[counterIndex] ?? "", /\s{2,}\(10\/18\)$/);
+	assert.match(initial[counterIndex] ?? "", /\s{2,}\(9\/18\)$/);
 	assert.ok(!initial.some((line) => /Category:.*\(\d+\/\d+\)/.test(line)), "no counter beside the heading");
 
 	view.handleInput("\u001b[4~"); // End
@@ -461,8 +462,8 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	assert.equal(
 		plain.slice(descriptionStart, hintsIndex - 1).map((line) => line.trim()).filter(Boolean).join(" "),
 		"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
-			"≈ is a provider-reported count; ~ is a rough signature-size proxy shown when no breakdown " +
-			"is reported and excluded from category totals. " +
+			"≈ is a provider-reported count; ~ is a rough approximation when no breakdown is reported " +
+			"and excluded from category totals. " +
 			"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.",
 	);
 	assert.match(rendered[descriptionStart] ?? "", /\u001b\[38;2;16;17;18m  Entry headers read:/);

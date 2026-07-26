@@ -28,10 +28,11 @@ import {
 import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 
-const USAGE_DESCRIPTION = "Estimated context for the next model request; actual token counts may differ.";
+const USAGE_DESCRIPTION = "Estimated context for the next model request. " +
+	"Token counts are approximate and may differ from the provider's estimate.";
 const INVISIBLE_REASONING_DESCRIPTION =
 	"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
-	"≈ is a provider-reported count; ~ is a rough signature-size proxy shown when no breakdown " +
+	"≈ is a provider-reported count; ~ is a rough approximation when no breakdown " +
 	"is reported and excluded from category totals. " +
 	"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.";
 const USAGE_TAIL_FIXED_LINE_COUNT = 5;
