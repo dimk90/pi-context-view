@@ -3,7 +3,7 @@
  * prompt/tool decomposition with the live session messages into estimated
  * category totals. No pi API access — unit-testable.
  */
-import { type ContextEvent, type ContextUsage, estimateTokens } from "@earendil-works/pi-coding-agent";
+import { type ContextEvent, type ContextUsage, convertToLlm, estimateTokens } from "@earendil-works/pi-coding-agent";
 
 import type {
 	ContextUsageSnapshot,
@@ -193,21 +193,24 @@ function classifyMessages(
 					text: contentToText(message.content),
 				});
 				break;
-			case "bashExecution":
-				if (message.excludeFromContext !== true) {
+			case "bashExecution": {
+				const tokens = transformedTokens(message);
+				// The transform drops `!!` bash executions: they never reach the provider.
+				if (tokens !== undefined) {
 					bashExecutions.push({
 						timestamp: message.timestamp,
 						breadcrumb: ["bash"],
-						tokens: estimateTokens(message),
+						tokens,
 						text: `$ ${message.command}\n${message.output}`,
 					});
 				}
 				break;
+			}
 			case "branchSummary":
 				compacted.push({
 					timestamp: message.timestamp,
 					breadcrumb: ["branch"],
-					tokens: estimateTokens(message),
+					tokens: transformedTokens(message) ?? 0,
 					text: message.summary,
 				});
 				break;
@@ -215,7 +218,7 @@ function classifyMessages(
 				compacted.push({
 					timestamp: message.timestamp,
 					breadcrumb: ["compaction"],
-					tokens: estimateTokens(message),
+					tokens: transformedTokens(message) ?? 0,
 					text: message.summary,
 				});
 				break;
@@ -255,6 +258,16 @@ function leafFromItem(item: InjectionItem): UsageCategory {
 		tokens: item.tokens,
 		entries: [{ breadcrumb: [item.label], tokens: item.tokens, text: item.text }],
 	};
+}
+
+/**
+ * Tokens for a message as pi's LLM transform actually sends it, so wrapper text
+ * `estimateTokens` alone cannot see (summary tags, `Ran ...` bash framing) is
+ * counted. Returns undefined for messages the transform excludes from context.
+ */
+function transformedTokens(message: ContextEvent["messages"][number]): number | undefined {
+	const converted = convertToLlm([message])[0];
+	return converted === undefined ? undefined : estimateTokens(converted);
 }
 
 /** Assistant-message shape narrowed out of the context event union. */

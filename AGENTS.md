@@ -71,7 +71,18 @@ window.
 
 Estimates need not reconcile exactly with pi or provider totals because of
 serialization, images, tokenizer differences, compaction timing, handler load
-order, and payload rewrites.
+order, and payload rewrites. Per-message role and block framing is a known
+residual: it may be real but is provider-internal and not exactly measurable,
+so no framing constant is added to totals. Protocol metadata such as
+`ToolCall.id`, `ToolResultMessage.toolCallId`, and `toolName` is likewise not
+counted; wire presence does not prove a field is tokenized.
+
+Messages whose provider-bound text pi's `convertToLlm` transform expands —
+compaction and branch summaries, and context-visible `bashExecution`
+messages — are estimated from the converted message
+(`estimateTokens(convertToLlm([message])[0])`), not the raw message. The
+extension may consequently exceed pi's own heuristic estimate, which has the
+same undercount; counting provider-bound text is intentional.
 
 Keep source, kind, and hierarchy in typed model fields; never recover semantics
 from display labels. Further rules:

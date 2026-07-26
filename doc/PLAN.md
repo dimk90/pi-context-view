@@ -66,30 +66,54 @@
       previewed, or logged.
   - UI sketch: [doc/sketches/thinking-preview.md](doc/sketches/thinking-preview.md).
   - Update [doc/UI.md](doc/UI.md) Usage-preview section accordingly.
-- [ ] 4. **Count replayed tool-exchange identifiers and summary wrappers**.
-  - pi's `estimateTokens` ignores provider-replayed structural text that is
-    verifiably sent on the wire:
-    - `ToolCall.id` (sent as `tool_use_id`/`call_id`; OpenAI-style APIs send
-      the ID twice — on the call and on its output) and
-      `ToolResultMessage.toolCallId` plus `toolName` — ~1K tokens on a
-      measured 42K-token branch;
-    - `convertToLlm` wrapper text around compaction and branch summaries
-      (prefix + `<summary>` tags, ~25–30 tokens each) — we currently count
-      only the bare `summary`.
-  - Additions, all exact chars/4 accounting:
-    - Agent Tool Call Messages: add `block.id.length` per tool-call block;
-    - Tool Output: add `toolCallId.length + toolName.length` per tool result;
-    - Compacted Data: estimate the wrapped text
-      (`PREFIX + summary + SUFFIX`), matching what `convertToLlm` actually
-      sends, for both compaction and branch summaries.
+- [x] 4. **Count text added by pi's LLM transform**.
+  - pi's `estimateTokens` undercounts message roles for which `convertToLlm`
+    adds literal user text:
+    - compaction and branch summaries gain a prefix and `<summary>` tags;
+    - context-visible `bashExecution` messages gain `Ran ...`, output fences or
+      `(no output)`, and optional cancellation, exit-code, and truncation text.
+    This transformed text is part of provider-bound input. `bashExecution`
+    represents pi's user/direct bash message type, not agent `bash` tool calls,
+    which remain tool calls and tool results.
+  - Use the public root exports as the source of truth instead of copying pi's
+    wrapper literals:
+
+    ```ts
+    const converted = convertToLlm([message])[0];
+    const tokens = converted === undefined ? 0 : estimateTokens(converted);
+    ```
+
+    Apply this to compaction summaries, branch summaries, and bash executions.
+    The transform handles `excludeFromContext` bash messages by returning no
+    converted message.
+  - Do not count `ToolCall.id`, `ToolResultMessage.toolCallId`,
+    `ToolResultMessage.toolName`, or other protocol metadata merely because a
+    provider sends the fields on the wire. This does not change the existing
+    counting of `ToolCall.name` and its JSON-serialized arguments. Wire presence
+    does not prove that a field is tokenized, and provider serializers replay
+    different subsets. A paired Anthropic token-count measurement produced the
+    same input count for otherwise identical tool exchanges with 1-, 16-, and
+    64-character IDs.
   - Do not add a per-message framing constant: role/block serialization
-    overhead (~4 tokens/message) is real but provider-internal and not
-    exactly measurable; keep it out of totals rather than introduce a fudge
-    factor. Document it as a known residual next to the existing
-    reconciliation caveats.
-  - Preview entries are unchanged: IDs and wrapper text are structural, not
-    content; only the token numbers move. Totals must still equal the exact
-    sum of entry estimates, so fold the additions into each entry's `tokens`.
+    overhead may be real but is provider-internal and not exactly measurable;
+    keep it out of totals rather than introduce a fudge factor. Document it as
+    a known residual in the reconciliation caveat at [AGENTS.md](../AGENTS.md).
+  - The extension may consequently exceed pi's heuristic fallback or trailing
+    estimate, which has the same undercount; prioritizing provider-bound text
+    over parity with that heuristic is intentional. Provider-reported usage,
+    when available, may instead align more closely.
+  - Keep preview text unchanged and add no separate wrapper annotation: the
+    transform-added text is structural. Only the affected entry token numbers
+    move, and totals must still equal the exact sum of entry estimates.
+  - Update the exact bash and summary expectations in `test/usage.test.ts` and
+    cover normal, no-output, failed or cancelled, truncated, and
+    `excludeFromContext` bash messages.
+- [ ] 5. **Small Visual Fixes**:
+  - Use big "M" letter for millions tokens. Now the small "m" is using in
+    usage view for context window size: "claude-fable-5 · 0/1m".
+  - The categories are scrollable but scroll counter e.g. "(10/20)" is not visible
+    when not all of categories are visible.
+  - Hide not implemented [Runtime] tab from injections view.
 
 ## v0.4.0
 
