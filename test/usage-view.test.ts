@@ -421,7 +421,7 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 					breadcrumb: ["assistant"],
 					tokens: 131,
 					visibleTokens: 131,
-					invisibleReasoning: { tokens: 1_126, basis: "signature-upper-bound", encoded: true },
+					invisibleReasoning: { tokens: 1_126, basis: "signature-proxy", encoded: true },
 					text: "Another visible summary.",
 				},
 				{
@@ -445,13 +445,13 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	const reportedHeader = plain.findIndex((line) =>
 		/\[assistant\] 594 \+ Encoded ≈547 \(≈1\.1k\)$/.test(line)
 	);
-	const boundedHeader = plain.findIndex((line) =>
-		/\[assistant\] 131 \+ Encoded ≤1\.1k \(≤1\.3k\)$/.test(line)
+	const proxyHeader = plain.findIndex((line) =>
+		/\[assistant\] 131 \+ Encoded ~1\.1k \(~1\.3k\)$/.test(line)
 	);
 	const unsignedHeader = plain.findIndex((line) => /\[assistant\] 50 \+ Reasoning ≈30 \(≈80\)$/.test(line));
-	assert.ok(reportedHeader >= 0 && boundedHeader > reportedHeader && unsignedHeader > boundedHeader);
+	assert.ok(reportedHeader >= 0 && proxyHeader > reportedHeader && unsignedHeader > proxyHeader);
 	assert.match(rendered[reportedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ≈547 \(≈1\.1k\)/);
-	assert.match(rendered[boundedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ≤1\.1k \(≤1\.3k\)/);
+	assert.match(rendered[proxyHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ~1\.1k \(~1\.3k\)/);
 	assert.match(rendered[unsignedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Reasoning ≈30 \(≈80\)/);
 
 	const descriptionStart = plain.findIndex((line) => line.includes("Entry headers read:"));
@@ -461,8 +461,8 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	assert.equal(
 		plain.slice(descriptionStart, hintsIndex - 1).map((line) => line.trim()).filter(Boolean).join(" "),
 		"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
-			"≈ is a provider-reported count; ≤ is a chars/4 upper bound shown when no breakdown is " +
-			"reported and excluded from category totals. " +
+			"≈ is a provider-reported count; ~ is a rough signature-size proxy shown when no breakdown " +
+			"is reported and excluded from category totals. " +
 			"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.",
 	);
 	assert.match(rendered[descriptionStart] ?? "", /\u001b\[38;2;16;17;18m  Entry headers read:/);

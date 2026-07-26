@@ -70,10 +70,10 @@ export interface InitialSnapshot {
 
 /** How an invisible reasoning-token estimate was derived without retaining raw signature bytes. */
 export interface InvisibleReasoningEstimate {
-	/** Invisible-token estimate; signature-only upper bounds are not added to category totals. */
+	/** Invisible-token estimate; signature-size proxies are not added to category totals. */
 	readonly tokens: number;
 	/** Whether the estimate came from a provider usage breakdown or opaque signature length. */
-	readonly basis: "provider-reported" | "signature-upper-bound";
+	readonly basis: "provider-reported" | "signature-proxy";
 	/** Whether the message carries an opaque replay signature. */
 	readonly encoded: boolean;
 }

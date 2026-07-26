@@ -275,7 +275,7 @@ type AssistantContextMessage = Extract<ContextEvent["messages"][number], { role:
 
 /**
  * Build thinking previews while accounting once per assistant message. Provider-reported
- * reasoning replaces a smaller visible-text estimate; signature-only estimates stay upper-bound metadata.
+ * reasoning replaces a smaller visible-text estimate; signature-only estimates stay approximate metadata.
  */
 function thinkingEntries(message: AssistantContextMessage): UsagePreviewEntry[] {
 	const texts = message.content.flatMap((block) => (block.type === "thinking" ? [block.thinking] : []));
@@ -323,7 +323,7 @@ function thinkingEntries(message: AssistantContextMessage): UsagePreviewEntry[] 
 	return entries;
 }
 
-/** Describe a positive invisible share or signature-only upper bound without retaining its source bytes. */
+/** Describe a positive invisible share or signature-size proxy without retaining its source bytes. */
 function createInvisibleReasoningEstimate(
 	signatureChars: number,
 	visibleTokens: number,
@@ -339,9 +339,12 @@ function createInvisibleReasoningEstimate(
 		};
 	}
 	if (signatureChars === 0) return undefined;
+	// chars/4 over a signature is a rough proxy, not a bound: the server decrypts the
+	// envelope and counts the reconstructed thinking, at a model-dependent ratio that
+	// measured either side of 4. See doc/THINKING.md.
 	return {
 		tokens: textTokens(signatureChars),
-		basis: "signature-upper-bound",
+		basis: "signature-proxy",
 		encoded: true,
 	};
 }

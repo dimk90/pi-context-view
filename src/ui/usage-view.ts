@@ -31,8 +31,8 @@ import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
 const USAGE_DESCRIPTION = "Estimated context for the next model request; actual token counts may differ.";
 const INVISIBLE_REASONING_DESCRIPTION =
 	"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
-	"≈ is a provider-reported count; ≤ is a chars/4 upper bound shown when no breakdown is " +
-	"reported and excluded from category totals. " +
+	"≈ is a provider-reported count; ~ is a rough signature-size proxy shown when no breakdown " +
+	"is reported and excluded from category totals. " +
 	"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.";
 const USAGE_TAIL_FIXED_LINE_COUNT = 5;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
@@ -585,7 +585,7 @@ export class UsageView {
 		cells.push(theme.fg("dim", formatTokens(entry.visibleTokens ?? entry.tokens)));
 		if (entry.invisibleReasoning !== undefined) {
 			const { tokens, basis, encoded } = entry.invisibleReasoning;
-			const marker = basis === "provider-reported" ? "≈" : "≤";
+			const marker = basis === "provider-reported" ? "≈" : "~";
 			const label = encoded ? "Encoded" : "Reasoning";
 			const total = (entry.visibleTokens ?? entry.tokens) + tokens;
 			cells.push(

@@ -142,14 +142,15 @@ For Agent Thinking Messages, estimate each assistant message as the greater of
 the visible-thinking chars/4 estimate and provider-reported `usage.reasoning`
 when available. If the message carries an opaque `thinkingSignature` or
 `thoughtSignature`, append `+ Encoded ≈N (≈T)` to one entry header for a
-positive provider-reported invisible share, or `+ Encoded ≤N (≤T)` for a
-signature-chars/4 upper bound when no reasoning breakdown is available; `T` is
-the visible-plus-invisible message total. Without a captured signature, show a
+positive provider-reported invisible share, or `+ Encoded ~N (~T)` for a
+signature-chars/4 proxy when no reasoning breakdown is available; `T` is
+the visible-plus-invisible message total. The proxy is not an upper bound and
+must never be rendered as one. Without a captured signature, show a
 positive provider-reported invisible share as `+ Reasoning ≈N (≈T)`; omit
 zero-size shares. Keep one wrapped dim explanation after the scrollable entries
 and before the hints; it opens with the schematic header pattern
 `[DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total)`, then defines
-`≈`, `≤`, and `Encoded`. Never render, preview, or log raw signature bytes.
+`≈`, `~`, and `Encoded`. Never render, preview, or log raw signature bytes.
 
 Indent content by two spaces and separate entries with one blank row. In User
 Messages only, replace complete attached `<skill name="…">…</skill>` expansions

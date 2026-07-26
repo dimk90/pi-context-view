@@ -426,7 +426,7 @@ test("computeUsage uses provider reasoning per message and keeps signature estim
 	assert.deepEqual(entries.map((entry) => entry.invisibleReasoning), [
 		{ tokens: 8, basis: "provider-reported", encoded: true },
 		undefined,
-		{ tokens: 4, basis: "signature-upper-bound", encoded: true },
+		{ tokens: 4, basis: "signature-proxy", encoded: true },
 		undefined,
 		{ tokens: 5, basis: "provider-reported", encoded: false },
 	]);
