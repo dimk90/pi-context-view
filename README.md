@@ -1,7 +1,7 @@
 # pi-context-view
 
 <h1 align="center">
-    <img width="400" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/cbf53257118d811188a48591905fb9438fd54536/doc/images/pi-context-view.png">
+    <img width="400" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/c69c44d9ed0ee245183c3f82de11d8da312ba129/doc/images/pi-context-view.png">
 </h1>
 
 <br>
