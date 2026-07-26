@@ -9,7 +9,7 @@ the resulting `master` merge commit.
    pnpm whoami
    ```
    ```bash
-   pnpm view pi-context-view dist-tags --json
+   pnpm view pi-context-view
    ```
 
 1. Check the local pi version and update the exact
