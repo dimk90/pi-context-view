@@ -100,3 +100,59 @@ The redesign review established two useful facts before implementation:
    only the synthetic aborted assistant at `message_end` with empty content
    and `stopReason: "stop"`. The production design must still filter the
    persisted synthetic entries and verify zero provider calls.
+
+## Historical `npm:pi-anthropic-oauth` transport issues
+
+These findings explain misleading counters observed during the encoded-thinking
+investigation. They describe the transport installed in that environment and
+are not part of the current counting architecture.
+
+An earlier analysis concluded from session `usage` fields that replayed
+thinking cost nothing. The counters were real; the client was not sending the
+thinking.
+
+`npm:pi-anthropic-oauth` replaced pi's Anthropic stream function with its own
+converter. Its assistant branch (`src/convert.ts`) handled only `text` and
+`toolCall` blocks, so every thinking block was silently dropped from the
+outgoing payload. It also never populated `usage.reasoning`, so neither the
+exact count nor the signature fallback could fire. Captured wire payloads for
+the same prompt showed:
+
+- default, extensions on — 0 thinking blocks sent, thinking parameter
+  `{"type":"enabled","budget_tokens":10240}`, `usage.reasoning` undefined;
+- `pi -ne`, stock pi — 1 thinking block sent with its signature intact,
+  thinking parameter `{"type":"adaptive","display":"summarized"}`,
+  `usage.reasoning` populated.
+
+Stock pi's `transformMessages` kept signed thinking whenever the stored
+assistant `provider`, `api`, and `model` all matched the runtime model; any one
+mismatch dropped the blocks. All three matched in these sessions, so the loss
+came from the extension, not from pi or Anthropic.
+
+Direct API replay of the same Fable prefix confirmed the cost: 21,671 input
+tokens with thinking versus 15,347 with it stripped, about 6.3k billed tokens
+that the instrumented session never paid because the blocks never left the
+client.
+
+Stripping thinking mid-tool-loop did not raise an API error. Anthropic
+documented that a thinking block must accompany the matching tool results, but
+replaying that history without it was accepted and answered normally under both
+the extension's beta set and one including
+`interleaved-thinking-2025-05-14`. The failure mode was silent quality loss,
+not a visible break, which is why it survived unnoticed.
+
+The converter also mishandled the thinking level. It mapped effort through a
+table keyed `minimal`/`low`/`medium`/`high`/`xhigh`, but Fable 5 and Opus 5
+exposed only `xhigh` and `max`, so `max` missed the table and fell through to a
+fixed `?? 10240` budget. Both models declared `forceAdaptiveThinking`, so stock
+pi sent `type: "adaptive"` and let the model allocate. On one identical prompt:
+the extension's `enabled`/10240 mode spent 941 thinking tokens, stock adaptive
+`xhigh` spent 1,434, and stock adaptive `max` spent 5,102. This was independent
+of the stripping bug.
+
+Caching was unaffected: the converter did set `cache_control` on the system
+prompt and the last content block.
+
+Method note: pi called `undici.install()` after startup, which replaced
+`globalThis.fetch`. A `--require` hook had to re-wrap `fetch` periodically or it
+observed nothing. `before_provider_request` did not fire on this transport.

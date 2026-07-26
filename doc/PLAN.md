@@ -41,21 +41,23 @@
     ```text
     invisibleTokens = usage.reasoning !== undefined
         ? max(0, usage.reasoning - ceil(visibleThinkingChars / 4))
-        : ceil(signatureChars / 4)   // upper bound, render with "≤"
+        : ceil(signatureChars / 4)   // rough proxy, render with "~"
     ```
 
     `signatureChars` sums `thinkingSignature` chars across thinking blocks and
     `thoughtSignature` chars across tool-call blocks of the message. When the
     provider reports `usage.reasoning`, the invisible share is what the
     visible text does not explain. Without it, chars/4 over the signatures is
-    only an upper bound because encrypted blobs do not tokenize at text
-    ratios; mark it `≤` so the number is not read as exact.
+    only a rough proxy: the server decrypts the envelope and counts the
+    reconstructed thinking, so the ratio is model-dependent and measured on
+    either side of 4 — it is **not** an upper bound. Mark it `~` so the number
+    is not read as exact or as a ceiling. See [THINKING.md](THINKING.md).
   - Preview changes for the Agent Thinking Messages category:
     - visible thinking content renders exactly as before (same wrapping and
       20-line cap);
     - entry headers of messages carrying a `thinkingSignature` or
-      `thoughtSignature` append a `+ Encoded ≈N (≈T)` (or `≤N (≤T)` for the
-      chars/4 upper bound) cell next to the visible token count, where `T` is
+      `thoughtSignature` append a `+ Encoded ≈N (≈T)` (or `~N (~T)` for the
+      chars/4 proxy) cell next to the visible token count, where `T` is
       the visible-plus-invisible message total;
     - when provider-reported reasoning exceeds the visible estimate without a
       captured signature, append `+ Reasoning ≈N (≈T)` so the extra counted
@@ -64,7 +66,7 @@
       the hotkeys row — explains the invisible part and the estimation method;
       no per-entry repetition. Raw signature bytes are never rendered,
       previewed, or logged.
-  - UI sketch: [doc/sketches/thinking-preview.md](doc/sketches/thinking-preview.md).
+  - Implementation notes and preview example: [THINKING.md](THINKING.md).
   - Update [doc/UI.md](doc/UI.md) Usage-preview section accordingly.
 - [x] 4. **Count text added by pi's LLM transform**.
   - pi's `estimateTokens` undercounts message roles for which `convertToLlm`

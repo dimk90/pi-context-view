@@ -84,6 +84,17 @@ messages — are estimated from the converted message
 extension may consequently exceed pi's own heuristic estimate, which has the
 same undercount; counting provider-bound text is intentional.
 
+Count thinking once per assistant message as
+`max(ceil(visibleThinkingChars / 4), usage.reasoning ?? 0)`, accepting only a
+finite, non-negative provider count. Attach any provider-reported excess over
+the visible estimate once as invisible-reasoning metadata. Without that count,
+`ceil(signatureChars / 4)` is a rough preview-only proxy excluded from category
+totals, not an upper bound; `signatureChars` sums all `thinkingSignature` and
+`thoughtSignature` character lengths. Never
+retain, tokenize, render, preview, or log raw signature bytes. See
+[doc/THINKING.md](doc/THINKING.md) for model retention, measurements, and UI
+notation.
+
 Keep source, kind, and hierarchy in typed model fields; never recover semantics
 from display labels. Further rules:
 
