@@ -149,6 +149,11 @@ export class ListNavigator {
 		return Math.min(this.visibleCount, this.rowCount);
 	}
 
+	/** One-based final row currently visible, suitable for a scroll counter. */
+	public get visibleEnd(): number {
+		return Math.min(this.rowCount, this.scrollOffset + this.windowSize);
+	}
+
 	public get hasOverflow(): boolean {
 		return this.rowCount > this.visibleCount;
 	}

@@ -275,18 +275,16 @@ export class UsageView {
 		});
 	}
 
-	/** Map-fill key, category heading, and selectable category legend viewport. */
+	/** Map-fill key, category heading, selectable category legend viewport, and scroll counter. */
 	private detailLines(width: number, rows: number, includeMapKey: boolean): string[] {
 		const theme = this.theme;
 		const showMapKey = includeMapKey && rows >= 4;
 		const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT + (showMapKey ? 2 : 0);
-		const viewportRows = Math.max(1, rows - headerLineCount);
-		this.navigator.setVisibleCount(viewportRows);
+		// The counter sits below the last legend row, so it consumes one of the available rows.
+		const viewport = calculateViewport(this.legendRows.length, rows, headerLineCount);
+		this.navigator.setVisibleCount(viewport.visibleCount);
 
 		const heading = theme.fg("mdHeading", theme.bold("Category:"));
-		const counter = this.navigator.hasOverflow
-			? theme.fg("dim", `(${this.navigator.selectedOrdinal + 1}/${this.navigator.selectableCount})`)
-			: "";
 		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
 		const columns = this.legendColumns(rowWidth);
 		const visibleRows: string[] = [];
@@ -299,10 +297,17 @@ export class UsageView {
 			const cursor = selected ? theme.fg("accent", "→ ") : "  ";
 			visibleRows.push(this.fit(`${cursor}${this.legendLine(row, columns, rowWidth, selected)}`, width));
 		}
+		const counterLines = viewport.showScroll
+			? [this.fit(
+				theme.fg("dim", `${BODY_INDENT}(${this.navigator.visibleEnd}/${this.legendRows.length})`),
+				width,
+			)]
+			: [];
 		return [
 			...(showMapKey ? [this.mapKeyLine(width), ""] : []),
-			counter === "" ? heading : spreadLine(heading, counter, width),
+			heading,
 			...visibleRows,
+			...counterLines,
 		].slice(0, rows);
 	}
 
@@ -712,11 +717,11 @@ function categoryColor(categoryId: string | undefined): ThemeColor {
 	}
 }
 
-/** Compact token count: 951, 3.7k, 43.8k, 1m. */
+/** Compact token count: 951, 3.7k, 43.8k, 1M. */
 export function formatTokens(tokens: number): string {
 	if (tokens < 1_000) return `${tokens}`;
 	if (tokens < 1_000_000) return `${trimTrailingZero((tokens / 1_000).toFixed(1))}k`;
-	return `${trimTrailingZero((tokens / 1_000_000).toFixed(1))}m`;
+	return `${trimTrailingZero((tokens / 1_000_000).toFixed(1))}M`;
 }
 
 /** Percentage with one decimal below 10%: 0.4%, 4.2%, 96%. */

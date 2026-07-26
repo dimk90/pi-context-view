@@ -1,6 +1,6 @@
 # UI specification
 
-This is the canonical UI reference for pi-context-view v0.2.1. Both `/context`
+This is the canonical UI reference for pi-context-view v0.3.0. Both `/context`
 views are focused fullscreen TUI overlays. Usage and Injections are separate
 views; there is no tab state.
 
@@ -110,8 +110,13 @@ scroll independently. Map allocation always uses top-level totals. The trailing 
 Buffer` (when enabled) and `⛶ Free Space` rows directly follow the last
 category. Free Space excludes the buffer so all rows still sum to the context
 window. Neither row has anything to preview: they trail the legend and scroll
-with it but are skipped by cursor navigation and excluded from the
-selectable-row counter.
+with it but are skipped by cursor navigation.
+
+When the legend overflows its viewport, show the dim `(current/total)` counter
+on the row directly below the last visible legend row, indented two spaces, and
+never beside the `Category:` heading. It counts every legend row, including the
+trailing buffer and free-space rows, and its left number is the last visible
+row, so scrolling to the end reaches the total.
 
 At widths of 72 columns and above, map cells have spacing. From 52–71 columns,
 remove inter-cell spacing. Below 52 columns, hide the map and its fill key while
@@ -159,13 +164,13 @@ preview states.
 `/context injections` opens **Context Injections**. Its header is:
 
 ```text
-Context Injections · [INITIAL]  RUNTIME
+Context Injections · [INITIAL]
 ```
 
-`INITIAL` uses the active `mdHeading` treatment. `RUNTIME` is dim, disabled, and
-cannot receive focus in v0.2.0. There is no switching key or Runtime status. If
-the combined header does not fit, put the title and tabs on separate lines with
-one empty row before and after the tabs.
+`INITIAL` uses the active `mdHeading` treatment. Runtime inspection is
+roadmap-only, so no Runtime label, switching key, or Runtime status is rendered
+until that step lands. If the combined header does not fit, put the title and
+label on separate lines with one empty row before and after the label.
 
 Present Initial contributions in this order:
 

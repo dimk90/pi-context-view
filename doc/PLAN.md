@@ -108,12 +108,18 @@
   - Update the exact bash and summary expectations in `test/usage.test.ts` and
     cover normal, no-output, failed or cancelled, truncated, and
     `excludeFromContext` bash messages.
-- [ ] 5. **Small Visual Fixes**:
+- [x] 5. **Small Visual Fixes**:
   - Use big "M" letter for millions tokens. Now the small "m" is using in
     usage view for context window size: "claude-fable-5 · 0/1m".
-  - The categories are scrollable but scroll counter e.g. "(10/20)" is not visible
+  - The categories are scrollable but counter "(1/14)" is on the right-top
+    location (the same row with "Category") move it to bottom-left - the
+    row after last category item to make it move obvious.
     when not all of categories are visible.
-  - Hide not implemented [Runtime] tab from injections view.
+    The counter counts all legend rows, including the non-selectable
+    Auto-Compact Buffer and Free Space rows, and its left number is the last
+    visible row so it reaches the total when scrolled to the end.
+  - Hide not implemented [Runtime] tab from injections view; the header keeps
+    the `[INITIAL]` label alone.
 
 ## v0.4.0
 

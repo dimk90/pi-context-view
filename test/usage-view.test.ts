@@ -117,7 +117,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const plain = lines.map(stripSgr);
 
 	assert.equal(lines.length, 30);
-	assert.match(plain[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1m \(4\.4%\)$/);
+	assert.match(plain[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;1;2;3m.*Context Usage/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;7;8;9mclaude-opus-4-8/);
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
@@ -202,7 +202,7 @@ test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space
 	const compactedIndex = plain.findIndex((line) => line.includes("Compacted Data"));
 	assert.ok(bufferIndex > compactedIndex && freeIndex === bufferIndex + 1, "buffer row precedes free space");
 	assert.match(plain[bufferIndex] ?? "", /⛝ Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/);
-	// The reserve is carved out of Free Space: 1m − 43.8k − 16.4k.
+	// The reserve is carved out of Free Space: 1M − 43.8k − 16.4k.
 	assert.match(plain[freeIndex] ?? "", /⛶ Free Space \.{2,}\s+939\.8k\s+94%/);
 	// The buffer row directly follows the last category without a blank separator.
 	assert.match(plain[bufferIndex - 1] ?? "", /Compacted Data/);
@@ -271,7 +271,7 @@ test("UsageView falls back to estimated post-compaction usage and closes on Esca
 
 	const rendered = stripSgr(view.render(80).join("\n"));
 	const summaryLine = rendered.split("\n").find((line) => line.includes("≈"));
-	assert.match(summaryLine ?? "", /≈50k\/1m \(5%\)$/);
+	assert.match(summaryLine ?? "", /≈50k\/1M \(5%\)$/);
 	assert.match(rendered, /■ User Messages \.{2,}\s+50k/);
 	assert.match(rendered, /⛶ Free Space \.{2,}\s+950k/);
 
@@ -304,11 +304,17 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	assert.ok(!initial.some((line) => line.includes("tool_15")));
 	assert.ok(!initial.some((line) => line.includes("read should stay collapsed")));
 	assert.ok(!initial.some((line) => line.includes("Tool Results:")));
-	assert.ok(initial.some((line) => /\(1\/\d+\)/.test(line)));
+	// The overflow counter sits below the last visible legend row and counts every legend row.
+	const counterIndex = initial.findIndex((line) => /\(\d+\/18\)$/.test(line));
+	const lastRowIndex = initial.findLastIndex((line) => /• tool_\d+ \.{2,}/.test(line));
+	assert.ok(counterIndex >= 0 && counterIndex === lastRowIndex + 1, "counter follows the last legend row");
+	assert.match(initial[counterIndex] ?? "", /\s{2,}\(10\/18\)$/);
+	assert.ok(!initial.some((line) => /Category:.*\(\d+\/\d+\)/.test(line)), "no counter beside the heading");
 
 	view.handleInput("\u001b[4~"); // End
 	const ending = view.render(80).map(stripSgr);
 	assert.ok(ending.some((line) => /→\s+• tool_15 \.{2,}\s+100\s+0%/.test(line)));
+	assert.ok(ending.some((line) => /\(18\/18\)$/.test(line)), "counter reaches the total at the end");
 	assert.ok(ending.some((line) => /⛶ Free Space \.{2,}\s+998\.4k\s+100%/.test(line)));
 	assert.ok(!ending.some((line) => /→\s+⛶ Free Space/.test(line)), "Free Space is never selected");
 });
@@ -728,7 +734,7 @@ test("UsageView hides model metadata instead of abbreviating it", () => {
 	);
 
 	const header = stripSgr(view.render(60)[2] ?? "");
-	assert.match(header, /^Context Usage\s+43\.8k\/1m \(4\.4%\)$/);
+	assert.match(header, /^Context Usage\s+43\.8k\/1M \(4\.4%\)$/);
 	assert.doesNotMatch(header, /provider|very-long|…| · /);
 });
 
@@ -744,11 +750,11 @@ test("UsageView respects width and height changes", () => {
 	}
 	const compactMap = view.render(60).map(stripSgr);
 	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Map: ■ Full · ◧ Part$/.test(line)));
-	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1m \(4\.4%\)$/);
+	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	const categoryOnly = view.render(40).map(stripSgr);
 	assert.equal(categoryOnly[2], "Context Usage");
 	assert.equal(categoryOnly[3], "");
-	assert.equal(categoryOnly[4], "43.8k/1m (4.4%)");
+	assert.equal(categoryOnly[4], "43.8k/1M (4.4%)");
 	assert.ok(categoryOnly.some((line) => line.startsWith("Category:")));
 	assert.ok(categoryOnly.some((line) => line.startsWith("→ ■ System")));
 	assert.ok(!categoryOnly.some((line) => line.includes("claude-opus-4-8")));
@@ -769,7 +775,7 @@ test("formatTokens and formatPercent keep compact readable precision", () => {
 	assert.equal(formatTokens(951), "951");
 	assert.equal(formatTokens(3_700), "3.7k");
 	assert.equal(formatTokens(50_000), "50k");
-	assert.equal(formatTokens(1_000_000), "1m");
+	assert.equal(formatTokens(1_000_000), "1M");
 	assert.equal(formatPercent(0.004), "0.4%");
 	assert.equal(formatPercent(0.042), "4.2%");
 	assert.equal(formatPercent(0.956), "96%");
