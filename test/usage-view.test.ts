@@ -177,7 +177,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.equal(plain[descriptionIndex]?.indexOf("Estimated context"), 2);
 	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;16;17;18m  Estimated context/);
 	assert.equal(plain[hintsIndex]?.indexOf("↑↓"), 2);
-	assert.match(plain[hintsIndex] ?? "", /↑↓ Navigate · Enter Preview · Esc Close/);
+	assert.match(plain[hintsIndex] ?? "", /↑↓\/jk Navigate · Enter Preview · Esc Close/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mEsc/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Close/);
 
@@ -238,7 +238,7 @@ test("UsageView wraps narrow descriptions instead of truncating them", () => {
 	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	const lines = view.render(40).map(stripSgr);
 	const descriptionStart = lines.findIndex((line) => line.includes("Estimated context"));
-	const hintsIndex = lines.findIndex((line) => line.includes("↑↓ Navigate"));
+	const hintsIndex = lines.findIndex((line) => line.includes("↑↓/jk Navigate"));
 
 	assert.ok(descriptionStart >= 0 && hintsIndex > descriptionStart);
 	assert.equal(lines[hintsIndex - 1], "");
@@ -388,9 +388,9 @@ test("UsageView opens a category content preview and returns to the same row", (
 	assert.equal(plain[readHeader + 1], "    read result content line");
 	assert.equal(plain[readHeader + 2], "    second line");
 	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
-	const hintIndex = plain.findIndex((line) => line.includes("↑↓ Scroll"));
+	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Scroll"));
 	assert.ok(hintIndex > 0);
-	assert.match(plain[hintIndex] ?? "", /↑↓ Scroll · PgUp\/PgDn Page · Esc Back/);
+	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
 
 	// First Escape returns to the same selected list row; second closes the view.
 	view.handleInput("\u001b");
@@ -398,6 +398,69 @@ test("UsageView opens a category content preview and returns to the same row", (
 	assert.equal(view.render(80).join("\n"), listBefore);
 	view.handleInput("\u001b");
 	assert.equal(closed, true);
+});
+
+test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
+	const tools = Array.from({ length: 30 }, (_, index) => ({
+		id: `tool-result:tool_${index + 1}`,
+		label: `tool_${index + 1}`,
+		tokens: 100,
+		entries: [
+			{
+				timestamp: Date.UTC(2026, 6, 11, 14, 0, index + 1),
+				breadcrumb: [`tool_${index + 1}`],
+				tokens: 100,
+				text: `tool_${index + 1} output`,
+			},
+		],
+	}));
+	const scrollUsage: ContextUsageSnapshot = {
+		...usage(3_000),
+		categories: [{ id: "tool-output", label: "Tool Output", tokens: 3_000, children: tools }],
+		estimatedTokens: 3_000,
+	};
+	const createScrollView = () =>
+		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
+	const arrows = createScrollView();
+	const vim = createScrollView();
+	const frame = (view: UsageView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const start = frame(vim);
+	assert.equal(frame(arrows), start);
+
+	// Legend navigation: j and k move exactly like Down and Up.
+	for (let step = 0; step < 6; step++) {
+		arrows.handleInput("\u001b[B");
+		vim.handleInput("j");
+	}
+	assert.notEqual(frame(vim), start);
+	assert.match(stripSgr(frame(vim)), /→\s+• tool_6 \.{2,}/);
+	assert.equal(frame(vim), frame(arrows));
+	arrows.handleInput("\u001b[A");
+	vim.handleInput("k");
+	assert.match(stripSgr(frame(vim)), /→\s+• tool_5 \.{2,}/);
+	assert.equal(frame(vim), frame(arrows));
+
+	// Preview scrolling: j and k move the aggregate entry stream, and neither key closes the view.
+	arrows.handleInput("\u001b[1~"); // Home → the overflowing Tool Output aggregate
+	vim.handleInput("\u001b[1~");
+	arrows.handleInput("\r");
+	vim.handleInput("\r");
+	const previewTop = frame(vim);
+	assert.equal(previewTop, frame(arrows));
+	for (let step = 0; step < 4; step++) {
+		arrows.handleInput("\u001b[B");
+		vim.handleInput("j");
+	}
+	assert.notEqual(frame(vim), previewTop);
+	assert.equal(frame(vim), frame(arrows));
+	arrows.handleInput("\u001b[A");
+	vim.handleInput("k");
+	assert.equal(frame(vim), frame(arrows));
+
+	const hints = frame(vim).split("\n").map(stripSgr);
+	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
 });
 
 test("UsageView explains invisible reasoning once and keeps its estimates distinct", () => {
@@ -456,7 +519,7 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	assert.match(rendered[unsignedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Reasoning ≈30 \(≈80\)/);
 
 	const descriptionStart = plain.findIndex((line) => line.includes("Entry headers read:"));
-	const hintsIndex = plain.findIndex((line) => line.includes("↑↓ Scroll"));
+	const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Scroll"));
 	assert.ok(descriptionStart > unsignedHeader && hintsIndex > descriptionStart);
 	assert.equal(plain[hintsIndex - 1], "");
 	assert.equal(
