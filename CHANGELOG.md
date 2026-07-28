@@ -1,5 +1,11 @@
 # Changelog
 
+## `[v0.3.1]` - 28.07.2026
+
+### Changed
+* `[ui]` Scroll lists and previews with `↑↓` and the vim-style `j`/`k` keys.
+
+
 ## `[v0.3.0]` - 26.07.2026
 
 ### New

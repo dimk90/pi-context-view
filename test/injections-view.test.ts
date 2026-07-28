@@ -170,7 +170,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.match(selectedChild, /\u001b\[38;2;1;2;3m20/);
 
 	const descriptionIndex = lines.findIndex((line) => stripSgr(line).includes("Injections into the model context"));
-	const hintsIndex = lines.findIndex((line) => stripSgr(line).includes("↑↓ Navigate"));
+	const hintsIndex = lines.findIndex((line) => stripSgr(line).includes("↑↓/jk Navigate"));
 	assert.ok(descriptionIndex > 0 && hintsIndex === descriptionIndex + 2);
 	assert.equal(lines[descriptionIndex - 1], "");
 	assert.equal(lines[descriptionIndex + 1], "");
@@ -187,7 +187,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 test("InjectionsView wraps narrow descriptions instead of truncating them", () => {
 	const lines = createView(4).render(40).map(stripSgr);
 	const descriptionStart = lines.findIndex((line) => line.includes("Injections into the model context"));
-	const hintsIndex = lines.findIndex((line) => line.includes("↑↓ Navigate"));
+	const hintsIndex = lines.findIndex((line) => line.includes("↑↓/jk Navigate"));
 
 	assert.ok(descriptionStart >= 0 && hintsIndex > descriptionStart);
 	assert.equal(lines[hintsIndex - 1], "");
@@ -228,7 +228,7 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 
 	const narrowLines = degraded.render(24).map(stripSgr);
 	const degradedStart = narrowLines.findIndex((line) => line.includes("[Degraded:"));
-	const hintsIndex = narrowLines.findIndex((line) => line.includes("↑↓ Navigate"));
+	const hintsIndex = narrowLines.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(degradedStart >= 0 && hintsIndex > degradedStart);
 	const wrappedDegradedLines = narrowLines.slice(degradedStart, hintsIndex - 1);
 	assert.ok(wrappedDegradedLines.length > 1);
@@ -327,7 +327,7 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	// Preview content is indented two spaces.
 	assert.equal(stripSgr(previewLines[firstContentIndex] ?? "").indexOf("pi-1"), 2);
 	assert.equal(previewLines[previewHeaderIndex + 1], "");
-	const hintIndex = previewLines.findIndex((line) => stripSgr(line).includes("↑↓ Scroll"));
+	const hintIndex = previewLines.findIndex((line) => stripSgr(line).includes("↑↓/jk Scroll"));
 	assert.ok(hintIndex > 0);
 	assert.equal(previewLines[hintIndex - 1], "");
 
@@ -346,6 +346,51 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	// A fresh preview starts back at the top.
 	view.handleInput("\r");
 	assert.match(view.render(80).join("\n"), /preview line 0 /);
+});
+
+test("InjectionsView accepts j/k wherever it accepts the arrow keys", () => {
+	let closed = false;
+	const arrows = createView(8);
+	const vim = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => {
+		closed = true;
+	}, () => 24);
+	const frame = (view: InjectionsView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const start = frame(vim);
+	assert.equal(frame(arrows), start);
+
+	// List navigation: j and k move exactly like Down and Up.
+	for (let step = 0; step < 3; step++) {
+		arrows.handleInput("\u001b[B");
+		vim.handleInput("j");
+	}
+	assert.notEqual(frame(vim), start);
+	assert.match(stripSgr(frame(vim)), /→ ├─ pi-2/);
+	assert.equal(frame(vim), frame(arrows));
+	arrows.handleInput("\u001b[A");
+	vim.handleInput("k");
+	assert.match(stripSgr(frame(vim)), /→ ├─ pi-1/);
+	assert.equal(frame(vim), frame(arrows));
+
+	// Preview scrolling: j and k move the wrapped text, and neither key closes the view.
+	arrows.handleInput("\r");
+	vim.handleInput("\r");
+	const previewTop = frame(vim);
+	assert.equal(previewTop, frame(arrows));
+	for (let step = 0; step < 4; step++) {
+		arrows.handleInput("\u001b[B");
+		vim.handleInput("j");
+	}
+	assert.notEqual(frame(vim), previewTop);
+	assert.equal(frame(vim), frame(arrows));
+	arrows.handleInput("\u001b[A");
+	vim.handleInput("k");
+	assert.equal(frame(vim), frame(arrows));
+	assert.equal(closed, false);
+
+	const hints = frame(vim).split("\n").map(stripSgr);
+	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
 });
 
 test("InjectionsView navigation scrolls the non-selectable total and Escape closes", () => {

@@ -38,7 +38,8 @@ case.
 
 Both views have `list` and `preview` states:
 
-- Up/Down navigate selectable rows.
+- Up/Down, and the vim-style `k`/`j`, navigate selectable rows and scroll
+  previews. Hints render the pair as one `↑↓/jk` key label.
 - PgUp/PgDn page through lists or previews.
 - Home/End jump to boundaries.
 - Enter opens the selected row's preview.

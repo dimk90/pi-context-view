@@ -1,10 +1,14 @@
 /**
- * Shared pi-native fullscreen-view layout helpers: indentation constants,
- * terminal-height viewport math, width fitting, and hint-row formatting used
- * by the Usage and Injections views. Pure string/number logic — no pi access.
+ * Shared pi-native fullscreen-view helpers: indentation constants,
+ * terminal-height viewport math, width fitting, hint-row formatting, and
+ * step-navigation key matching used by the Usage and Injections views. Pure
+ * string/number logic — no pi access.
  */
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+
+/** Hint-row key label for the single-step navigation keys both views accept. */
+export const STEP_KEY_HINT = "↑↓/jk";
 
 /** Two-space indent for descriptions, counters, hints, and body content. */
 export const BODY_INDENT = "  ";
@@ -41,6 +45,16 @@ export function fitToTerminalHeight(lines: string[], terminalRows: number, borde
 /** Normalize an injected terminal-height reading to a usable positive integer. */
 export function normalizeTerminalRows(rows: number): number {
 	return Number.isFinite(rows) ? Math.max(1, Math.floor(rows)) : DEFAULT_TERMINAL_ROWS;
+}
+
+/** Whether input requests one step backwards: Up or vim-style `k`. */
+export function isStepBackKey(data: string): boolean {
+	return matchesKey(data, Key.up) || data === "k";
+}
+
+/** Whether input requests one step forwards: Down or vim-style `j`. */
+export function isStepForwardKey(data: string): boolean {
+	return matchesKey(data, Key.down) || data === "j";
 }
 
 /** Truncate one rendered line to the supplied width. */

@@ -22,8 +22,11 @@ import {
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
+	isStepBackKey,
+	isStepForwardKey,
 	normalizeTerminalRows,
 	spreadLine,
+	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
 
@@ -112,9 +115,9 @@ export class InjectionsView {
 		}
 		if (matchesKey(data, Key.enter)) {
 			this.openPreview();
-		} else if (matchesKey(data, Key.up)) {
+		} else if (isStepBackKey(data)) {
 			if (this.navigator.moveBy(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.down)) {
+		} else if (isStepForwardKey(data)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
 		} else if (matchesKey(data, Key.pageUp)) {
 			if (this.navigator.page(-1)) this.clearCache();
@@ -163,7 +166,7 @@ export class InjectionsView {
 		lines.push(
 			this.fit(
 				hintRow(this.theme, [
-					["↑↓", "Navigate"],
+					[STEP_KEY_HINT, "Navigate"],
 					["Enter", "Preview"],
 					["Esc", "Close"],
 				]),
@@ -190,9 +193,9 @@ export class InjectionsView {
 			this.closePreview();
 			return;
 		}
-		if (matchesKey(data, Key.up)) {
+		if (isStepBackKey(data)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.down)) {
+		} else if (isStepForwardKey(data)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
 		} else if (matchesKey(data, Key.pageUp)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
@@ -248,7 +251,7 @@ export class InjectionsView {
 		lines.push(
 			this.fit(
 				hintRow(this.theme, [
-					["↑↓", "Scroll"],
+					[STEP_KEY_HINT, "Scroll"],
 					["PgUp/PgDn", "Page"],
 					["Esc", "Back"],
 				]),
