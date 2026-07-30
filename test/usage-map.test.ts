@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { ContextUsageSnapshot, UsageCategory } from "../src/model.ts";
-import { buildUsageMap } from "../src/ui/usage-map.ts";
+import { buildUsageMap, calculateFitMapScale } from "../src/ui/usage-map.ts";
 
 /** Minimal usage fixture for proportional map tests. */
 function usage(
@@ -18,6 +18,29 @@ function usage(
 		autoCompactReserveTokens,
 	};
 }
+
+test("calculateFitMapScale adds headroom and rounds upward within its floor and window cap", () => {
+	assert.equal(calculateFitMapScale(
+		usage([{ id: "messages", label: "Messages", tokens: 100_000 }], { contextWindow: 1_000_000 }),
+	), 120_000);
+	assert.equal(calculateFitMapScale(
+		usage([{ id: "messages", label: "Messages", tokens: 43_800 }], { contextWindow: 1_000_000 }),
+	), 51_000);
+	assert.equal(calculateFitMapScale(
+		usage([{ id: "messages", label: "Messages", tokens: 200_000 }], { contextWindow: 1_000_000 }),
+	), 230_000);
+	assert.equal(calculateFitMapScale(
+		usage([{ id: "messages", label: "Messages", tokens: 1 }], { contextWindow: 1_000_000 }),
+	), 10_000);
+	assert.equal(calculateFitMapScale(
+		usage([{ id: "messages", label: "Messages", tokens: 1 }], { contextWindow: 8_000 }),
+	), 8_000);
+	assert.equal(calculateFitMapScale(
+		usage([{ id: "messages", label: "Messages", tokens: 900_000 }], { contextWindow: 1_000_000 }),
+	), 1_000_000);
+	assert.equal(calculateFitMapScale(usage([], undefined)), undefined);
+	assert.equal(calculateFitMapScale(usage([], { contextWindow: 0 })), undefined);
+});
 
 test("buildUsageMap uses estimated category occupancy independently of reported tokens", () => {
 	const map = buildUsageMap(
@@ -45,6 +68,35 @@ test("buildUsageMap uses estimated category occupancy independently of reported 
 		{ fill: "free" },
 		{ fill: "free" },
 		{ fill: "free" },
+		{ fill: "free" },
+	]);
+});
+
+test("buildUsageMap changes only the denominator for a smaller anchored scale", () => {
+	const fit = buildUsageMap(
+		usage(
+			[
+				{ id: "first", label: "First", tokens: 25 },
+				{ id: "second", label: "Second", tokens: 25 },
+			],
+			{ contextWindow: 100 },
+		),
+		10,
+		1,
+		60,
+	);
+
+	assert.ok(fit !== undefined);
+	assert.deepEqual(fit.cells, [
+		{ categoryId: "first", fill: "full" },
+		{ categoryId: "first", fill: "full" },
+		{ categoryId: "first", fill: "full" },
+		{ categoryId: "first", fill: "full" },
+		{ categoryId: "second", fill: "full" },
+		{ categoryId: "second", fill: "full" },
+		{ categoryId: "second", fill: "full" },
+		{ categoryId: "second", fill: "full" },
+		{ categoryId: "second", fill: "partial" },
 		{ fill: "free" },
 	]);
 });
@@ -90,6 +142,30 @@ test("buildUsageMap marks trailing auto-compact buffer cells after free space", 
 	assert.ok(map.cells.slice(8).every((cell) => cell.categoryId === undefined));
 });
 
+test("buildUsageMap leaves the true-window buffer beyond a smaller Fit range", () => {
+	const map = buildUsageMap(
+		usage([{ id: "messages", label: "Messages", tokens: 40 }], { contextWindow: 100 }, 100),
+		10,
+		1,
+		50,
+	);
+
+	assert.ok(map !== undefined);
+	assert.deepEqual(map.cells.map((cell) => cell.fill), [
+		"full",
+		"full",
+		"full",
+		"full",
+		"full",
+		"full",
+		"full",
+		"full",
+		"free",
+		"free",
+	]);
+	assert.ok(map.cells.every((cell) => cell.fill !== "buffer"));
+});
+
 test("buildUsageMap shrinks the buffer when content grows into the reserve", () => {
 	// 90 occupied + 20 reserve overflows the window: only the remaining 10 tokens can be buffer.
 	const map = buildUsageMap(
@@ -127,4 +203,5 @@ test("buildUsageMap clamps over-capacity usage and rejects unusable dimensions",
 	assert.ok(full.cells.every((cell) => cell.fill === "full"));
 	assert.equal(buildUsageMap(usage([], undefined), 5, 2), undefined);
 	assert.equal(buildUsageMap(usage([], { contextWindow: 100 }), 0, 2), undefined);
+	assert.equal(buildUsageMap(usage([], { contextWindow: 100 }), 5, 2, Number.NaN), undefined);
 });

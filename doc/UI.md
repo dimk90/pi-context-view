@@ -269,7 +269,8 @@ text must never appear in descriptions, notifications, reports, or logs.
 Every rendered line must fit the supplied width. Fullscreen output must respect
 both terminal width and height, including borders, wrapped degraded warnings,
 descriptions, hints, counters, and blank rows. Cache keys must include all
-layout-affecting dimensions and theme state, including the Usage map scale.
+layout-affecting dimensions and theme state. State changed from within a view,
+such as the Usage map scale, must invalidate cached output instead.
 
 Test at 60, 80, and 120 columns, narrow fallbacks, short heights, height-only
 resizing, overflow navigation, preview return position, and theme invalidation.

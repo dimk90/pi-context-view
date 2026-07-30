@@ -177,7 +177,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.equal(plain[descriptionIndex]?.indexOf("Estimated context"), 2);
 	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;16;17;18m  Estimated context/);
 	assert.equal(plain[hintsIndex]?.indexOf("↑↓"), 2);
-	assert.match(plain[hintsIndex] ?? "", /↑↓\/jk Navigate · Enter Preview · Esc Close/);
+	assert.match(plain[hintsIndex] ?? "", /↑↓\/jk Navigate · Enter Preview · Z Zoom · Esc Close/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mEsc/);
 	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Close/);
 
@@ -190,6 +190,114 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.match(selectedRow, /\u001b\[38;2;16;17;18m\.+/);
 	assert.match(selectedRow, /\u001b\[38;2;1;2;3m3\.7k/);
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
+});
+
+test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
+	const zoomUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
+	const view = new UsageView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
+	const windowFrame = view.render(80);
+	const windowPlain = windowFrame.map(stripSgr);
+	const windowMap = windowPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
+	const windowCells = windowMap.flatMap((line) => line.slice(2, 2 + 14 * 2 - 1).split(" "));
+
+	assert.ok(!windowPlain.some((line) => line.includes("Zoom 1M")));
+	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · Esc Close")));
+	assert.ok(windowCells.includes("⛝"));
+
+	view.handleInput("z");
+	const fitFrame = view.render(80);
+	const fitPlain = fitFrame.map(stripSgr);
+	const fitMap = fitPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
+	const fitCells = fitMap.flatMap((line) => line.slice(2, 2 + 14 * 2 - 1).split(" "));
+
+	assert.notDeepEqual(fitFrame, windowFrame, "the scale toggle invalidates the same-width render cache");
+	assert.match(
+		fitPlain[2] ?? "",
+		/^Context Usage · Zoom 1M → 51k\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/,
+	);
+	assert.ok(fitCells.every((cell) => cell !== "⛝"), "the true-window buffer lies beyond Fit");
+	assert.ok(
+		fitCells.filter((cell) => cell !== "⛶").length > windowCells.filter((cell) => cell !== "⛶").length,
+		"Fit makes estimated occupancy legible",
+	);
+	assert.ok(fitPlain.some((line) => /⛝ Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/.test(line)));
+	assert.ok(fitPlain.some((line) => /⛶ Free Space \.{2,}\s+939\.8k\s+94%/.test(line)));
+
+	for (const width of [60, 80, 120]) {
+		const scaled = view.render(width);
+		assert.ok(scaled.map(stripSgr).some((line) => line.includes("Zoom 1M → 51k")));
+		for (const line of scaled) {
+			assert.ok(visibleWidth(line) <= width, `Fit line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+	}
+	assert.ok(!view.render(60).map(stripSgr).some((line) => line.includes("claude-opus-4-8")));
+	assert.ok(view.render(120).map(stripSgr).some((line) => line.includes("claude-opus-4-8")));
+
+	const narrowFit = view.render(40).map(stripSgr);
+	assert.ok(!narrowFit.some((line) => line.includes("Zoom")));
+	view.handleInput("z");
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M → 51k")),
+		"the hidden narrow binding does not change the scale");
+
+	view.handleInput("z");
+	assert.deepEqual(view.render(80), windowFrame);
+	const reopened = new UsageView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
+	assert.ok(!reopened.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
+});
+
+test("UsageView hides the zoom binding when its map cannot benefit", () => {
+	const narrow = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	assert.ok(!narrow.render(51).map(stripSgr).some((line) => line.includes("Z Zoom")));
+	narrow.handleInput("z");
+	assert.ok(!narrow.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
+
+	const threshold = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	assert.ok(threshold.render(52).map(stripSgr).some((line) => line.includes("Z Zoom")));
+	threshold.handleInput("z");
+	assert.ok(threshold.render(52).map(stripSgr).some((line) => line.includes("Zoom 1M → 51k")));
+
+	const unknownUsage: ContextUsageSnapshot = { ...usage(), reported: undefined };
+	const unknown = new UsageView(createTheme(), { usage: unknownUsage }, () => {}, () => 30);
+	const unknownFrame = unknown.render(80);
+	assert.ok(!unknownFrame.map(stripSgr).some((line) => line.includes("Z Zoom")));
+	unknown.handleInput("z");
+	assert.deepEqual(unknown.render(80), unknownFrame);
+
+	const fullUsage: ContextUsageSnapshot = {
+		...usage(900_000),
+		reported: { tokens: 900_000, contextWindow: 1_000_000, percent: 90 },
+		categories: [{ id: "user-messages", label: "User Messages", tokens: 900_000 }],
+		estimatedTokens: 900_000,
+	};
+	const full = new UsageView(createTheme(), { usage: fullUsage }, () => {}, () => 30);
+	const fullFrame = full.render(80);
+	assert.ok(!fullFrame.map(stripSgr).some((line) => line.includes("Z Zoom")));
+	full.handleInput("z");
+	assert.deepEqual(full.render(80), fullFrame);
+});
+
+test("UsageView drops model metadata and splits an oversized Fit label responsively", () => {
+	const hugeUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-11T12:00:00Z"),
+		modelLabel: "model-must-be-dropped",
+		reported: {
+			tokens: 100_000_000_000,
+			contextWindow: 999_999_900_000,
+			percent: 10,
+		},
+		categories: [{ id: "user-messages", label: "User Messages", tokens: 100_000_000_000 }],
+		estimatedTokens: 100_000_000_000,
+	};
+	const view = new UsageView(createTheme(), { usage: hugeUsage }, () => {}, () => 30);
+	view.render(52);
+	view.handleInput("z");
+	const lines = view.render(52).map(stripSgr);
+
+	assert.match(lines[2] ?? "", /^Context Usage\s+100000M\/999999\.9M \(10%\)$/);
+	assert.equal(lines[3], "");
+	assert.equal(lines[4], "Zoom 999999.9M → 120000M");
+	assert.equal(lines[5], "");
+	assert.ok(!lines.some((line) => line.includes("model-must-be-dropped")));
 });
 
 test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space", () => {

@@ -10,7 +10,7 @@
 
 ## v0.4.0
 
-- [ ] **Zoom for the usage map.**
+- [x] **Zoom for the usage map.**
   - Toggle the map between `Window` and `Fit` scale with `z`.
   - Fit is estimated occupancy plus 15% headroom, rounded up to two significant
     digits, floored at 10k and capped at the context window.
@@ -23,7 +23,7 @@
     window, and when Fit would reach the window.
   - Open at Window, preserving current behavior; the scale lives only for the
     open view.
-  - Add the scale to render cache keys.
+  - Clear the render cache when the scale toggles.
 
 
 ## v0.5.0
