@@ -50,7 +50,7 @@ the resulting `master` merge commit.
    commit convention. Add doc/images files only if their reviewed captures changed.
 
    ```bash
-   git add CHANGELOG.md PLAN.md package.json pnpm-lock.yaml README.md doc/RELEASE.md
+   git add CHANGELOG.md PLAN.md package.json pnpm-lock.yaml README.md
    ```
    ```bash
    git commit -m "[doc] Release v0.?.?"

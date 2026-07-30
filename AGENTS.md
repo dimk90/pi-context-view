@@ -140,3 +140,10 @@ Required invariants:
 Keep `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` as `"*"`
 peer dependencies and exact development pins matching `pi --version`. Run
 `pnpm install` after changing the pins.
+
+The extension registers no tools and imports no schema library, so `typebox`
+stays out of `package.json` and the APIs pi 0.83 dropped with typebox 1.3
+(`Type.Base`, `Type.Awaited`, `Type.Promise`, `Type.AsyncIterator`,
+`Type.Iterator`, `Type.Options`, `Value.Mutate`) are unreachable here. If a tool
+is ever added, declare `typebox` as a `"*"` peer dependency and build schemas
+from `Type.Unsafe` plus `Type.Refine` instead of the removed types.
