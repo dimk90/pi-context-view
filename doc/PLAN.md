@@ -10,6 +10,24 @@
 
 ## v0.4.0
 
+- [ ] **Zoom for the usage map.**
+  - Toggle the map between `Window` and `Fit` scale with `z`.
+  - Fit is estimated occupancy plus 15% headroom, rounded up to two significant
+    digits, floored at 10k and capped at the context window.
+  - Scale changes the map denominator only: anchored at token 0, never pans,
+    and cell classification is unchanged.
+  - Show `Zoom 1M → 120k` in the header while Fit is active.
+  - Put the `Z Zoom` hint directly before `Esc Close`.
+  - Keep legend tokens and percentages against the true context window.
+  - Hide the binding, hint, and label below 52 columns, without a context
+    window, and when Fit would reach the window.
+  - Open at Window, preserving current behavior; the scale lives only for the
+    open view.
+  - Add the scale to render cache keys.
+
+
+## v0.5.0
+
 - [ ] **Different Icon Styles for the usage map**.
   - Default icon style is "Square" = "⛝⛶◧■▩".
   - Add hotkey to cycle icons styles in context usage view.
@@ -23,7 +41,17 @@
     - "Circle"="⮾·◕●♼";
 
 
-## v0.5.0
+## v0.6.0
+
+- [ ] **Persistent zoom preference.**
+  - Depends on the extension config introduced with icon styles.
+  - Persist the chosen map scale instead of resetting to Window on every open.
+  - Scope the preference to context windows of 1M tokens and above, where
+    Window scale is least useful.
+  - Keep the in-view toggle authoritative for the current view.
+
+
+## v0.7.0
 
 - [ ] **Add bounded opt-in Runtime mutation logging.**
   - Enable the Runtime view and restore `/context runtime on|off`.
@@ -34,5 +62,5 @@
 
 ## Open question
 
-- For v0.5.0 context-only message mutations, should the Runtime view explain
+- For v0.7.0 context-only message mutations, should the Runtime view explain
   chain-position visibility limits inline or leave that detail to documentation?

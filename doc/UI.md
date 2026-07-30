@@ -45,6 +45,8 @@ Both views have `list` and `preview` states:
 - Enter opens the selected row's preview.
 - Escape returns to the same list row, then closes the view.
 
+Views may add their own keys; the Usage view adds `z` for the map scale.
+
 Navigation skips non-selectable rows and remains bounded after terminal resize.
 All content is terminal-sanitized before rendering. Raw content appears only
 after explicit Enter selection.
@@ -57,17 +59,20 @@ The overview contains a proportional 14×14 map and an interactive category
 legend. Cells use themed `■` for full occupancy, `◧` for partial occupancy, `▦`
 for compacted data, dim `⛝` for the auto-compact buffer, and dim `⛶` for free
 space. Allocate occupied cells from estimated category totals against the
-context window; display pi-reported usage separately because the values may
-differ. A dedicated `Map: ■ Full · ◧ Part` key appears beside the map, followed
-by one empty detail row before `Category:`. Compacted, buffer, and free glyphs
-need no key because their category rows identify them.
+current map scale, which is the context window unless Fit is active (see
+[Map scale](#map-scale)); display pi-reported usage separately because the
+values may differ. A dedicated `Map: ■ Full · ◧ Part` key appears beside the
+map, followed by one empty detail row before `Category:`. Compacted, buffer,
+and free glyphs need no key because their category rows identify them.
 
 When auto-compaction is enabled, the tail of the map shows the settings
 `reserveTokens` reserve as `⛝` cells after the free cells: tokens that content
 will never occupy because compaction triggers first. The buffer shrinks once
 estimated content grows into the reserve and disappears when auto-compaction is
 disabled or settings are unreadable. Read the reserve from pi's merged
-global/project settings at view-open time, honoring project trust.
+global/project settings at view-open time, honoring project trust. At Fit scale
+the reserve lies past the mapped range, so no `⛝` cells render while the
+`⛝ Auto-Compact Buffer` legend row remains.
 
 At map widths, render the header as:
 
@@ -88,14 +93,59 @@ used/window (percent)
 Category:
 ```
 
+At map widths, while Fit scale is active, append the zoom label to the title
+with the shared ` · ` separator:
+
+```text
+Context Usage · Zoom 1M → 120k        model · used/window (percent)
+```
+
+The label reads `Zoom window → scale` using the same token formatting as the
+usage summary. Drop the model before the label. If the title and label still do
+not fit on one line, put them on separate lines with one empty row before and
+after the label, as the Injections header does. The label is absent at Window
+scale and at the narrow widths that hide the map.
+
 Do not append the redundant word `tokens` to Usage header or category-preview
 summaries. Preserve `≈` when the usage total is estimated.
+
+### Map scale
+
+The map has two scales, toggled by `z`:
+
+- `Window` maps the full context window, matching pi-reported fullness;
+- `Fit` maps a smaller range so that low occupancy stays legible.
+
+Scale changes the map's denominator only. The map is always anchored at token 0
+and never pans, so no content can fall outside it, and cell classification,
+segment order, and the `■`/`◧` thresholds are unchanged.
+
+Fit scale is the estimated occupied total plus 15% headroom, rounded up to a
+two-significant-digit boundary, floored at 10k tokens and capped at the context
+window. The headroom keeps a visible band of `⛶` free cells, so the map still
+reads as occupancy rather than as a pure composition chart.
+
+At 1M windows the difference is the point of the feature: Window scale gives
+196 cells of about 5.1k tokens each, so categories under roughly 2.5k tokens
+claim no cell at all and vanish from a map whose legend still lists them.
+
+Render `Z Zoom` in the hint row directly before `Esc Close`. Hide the hint, the
+header label, and the binding together whenever the toggle cannot help:
+
+- below 52 columns, where the map itself is hidden;
+- when the map is unavailable for lack of a context-window denominator;
+- when the Fit scale would reach the context window, leaving nothing to zoom.
+
+The view opens at Window, preserving the behavior of releases without a scale
+toggle, and holds the chosen scale only until it closes. There is no
+persistence yet; see [PLAN.md](PLAN.md).
 
 The legend uses a distinct semantic theme color for each top-level category,
 except the intentionally shared System Prompt/System Tools color. Category
 names have no trailing colons. Fill the gap before values with `dim` dot
 leaders; shorten or remove leaders before truncating labels or values. Token
-and percentage values align in separate columns. Categories include:
+and percentage values align in separate columns, and both always denominate
+against the true context window regardless of map scale. Categories include:
 
 - System Prompt, System Tools, Custom Tools, and MCP Tools;
 - Memory (`AGENTS.md`) and Skills;
@@ -120,9 +170,9 @@ trailing buffer and free-space rows, and its left number is the last visible
 row, so scrolling to the end reaches the total.
 
 At widths of 72 columns and above, map cells have spacing. From 52–71 columns,
-remove inter-cell spacing. Below 52 columns, hide the map and its fill key while
-keeping the selectable category list. Height-only resizing must also reflow and
-clamp the viewport.
+remove inter-cell spacing. Below 52 columns, hide the map, its fill key, and the
+zoom hint and label while keeping the selectable category list. Height-only
+resizing must also reflow and clamp the viewport.
 
 ### Usage preview
 
@@ -219,10 +269,12 @@ text must never appear in descriptions, notifications, reports, or logs.
 Every rendered line must fit the supplied width. Fullscreen output must respect
 both terminal width and height, including borders, wrapped degraded warnings,
 descriptions, hints, counters, and blank rows. Cache keys must include all
-layout-affecting dimensions and theme state.
+layout-affecting dimensions and theme state, including the Usage map scale.
 
 Test at 60, 80, and 120 columns, narrow fallbacks, short heights, height-only
 resizing, overflow navigation, preview return position, and theme invalidation.
+Cover both map scales, the header label's line-splitting fallback, and the
+conditions that hide the zoom binding.
 
 ## Release media
 
