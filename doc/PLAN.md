@@ -25,7 +25,7 @@
     open view.
   - Clear the render cache when the scale toggles.
 
-- [ ] **Track pi 0.84.**
+- [x] **Track pi 0.84.**
   - Bump the `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`
     development pins to `0.84.0` and run `pnpm install`.
   - Keep the peer ranges at `"*"`; the extension still registers no tools, so
