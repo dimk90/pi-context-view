@@ -119,6 +119,10 @@ interaction, responsive behavior, previews, and release media.
 
 ## Verification
 
+For any release, publish, or version-tag request, load and follow
+[release-pi-extension](.agents/skills/release-pi-extension/SKILL.md) before
+taking a release action.
+
 Run `pnpm check`. Follow the `pi-extension` skill for provider smoke tests
 and real-PTY testing. Lifecycle coverage must load `test/fixtures/marker.ts` in
 both orders and use an `after_provider_response` sentinel for probes.

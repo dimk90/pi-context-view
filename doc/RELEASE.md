@@ -1,7 +1,9 @@
 # Release Instructions
 
 Release from `develop`, merge the reviewed release commit into `master`, and tag
-the resulting `master` merge commit.
+the resulting `master` merge commit. Pushing a stable `vX.Y.Z` tag starts the
+`Publish GitHub release` workflow, which publishes the matching `CHANGELOG.md`
+section as the GitHub release notes.
 
 1. Confirm npm access and make sure the version has not already been published:
 
@@ -83,26 +85,29 @@ the resulting `master` merge commit.
       pnpm pkg get version
       ```
 
-1. Push both branches and the tag together. Do not publish anything if this
-    push fails:
-      ```bash
-      git push origin master
-      ```
+1. Push `master` and only the target tag atomically. Do not publish anything if
+   this push fails:
 
-      ```bash
-      git push --tags origin
-      ```
+   ```bash
+   git push --atomic origin master refs/tags/v0.?.?
+   ```
 
-13. Publish only from the clean commit identified by the pushed tag:
+1. Wait for the `Publish GitHub release` workflow to complete. Verify that the
+   published release has the target tag and title, the exact target changelog
+   section as its notes, and the tested merge commit as its tag target. Do not
+   create the release manually or publish npm if the workflow fails.
 
-      ```bash
-      pnpm publish --no-git-checks --access public
-      ```
+1. Publish only from the clean commit identified by the pushed tag:
 
-14. Return back to develop branch:
+   ```bash
+   pnpm publish --no-git-checks --access public
+   ```
 
-      ```bash
-      git switch develop
-      ```
+   If npm publication fails after the GitHub release exists, stop and report
+   the partial release; do not delete or replace published artifacts.
 
-15. Publish the GitHub release.
+1. Return to the `develop` branch:
+
+   ```bash
+   git switch develop
+   ```
