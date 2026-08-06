@@ -25,6 +25,43 @@
     open view.
   - Clear the render cache when the scale toggles.
 
+- [ ] **Track pi 0.84.**
+  - Bump the `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`
+    development pins to `0.84.0` and run `pnpm install`.
+  - Keep the peer ranges at `"*"`; the extension still registers no tools, so
+    `typebox` stays out of `package.json`.
+  - Already verified unaffected on 0.84: the type surface, both views under
+    fullscreen TUI and `fullscreenScrollbar: "always"`, and
+    `AGENTS.override.md` context files, which measure by path. Only the generic
+    "Memory (AGENTS.md)" Usage label reads oddly for an override file.
+
+- [ ] **Restore silent-probe invisibility on pi 0.84.**
+  - pi 0.84 resolves provider auth with the request signal, so a probe aborted
+    at `turn_start` now fails during stream setup instead of inside the
+    provider stream.
+  - The synthetic assistant therefore arrives as `stopReason: "error"` with
+    `errorMessage: "This operation was aborted"`. `sanitizeAssistant()` matches
+    only `"aborted"`, so pi renders an `Error:` row, persists the message, and
+    re-renders it on every resume.
+  - Sanitize that shape too, still keyed on the probe-owned run and the
+    recorded role/timestamp identity, so genuine aborts and genuine provider
+    errors stay visible.
+  - An unsanitized `error` message also reaches pi's auto-retry check; only the
+    absence of a retryable-pattern match currently stops it from turning the
+    probe into a real provider request.
+  - Cover both stop reasons in `test/capture.test.ts` and re-verify in a real
+    PTY, in regular and fullscreen TUI, including resume.
+
+- [ ] **Skip the probe while compaction runs.**
+  - pi 0.84 rejects `prompt()` during compaction, and `waitForIdle()` still
+    tracks only the agent run, so `/context` mid-compaction shows an
+    extension-error row and then waits out the 5 s probe timeout.
+  - `pi.sendUserMessage()` swallows that rejection into pi's extension-error
+    channel, so the existing `try`/`catch` around it cannot observe the
+    failure.
+  - Detect the compaction state before probing and return the pi-native
+    fallback with a precise degraded reason instead.
+
 
 ## v0.5.0
 
