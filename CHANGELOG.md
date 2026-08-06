@@ -10,6 +10,7 @@
 
 ### Fixed
 * `[probe]` Restore silent-probe invisibility on Pi 0.84.
+* `[probe]` Skip silent probe during compaction.
 
 
 ## `[v0.3.1]` - 28.07.2026

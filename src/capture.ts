@@ -130,6 +130,33 @@ export class InitialCaptureState {
 	}
 }
 
+/** Tracks the observable compaction lifecycle that makes a silent probe unsafe. */
+export class CompactionState {
+	private currentSignal: AbortSignal | undefined;
+
+	/** Whether a compaction observed through `session_before_compact` is still active. */
+	public get isActive(): boolean {
+		return this.currentSignal !== undefined && !this.currentSignal.aborted;
+	}
+
+	/** Track the current compaction until success, abort, or agent settlement. */
+	public begin(signal: AbortSignal): void {
+		if (signal.aborted) {
+			this.currentSignal = undefined;
+			return;
+		}
+		this.currentSignal = signal;
+		signal.addEventListener("abort", () => {
+			if (this.currentSignal === signal) this.currentSignal = undefined;
+		}, { once: true });
+	}
+
+	/** Clear the current lifecycle after compaction can no longer reject prompts. */
+	public finish(): void {
+		this.currentSignal = undefined;
+	}
+}
+
 /**
  * State for one on-demand silent probe. It owns the timeout and exact synthetic
  * message identities, but leaves pi API calls and UI restoration to index.ts.

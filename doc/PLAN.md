@@ -52,7 +52,7 @@
   - Cover both stop reasons in `test/capture.test.ts` and re-verify in a real
     PTY, in regular and fullscreen TUI, including resume.
 
-- [ ] **Skip the probe while compaction runs.**
+- [x] **Skip the probe while compaction runs.**
   - pi 0.84 rejects `prompt()` during compaction, and `waitForIdle()` still
     tracks only the agent run, so `/context` mid-compaction shows an
     extension-error row and then waits out the 5 s probe timeout.
@@ -62,6 +62,11 @@
   - Detect the compaction state before probing and return the pi-native
     fallback with a precise degraded reason instead.
 
+
+## v0.4.1
+
+- [ ] **Update views for fullscreen mode**:
+  - Check and fix PgUp/PgDn functionality.
 
 ## v0.5.0
 

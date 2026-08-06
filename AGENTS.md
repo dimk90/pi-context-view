@@ -38,7 +38,8 @@ If a view is requested before a real turn, allow one explicit probe per
 extension runtime:
 
 ```text
-/context           → wait idle, hide working row, sendUserMessage("")
+/context           → wait idle; while compaction runs, use the degraded fallback
+                   → otherwise hide working row, sendUserMessage("")
 before_agent_start → prepare Initial
 turn_start         → abort before provider
 context            → finalize Initial; filter synthetic user message
@@ -58,8 +59,11 @@ resume, reload, and fork without identifying probes by empty content.
 `pi.sendMessage(..., { triggerTurn: true })` cannot replace
 `sendUserMessage()` because it bypasses `before_agent_start`. Abort at
 `turn_start`; do not rely on `before_provider_request`, which some transports
-skip. Always restore UI state in `finally`. On failure or timeout, return a
-pi-native fallback with a precise degraded-capture reason.
+skip. `waitForIdle()` does not cover manual compaction, so track
+`session_before_compact` until `session_compact`, signal abort, or
+`agent_settled`, and never start a probe while that state is active. Always
+restore UI state in `finally`. On failure, timeout, or active compaction, return
+a pi-native fallback with a precise degraded-capture reason.
 
 ## Usage and attribution
 
@@ -131,6 +135,7 @@ Required invariants:
 
 - normal turns are unchanged when inspection is not invoked;
 - probes make no provider request and leave no visible transcript artifact;
+- active compaction uses the degraded fallback without consuming the probe attempt;
 - genuine aborts remain visible;
 - synthetic entries never reach later model contexts or Usage;
 - Initial freezes once per extension runtime;
