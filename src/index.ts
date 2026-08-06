@@ -19,6 +19,7 @@ import {
 } from "./command.ts";
 import {
 	buildNativeSnapshot,
+	CompactionState,
 	InitialCaptureState,
 	mergeContextOnlyMessages,
 	parsePersistedIdentities,
@@ -32,6 +33,7 @@ import { computeUsage, toReportedUsage } from "./usage.ts";
 export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
 	const probe = new SilentProbeState();
+	const compaction = new CompactionState();
 	let persistedIdentityCount = 0;
 
 	/** Persist identities (role and timestamp only, never content) not yet written this runtime. */
@@ -43,6 +45,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		compaction.finish();
 		// Rehydrate probe identities from all prior runtimes so persisted probe
 		// messages stay out of later model contexts and Usage after resume,
 		// reload, or fork. Restored identities are already persisted.
@@ -54,11 +57,21 @@ export default function (pi: ExtensionAPI) {
 		persistedIdentityCount = probe.syntheticMessages.length;
 	});
 
+	pi.on("session_before_compact", (event) => {
+		compaction.begin(event.signal);
+	});
+
+	pi.on("session_compact", () => {
+		compaction.finish();
+	});
+
 	pi.on("input", (event) => {
 		probe.observeInput(event.source, event.text);
 	});
 
 	pi.on("before_agent_start", (event) => {
+		// Any new run proves a failed or cancelled manual compaction has ended.
+		compaction.finish();
 		probe.beginRun(event.prompt);
 		capture.prepare(event.systemPromptOptions);
 	});
@@ -93,6 +106,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
+		// Auto-compaction failures have no session_compact event.
+		compaction.finish();
 		if (!probe.isCurrentRun) return;
 		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
 		probe.settle(capture.snapshot !== undefined);
@@ -100,6 +115,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => {
+		compaction.finish();
 		// A shutdown mid-probe can leave probe messages already persisted in the
 		// session; write their identities so the next runtime keeps filtering them.
 		persistProbeIdentities();
@@ -120,7 +136,7 @@ export default function (pi: ExtensionAPI) {
 				reportCommandMessage(ctx, "/context requires TUI mode.", "warning");
 				return;
 			}
-			const initial = await resolveInitialCapture(pi, capture, probe, ctx);
+			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
 			if (command.view === "injections") {
 				await showInjectionsView(ctx, {
 					snapshot: initial.snapshot,

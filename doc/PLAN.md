@@ -7,8 +7,12 @@
 - [doc/HISTORY.md](doc/HISTORY.md) - legacy, superseded designs and architecture decisions;
 - [CHANGELOG.md](CHANGELOG.md) for completed work.
 
+## v0.4.1
 
-## v0.4.0
+- [ ] **Update views for fullscreen mode**:
+  - Check and fix PgUp/PgDn functionality.
+
+## v0.5.0
 
 - [ ] **Different Icon Styles for the usage map**.
   - Default icon style is "Square" = "⛝⛶◧■▩".
@@ -23,7 +27,17 @@
     - "Circle"="⮾·◕●♼";
 
 
-## v0.5.0
+## v0.6.0
+
+- [ ] **Persistent zoom preference.**
+  - Depends on the extension config introduced with icon styles.
+  - Persist the chosen map scale instead of resetting to Window on every open.
+  - Scope the preference to context windows of 1M tokens and above, where
+    Window scale is least useful.
+  - Keep the in-view toggle authoritative for the current view.
+
+
+## v0.7.0
 
 - [ ] **Add bounded opt-in Runtime mutation logging.**
   - Enable the Runtime view and restore `/context runtime on|off`.
@@ -34,5 +48,5 @@
 
 ## Open question
 
-- For v0.5.0 context-only message mutations, should the Runtime view explain
+- For v0.7.0 context-only message mutations, should the Runtime view explain
   chain-position visibility limits inline or leave that detail to documentation?

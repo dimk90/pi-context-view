@@ -7,6 +7,7 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
 import {
 	buildNativeSnapshot,
+	type CompactionState,
 	type InitialCaptureState,
 	type SilentProbeState,
 } from "./capture.ts";
@@ -60,6 +61,7 @@ export async function resolveInitialCapture(
 	pi: ExtensionAPI,
 	capture: InitialCaptureState,
 	probe: SilentProbeState,
+	compaction: CompactionState,
 	context: ExtensionCommandContext,
 ): Promise<InitialCaptureResult> {
 	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
@@ -67,7 +69,7 @@ export async function resolveInitialCapture(
 	await context.waitForIdle();
 	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
 
-	const unavailableReason = getProbeUnavailableReason(context);
+	const unavailableReason = getProbeUnavailableReason(context, compaction.isActive);
 	if (unavailableReason !== undefined) {
 		return createFallback(pi, context, unavailableReason);
 	}
@@ -108,7 +110,11 @@ export function reportCommandMessage(
 }
 
 /** Explain why a silent probe cannot run now, or undefined when it can. */
-function getProbeUnavailableReason(context: ExtensionCommandContext): string | undefined {
+function getProbeUnavailableReason(
+	context: ExtensionCommandContext,
+	compactionInProgress: boolean,
+): string | undefined {
+	if (compactionInProgress) return "Silent probe unavailable: context compaction is in progress.";
 	if (context.model === undefined) return "Silent probe unavailable: no model is selected.";
 	if (!context.modelRegistry.hasConfiguredAuth(context.model)) {
 		return `Silent probe unavailable: ${context.model.provider} has no configured authentication.`;

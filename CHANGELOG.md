@@ -1,5 +1,18 @@
 # Changelog
 
+## `[v0.4.0]` - 06.08.2026
+
+### New
+* `[usage]` Zoom context map with `z`.
+
+### Changed
+* `[package]` Bump dev dependencies to Pi 0.84.
+
+### Fixed
+* `[probe]` Restore silent-probe invisibility on Pi 0.84.
+* `[probe]` Skip silent probe during compaction.
+
+
 ## `[v0.3.1]` - 28.07.2026
 
 ### Changed

@@ -25,6 +25,7 @@ import {
 export const PROBE_IDENTITIES_CUSTOM_TYPE = "pi-context-view:probe-identities";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+const SETUP_ABORT_ERROR_MESSAGE = "This operation was aborted";
 const AGGREGATE_SOURCE: InjectionSource = {
 	id: AGGREGATE_SOURCE_ID,
 	label: "extensions (aggregate)",
@@ -129,6 +130,33 @@ export class InitialCaptureState {
 	}
 }
 
+/** Tracks the observable compaction lifecycle that makes a silent probe unsafe. */
+export class CompactionState {
+	private currentSignal: AbortSignal | undefined;
+
+	/** Whether a compaction observed through `session_before_compact` is still active. */
+	public get isActive(): boolean {
+		return this.currentSignal !== undefined && !this.currentSignal.aborted;
+	}
+
+	/** Track the current compaction until success, abort, or agent settlement. */
+	public begin(signal: AbortSignal): void {
+		if (signal.aborted) {
+			this.currentSignal = undefined;
+			return;
+		}
+		this.currentSignal = signal;
+		signal.addEventListener("abort", () => {
+			if (this.currentSignal === signal) this.currentSignal = undefined;
+		}, { once: true });
+	}
+
+	/** Clear the current lifecycle after compaction can no longer reject prompts. */
+	public finish(): void {
+		this.currentSignal = undefined;
+	}
+}
+
 /**
  * State for one on-demand silent probe. It owns the timeout and exact synthetic
  * message identities, but leaves pi API calls and UI restoration to index.ts.
@@ -210,16 +238,17 @@ export class SilentProbeState {
 	}
 
 	/**
-	 * Replace only the probe's aborted assistant with an empty successful message
-	 * so pi does not render an "Operation aborted" transcript row.
+	 * Replace only a recorded probe abort with an empty successful message so pi
+	 * does not render an abort transcript row. Pi 0.84 reports an abort during
+	 * stream setup as an error instead of the legacy aborted stop reason.
 	 */
 	public sanitizeAssistant(
 		message: ContextEvent["messages"][number],
 	): ContextEvent["messages"][number] | undefined {
-		if (!this.isCurrentRun || message.role !== "assistant" || message.stopReason !== "aborted") {
-			return undefined;
-		}
-		this.recordMessage(message);
+		if (!this.isCurrentRun || message.role !== "assistant") return undefined;
+		const isProbeAbort = message.stopReason === "aborted"
+			|| (message.stopReason === "error" && message.errorMessage === SETUP_ABORT_ERROR_MESSAGE);
+		if (!isProbeAbort) return undefined;
 		const identity = { role: "assistant", timestamp: message.timestamp } satisfies SyntheticMessageIdentity;
 		if (!this.identities.has(identityKey(identity))) return undefined;
 		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };

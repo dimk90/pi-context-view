@@ -1,0 +1,159 @@
+name: Publish GitHub release
+
+run-name: Publish ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: github-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Create release from changelog
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const releaseSha = process.env.RELEASE_SHA;
+            const releaseTag = process.env.RELEASE_TAG;
+
+            if (!releaseSha) {
+              throw new Error("GitHub did not provide the tag commit SHA.");
+            }
+            if (!releaseTag || !/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(releaseTag)) {
+              throw new Error(`Tag must use stable vX.Y.Z form: ${releaseTag ?? "missing"}`);
+            }
+
+            const { owner, repo } = context.repo;
+            const { data: master } = await github.rest.repos.getBranch({
+              owner,
+              repo,
+              branch: "master",
+            });
+            if (master.commit.sha !== releaseSha) {
+              throw new Error(
+                `Tag ${releaseTag} targets ${releaseSha}, but master targets ${master.commit.sha}.`,
+              );
+            }
+
+            const { data: changelogFile } = await github.rest.repos.getContent({
+              owner,
+              repo,
+              path: "CHANGELOG.md",
+              ref: releaseTag,
+            });
+            if (
+              Array.isArray(changelogFile)
+              || changelogFile.type !== "file"
+              || changelogFile.encoding !== "base64"
+            ) {
+              throw new Error(`Cannot read CHANGELOG.md from ${releaseTag}.`);
+            }
+
+            const changelog = Buffer.from(changelogFile.content, "base64")
+              .toString("utf8")
+              .replace(/\r\n/g, "\n");
+            const lines = changelog.split("\n");
+            const headingPrefix = `## \`[${releaseTag}]\` - `;
+            const matchingHeadingIndexes = [];
+
+            for (let index = 0; index < lines.length; index += 1) {
+              if (lines[index].startsWith(headingPrefix)) {
+                matchingHeadingIndexes.push(index);
+              }
+            }
+            if (matchingHeadingIndexes.length !== 1) {
+              throw new Error(
+                `Expected one changelog heading for ${releaseTag}, found ${matchingHeadingIndexes.length}.`,
+              );
+            }
+
+            const headingIndex = matchingHeadingIndexes[0];
+            const releaseDate = lines[headingIndex].slice(headingPrefix.length);
+            if (!/^\d{2}\.\d{2}\.\d{4}$/.test(releaseDate)) {
+              throw new Error(
+                `Changelog heading for ${releaseTag} must contain a DD.MM.YYYY release date.`,
+              );
+            }
+
+            let nextHeadingIndex = lines.length;
+            for (let index = headingIndex + 1; index < lines.length; index += 1) {
+              if (lines[index].startsWith("## ")) {
+                nextHeadingIndex = index;
+                break;
+              }
+            }
+
+            const releaseNotes = lines
+              .slice(headingIndex + 1, nextHeadingIndex)
+              .join("\n")
+              .trim();
+            if (!releaseNotes) {
+              throw new Error(`Changelog section for ${releaseTag} is empty.`);
+            }
+
+            let existingRelease;
+            try {
+              const response = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag: releaseTag,
+              });
+              existingRelease = response.data;
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            if (existingRelease) {
+              const matches = existingRelease.tag_name === releaseTag
+                && existingRelease.name === releaseTag
+                && existingRelease.body === releaseNotes
+                && !existingRelease.draft
+                && !existingRelease.prerelease;
+              if (!matches) {
+                throw new Error(`An inconsistent GitHub release already exists for ${releaseTag}.`);
+              }
+
+              core.notice(`Matching release already exists: ${existingRelease.html_url}`);
+              return;
+            }
+
+            const { data: release } = await github.rest.repos.createRelease({
+              owner,
+              repo,
+              tag_name: releaseTag,
+              target_commitish: releaseSha,
+              name: releaseTag,
+              body: releaseNotes,
+              draft: false,
+              prerelease: false,
+              make_latest: "true",
+            });
+            if (
+              release.tag_name !== releaseTag
+              || release.name !== releaseTag
+              || release.body !== releaseNotes
+              || release.draft
+              || release.prerelease
+            ) {
+              throw new Error(`GitHub returned an inconsistent release for ${releaseTag}.`);
+            }
+
+            core.notice(`Published ${release.html_url}`);

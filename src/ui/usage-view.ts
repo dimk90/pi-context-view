@@ -29,7 +29,13 @@ import {
 	wrapDescriptionLines,
 } from "./layout.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
-import { buildUsageMap, type UsageMapCell } from "./usage-map.ts";
+import {
+	buildUsageMap,
+	calculateFitMapScale,
+	DEFAULT_MAP_COLUMNS,
+	DEFAULT_MAP_ROWS,
+	type UsageMapCell,
+} from "./usage-map.ts";
 
 const USAGE_DESCRIPTION = "Estimated context for the next model request. " +
 	"Token counts are approximate and may differ from the provider's estimate.";
@@ -62,6 +68,9 @@ export interface UsageViewInput {
 	readonly usage: ContextUsageSnapshot;
 	readonly degradedReason?: string;
 }
+
+/** View-local denominator selected for the context map. */
+type UsageMapScale = "window" | "fit";
 
 interface CategoryLegendRow {
 	readonly type: "category";
@@ -118,6 +127,9 @@ export class UsageView {
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
 	private readonly previewScroller = new PreviewScroller();
+	private readonly fitMapScale: number | undefined;
+	private mapScale: UsageMapScale = "window";
+	private currentWidth: number | undefined;
 	private previewRow: CategoryLegendRow | undefined;
 	private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
 	private previewLines: string[] | undefined;
@@ -138,6 +150,7 @@ export class UsageView {
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
 		this.usage = input.usage;
+		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
 		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable.
 		const selectableCount = this.legendRows.filter((row) => row.type === "category").length;
@@ -154,7 +167,9 @@ export class UsageView {
 			this.done(undefined);
 			return;
 		}
-		if (matchesKey(data, Key.enter)) {
+		if (matchesKey(data, "z")) {
+			this.toggleMapScale();
+		} else if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
 			if (this.navigator.moveBy(-1)) this.clearCache();
@@ -173,6 +188,7 @@ export class UsageView {
 
 	/** Render a cached fullscreen frame for the current width and terminal height. */
 	public render(width: number): string[] {
+		this.currentWidth = width;
 		const terminalRows = normalizeTerminalRows(this.getTerminalRows());
 		if (
 			this.cachedLines !== undefined &&
@@ -217,11 +233,7 @@ export class UsageView {
 			...descriptionLines,
 			"",
 			this.fit(
-				hintRow(theme, [
-					[STEP_KEY_HINT, "Navigate"],
-					["Enter", "Preview"],
-					["Esc", "Close"],
-				]),
+				hintRow(theme, this.dashboardHints(width)),
 				width,
 			),
 			"",
@@ -230,7 +242,7 @@ export class UsageView {
 		return fitToTerminalHeight([...prefix, ...dashboard, ...tail], terminalRows, border);
 	}
 
-	/** Accent title with responsive model and current total/window usage metadata. */
+	/** Accent title with responsive model, zoom label, and true-window usage metadata. */
 	private headerLines(width: number): string[] {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold("Context Usage"));
@@ -244,6 +256,27 @@ export class UsageView {
 		const fullMetadata = normalizedModel === ""
 			? summary
 			: `${theme.fg("muted", normalizedModel)}${separator}${summary}`;
+		const zoomLabel = this.zoomLabel(width);
+		if (zoomLabel !== undefined) {
+			const titleWithZoom = `${title}${separator}${zoomLabel}`;
+			if (visibleWidth(titleWithZoom) + 1 + visibleWidth(fullMetadata) <= width) {
+				return [spreadLine(titleWithZoom, fullMetadata, width)];
+			}
+			if (visibleWidth(titleWithZoom) + 1 + visibleWidth(summary) <= width) {
+				return [spreadLine(titleWithZoom, summary, width)];
+			}
+			if (visibleWidth(title) + 1 + visibleWidth(summary) <= width) {
+				return [spreadLine(title, summary, width), "", this.fit(zoomLabel, width)];
+			}
+			return [
+				this.fit(title, width),
+				"",
+				this.fit(zoomLabel, width),
+				"",
+				this.fit(summary, width),
+			];
+		}
+
 		if (visibleWidth(title) + 1 + visibleWidth(fullMetadata) <= width) {
 			return [spreadLine(title, fullMetadata, width)];
 		}
@@ -253,9 +286,58 @@ export class UsageView {
 		return [this.fit(title, width), "", this.fit(summary, width)];
 	}
 
+	/** Toggle the view-local map denominator when the binding is currently visible. */
+	private toggleMapScale(): void {
+		if (!this.canToggleMapScale(this.currentWidth)) return;
+		this.mapScale = this.mapScale === "window" ? "fit" : "window";
+		this.clearCache();
+	}
+
+	/** Whether zoom can help and its binding is visible at this width. */
+	private canToggleMapScale(width: number | undefined): boolean {
+		const contextWindow = this.usage.reported?.contextWindow;
+		return width !== undefined &&
+			width >= MAP_SIDE_BY_SIDE_MIN_WIDTH &&
+			contextWindow !== undefined &&
+			this.fitMapScale !== undefined &&
+			this.fitMapScale < contextWindow;
+	}
+
+	/** The active Fit label, omitted together with its map and binding. */
+	private zoomLabel(width: number): string | undefined {
+		const contextWindow = this.usage.reported?.contextWindow;
+		if (
+			this.mapScale !== "fit" ||
+			!this.canToggleMapScale(width) ||
+			contextWindow === undefined ||
+			this.fitMapScale === undefined
+		) return undefined;
+		return this.theme.fg(
+			"mdHeading",
+			`Zoom ${formatTokens(contextWindow)} → ${formatTokens(this.fitMapScale)}`,
+		);
+	}
+
+	/** Dashboard hints with Zoom immediately before Close when the binding is active. */
+	private dashboardHints(width: number): Array<readonly [string, string]> {
+		const hints: Array<readonly [string, string]> = [
+			[STEP_KEY_HINT, "Navigate"],
+			["Enter", "Preview"],
+		];
+		if (this.canToggleMapScale(width)) hints.push(["Z", "Zoom"]);
+		hints.push(["Esc", "Close"]);
+		return hints;
+	}
+
 	/** Render the map and legend side by side, or only details when width/window data is insufficient. */
 	private dashboardLines(width: number, rows: number): string[] {
-		const map = buildUsageMap(this.usage);
+		const scaleTokens = this.mapScale === "fit" ? this.fitMapScale : undefined;
+		const map = buildUsageMap(
+			this.usage,
+			DEFAULT_MAP_COLUMNS,
+			DEFAULT_MAP_ROWS,
+			scaleTokens,
+		);
 		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) {
 			return this.detailLines(width, rows, false).map((line) => this.fit(line, width));
 		}
