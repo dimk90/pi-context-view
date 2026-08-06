@@ -1,6 +1,6 @@
 # Changelog
 
-## `[v0.4.0]` - Unreleased
+## `[v0.4.0]` - 06.08.2026
 
 ### New
 * `[usage]` Zoom context map with `z`.
