@@ -59,6 +59,32 @@ function tool(name: string, source: string): ToolInfo {
 	};
 }
 
+/** Assistant fixture for probe stop-reason tests. */
+function assistantMessage(
+	stopReason: "aborted" | "error",
+	timestamp: number,
+	errorMessage?: string,
+): Extract<ContextEvent["messages"][number], { role: "assistant" }> {
+	return {
+		role: "assistant",
+		content: [],
+		api: "anthropic-messages",
+		provider: "anthropic",
+		model: "test",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason,
+		errorMessage,
+		timestamp,
+	};
+}
+
 test("captureActiveTools uses the final active set", () => {
 	const tools = captureActiveTools(
 		[tool("read", "builtin"), tool("search", "npm:web")],
@@ -221,23 +247,7 @@ test("SilentProbeState sanitizes and filters only exact probe identities", async
 
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	const realUser = { role: "user", content: [], timestamp: 11 } satisfies ContextEvent["messages"][number];
-	const probeAssistant = {
-		role: "assistant",
-		content: [],
-		api: "anthropic-messages",
-		provider: "anthropic",
-		model: "test",
-		usage: {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 0,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		},
-		stopReason: "aborted",
-		timestamp: 12,
-	} satisfies ContextEvent["messages"][number];
+	const probeAssistant = assistantMessage("aborted", 12);
 
 	state.recordMessage(probeUser);
 	state.recordMessage(probeAssistant);
@@ -257,6 +267,32 @@ test("SilentProbeState sanitizes and filters only exact probe identities", async
 	assert.deepEqual(await attempt.completion, { status: "captured" });
 	assert.equal(state.start().started, false);
 	assert.equal(state.sanitizeAssistant(probeAssistant), undefined);
+});
+
+test("SilentProbeState sanitizes pi 0.84 setup abort errors only for a recorded probe assistant", () => {
+	const state = new SilentProbeState();
+	state.start(1_000);
+	state.observeInput("extension", "");
+	assert.equal(state.beginRun(""), true);
+
+	const setupAbort = assistantMessage("error", 20, "This operation was aborted");
+	const providerError = assistantMessage("error", 21, "Authentication failed");
+	const unrecordedSetupAbort = assistantMessage("error", 22, "This operation was aborted");
+	const unrecordedLegacyAbort = assistantMessage("aborted", 23);
+	state.recordMessage(setupAbort);
+	state.recordMessage(providerError);
+
+	const sanitized = state.sanitizeAssistant(setupAbort);
+	assert.equal(sanitized?.role, "assistant");
+	if (sanitized?.role === "assistant") {
+		assert.equal(sanitized.stopReason, "stop");
+		assert.equal(sanitized.errorMessage, undefined);
+		assert.deepEqual(sanitized.content, []);
+	}
+	assert.equal(state.sanitizeAssistant(providerError), undefined);
+	assert.equal(state.sanitizeAssistant(unrecordedSetupAbort), undefined);
+	assert.equal(state.sanitizeAssistant(unrecordedLegacyAbort), undefined);
+	state.settle(true);
 });
 
 test("SilentProbeState filters restored identities without consuming the probe attempt", () => {

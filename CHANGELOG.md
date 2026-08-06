@@ -6,6 +6,10 @@
 * `[usage]` Zoom context map with `z`.
 
 ### Changed
+* `[package]` Bump dev dependencies to Pi 0.84.
+
+### Fixed
+* `[probe]` Restore silent-probe invisibility on Pi 0.84.
 
 
 ## `[v0.3.1]` - 28.07.2026

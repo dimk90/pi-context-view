@@ -35,14 +35,14 @@
     `AGENTS.override.md` context files, which measure by path. Only the generic
     "Memory (AGENTS.md)" Usage label reads oddly for an override file.
 
-- [ ] **Restore silent-probe invisibility on pi 0.84.**
+- [x] **Restore silent-probe invisibility on pi 0.84.**
   - pi 0.84 resolves provider auth with the request signal, so a probe aborted
     at `turn_start` now fails during stream setup instead of inside the
     provider stream.
   - The synthetic assistant therefore arrives as `stopReason: "error"` with
-    `errorMessage: "This operation was aborted"`. `sanitizeAssistant()` matches
-    only `"aborted"`, so pi renders an `Error:` row, persists the message, and
-    re-renders it on every resume.
+    `errorMessage: "This operation was aborted"`. Before this fix,
+    `sanitizeAssistant()` matched only `"aborted"`, so pi rendered an `Error:`
+    row, persisted the message, and re-rendered it on every resume.
   - Sanitize that shape too, still keyed on the probe-owned run and the
     recorded role/timestamp identity, so genuine aborts and genuine provider
     errors stay visible.
