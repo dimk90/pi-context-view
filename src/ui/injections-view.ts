@@ -3,7 +3,7 @@
  * Runtime label stays hidden until the runtime-inspection roadmap step.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, matchesKey, type TuiMode, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { InitialSnapshot, InjectionItem } from "../model.ts";
 import {
@@ -22,9 +22,14 @@ import {
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
+	isJumpEndKey,
+	isJumpStartKey,
+	isPageBackKey,
+	isPageForwardKey,
 	isStepBackKey,
 	isStepForwardKey,
 	normalizeTerminalRows,
+	pageKeyHint,
 	spreadLine,
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
@@ -55,7 +60,7 @@ export async function showInjectionsView(
 ): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows);
+			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows, () => tui.mode);
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
@@ -78,6 +83,7 @@ export class InjectionsView {
 	private readonly input: InjectionsViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
+	private readonly getTuiMode: () => TuiMode;
 	private readonly rows: InjectionRow[];
 	private readonly navigator: ListNavigator;
 	private readonly itemsById: Map<string, InjectionItem>;
@@ -94,11 +100,13 @@ export class InjectionsView {
 		input: InjectionsViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
+		getTuiMode: () => TuiMode = () => "regular",
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
+		this.getTuiMode = getTuiMode;
 		this.rows = buildInjectionRows(input.snapshot);
 		this.navigator = new ListNavigator(this.rows.length, 1, this.rows.length - 2);
 		this.itemsById = collectItemsById(input.snapshot);
@@ -119,13 +127,13 @@ export class InjectionsView {
 			if (this.navigator.moveBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.navigator.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.navigator.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
+		} else if (isJumpStartKey(data)) {
 			if (this.navigator.moveTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
+		} else if (isJumpEndKey(data)) {
 			if (this.navigator.moveTo(this.rows.length - 1)) this.clearCache();
 		}
 	}
@@ -197,13 +205,13 @@ export class InjectionsView {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.previewScroller.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
+		} else if (isJumpStartKey(data)) {
 			if (this.previewScroller.scrollTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
+		} else if (isJumpEndKey(data)) {
 			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
 		}
 	}
@@ -252,7 +260,7 @@ export class InjectionsView {
 			this.fit(
 				hintRow(this.theme, [
 					[STEP_KEY_HINT, "Scroll"],
-					["PgUp/PgDn", "Page"],
+					[pageKeyHint(this.getTuiMode()), "Page"],
 					["Esc", "Back"],
 				]),
 				width,

@@ -9,8 +9,18 @@
 
 ## v0.4.1
 
-- [ ] **Update views for fullscreen mode**:
-  - Check and fix PgUp/PgDn functionality.
+- [x] **Update views for fullscreen mode**:
+  - Page with `Ctrl+U`/`Ctrl+D` and jump with `g`/`G`, because pi's fullscreen
+    viewport consumes PgUp, PgDn, Home, and End before overlays see them.
+  - Name only the keys the active TUI mode delivers in the page hint.
+
+## v0.4.2
+
+- [ ] **Recover PgUp/PgDn for fullscreen mode**:
+  - Prefer PgUp/PgDn once pi can deliver those keys to a focused overlay instead
+    of consuming them for the transcript viewport.
+  - Keep `Ctrl+U`/`Ctrl+D` as fallback aliases.
+
 
 ## v0.5.0
 
@@ -45,8 +55,5 @@
     growth and unchanged context.
   - Keep logging disabled by default, memory-only, and bounded to 200 entries
     and 1 MiB, with request indexing and eviction reporting.
-
-## Open question
-
-- For v0.7.0 context-only message mutations, should the Runtime view explain
-  chain-position visibility limits inline or leave that detail to documentation?
+  - Context-only message mutations, should the Runtime view explain
+    chain-position visibility limits inline or leave that detail to documentation?

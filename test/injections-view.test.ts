@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { type TuiMode, visibleWidth } from "@earendil-works/pi-tui";
 
 import type { InitialSnapshot, InjectionGroup, InjectionItem } from "../src/model.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
@@ -391,6 +391,68 @@ test("InjectionsView accepts j/k wherever it accepts the arrow keys", () => {
 
 	const hints = frame(vim).split("\n").map(stripSgr);
 	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
+});
+
+test("InjectionsView pages and jumps with the keys fullscreen pi leaves to overlays", () => {
+	const createScrollView = (mode: TuiMode = "regular") =>
+		new InjectionsView(createTheme(), { snapshot: snapshot(30) }, () => {}, () => 24, () => mode);
+	const standard = createScrollView();
+	const aliases = createScrollView();
+	const frame = (view: InjectionsView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const start = frame(aliases);
+	assert.equal(frame(standard), start);
+
+	// List paging: Ctrl+D and Ctrl+U move exactly like PgDn and PgUp.
+	standard.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), start);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), start);
+	assert.equal(frame(standard), start);
+
+	// List jumps: G and g move exactly like End and Home.
+	standard.handleInput("\u001b[4~");
+	aliases.handleInput("G");
+	assert.match(stripSgr(frame(aliases)), /→ └─ ext-29/);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[1~");
+	aliases.handleInput("g");
+	assert.equal(frame(aliases), start);
+	assert.equal(frame(standard), start);
+
+	// Preview paging and jumps: the wrapped raw text moves identically.
+	standard.handleInput("\u001b[B");
+	aliases.handleInput("\u001b[B");
+	standard.handleInput("\r");
+	aliases.handleInput("\r");
+	const previewTop = frame(aliases);
+	assert.equal(frame(standard), previewTop);
+	standard.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), previewTop);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[4~");
+	aliases.handleInput("G");
+	assert.equal(frame(aliases), frame(standard));
+	assert.match(stripSgr(frame(aliases)), /\((\d+)\/\1\)/);
+	standard.handleInput("\u001b[1~");
+	aliases.handleInput("g");
+	assert.equal(frame(aliases), previewTop);
+	assert.equal(frame(standard), previewTop);
+
+	// The hint names only the paging keys the active TUI mode delivers to the view.
+	const previewHint = (view: InjectionsView) =>
+		frame(view).split("\n").map(stripSgr).find((line) => line.includes("↑↓/jk Scroll"));
+	assert.match(previewHint(aliases) ?? "", /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
+	const fullscreen = createScrollView("fullscreen");
+	fullscreen.render(80);
+	fullscreen.handleInput("\u001b[B");
+	fullscreen.handleInput("\r");
+	assert.match(previewHint(fullscreen) ?? "", /↑↓\/jk Scroll · Ctrl\+U\/D Page · Esc Back/);
 });
 
 test("InjectionsView navigation scrolls the non-selectable total and Escape closes", () => {

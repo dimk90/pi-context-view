@@ -1,5 +1,12 @@
 # Changelog
 
+## `[v0.4.1]` - Unreleased
+
+
+### Fixed
+* `[ui]` Add workaround for `Page` keys in fullscreen mode -> map to `Ctrl+U`/`Ctrl+D`.
+
+
 ## `[v0.4.0]` - 06.08.2026
 
 ### New

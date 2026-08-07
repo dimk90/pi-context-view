@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { type TuiMode, visibleWidth } from "@earendil-works/pi-tui";
 
 import type { ContextUsageSnapshot } from "../src/model.ts";
 import { formatPercent, formatTokens, UsageView } from "../src/ui/usage-view.ts";
@@ -569,6 +569,82 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 
 	const hints = frame(vim).split("\n").map(stripSgr);
 	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
+});
+
+test("UsageView pages and jumps with the keys fullscreen pi leaves to overlays", () => {
+	const tools = Array.from({ length: 20 }, (_, index) => ({
+		id: `tool-result:tool_${index + 1}`,
+		label: `tool_${index + 1}`,
+		tokens: 100,
+		entries: [
+			{
+				timestamp: Date.UTC(2026, 6, 11, 14, 0, index + 1),
+				breadcrumb: [`tool_${index + 1}`],
+				tokens: 100,
+				text: `tool_${index + 1} output line one\ntool_${index + 1} output line two`,
+			},
+		],
+	}));
+	const scrollUsage: ContextUsageSnapshot = {
+		...usage(2_000),
+		categories: [{ id: "tool-output", label: "Tool Output", tokens: 2_000, children: tools }],
+		estimatedTokens: 2_000,
+	};
+	const createScrollView = (mode: TuiMode = "regular") =>
+		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20, () => mode);
+	const standard = createScrollView();
+	const aliases = createScrollView();
+	const frame = (view: UsageView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const start = frame(aliases);
+	assert.equal(frame(standard), start);
+
+	// Legend paging: Ctrl+D and Ctrl+U move exactly like PgDn and PgUp.
+	standard.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), start);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), start);
+	assert.equal(frame(standard), start);
+
+	// Legend jumps: G and g move exactly like End and Home.
+	standard.handleInput("\u001b[4~");
+	aliases.handleInput("G");
+	assert.match(stripSgr(frame(aliases)), /→\s+• tool_20 \.{2,}/);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[1~");
+	aliases.handleInput("g");
+	assert.equal(frame(aliases), start);
+	assert.equal(frame(standard), start);
+
+	// Preview paging and jumps: the aggregate entry stream moves identically.
+	standard.handleInput("\r");
+	aliases.handleInput("\r");
+	const previewTop = frame(aliases);
+	assert.equal(frame(standard), previewTop);
+	standard.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), previewTop);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[4~");
+	aliases.handleInput("G");
+	assert.equal(frame(aliases), frame(standard));
+	assert.match(stripSgr(frame(aliases)), /\((\d+)\/\1\)/);
+	standard.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), frame(standard));
+
+	// The hint names only the paging keys the active TUI mode delivers to the view.
+	const previewHint = (view: UsageView) =>
+		frame(view).split("\n").map(stripSgr).find((line) => line.includes("↑↓/jk Scroll"));
+	assert.match(previewHint(aliases) ?? "", /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
+	const fullscreen = createScrollView("fullscreen");
+	fullscreen.render(80);
+	fullscreen.handleInput("\r");
+	assert.match(previewHint(fullscreen) ?? "", /↑↓\/jk Scroll · Ctrl\+U\/D Page · Esc Back/);
 });
 
 test("UsageView explains invisible reasoning once and keeps its estimates distinct", () => {

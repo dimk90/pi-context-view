@@ -40,12 +40,19 @@ Both views have `list` and `preview` states:
 
 - Up/Down, and the vim-style `k`/`j`, navigate selectable rows and scroll
   previews. Hints render the pair as one `↑↓/jk` key label.
-- PgUp/PgDn page through lists or previews.
-- Home/End jump to boundaries.
+- PgUp/PgDn, and `Ctrl+U`/`Ctrl+D`, page through lists or previews.
+- Home/End, and the vim-style `g`/`G`, jump to boundaries.
 - Enter opens the selected row's preview.
 - Escape returns to the same list row, then closes the view.
 
 Views may add their own keys; the Usage view adds `z` for the map scale.
+
+Pi's fullscreen renderer scrolls its own transcript viewport from a global input
+listener that runs before overlays are offered input, so it never delivers
+PgUp, PgDn, Home, or End to these views. The `Ctrl+U`/`Ctrl+D` and `g`/`G`
+aliases work in both TUI modes, and the page hint names only the keys the
+active mode delivers: `PgUp/PgDn Page` in regular mode, `Ctrl+U/D Page` in
+fullscreen.
 
 Navigation skips non-selectable rows and remains bounded after terminal resize.
 All content is terminal-sanitized before rendering. Raw content appears only

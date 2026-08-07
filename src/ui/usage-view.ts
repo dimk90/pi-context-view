@@ -4,7 +4,7 @@
  * rows, and an Enter-opened chronological content preview.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, matchesKey, type TuiMode, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
 import { collectPreviewEntries } from "../usage.ts";
@@ -21,9 +21,14 @@ import {
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
+	isJumpEndKey,
+	isJumpStartKey,
+	isPageBackKey,
+	isPageForwardKey,
 	isStepBackKey,
 	isStepForwardKey,
 	normalizeTerminalRows,
+	pageKeyHint,
 	spreadLine,
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
@@ -100,7 +105,7 @@ interface LegendColumns {
 export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new UsageView(theme, input, done, () => tui.terminal.rows);
+			const view = new UsageView(theme, input, done, () => tui.terminal.rows, () => tui.mode);
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
@@ -123,6 +128,7 @@ export class UsageView {
 	private readonly input: UsageViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
+	private readonly getTuiMode: () => TuiMode;
 	private readonly usage: ContextUsageSnapshot;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
@@ -144,11 +150,13 @@ export class UsageView {
 		input: UsageViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
+		getTuiMode: () => TuiMode = () => "regular",
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
+		this.getTuiMode = getTuiMode;
 		this.usage = input.usage;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
@@ -175,13 +183,13 @@ export class UsageView {
 			if (this.navigator.moveBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.navigator.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.navigator.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
+		} else if (isJumpStartKey(data)) {
 			if (this.navigator.moveTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
+		} else if (isJumpEndKey(data)) {
 			if (this.navigator.moveTo(this.legendRows.length - 1)) this.clearCache();
 		}
 	}
@@ -548,13 +556,13 @@ export class UsageView {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.previewScroller.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
+		} else if (isJumpStartKey(data)) {
 			if (this.previewScroller.scrollTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
+		} else if (isJumpEndKey(data)) {
 			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
 		}
 	}
@@ -621,7 +629,7 @@ export class UsageView {
 			this.fit(
 				hintRow(theme, [
 					[STEP_KEY_HINT, "Scroll"],
-					["PgUp/PgDn", "Page"],
+					[pageKeyHint(this.getTuiMode()), "Page"],
 					["Esc", "Back"],
 				]),
 				width,
