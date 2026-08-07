@@ -1,15 +1,17 @@
 # pi-context-view
 
 <h1 align="center">
-    <img width="400" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/c69c44d9ed0ee245183c3f82de11d8da312ba129/doc/images/pi-context-view.png">
+
+  <img width="400" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/c69c44d9ed0ee245183c3f82de11d8da312ba129/doc/images/pi-context-view.png">
+
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+  [![npm version](https://img.shields.io/npm/v/pi-context-view?style=flat-square&logoColor=white)](https://www.npmjs.com/package/pi-context-view)
+  [![Pi Package](https://img.shields.io/badge/Pi-Package-6366F1?style=flat-square)](https://pi.dev/packages/pi-context-view)
+  [![npm](https://img.shields.io/npm/dm/pi-context-view?style=flat-square)](https://www.npmjs.com/package/pi-context-view)
+
 </h1>
 
 <br>
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)](https://opensource.org/licenses/MIT)
-[![npm version](https://img.shields.io/npm/v/pi-context-view?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/pi-context-view)
-[![Pi Package](https://img.shields.io/badge/Pi-Package-6366F1?style=flat)](https://pi.dev/packages/pi-context-view)
-[![npm](https://img.shields.io/npm/dm/pi-context-view)](https://www.npmjs.com/package/pi-context-view)
 
 [Pi](https://pi.dev) extension to visualizes context usage and lets you inspect the parts you
 normally can't see: the base prompt, tool definitions, and instructions
