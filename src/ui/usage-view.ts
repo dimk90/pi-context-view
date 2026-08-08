@@ -39,6 +39,7 @@ import {
 	calculateFitMapScale,
 	DEFAULT_MAP_COLUMNS,
 	DEFAULT_MAP_ROWS,
+	type UsageMap,
 	type UsageMapCell,
 } from "./usage-map.ts";
 
@@ -67,6 +68,11 @@ const COMPACTED_CELL = "▦";
 const BUFFER_CELL = "⛝";
 const FREE_CELL = "⛶";
 const BREAKDOWN_MARKER = "•";
+const MAP_KEY_FULL_DESCRIPTION = "Whole block, one category";
+const MAP_KEY_PART_DESCRIPTION = "Mixed block, largest shown";
+const MAP_KEY_SIZE_LABEL = "Block Size";
+const MAP_KEY_MIN_ROWS = 4;
+const MAP_KEY_DETAILED_MIN_ROWS = 7;
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -347,7 +353,7 @@ export class UsageView {
 			scaleTokens,
 		);
 		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) {
-			return this.detailLines(width, rows, false).map((line) => this.fit(line, width));
+			return this.detailLines(width, rows, undefined).map((line) => this.fit(line, width));
 		}
 
 		const spaced = width >= SPACED_MAP_MIN_WIDTH;
@@ -360,7 +366,7 @@ export class UsageView {
 		const mapWidth = BODY_INDENT.length + map.columns + (spaced ? map.columns - 1 : 0);
 		const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
 		const detailWidth = Math.max(1, width - mapWidth - gap);
-		const details = this.detailLines(detailWidth, rows, true);
+		const details = this.detailLines(detailWidth, rows, map);
 		const lineCount = Math.max(mapLines.length, details.length);
 		return Array.from({ length: lineCount }, (_, index) => {
 			const mapLine = mapLines[index] ?? " ".repeat(mapWidth);
@@ -370,10 +376,11 @@ export class UsageView {
 	}
 
 	/** Map-fill key, category heading, selectable category legend viewport, and scroll counter. */
-	private detailLines(width: number, rows: number, includeMapKey: boolean): string[] {
+	private detailLines(width: number, rows: number, map: UsageMap | undefined): string[] {
 		const theme = this.theme;
-		const showMapKey = includeMapKey && rows >= 4;
-		const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT + (showMapKey ? 2 : 0);
+		const keyLines = map === undefined ? [] : this.mapKeyLines(map, width, rows);
+		const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT +
+			(keyLines.length === 0 ? 0 : keyLines.length + 1);
 		// The counter sits below the last legend row, so it consumes one of the available rows.
 		const viewport = calculateViewport(this.legendRows.length, rows, headerLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
@@ -398,21 +405,63 @@ export class UsageView {
 			)]
 			: [];
 		return [
-			...(showMapKey ? [this.mapKeyLine(width), ""] : []),
+			...(keyLines.length === 0 ? [] : [...keyLines, ""]),
 			heading,
 			...visibleRows,
 			...counterLines,
 		].slice(0, rows);
 	}
 
-	/** Explain only the map's full and partial occupancy glyphs. */
-	private mapKeyLine(width: number): string {
+	/**
+	 * Map key: one heading plus a row per occupancy glyph and the scale-dependent
+	 * block size. Degrades to the single-line key when the detail column is too
+	 * short to spend five rows on it, and disappears entirely below that.
+	 */
+	private mapKeyLines(map: UsageMap, width: number, rows: number): string[] {
+		if (rows < MAP_KEY_MIN_ROWS) return [];
+		if (rows < MAP_KEY_DETAILED_MIN_ROWS) return [this.compactMapKeyLine(map, width)];
+		const theme = this.theme;
+		const sizeLabel = theme.fg("muted", `${MAP_KEY_SIZE_LABEL} - `);
+		return [
+			this.fit(theme.fg("mdHeading", theme.bold("Map:")), width),
+			this.fit(this.mapKeyEntry("text", FULL_CELL, theme.fg("muted", MAP_KEY_FULL_DESCRIPTION)), width),
+			this.fit(this.mapKeyEntry("text", PARTIAL_CELL, theme.fg("muted", MAP_KEY_PART_DESCRIPTION)), width),
+			this.fit(this.mapKeyEntry("dim", FREE_CELL, `${sizeLabel}${this.blockSizeText(map, true)}`), width),
+		];
+	}
+
+	/** One indented `glyph - text` key row. */
+	private mapKeyEntry(glyphColor: ThemeColor, glyph: string, text: string): string {
+		return `${BODY_INDENT}${this.theme.fg(glyphColor, glyph)}${this.theme.fg("dim", " - ")}${text}`;
+	}
+
+	/** Single-line key kept for short detail columns, dropping the percentage before it truncates. */
+	private compactMapKeyLine(map: UsageMap, width: number): string {
 		const theme = this.theme;
 		const heading = theme.fg("mdHeading", theme.bold("Map:"));
 		const separator = theme.fg("dim", " · ");
 		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " Full")}`;
 		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Part")}`;
-		return this.fit(`${heading} ${full}${separator}${partial}`, width);
+		const size = (withPercent: boolean) =>
+			`${theme.fg("dim", FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
+		const prefix = `${heading} ${full}${separator}${partial}${separator}`;
+		const detailed = `${prefix}${size(true)}`;
+		return this.fit(visibleWidth(detailed) <= width ? detailed : `${prefix}${size(false)}`, width);
+	}
+
+	/**
+	 * Tokens one map cell covers, with its share of the mapped range. While Fit
+	 * zoom shrinks the value, it shares the header zoom label's color. The share
+	 * is derived from the current map geometry rather than assumed, so it follows
+	 * any future cell count.
+	 */
+	private blockSizeText(map: UsageMap, withPercent: boolean): string {
+		const percent = withPercent ? formatPercent(1 / (map.columns * map.rows)) : "";
+		const tokens = formatTokens(Math.round(map.blockTokens));
+		return this.theme.fg(
+			this.mapScale === "fit" ? "mdHeading" : "muted",
+			percent === "" ? tokens : `${tokens} (${percent})`,
+		);
 	}
 
 	/** Pi-reported usage/window metadata, with a marked estimate when current usage is unknown. */

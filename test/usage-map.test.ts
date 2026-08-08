@@ -58,6 +58,7 @@ test("buildUsageMap uses estimated category occupancy independently of reported 
 	assert.ok(map !== undefined);
 	assert.equal(map.columns, 10);
 	assert.equal(map.rows, 1);
+	assert.equal(map.blockTokens, 10);
 	assert.deepEqual(map.cells, [
 		{ categoryId: "first", fill: "full" },
 		{ categoryId: "first", fill: "full" },
@@ -87,6 +88,7 @@ test("buildUsageMap changes only the denominator for a smaller anchored scale", 
 	);
 
 	assert.ok(fit !== undefined);
+	assert.equal(fit.blockTokens, 6, "Fit shrinks what one cell represents");
 	assert.deepEqual(fit.cells, [
 		{ categoryId: "first", fill: "full" },
 		{ categoryId: "first", fill: "full" },

@@ -68,9 +68,29 @@ for compacted data, dim `⛝` for the auto-compact buffer, and dim `⛶` for fre
 space. Allocate occupied cells from estimated category totals against the
 current map scale, which is the context window unless Fit is active (see
 [Map scale](#map-scale)); display pi-reported usage separately because the
-values may differ. A dedicated `Map: ■ Full · ◧ Part` key appears beside the
-map, followed by one empty detail row before `Category:`. Compacted, buffer,
-and free glyphs need no key because their category rows identify them.
+values may differ. A dedicated key appears beside the map, followed by one empty
+detail row before `Category:`:
+
+```text
+Map:
+  ■ - Whole block, one category
+  ◧ - Mixed block, largest shown
+  ⛶ - Block Size - 5.1k (0.5%)
+```
+
+Compacted, buffer, and free glyphs need no key because their category rows
+identify them. Block Size is the mapped range divided by the cell count, so it
+states the map's resolution: what the smallest visible cell is worth. Its
+percentage is the cell's share of the mapped range, not of the context window,
+and is derived from the live map geometry rather than assumed from a fixed
+14×14 grid. Only the token value follows the active scale; it renders in
+`muted` at Window and, while Fit is active, in the same `mdHeading` treatment as
+the header's zoom label, so zooming visibly shrinks and highlights it.
+
+When the detail column cannot spare the five rows, degrade to the single-line
+`Map: ■ Full · ◧ Part · ⛶ 5.1k (0.5%)` key, dropping the percentage before it
+would truncate; below that, drop the key entirely and give the rows to the
+legend.
 
 When auto-compaction is enabled, the tail of the map shows the settings
 `reserveTokens` reserve as `⛝` cells after the free cells: tokens that content
@@ -134,7 +154,8 @@ reads as occupancy rather than as a pure composition chart.
 
 At 1M windows the difference is the point of the feature: Window scale gives
 196 cells of about 5.1k tokens each, so categories under roughly 2.5k tokens
-claim no cell at all and vanish from a map whose legend still lists them.
+claim no cell at all and vanish from a map whose legend still lists them. The
+key's Block Size row states that number at the active scale.
 
 Render `Z Zoom` in the hint row directly before `Esc Close`. Hide the hint, the
 header label, and the binding together whenever the toggle cannot help:
@@ -281,8 +302,8 @@ such as the Usage map scale, must invalidate cached output instead.
 
 Test at 60, 80, and 120 columns, narrow fallbacks, short heights, height-only
 resizing, overflow navigation, preview return position, and theme invalidation.
-Cover both map scales, the header label's line-splitting fallback, and the
-conditions that hide the zoom binding.
+Cover both map scales, the header label's line-splitting fallback, the
+conditions that hide the zoom binding, and both map-key degradations.
 
 ## Release media
 

@@ -2,9 +2,12 @@
 
 ## `[v0.4.1]` - Unreleased
 
+### Changed
+* `[usage]` Explain the map glyphs on separate.
+* `[usage]` Add a "Block Size" row with the tokens and map share.
 
 ### Fixed
-* `[ui]` Add workaround for `Page` keys in fullscreen mode -> map to `Ctrl+U`/`Ctrl+D`.
+* `[ui]` Add workaround for `PgUp/PgDn` keys in `fullscreen` mode -> map to `Ctrl+U/Ctrl+D`.
 
 
 ## `[v0.4.0]` - 06.08.2026
