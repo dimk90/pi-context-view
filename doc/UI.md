@@ -73,9 +73,9 @@ legend and its scroll counter, separated from them by one empty detail row:
 
 ```text
 Map:
-  ■ - Whole block, one category
-  ◧ - Mixed block, largest shown
-  ⛶ - Block Size - 5.1k (0.5%)
+  ■ - Single category block
+  ◧ - Shared block, largest category shown
+  ⛶ - Block Size: 5.1k (0.5%)
 ```
 
 The legend is the more important section, so it comes first and the key is what

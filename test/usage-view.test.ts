@@ -129,9 +129,9 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.match(plain[mapKeyIndex - 2] ?? "", /⛶ Free Space/);
 	assert.match(plain[mapKeyIndex - 1] ?? "", /^\s*$/);
 	assert.match(plain[mapKeyIndex] ?? "", /^\s+Map:$/);
-	assert.match(plain[mapKeyIndex + 1] ?? "", /^\s+■ - Whole block, one category$/);
-	assert.match(plain[mapKeyIndex + 2] ?? "", /^\s+◧ - Mixed block, largest shown$/);
-	assert.match(plain[mapKeyIndex + 3] ?? "", /^\s+⛶ - Block Size - 5\.1k \(0\.5%\)$/);
+	assert.match(plain[mapKeyIndex + 1] ?? "", /^\s+■ - Single category block$/);
+	assert.match(plain[mapKeyIndex + 2] ?? "", /^\s+◧ - Shared block, largest category shown$/);
+	assert.match(plain[mapKeyIndex + 3] ?? "", /^\s+⛶ - Block Size: 5\.1k \(0\.5%\)$/);
 	assert.doesNotMatch(plain[mapKeyIndex] ?? "", /Compacted|Free/);
 	// The block size stays muted at Window scale; only the Fit toggle highlights it.
 	assert.match(lines[mapKeyIndex + 3] ?? "", /\u001b\[38;2;7;8;9m5\.1k \(0\.5%\)/);
@@ -236,7 +236,7 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 		"Fit makes estimated occupancy legible",
 	);
 	// Only the token value follows the scale: the share of the mapped range is one cell of the grid.
-	assert.ok(fitPlain.some((line) => line.endsWith("⛶ - Block Size - 260 (0.5%)")), "Fit shrinks the block size");
+	assert.ok(fitPlain.some((line) => line.endsWith("⛶ - Block Size: 260 (0.5%)")), "Fit shrinks the block size");
 	assert.match(
 		fitFrame.find((line) => stripSgr(line).includes("Block Size")) ?? "",
 		/\u001b\[38;2;22;23;24m260 \(0\.5%\)/,
@@ -272,7 +272,7 @@ test("UsageView collapses the map key before the legend loses a row", () => {
 	const scrollCounter = /\(\d+\/16\)/;
 	let rows = 33;
 	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => rows);
-	assert.ok(view.render(80).map(stripSgr).some((line) => line.endsWith("⛶ - Block Size - 5.1k (0.5%)")));
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
 
 	rows = 32;
 	const compact = view.render(80).map(stripSgr);
@@ -1058,7 +1058,7 @@ test("UsageView respects width and height changes", () => {
 	const compactMap = view.render(60).map(stripSgr);
 	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Category:$/.test(line)));
 	assert.ok(compactMap.some((line) => /^\s+Map:$/.test(line)));
-	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size - 5.1k (0.5%)")));
+	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
 	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	const categoryOnly = view.render(40).map(stripSgr);
 	assert.equal(categoryOnly[2], "Context Usage");

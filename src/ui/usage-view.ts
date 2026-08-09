@@ -68,8 +68,8 @@ const COMPACTED_CELL = "▦";
 const BUFFER_CELL = "⛝";
 const FREE_CELL = "⛶";
 const BREAKDOWN_MARKER = "•";
-const MAP_KEY_FULL_DESCRIPTION = "Whole block, one category";
-const MAP_KEY_PART_DESCRIPTION = "Mixed block, largest shown";
+const MAP_KEY_FULL_DESCRIPTION = "Single category block";
+const MAP_KEY_PART_DESCRIPTION = "Shared block, largest category shown";
 const MAP_KEY_SIZE_LABEL = "Block Size";
 /** Rows the detailed key costs beside the complete legend: one separator plus four key rows. */
 const MAP_KEY_DETAILED_SPARE_ROWS = 5;
@@ -425,7 +425,7 @@ export class UsageView {
 		if (spare < MAP_KEY_COMPACT_SPARE_ROWS) return [];
 		if (spare < MAP_KEY_DETAILED_SPARE_ROWS) return [this.compactMapKeyLine(map, width)];
 		const theme = this.theme;
-		const sizeLabel = theme.fg("muted", `${MAP_KEY_SIZE_LABEL} - `);
+		const sizeLabel = theme.fg("muted", `${MAP_KEY_SIZE_LABEL}: `);
 		return [
 			this.fit(theme.fg("mdHeading", theme.bold("Map:")), width),
 			this.fit(this.mapKeyEntry("text", FULL_CELL, theme.fg("muted", MAP_KEY_FULL_DESCRIPTION)), width),
