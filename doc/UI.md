@@ -68,8 +68,8 @@ for compacted data, dim `⛝` for the auto-compact buffer, and dim `⛶` for fre
 space. Allocate occupied cells from estimated category totals against the
 current map scale, which is the context window unless Fit is active (see
 [Map scale](#map-scale)); display pi-reported usage separately because the
-values may differ. A dedicated key appears beside the map, followed by one empty
-detail row before `Category:`:
+values may differ. A dedicated key appears beside the map, below the `Category:`
+legend and its scroll counter, separated from them by one empty detail row:
 
 ```text
 Map:
@@ -77,6 +77,9 @@ Map:
   ◧ - Mixed block, largest shown
   ⛶ - Block Size - 5.1k (0.5%)
 ```
+
+The legend is the more important section, so it comes first and the key is what
+shrinks as the terminal gets shorter.
 
 Compacted, buffer, and free glyphs need no key because their category rows
 identify them. Block Size is the mapped range divided by the cell count, so it
@@ -87,10 +90,14 @@ and is derived from the live map geometry rather than assumed from a fixed
 `muted` at Window and, while Fit is active, in the same `mdHeading` treatment as
 the header's zoom label, so zooming visibly shrinks and highlights it.
 
-When the detail column cannot spare the five rows, degrade to the single-line
+The key claims only rows the complete legend leaves over, counted as the detail
+column minus the `Category:` heading and every legend row. With five spare rows
+it renders in full. With two to four, degrade to the single-line
 `Map: ■ Full · ◧ Part · ⛶ 5.1k (0.5%)` key, dropping the percentage before it
-would truncate; below that, drop the key entirely and give the rows to the
-legend.
+would truncate. Below two, drop the key entirely. So a shrinking terminal
+collapses the key in that order before the legend hides a single category row or
+starts scrolling, and the `Category:` heading with at least one legend row
+always survives.
 
 When auto-compaction is enabled, the tail of the map shows the settings
 `reserveTokens` reserve as `⛝` cells after the free cells: tokens that content

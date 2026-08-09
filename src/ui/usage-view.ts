@@ -71,8 +71,10 @@ const BREAKDOWN_MARKER = "•";
 const MAP_KEY_FULL_DESCRIPTION = "Whole block, one category";
 const MAP_KEY_PART_DESCRIPTION = "Mixed block, largest shown";
 const MAP_KEY_SIZE_LABEL = "Block Size";
-const MAP_KEY_MIN_ROWS = 4;
-const MAP_KEY_DETAILED_MIN_ROWS = 7;
+/** Rows the detailed key costs beside the complete legend: one separator plus four key rows. */
+const MAP_KEY_DETAILED_SPARE_ROWS = 5;
+/** Rows the single-line key costs beside the complete legend: one separator plus one key row. */
+const MAP_KEY_COMPACT_SPARE_ROWS = 2;
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -375,14 +377,14 @@ export class UsageView {
 		});
 	}
 
-	/** Map-fill key, category heading, selectable category legend viewport, and scroll counter. */
+	/** Category heading, selectable category legend viewport, scroll counter, and map-fill key. */
 	private detailLines(width: number, rows: number, map: UsageMap | undefined): string[] {
 		const theme = this.theme;
 		const keyLines = map === undefined ? [] : this.mapKeyLines(map, width, rows);
-		const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT +
+		const reservedLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT +
 			(keyLines.length === 0 ? 0 : keyLines.length + 1);
 		// The counter sits below the last legend row, so it consumes one of the available rows.
-		const viewport = calculateViewport(this.legendRows.length, rows, headerLineCount);
+		const viewport = calculateViewport(this.legendRows.length, rows, reservedLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 
 		const heading = theme.fg("mdHeading", theme.bold("Category:"));
@@ -405,21 +407,23 @@ export class UsageView {
 			)]
 			: [];
 		return [
-			...(keyLines.length === 0 ? [] : [...keyLines, ""]),
 			heading,
 			...visibleRows,
 			...counterLines,
+			...(keyLines.length === 0 ? [] : ["", ...keyLines]),
 		].slice(0, rows);
 	}
 
 	/**
 	 * Map key: one heading plus a row per occupancy glyph and the scale-dependent
-	 * block size. Degrades to the single-line key when the detail column is too
-	 * short to spend five rows on it, and disappears entirely below that.
+	 * block size, rendered below the more important category legend. It claims
+	 * only rows the complete legend leaves over, so a shrinking terminal degrades
+	 * it to the single-line key and then drops it before any category row goes.
 	 */
 	private mapKeyLines(map: UsageMap, width: number, rows: number): string[] {
-		if (rows < MAP_KEY_MIN_ROWS) return [];
-		if (rows < MAP_KEY_DETAILED_MIN_ROWS) return [this.compactMapKeyLine(map, width)];
+		const spare = rows - DETAIL_CATEGORY_HEADER_LINE_COUNT - this.legendRows.length;
+		if (spare < MAP_KEY_COMPACT_SPARE_ROWS) return [];
+		if (spare < MAP_KEY_DETAILED_SPARE_ROWS) return [this.compactMapKeyLine(map, width)];
 		const theme = this.theme;
 		const sizeLabel = theme.fg("muted", `${MAP_KEY_SIZE_LABEL} - `);
 		return [

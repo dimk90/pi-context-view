@@ -122,14 +122,16 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.match(lines[2] ?? "", /\u001b\[38;2;1;2;3m.*Context Usage/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;7;8;9mclaude-opus-4-8/);
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
+	assert.match(plain[4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Category:$/);
+	// The key trails the more important legend, separated by one empty detail row.
 	const mapKeyIndex = plain.findIndex((line) => line.includes("Map:"));
-	assert.equal(mapKeyIndex, 4);
-	assert.match(plain[mapKeyIndex] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Map:$/);
-	assert.match(plain[mapKeyIndex + 1] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+■ - Whole block, one category$/);
-	assert.match(plain[mapKeyIndex + 2] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+◧ - Mixed block, largest shown$/);
-	assert.match(plain[mapKeyIndex + 3] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+⛶ - Block Size - 5\.1k \(0\.5%\)$/);
-	assert.match(plain[mapKeyIndex + 4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s*$/);
-	assert.match(plain[mapKeyIndex + 5] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Category:/);
+	assert.equal(mapKeyIndex, 22);
+	assert.match(plain[mapKeyIndex - 2] ?? "", /⛶ Free Space/);
+	assert.match(plain[mapKeyIndex - 1] ?? "", /^\s*$/);
+	assert.match(plain[mapKeyIndex] ?? "", /^\s+Map:$/);
+	assert.match(plain[mapKeyIndex + 1] ?? "", /^\s+■ - Whole block, one category$/);
+	assert.match(plain[mapKeyIndex + 2] ?? "", /^\s+◧ - Mixed block, largest shown$/);
+	assert.match(plain[mapKeyIndex + 3] ?? "", /^\s+⛶ - Block Size - 5\.1k \(0\.5%\)$/);
 	assert.doesNotMatch(plain[mapKeyIndex] ?? "", /Compacted|Free/);
 	// The block size stays muted at Window scale; only the Fit toggle highlights it.
 	assert.match(lines[mapKeyIndex + 3] ?? "", /\u001b\[38;2;7;8;9m5\.1k \(0\.5%\)/);
@@ -265,26 +267,40 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	assert.ok(!reopened.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
 });
 
-test("UsageView degrades the map key before the legend loses its rows", () => {
-	let rows = 18;
+test("UsageView collapses the map key before the legend loses a row", () => {
+	// The fixture legend has 16 rows, so its counter names them as (visible/16).
+	const scrollCounter = /\(\d+\/16\)/;
+	let rows = 33;
 	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => rows);
 	assert.ok(view.render(80).map(stripSgr).some((line) => line.endsWith("⛶ - Block Size - 5.1k (0.5%)")));
 
-	rows = 17;
+	rows = 32;
 	const compact = view.render(80).map(stripSgr);
 	assert.ok(compact.some((line) => line.endsWith("Map: ■ Full · ◧ Part · ⛶ 5.1k (0.5%)")));
 	assert.ok(!compact.some((line) => line.includes("Block Size")));
-	assert.ok(compact.some((line) => line.includes("Category:")));
+	assert.ok(compact.some((line) => line.includes("⛶ Free Space")), "the whole legend still fits");
+	assert.ok(
+		compact.findIndex((line) => line.includes("Category:")) <
+			compact.findIndex((line) => line.includes("Map:")),
+		"the legend keeps its rows above the degrading key",
+	);
 
 	// The narrow detail column drops the percentage instead of truncating the key.
 	const narrow = view.render(52).map(stripSgr);
 	assert.ok(narrow.some((line) => line.endsWith("Map: ■ Full · ◧ Part · ⛶ 5.1k")));
 
-	rows = 14;
-	const hidden = view.render(80).map(stripSgr);
-	assert.ok(!hidden.some((line) => line.includes("Map:")));
-	assert.ok(hidden.some((line) => line.includes("Category:")));
-	assert.ok(hidden.some((line) => line.includes("System Prompt")));
+	rows = 29;
+	const keyless = view.render(80).map(stripSgr);
+	assert.ok(!keyless.some((line) => line.includes("Map:")));
+	assert.ok(keyless.some((line) => line.includes("⛶ Free Space")));
+	assert.ok(!keyless.some((line) => scrollCounter.test(line)), "the key goes before the legend scrolls");
+
+	rows = 27;
+	const scrolled = view.render(80).map(stripSgr);
+	assert.ok(!scrolled.some((line) => line.includes("Map:")));
+	assert.ok(scrolled.some((line) => line.includes("Category:")));
+	assert.ok(scrolled.some((line) => line.includes("System Prompt")));
+	assert.ok(scrolled.some((line) => scrollCounter.test(line)));
 });
 
 test("UsageView hides the zoom binding when its map cannot benefit", () => {
@@ -459,7 +475,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	const counterIndex = initial.findIndex((line) => /\(\d+\/18\)$/.test(line));
 	const lastRowIndex = initial.findLastIndex((line) => /• tool_\d+ \.{2,}/.test(line));
 	assert.ok(counterIndex >= 0 && counterIndex === lastRowIndex + 1, "counter follows the last legend row");
-	assert.match(initial[counterIndex] ?? "", /\s{2,}\(6\/18\)$/);
+	assert.match(initial[counterIndex] ?? "", /\s{2,}\(11\/18\)$/);
 	assert.ok(!initial.some((line) => /Category:.*\(\d+\/\d+\)/.test(line)), "no counter beside the heading");
 
 	view.handleInput("\u001b[4~"); // End
@@ -1029,7 +1045,8 @@ test("UsageView hides model metadata instead of abbreviating it", () => {
 });
 
 test("UsageView respects width and height changes", () => {
-	let rows = 30;
+	// Tall enough for the detailed map key to survive beside the complete legend at width 60.
+	let rows = 36;
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
 	const view = new UsageView(createTheme(), { usage: usage(), degradedReason: reason }, () => {}, () => rows);
 
@@ -1039,7 +1056,8 @@ test("UsageView respects width and height changes", () => {
 		}
 	}
 	const compactMap = view.render(60).map(stripSgr);
-	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Map:$/.test(line)));
+	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Category:$/.test(line)));
+	assert.ok(compactMap.some((line) => /^\s+Map:$/.test(line)));
 	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size - 5.1k (0.5%)")));
 	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	const categoryOnly = view.render(40).map(stripSgr);
@@ -1053,7 +1071,7 @@ test("UsageView respects width and height changes", () => {
 	assert.ok(!categoryOnly.some((line) => /[■◧▦⛶]{14}/.test(line)));
 
 	const tall = view.render(40);
-	assert.equal(tall.length, 30);
+	assert.equal(tall.length, 36);
 	rows = 12;
 	const short = view.render(40);
 	assert.equal(short.length, 12);
