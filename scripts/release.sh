@@ -710,7 +710,7 @@ _release_pass() {
     #
     local message="$1"
 
-    printf '%s %s\n' "$(gum style --foreground 42 '✔')" "$message"
+    printf '%s%s\n' "$(gum style --foreground 42 '✅ ')" "$message"
 }
 
 
