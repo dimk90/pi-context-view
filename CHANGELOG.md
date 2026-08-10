@@ -1,6 +1,6 @@
 # Changelog
 
-## `[v0.4.1]` - Unreleased
+## `[v0.4.1]` - 10.08.2026
 
 ### Changed
 * `[usage]` Add a "Block Size" row with the tokens and map share.

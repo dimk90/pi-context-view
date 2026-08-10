@@ -1,7 +1,7 @@
 # pi-context-view
 
 <p align="center">
-  <img width="404" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/c69c44d9ed0ee245183c3f82de11d8da312ba129/doc/images/pi-context-view.png">
+  <img width="392" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/c69c44d9ed0ee245183c3f82de11d8da312ba129/doc/images/pi-context-view.png">
   <br>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
   <a href="https://www.npmjs.com/package/pi-context-view"><img src="https://img.shields.io/npm/v/pi-context-view?style=flat-square&amp;logoColor=white" alt="npm version"></a>
@@ -49,7 +49,7 @@ Inspect hidden parts of the context, such as tool definitions:
 ### Zoom
 
 Zoom in for a more detailed breakdown of large context windows, such as
-1M-token windows.
+1M-token windows:
 
 ![Zoom feature](https://media.githubusercontent.com/media/dimk90/pi-context-view/d24c88eb8a9f89fb9acc9bd4cbdfec283a1de8b7/doc/images/zoom.gif)
 
@@ -65,7 +65,7 @@ pi install npm:pi-context-view
 
 ## Related Projects
 
-- [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create
+📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create
   the demo GIFs in this README.
 
 ## License
