@@ -24,6 +24,8 @@ export interface UsageMapCell {
 export interface UsageMap {
 	readonly columns: number;
 	readonly rows: number;
+	/** Tokens one cell represents at the active scale; shrinks when Fit narrows the denominator. */
+	readonly blockTokens: number;
 	readonly cells: readonly UsageMapCell[];
 }
 
@@ -85,7 +87,12 @@ export function buildUsageMap(
 		{ length: cellCount },
 		(_, index) => createCell(index, occupiedCells, bufferStart, segments),
 	);
-	return { columns: Math.floor(columns), rows: Math.floor(rows), cells };
+	return {
+		columns: Math.floor(columns),
+		rows: Math.floor(rows),
+		blockTokens: mapScale / cellCount,
+		cells,
+	};
 }
 
 /** Scale estimated category shares into the occupied map range. */

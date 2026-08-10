@@ -4,7 +4,7 @@
  * rows, and an Enter-opened chronological content preview.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, matchesKey, type TuiMode, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
 import { collectPreviewEntries } from "../usage.ts";
@@ -21,9 +21,14 @@ import {
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
+	isJumpEndKey,
+	isJumpStartKey,
+	isPageBackKey,
+	isPageForwardKey,
 	isStepBackKey,
 	isStepForwardKey,
 	normalizeTerminalRows,
+	pageKeyHint,
 	spreadLine,
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
@@ -34,6 +39,7 @@ import {
 	calculateFitMapScale,
 	DEFAULT_MAP_COLUMNS,
 	DEFAULT_MAP_ROWS,
+	type UsageMap,
 	type UsageMapCell,
 } from "./usage-map.ts";
 
@@ -62,6 +68,13 @@ const COMPACTED_CELL = "▦";
 const BUFFER_CELL = "⛝";
 const FREE_CELL = "⛶";
 const BREAKDOWN_MARKER = "•";
+const MAP_KEY_FULL_DESCRIPTION = "Single category block";
+const MAP_KEY_PART_DESCRIPTION = "Shared block, largest category shown";
+const MAP_KEY_SIZE_LABEL = "Block Size";
+/** Rows the detailed key costs beside the complete legend: one separator plus four key rows. */
+const MAP_KEY_DETAILED_SPARE_ROWS = 5;
+/** Rows the single-line key costs beside the complete legend: one separator plus one key row. */
+const MAP_KEY_COMPACT_SPARE_ROWS = 2;
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -100,7 +113,7 @@ interface LegendColumns {
 export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new UsageView(theme, input, done, () => tui.terminal.rows);
+			const view = new UsageView(theme, input, done, () => tui.terminal.rows, () => tui.mode);
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
@@ -123,6 +136,7 @@ export class UsageView {
 	private readonly input: UsageViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
+	private readonly getTuiMode: () => TuiMode;
 	private readonly usage: ContextUsageSnapshot;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
@@ -144,11 +158,13 @@ export class UsageView {
 		input: UsageViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
+		getTuiMode: () => TuiMode = () => "regular",
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
+		this.getTuiMode = getTuiMode;
 		this.usage = input.usage;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
@@ -175,13 +191,13 @@ export class UsageView {
 			if (this.navigator.moveBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.navigator.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.navigator.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
+		} else if (isJumpStartKey(data)) {
 			if (this.navigator.moveTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
+		} else if (isJumpEndKey(data)) {
 			if (this.navigator.moveTo(this.legendRows.length - 1)) this.clearCache();
 		}
 	}
@@ -339,7 +355,7 @@ export class UsageView {
 			scaleTokens,
 		);
 		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) {
-			return this.detailLines(width, rows, false).map((line) => this.fit(line, width));
+			return this.detailLines(width, rows, undefined).map((line) => this.fit(line, width));
 		}
 
 		const spaced = width >= SPACED_MAP_MIN_WIDTH;
@@ -352,7 +368,7 @@ export class UsageView {
 		const mapWidth = BODY_INDENT.length + map.columns + (spaced ? map.columns - 1 : 0);
 		const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
 		const detailWidth = Math.max(1, width - mapWidth - gap);
-		const details = this.detailLines(detailWidth, rows, true);
+		const details = this.detailLines(detailWidth, rows, map);
 		const lineCount = Math.max(mapLines.length, details.length);
 		return Array.from({ length: lineCount }, (_, index) => {
 			const mapLine = mapLines[index] ?? " ".repeat(mapWidth);
@@ -361,13 +377,14 @@ export class UsageView {
 		});
 	}
 
-	/** Map-fill key, category heading, selectable category legend viewport, and scroll counter. */
-	private detailLines(width: number, rows: number, includeMapKey: boolean): string[] {
+	/** Category heading, selectable category legend viewport, scroll counter, and map-fill key. */
+	private detailLines(width: number, rows: number, map: UsageMap | undefined): string[] {
 		const theme = this.theme;
-		const showMapKey = includeMapKey && rows >= 4;
-		const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT + (showMapKey ? 2 : 0);
+		const keyLines = map === undefined ? [] : this.mapKeyLines(map, width, rows);
+		const reservedLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT +
+			(keyLines.length === 0 ? 0 : keyLines.length + 1);
 		// The counter sits below the last legend row, so it consumes one of the available rows.
-		const viewport = calculateViewport(this.legendRows.length, rows, headerLineCount);
+		const viewport = calculateViewport(this.legendRows.length, rows, reservedLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 
 		const heading = theme.fg("mdHeading", theme.bold("Category:"));
@@ -390,21 +407,69 @@ export class UsageView {
 			)]
 			: [];
 		return [
-			...(showMapKey ? [this.mapKeyLine(width), ""] : []),
 			heading,
 			...visibleRows,
 			...counterLines,
+			...(keyLines.length === 0 ? [] : ["", ...keyLines]),
 		].slice(0, rows);
 	}
 
-	/** Explain only the map's full and partial occupancy glyphs. */
-	private mapKeyLine(width: number): string {
+	/**
+	 * Map key: one heading plus a row per occupancy glyph and the scale-dependent
+	 * block size, rendered below the more important category legend. It claims
+	 * only rows the complete legend leaves over, so a shrinking terminal degrades
+	 * it to the single-line key and then drops it before any category row goes.
+	 */
+	private mapKeyLines(map: UsageMap, width: number, rows: number): string[] {
+		const spare = rows - DETAIL_CATEGORY_HEADER_LINE_COUNT - this.legendRows.length;
+		if (spare < MAP_KEY_COMPACT_SPARE_ROWS) return [];
+		if (spare < MAP_KEY_DETAILED_SPARE_ROWS) return [this.compactMapKeyLine(map, width)];
+		const theme = this.theme;
+		const sizeLabel = theme.fg("muted", `${MAP_KEY_SIZE_LABEL}: `);
+		return [
+			this.fit(theme.fg("mdHeading", theme.bold("Map:")), width),
+			this.fit(this.mapKeyEntry("text", FULL_CELL, theme.fg("muted", MAP_KEY_FULL_DESCRIPTION)), width),
+			this.fit(this.mapKeyEntry("text", PARTIAL_CELL, theme.fg("muted", MAP_KEY_PART_DESCRIPTION)), width),
+			this.fit(this.mapKeyEntry("dim", FREE_CELL, `${sizeLabel}${this.blockSizeText(map, true)}`), width),
+		];
+	}
+
+	/** One indented `glyph - text` key row. */
+	private mapKeyEntry(glyphColor: ThemeColor, glyph: string, text: string): string {
+		return `${BODY_INDENT}${this.theme.fg(glyphColor, glyph)}${this.theme.fg("dim", " - ")}${text}`;
+	}
+
+	/** Single-line key that drops detail in stages before it would truncate. */
+	private compactMapKeyLine(map: UsageMap, width: number): string {
 		const theme = this.theme;
 		const heading = theme.fg("mdHeading", theme.bold("Map:"));
 		const separator = theme.fg("dim", " · ");
-		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " Full")}`;
-		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Part")}`;
-		return this.fit(`${heading} ${full}${separator}${partial}`, width);
+		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One category")}`;
+		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Mixed")}`;
+		const size = (withPercent: boolean) =>
+			`${theme.fg("dim", FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
+		const prefix = `${heading} ${full}${separator}${partial}${separator}`;
+		const detailed = `${prefix}${size(true)}`;
+		if (visibleWidth(detailed) <= width) return detailed;
+		const withoutPercent = `${prefix}${size(false)}`;
+		if (visibleWidth(withoutPercent) <= width) return withoutPercent;
+		const shortenedFull = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One")}`;
+		return this.fit(`${heading} ${shortenedFull}${separator}${partial}${separator}${size(false)}`, width);
+	}
+
+	/**
+	 * Tokens one map cell covers, with its share of the mapped range. While Fit
+	 * zoom shrinks the value, it shares the header zoom label's color. The share
+	 * is derived from the current map geometry rather than assumed, so it follows
+	 * any future cell count.
+	 */
+	private blockSizeText(map: UsageMap, withPercent: boolean): string {
+		const percent = withPercent ? formatPercent(1 / (map.columns * map.rows)) : "";
+		const tokens = formatTokens(Math.round(map.blockTokens));
+		return this.theme.fg(
+			this.mapScale === "fit" ? "mdHeading" : "muted",
+			percent === "" ? tokens : `${tokens} (${percent})`,
+		);
 	}
 
 	/** Pi-reported usage/window metadata, with a marked estimate when current usage is unknown. */
@@ -548,13 +613,13 @@ export class UsageView {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.previewScroller.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
+		} else if (isJumpStartKey(data)) {
 			if (this.previewScroller.scrollTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
+		} else if (isJumpEndKey(data)) {
 			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
 		}
 	}
@@ -621,7 +686,7 @@ export class UsageView {
 			this.fit(
 				hintRow(theme, [
 					[STEP_KEY_HINT, "Scroll"],
-					["PgUp/PgDn", "Page"],
+					[pageKeyHint(this.getTuiMode()), "Page"],
 					["Esc", "Back"],
 				]),
 				width,

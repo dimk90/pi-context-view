@@ -40,12 +40,19 @@ Both views have `list` and `preview` states:
 
 - Up/Down, and the vim-style `k`/`j`, navigate selectable rows and scroll
   previews. Hints render the pair as one `↑↓/jk` key label.
-- PgUp/PgDn page through lists or previews.
-- Home/End jump to boundaries.
+- PgUp/PgDn, and `Ctrl+U`/`Ctrl+D`, page through lists or previews.
+- Home/End, and the vim-style `g`/`G`, jump to boundaries.
 - Enter opens the selected row's preview.
 - Escape returns to the same list row, then closes the view.
 
 Views may add their own keys; the Usage view adds `z` for the map scale.
+
+Pi's fullscreen renderer scrolls its own transcript viewport from a global input
+listener that runs before overlays are offered input, so it never delivers
+PgUp, PgDn, Home, or End to these views. The `Ctrl+U`/`Ctrl+D` and `g`/`G`
+aliases work in both TUI modes, and the page hint names only the keys the
+active mode delivers: `PgUp/PgDn Page` in regular mode, `Ctrl+U/D Page` in
+fullscreen.
 
 Navigation skips non-selectable rows and remains bounded after terminal resize.
 All content is terminal-sanitized before rendering. Raw content appears only
@@ -61,9 +68,36 @@ for compacted data, dim `⛝` for the auto-compact buffer, and dim `⛶` for fre
 space. Allocate occupied cells from estimated category totals against the
 current map scale, which is the context window unless Fit is active (see
 [Map scale](#map-scale)); display pi-reported usage separately because the
-values may differ. A dedicated `Map: ■ Full · ◧ Part` key appears beside the
-map, followed by one empty detail row before `Category:`. Compacted, buffer,
-and free glyphs need no key because their category rows identify them.
+values may differ. A dedicated key appears beside the map, below the `Category:`
+legend and its scroll counter, separated from them by one empty detail row:
+
+```text
+Map:
+  ■ - Single category block
+  ◧ - Shared block, largest category shown
+  ⛶ - Block Size: 5.1k (0.5%)
+```
+
+The legend is the more important section, so it comes first and the key is what
+shrinks as the terminal gets shorter.
+
+Compacted, buffer, and free glyphs need no key because their category rows
+identify them. Block Size is the mapped range divided by the cell count, so it
+states the map's resolution: what the smallest visible cell is worth. Its
+percentage is the cell's share of the mapped range, not of the context window,
+and is derived from the live map geometry rather than assumed from a fixed
+14×14 grid. Only the token value follows the active scale; it renders in
+`muted` at Window and, while Fit is active, in the same `mdHeading` treatment as
+the header's zoom label, so zooming visibly shrinks and highlights it.
+
+The key claims only rows the complete legend leaves over, counted as the detail
+column minus the `Category:` heading and every legend row. With five spare rows
+it renders in full. With two to four, degrade to the single-line
+`Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)` key. Before the line would
+truncate, drop the percentage and then shorten `One category` to `One`. Below
+two spare rows, drop the key entirely. So a shrinking terminal collapses the key
+in that order before the legend hides a single category row or starts scrolling,
+and the `Category:` heading with at least one legend row always survives.
 
 When auto-compaction is enabled, the tail of the map shows the settings
 `reserveTokens` reserve as `⛝` cells after the free cells: tokens that content
@@ -127,7 +161,8 @@ reads as occupancy rather than as a pure composition chart.
 
 At 1M windows the difference is the point of the feature: Window scale gives
 196 cells of about 5.1k tokens each, so categories under roughly 2.5k tokens
-claim no cell at all and vanish from a map whose legend still lists them.
+claim no cell at all and vanish from a map whose legend still lists them. The
+key's Block Size row states that number at the active scale.
 
 Render `Z Zoom` in the hint row directly before `Esc Close`. Hide the hint, the
 header label, and the binding together whenever the toggle cannot help:
@@ -274,8 +309,8 @@ such as the Usage map scale, must invalidate cached output instead.
 
 Test at 60, 80, and 120 columns, narrow fallbacks, short heights, height-only
 resizing, overflow navigation, preview return position, and theme invalidation.
-Cover both map scales, the header label's line-splitting fallback, and the
-conditions that hide the zoom binding.
+Cover both map scales, the header label's line-splitting fallback, the
+conditions that hide the zoom binding, and every map-key degradation.
 
 ## Release media
 

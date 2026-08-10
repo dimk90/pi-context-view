@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { type TuiMode, visibleWidth } from "@earendil-works/pi-tui";
 
 import type { ContextUsageSnapshot } from "../src/model.ts";
 import { formatPercent, formatTokens, UsageView } from "../src/ui/usage-view.ts";
@@ -112,21 +112,29 @@ function stripSgr(text: string): string {
 }
 
 test("UsageView renders the 14x14 map and matching category legend with semantic colors", () => {
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	// Tall enough for the whole legend to sit beside the map without scrolling.
+	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 33);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
-	assert.equal(lines.length, 30);
+	assert.equal(lines.length, 33);
 	assert.match(plain[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;1;2;3m.*Context Usage/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;7;8;9mclaude-opus-4-8/);
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
-	const mapKeyIndex = plain.findIndex((line) => line.includes("Map: ■ Full · ◧ Part"));
-	assert.equal(mapKeyIndex, 4);
-	assert.match(plain[mapKeyIndex] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Map: ■ Full · ◧ Part$/);
-	assert.match(plain[mapKeyIndex + 1] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s*$/);
-	assert.match(plain[mapKeyIndex + 2] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Category:/);
+	assert.match(plain[4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Category:$/);
+	// The key trails the more important legend, separated by one empty detail row.
+	const mapKeyIndex = plain.findIndex((line) => line.includes("Map:"));
+	assert.equal(mapKeyIndex, 22);
+	assert.match(plain[mapKeyIndex - 2] ?? "", /⛶ Free Space/);
+	assert.match(plain[mapKeyIndex - 1] ?? "", /^\s*$/);
+	assert.match(plain[mapKeyIndex] ?? "", /^\s+Map:$/);
+	assert.match(plain[mapKeyIndex + 1] ?? "", /^\s+■ - Single category block$/);
+	assert.match(plain[mapKeyIndex + 2] ?? "", /^\s+◧ - Shared block, largest category shown$/);
+	assert.match(plain[mapKeyIndex + 3] ?? "", /^\s+⛶ - Block Size: 5\.1k \(0\.5%\)$/);
 	assert.doesNotMatch(plain[mapKeyIndex] ?? "", /Compacted|Free/);
+	// The block size stays muted at Window scale; only the Fit toggle highlights it.
+	assert.match(lines[mapKeyIndex + 3] ?? "", /\u001b\[38;2;7;8;9m5\.1k \(0\.5%\)/);
 	assert.equal(plain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){13}/.test(line)).length, 14);
 	assert.ok(plain.some((line) => /■ System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
 	assert.ok(plain.some((line) => /■ Tool Output \.{2,}\s+5k\s+0\.5%/.test(line)));
@@ -162,8 +170,15 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 		return line.indexOf(value);
 	});
 	assert.equal(new Set(valueColumns).size, 1);
-	const percentColumns = ["0.4%", "1.2%", "0.1%", "0.5%", "96%"].map((percent) => {
-		const line = plain.find((candidate) => candidate.includes(percent));
+	// Percentages are matched through their labels: the map key also carries one.
+	const percentColumns = [
+		["System Prompt", "0.4%"],
+		["System Tools", "1.2%"],
+		["Memory (AGENTS.md)", "0.1%"],
+		["Tool Output", "0.5%"],
+		["Free Space", "96%"],
+	].map(([label, percent]) => {
+		const line = plain.find((candidate) => candidate.includes(label));
 		assert.ok(line !== undefined);
 		return line.indexOf(percent);
 	});
@@ -220,6 +235,13 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 		fitCells.filter((cell) => cell !== "⛶").length > windowCells.filter((cell) => cell !== "⛶").length,
 		"Fit makes estimated occupancy legible",
 	);
+	// Only the token value follows the scale: the share of the mapped range is one cell of the grid.
+	assert.ok(fitPlain.some((line) => line.endsWith("⛶ - Block Size: 260 (0.5%)")), "Fit shrinks the block size");
+	assert.match(
+		fitFrame.find((line) => stripSgr(line).includes("Block Size")) ?? "",
+		/\u001b\[38;2;22;23;24m260 \(0\.5%\)/,
+		"Fit highlights the block size like the header zoom label",
+	);
 	assert.ok(fitPlain.some((line) => /⛝ Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/.test(line)));
 	assert.ok(fitPlain.some((line) => /⛶ Free Space \.{2,}\s+939\.8k\s+94%/.test(line)));
 
@@ -243,6 +265,48 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	assert.deepEqual(view.render(80), windowFrame);
 	const reopened = new UsageView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
 	assert.ok(!reopened.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
+});
+
+test("UsageView collapses the map key before the legend loses a row", () => {
+	// The fixture legend has 16 rows, so its counter names them as (visible/16).
+	const scrollCounter = /\(\d+\/16\)/;
+	let rows = 33;
+	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => rows);
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
+
+	rows = 32;
+	const compact = view.render(80).map(stripSgr);
+	assert.ok(compact.some((line) =>
+		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)")
+	));
+	assert.ok(!compact.some((line) => line.includes("Block Size")));
+	assert.ok(compact.some((line) => line.includes("⛶ Free Space")), "the whole legend still fits");
+	assert.ok(
+		compact.findIndex((line) => line.includes("Category:")) <
+			compact.findIndex((line) => line.includes("Map:")),
+		"the legend keeps its rows above the degrading key",
+	);
+
+	// The key drops the percentage before shortening its occupancy description.
+	const withoutPercent = view.render(72).map(stripSgr);
+	assert.ok(withoutPercent.some((line) =>
+		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 5.1k")
+	));
+	const narrow = view.render(52).map(stripSgr);
+	assert.ok(narrow.some((line) => line.endsWith("Map: ■ One · ◧ Mixed · ⛶ 5.1k")));
+
+	rows = 29;
+	const keyless = view.render(80).map(stripSgr);
+	assert.ok(!keyless.some((line) => line.includes("Map:")));
+	assert.ok(keyless.some((line) => line.includes("⛶ Free Space")));
+	assert.ok(!keyless.some((line) => scrollCounter.test(line)), "the key goes before the legend scrolls");
+
+	rows = 27;
+	const scrolled = view.render(80).map(stripSgr);
+	assert.ok(!scrolled.some((line) => line.includes("Map:")));
+	assert.ok(scrolled.some((line) => line.includes("Category:")));
+	assert.ok(scrolled.some((line) => line.includes("System Prompt")));
+	assert.ok(scrolled.some((line) => scrollCounter.test(line)));
 });
 
 test("UsageView hides the zoom binding when its map cannot benefit", () => {
@@ -417,7 +481,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	const counterIndex = initial.findIndex((line) => /\(\d+\/18\)$/.test(line));
 	const lastRowIndex = initial.findLastIndex((line) => /• tool_\d+ \.{2,}/.test(line));
 	assert.ok(counterIndex >= 0 && counterIndex === lastRowIndex + 1, "counter follows the last legend row");
-	assert.match(initial[counterIndex] ?? "", /\s{2,}\(9\/18\)$/);
+	assert.match(initial[counterIndex] ?? "", /\s{2,}\(11\/18\)$/);
 	assert.ok(!initial.some((line) => /Category:.*\(\d+\/\d+\)/.test(line)), "no counter beside the heading");
 
 	view.handleInput("\u001b[4~"); // End
@@ -569,6 +633,82 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 
 	const hints = frame(vim).split("\n").map(stripSgr);
 	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
+});
+
+test("UsageView pages and jumps with the keys fullscreen pi leaves to overlays", () => {
+	const tools = Array.from({ length: 20 }, (_, index) => ({
+		id: `tool-result:tool_${index + 1}`,
+		label: `tool_${index + 1}`,
+		tokens: 100,
+		entries: [
+			{
+				timestamp: Date.UTC(2026, 6, 11, 14, 0, index + 1),
+				breadcrumb: [`tool_${index + 1}`],
+				tokens: 100,
+				text: `tool_${index + 1} output line one\ntool_${index + 1} output line two`,
+			},
+		],
+	}));
+	const scrollUsage: ContextUsageSnapshot = {
+		...usage(2_000),
+		categories: [{ id: "tool-output", label: "Tool Output", tokens: 2_000, children: tools }],
+		estimatedTokens: 2_000,
+	};
+	const createScrollView = (mode: TuiMode = "regular") =>
+		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20, () => mode);
+	const standard = createScrollView();
+	const aliases = createScrollView();
+	const frame = (view: UsageView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const start = frame(aliases);
+	assert.equal(frame(standard), start);
+
+	// Legend paging: Ctrl+D and Ctrl+U move exactly like PgDn and PgUp.
+	standard.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), start);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), start);
+	assert.equal(frame(standard), start);
+
+	// Legend jumps: G and g move exactly like End and Home.
+	standard.handleInput("\u001b[4~");
+	aliases.handleInput("G");
+	assert.match(stripSgr(frame(aliases)), /→\s+• tool_20 \.{2,}/);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[1~");
+	aliases.handleInput("g");
+	assert.equal(frame(aliases), start);
+	assert.equal(frame(standard), start);
+
+	// Preview paging and jumps: the aggregate entry stream moves identically.
+	standard.handleInput("\r");
+	aliases.handleInput("\r");
+	const previewTop = frame(aliases);
+	assert.equal(frame(standard), previewTop);
+	standard.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), previewTop);
+	assert.equal(frame(aliases), frame(standard));
+	standard.handleInput("\u001b[4~");
+	aliases.handleInput("G");
+	assert.equal(frame(aliases), frame(standard));
+	assert.match(stripSgr(frame(aliases)), /\((\d+)\/\1\)/);
+	standard.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), frame(standard));
+
+	// The hint names only the paging keys the active TUI mode delivers to the view.
+	const previewHint = (view: UsageView) =>
+		frame(view).split("\n").map(stripSgr).find((line) => line.includes("↑↓/jk Scroll"));
+	assert.match(previewHint(aliases) ?? "", /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
+	const fullscreen = createScrollView("fullscreen");
+	fullscreen.render(80);
+	fullscreen.handleInput("\r");
+	assert.match(previewHint(fullscreen) ?? "", /↑↓\/jk Scroll · Ctrl\+U\/D Page · Esc Back/);
 });
 
 test("UsageView explains invisible reasoning once and keeps its estimates distinct", () => {
@@ -911,7 +1051,8 @@ test("UsageView hides model metadata instead of abbreviating it", () => {
 });
 
 test("UsageView respects width and height changes", () => {
-	let rows = 30;
+	// Tall enough for the detailed map key to survive beside the complete legend at width 60.
+	let rows = 36;
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
 	const view = new UsageView(createTheme(), { usage: usage(), degradedReason: reason }, () => {}, () => rows);
 
@@ -921,7 +1062,9 @@ test("UsageView respects width and height changes", () => {
 		}
 	}
 	const compactMap = view.render(60).map(stripSgr);
-	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Map: ■ Full · ◧ Part$/.test(line)));
+	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Category:$/.test(line)));
+	assert.ok(compactMap.some((line) => /^\s+Map:$/.test(line)));
+	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
 	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	const categoryOnly = view.render(40).map(stripSgr);
 	assert.equal(categoryOnly[2], "Context Usage");
@@ -930,11 +1073,11 @@ test("UsageView respects width and height changes", () => {
 	assert.ok(categoryOnly.some((line) => line.startsWith("Category:")));
 	assert.ok(categoryOnly.some((line) => line.startsWith("→ ■ System")));
 	assert.ok(!categoryOnly.some((line) => line.includes("claude-opus-4-8")));
-	assert.ok(!categoryOnly.some((line) => line.includes("Map: ■ Full · ◧ Part")));
+	assert.ok(!categoryOnly.some((line) => line.includes("Map:")));
 	assert.ok(!categoryOnly.some((line) => /[■◧▦⛶]{14}/.test(line)));
 
 	const tall = view.render(40);
-	assert.equal(tall.length, 30);
+	assert.equal(tall.length, 36);
 	rows = 12;
 	const short = view.render(40);
 	assert.equal(short.length, 12);

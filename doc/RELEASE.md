@@ -92,11 +92,6 @@ section as the GitHub release notes.
    git push --atomic origin master refs/tags/v0.?.?
    ```
 
-1. Wait for the `Publish GitHub release` workflow to complete. Verify that the
-   published release has the target tag and title, the exact target changelog
-   section as its notes, and the tested merge commit as its tag target. Do not
-   create the release manually or publish npm if the workflow fails.
-
 1. Publish only from the clean commit identified by the pushed tag:
 
    ```bash

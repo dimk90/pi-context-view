@@ -7,10 +7,14 @@
 - [doc/HISTORY.md](doc/HISTORY.md) - legacy, superseded designs and architecture decisions;
 - [CHANGELOG.md](CHANGELOG.md) for completed work.
 
-## v0.4.1
 
-- [ ] **Update views for fullscreen mode**:
-  - Check and fix PgUp/PgDn functionality.
+## v0.4.2
+
+- [ ] **Recover PgUp/PgDn for fullscreen mode**:
+  - Prefer PgUp/PgDn once pi can deliver those keys to a focused overlay instead
+    of consuming them for the transcript viewport.
+  - Keep `Ctrl+U`/`Ctrl+D` as fallback aliases.
+
 
 ## v0.5.0
 
@@ -45,8 +49,5 @@
     growth and unchanged context.
   - Keep logging disabled by default, memory-only, and bounded to 200 entries
     and 1 MiB, with request indexing and eviction reporting.
-
-## Open question
-
-- For v0.7.0 context-only message mutations, should the Runtime view explain
-  chain-position visibility limits inline or leave that detail to documentation?
+  - Context-only message mutations, should the Runtime view explain
+    chain-position visibility limits inline or leave that detail to documentation?

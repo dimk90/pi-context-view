@@ -1,5 +1,16 @@
 # Changelog
 
+## `[v0.4.1]` - 10.08.2026
+
+### Changed
+* `[usage]` Add a "Block Size" row with the tokens and map share.
+* `[usage]` Move the map legend below the category legend.
+* `[usage]` Explain the map glyphs on separate rows.
+
+### Fixed
+* `[ui]` Add workaround for `PgUp/PgDn` keys in `fullscreen` mode -> map to `Ctrl+U/Ctrl+D`.
+
+
 ## `[v0.4.0]` - 06.08.2026
 
 ### New
