@@ -30,8 +30,8 @@ PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 SetOutput "$REPO_ROOT/doc/images/context-usage.gif"
 
 SetCols 80
-SetRows 30
-SetFontSize 21
+SetRows 34
+SetFontSize 30
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'
 SetTypingSpeed 0.1

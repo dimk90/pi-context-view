@@ -30,11 +30,9 @@ PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/pi-web-providers'
 
 SetOutput "$REPO_ROOT/doc/images/context-injections.gif"
 
-SetSession 'debug'
-
 SetCols 80
-SetRows 33
-SetFontSize 21 # TODO: update to target resolution
+SetRows 34
+SetFontSize 30
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'
 SetTypingSpeed 0.1
