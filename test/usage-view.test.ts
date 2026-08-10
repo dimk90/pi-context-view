@@ -276,7 +276,9 @@ test("UsageView collapses the map key before the legend loses a row", () => {
 
 	rows = 32;
 	const compact = view.render(80).map(stripSgr);
-	assert.ok(compact.some((line) => line.endsWith("Map: ■ Full · ◧ Part · ⛶ 5.1k (0.5%)")));
+	assert.ok(compact.some((line) =>
+		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)")
+	));
 	assert.ok(!compact.some((line) => line.includes("Block Size")));
 	assert.ok(compact.some((line) => line.includes("⛶ Free Space")), "the whole legend still fits");
 	assert.ok(
@@ -285,9 +287,13 @@ test("UsageView collapses the map key before the legend loses a row", () => {
 		"the legend keeps its rows above the degrading key",
 	);
 
-	// The narrow detail column drops the percentage instead of truncating the key.
+	// The key drops the percentage before shortening its occupancy description.
+	const withoutPercent = view.render(72).map(stripSgr);
+	assert.ok(withoutPercent.some((line) =>
+		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 5.1k")
+	));
 	const narrow = view.render(52).map(stripSgr);
-	assert.ok(narrow.some((line) => line.endsWith("Map: ■ Full · ◧ Part · ⛶ 5.1k")));
+	assert.ok(narrow.some((line) => line.endsWith("Map: ■ One · ◧ Mixed · ⛶ 5.1k")));
 
 	rows = 29;
 	const keyless = view.render(80).map(stripSgr);

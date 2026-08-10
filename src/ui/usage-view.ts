@@ -439,18 +439,22 @@ export class UsageView {
 		return `${BODY_INDENT}${this.theme.fg(glyphColor, glyph)}${this.theme.fg("dim", " - ")}${text}`;
 	}
 
-	/** Single-line key kept for short detail columns, dropping the percentage before it truncates. */
+	/** Single-line key that drops detail in stages before it would truncate. */
 	private compactMapKeyLine(map: UsageMap, width: number): string {
 		const theme = this.theme;
 		const heading = theme.fg("mdHeading", theme.bold("Map:"));
 		const separator = theme.fg("dim", " · ");
-		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " Full")}`;
-		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Part")}`;
+		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One category")}`;
+		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Mixed")}`;
 		const size = (withPercent: boolean) =>
 			`${theme.fg("dim", FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
 		const prefix = `${heading} ${full}${separator}${partial}${separator}`;
 		const detailed = `${prefix}${size(true)}`;
-		return this.fit(visibleWidth(detailed) <= width ? detailed : `${prefix}${size(false)}`, width);
+		if (visibleWidth(detailed) <= width) return detailed;
+		const withoutPercent = `${prefix}${size(false)}`;
+		if (visibleWidth(withoutPercent) <= width) return withoutPercent;
+		const shortenedFull = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One")}`;
+		return this.fit(`${heading} ${shortenedFull}${separator}${partial}${separator}${size(false)}`, width);
 	}
 
 	/**

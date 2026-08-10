@@ -93,11 +93,11 @@ the header's zoom label, so zooming visibly shrinks and highlights it.
 The key claims only rows the complete legend leaves over, counted as the detail
 column minus the `Category:` heading and every legend row. With five spare rows
 it renders in full. With two to four, degrade to the single-line
-`Map: ■ Full · ◧ Part · ⛶ 5.1k (0.5%)` key, dropping the percentage before it
-would truncate. Below two, drop the key entirely. So a shrinking terminal
-collapses the key in that order before the legend hides a single category row or
-starts scrolling, and the `Category:` heading with at least one legend row
-always survives.
+`Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)` key. Before the line would
+truncate, drop the percentage and then shorten `One category` to `One`. Below
+two spare rows, drop the key entirely. So a shrinking terminal collapses the key
+in that order before the legend hides a single category row or starts scrolling,
+and the `Category:` heading with at least one legend row always survives.
 
 When auto-compaction is enabled, the tail of the map shows the settings
 `reserveTokens` reserve as `⛝` cells after the free cells: tokens that content
@@ -310,7 +310,7 @@ such as the Usage map scale, must invalidate cached output instead.
 Test at 60, 80, and 120 columns, narrow fallbacks, short heights, height-only
 resizing, overflow navigation, preview return position, and theme invalidation.
 Cover both map scales, the header label's line-splitting fallback, the
-conditions that hide the zoom binding, and both map-key degradations.
+conditions that hide the zoom binding, and every map-key degradation.
 
 ## Release media
 
