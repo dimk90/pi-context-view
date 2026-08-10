@@ -23,6 +23,7 @@ source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.2.0) && wait "$!" || exit 
 PI_COMMAND='pi -e . --session 019f7c38-d958-7d36-8d86-e22832c0d227'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/pi-web-providers'
+PI_COMMAND+=' --thinking xhigh'
 
 
 ## Configuration
