@@ -7,12 +7,6 @@
 - [doc/HISTORY.md](doc/HISTORY.md) - legacy, superseded designs and architecture decisions;
 - [CHANGELOG.md](CHANGELOG.md) for completed work.
 
-## v0.4.1
-
-- [x] **Update views for fullscreen mode**:
-  - Page with `Ctrl+U`/`Ctrl+D` and jump with `g`/`G`, because pi's fullscreen
-    viewport consumes PgUp, PgDn, Home, and End before overlays see them.
-  - Name only the keys the active TUI mode delivers in the page hint.
 
 ## v0.4.2
 
