@@ -3,8 +3,9 @@
 # Release pi-context-view from develop to master, npm, and GitHub.
 #
 # Prepare the version bump, dated changelog, completed-plan removal, README,
-# images, and dependency pins before running this script. It performs all
-# mechanical checks before asking for one approval, then stops on the first
+# images, and dependency pins before running this script. The prepared tree may
+# be uncommitted or already committed and pushed to develop. The script performs
+# all mechanical checks before asking for one approval, then stops on the first
 # failed release step without attempting rollback.
 #
 
@@ -57,6 +58,7 @@ main() {
     local missing_tools=()
     local operations=()
     local unexpected_paths=()
+    local committed_candidate_paths=()
     local summary_lines=()
     local plan_lines=()
     local tool repository_root required_file origin_url origin_pattern
@@ -65,7 +67,8 @@ main() {
     local changelog_pattern changelog_heading changelog_version release_date plan_pattern
     local branch counts ahead behind merge_base remote_tag configured_registry blocker
     local current_head current_status expected_paths staged_paths commit_message
-    local develop_push_status remote_develop master_parent first_parent second_parent
+    local candidate_mode candidate_summary candidate_plan develop_push_status
+    local remote_develop master_parent first_parent second_parent
     local master_version tagged_commit release_push_status remote_refs matching_refs
     local publish_status published attempt
 
@@ -147,27 +150,32 @@ main() {
     done < <(git diff HEAD --name-only -z
              git ls-files --others --exclude-standard -z)
 
+    candidate_mode='invalid'
     if ((${#_RELEASE_CANDIDATE_PATHS[@]} == 0)); then
-        _release_block 'the worktree has no prepared release changes'
+        candidate_mode='committed'
+        _release_pass 'the worktree is clean; checking the committed develop tree'
     elif ((${#unexpected_paths[@]} > 0)); then
         _release_block 'the worktree holds changes outside the release paths' \
                        "$(printf '%s\n' "${unexpected_paths[@]}")"
     else
+        candidate_mode='worktree'
         _release_pass "the worktree holds ${#_RELEASE_CANDIDATE_PATHS[@]} release path(s) and nothing else"
     fi
 
-    for required_candidate in CHANGELOG.md package.json; do
-        candidate_found=false
-        for path in "${_RELEASE_CANDIDATE_PATHS[@]}"; do
-            if [[ $path == "$required_candidate" ]]; then
-                candidate_found=true
-                break
+    if [[ $candidate_mode == 'worktree' ]]; then
+        for required_candidate in CHANGELOG.md package.json; do
+            candidate_found=false
+            for path in "${_RELEASE_CANDIDATE_PATHS[@]}"; do
+                if [[ $path == "$required_candidate" ]]; then
+                    candidate_found=true
+                    break
+                fi
+            done
+            if [[ $candidate_found != true ]]; then
+                _release_block "the prepared release does not change ${required_candidate}"
             fi
         done
-        if [[ $candidate_found != true ]]; then
-            _release_block "the prepared release does not change ${required_candidate}"
-        fi
-    done
+    fi
 
     package_readable=true
     if ! _RELEASE_TARGET_VERSION="$(_release_package_value 'version' 2>"$_RELEASE_LOG_FILE")"; then
@@ -304,11 +312,40 @@ NODE
                                "ahead ${ahead}, behind ${behind}"
             elif ((ahead > 0)); then
                 _release_block "${branch} is ahead of origin/${branch}" \
-                               'both branches must match origin before the release commit'
+                               'both branches must match origin before the release starts'
             else
                 _release_pass "${branch} exactly matches origin/${branch}"
             fi
         done
+
+        if [[ $candidate_mode == 'committed' ]]; then
+            while IFS= read -r -d '' path; do
+                committed_candidate_paths+=("$path")
+            done < <(git diff --name-only -z \
+                              "refs/remotes/origin/${_RELEASE_MASTER_BRANCH}" \
+                              "refs/heads/${_RELEASE_DEVELOP_BRANCH}")
+
+            if ((${#committed_candidate_paths[@]} == 0)); then
+                _release_block 'the committed develop tree has no changes from origin/master'
+            else
+                _release_pass \
+                    "the committed develop tree differs from origin/master in ${#committed_candidate_paths[@]} path(s)"
+            fi
+
+            for required_candidate in CHANGELOG.md package.json; do
+                candidate_found=false
+                for path in "${committed_candidate_paths[@]}"; do
+                    if [[ $path == "$required_candidate" ]]; then
+                        candidate_found=true
+                        break
+                    fi
+                done
+                if [[ $candidate_found != true ]]; then
+                    _release_block \
+                        "the committed release does not change ${required_candidate} from origin/master"
+                fi
+            done
+        fi
 
         merge_base="$(git merge-base "refs/remotes/origin/${_RELEASE_MASTER_BRANCH}" \
                                       "refs/heads/${_RELEASE_DEVELOP_BRANCH}" 2>/dev/null)"
@@ -403,6 +440,14 @@ NODE
     _RELEASE_APPROVED_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
     readonly _RELEASE_APPROVED_HEAD _RELEASE_APPROVED_STATUS
 
+    if [[ $candidate_mode == 'committed' ]]; then
+        candidate_summary="$(git rev-parse --short HEAD) (already committed on develop)"
+        candidate_plan=' 2. Use the reviewed release tree already committed on develop'
+    else
+        candidate_summary="uncommitted: ${_RELEASE_CANDIDATE_PATHS[*]}"
+        candidate_plan=" 2. Commit reviewed release paths as [doc] Release ${_RELEASE_TARGET_TAG}"
+    fi
+
     _release_heading "Release plan for ${_RELEASE_TARGET_TAG}"
     summary_lines=(
         "package    ${_RELEASE_PACKAGE_NAME}"
@@ -410,14 +455,14 @@ NODE
         "tag        ${_RELEASE_TARGET_TAG}"
         "branches   ${_RELEASE_DEVELOP_BRANCH} → ${_RELEASE_MASTER_BRANCH}"
         "npm        ${_RELEASE_NPM_ACCOUNT} at ${_RELEASE_NPM_REGISTRY}"
-        "commit     ${_RELEASE_CANDIDATE_PATHS[*]}"
+        "candidate  ${candidate_summary}"
     )
     gum style --border rounded --border-foreground 212 --padding '0 2' --margin '1 0 0 0' -- \
               "${summary_lines[@]}"
 
     plan_lines=(
         ' 1. Validate: frozen install, diff check, pnpm check, package dry run'
-        " 2. Commit reviewed release paths as [doc] Release ${_RELEASE_TARGET_TAG}"
+        "$candidate_plan"
         ' 3. Push develop to origin and verify the remote commit'
         ' 4. Update master, merge develop with --no-ff, and revalidate the exact tree'
         " 5. Verify version and clean state, then tag ${_RELEASE_TARGET_TAG}"
@@ -448,7 +493,14 @@ NODE
     _release_begin_step 'Validate the release tree'
     _release_apply_command 'installing with the frozen lockfile' \
                            pnpm install --frozen-lockfile --ignore-scripts
-    _release_apply_command 'checking the candidate diff' git diff --check
+    if [[ $candidate_mode == 'committed' ]]; then
+        _release_apply_command 'checking the committed candidate diff' \
+                               git diff --check \
+                                   "refs/remotes/origin/${_RELEASE_MASTER_BRANCH}" \
+                                   "refs/heads/${_RELEASE_DEVELOP_BRANCH}"
+    else
+        _release_apply_command 'checking the candidate diff' git diff --check
+    fi
     _release_apply_command 'running pnpm check' pnpm check
     if _release_capture 'packing a dry run' pnpm pack --dry-run; then
         _release_pass 'pnpm pack --dry-run succeeded'
@@ -457,29 +509,43 @@ NODE
         _release_stop 'pnpm pack --dry-run failed' "$(tail -n 20 "$_RELEASE_LOG_FILE")"
     fi
 
-    _release_begin_step 'Commit the release on develop'
-    if ! git add -- "${_RELEASE_CANDIDATE_PATHS[@]}"; then
-        _release_stop 'unable to stage the reviewed release paths'
+    if [[ $candidate_mode == 'committed' ]]; then
+        _release_begin_step 'Use the committed release on develop'
+        if [[ $(git rev-parse HEAD) != "$_RELEASE_APPROVED_HEAD" ]]; then
+            _release_stop 'develop moved while validating the committed release'
+        fi
+        if [[ -n $(git status --porcelain) ]]; then
+            _release_stop 'the committed release worktree is no longer clean' \
+                          "$(git status --short)"
+        fi
+        _RELEASE_RELEASE_COMMIT="$_RELEASE_APPROVED_HEAD"
+        _release_pass "release commit: $(git log -1 --format='%h %s')"
+    else
+        _release_begin_step 'Commit the release on develop'
+        if ! git add -- "${_RELEASE_CANDIDATE_PATHS[@]}"; then
+            _release_stop 'unable to stage the reviewed release paths'
+        fi
+        if ! git diff --quiet || [[ -n $(git ls-files --others --exclude-standard) ]]; then
+            _release_stop 'unstaged or untracked changes appeared after staging' \
+                          "$(git status --short)"
+        fi
+        expected_paths="$(printf '%s\n' "${_RELEASE_CANDIDATE_PATHS[@]}" | sort)"
+        staged_paths="$(git diff --cached --name-only | sort)"
+        if [[ $staged_paths != "$expected_paths" ]]; then
+            _release_stop 'the staged paths differ from the approved release paths' \
+                          "$(git status --short)"
+        fi
+        commit_message="[doc] Release ${_RELEASE_TARGET_TAG}"
+        if ! git commit -m "$commit_message"; then
+            _release_stop 'release commit failed'
+        fi
+        if [[ -n $(git status --porcelain) ]]; then
+            _release_stop 'the worktree is not clean after the release commit' \
+                          "$(git status --short)"
+        fi
+        _RELEASE_RELEASE_COMMIT="$(git rev-parse HEAD)"
+        _release_pass "release commit: $(git log -1 --format='%h %s')"
     fi
-    if ! git diff --quiet || [[ -n $(git ls-files --others --exclude-standard) ]]; then
-        _release_stop 'unstaged or untracked changes appeared after staging' \
-                      "$(git status --short)"
-    fi
-    expected_paths="$(printf '%s\n' "${_RELEASE_CANDIDATE_PATHS[@]}" | sort)"
-    staged_paths="$(git diff --cached --name-only | sort)"
-    if [[ $staged_paths != "$expected_paths" ]]; then
-        _release_stop 'the staged paths differ from the approved release paths' \
-                      "$(git status --short)"
-    fi
-    commit_message="[doc] Release ${_RELEASE_TARGET_TAG}"
-    if ! git commit -m "$commit_message"; then
-        _release_stop 'release commit failed'
-    fi
-    if [[ -n $(git status --porcelain) ]]; then
-        _release_stop 'the worktree is not clean after the release commit' "$(git status --short)"
-    fi
-    _RELEASE_RELEASE_COMMIT="$(git rev-parse HEAD)"
-    _release_pass "release commit: $(git log -1 --format='%h %s')"
 
     _release_begin_step 'Push develop to origin'
     develop_push_status=0
@@ -676,9 +742,13 @@ _release_detail() {
     #
     local detail="$1"
     local lines=()
+    local line_index
 
     [[ -n $detail ]] || return 0
     mapfile -t lines <<< "$detail"
+    for line_index in "${!lines[@]}"; do
+        lines[line_index]="-> ${lines[line_index]}"
+    done
     gum style --faint --margin '0 0 0 2' -- "${lines[@]}"
 }
 
