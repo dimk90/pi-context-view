@@ -66,7 +66,7 @@ pi install npm:pi-context-view
 ## Related Projects
 
 📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create
-  the demo GIFs in this README.
+  the demo GIFs.
 
 ## License
 
