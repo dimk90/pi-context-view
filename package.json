@@ -1,6 +1,6 @@
 {
 	"name": "pi-context-view",
-	"version": "0.4.1",
+	"version": "0.4.2",
 	"description": "Pi extension to visualize context usage and inspect the hidden parts: base prompt, tools defs, and extension injections",
 	"type": "module",
 	"license": "MIT",

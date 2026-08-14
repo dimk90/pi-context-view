@@ -8,13 +8,6 @@
 - [CHANGELOG.md](CHANGELOG.md) for completed work.
 
 
-## v0.4.2
-
-- [x] **Recover PgUp/PgDn for fullscreen mode**:
-  - Prefer PgUp/PgDn once pi can deliver those keys to a focused overlay instead
-    of consuming them for the transcript viewport.
-
-
 ## v0.5.0
 
 - [ ] **Different Icon Styles for the usage map**.
