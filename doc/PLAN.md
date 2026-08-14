@@ -10,10 +10,9 @@
 
 ## v0.4.2
 
-- [ ] **Recover PgUp/PgDn for fullscreen mode**:
+- [x] **Recover PgUp/PgDn for fullscreen mode**:
   - Prefer PgUp/PgDn once pi can deliver those keys to a focused overlay instead
     of consuming them for the transcript viewport.
-  - Keep `Ctrl+U`/`Ctrl+D` as fallback aliases.
 
 
 ## v0.5.0

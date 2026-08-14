@@ -1,5 +1,11 @@
 # Changelog
 
+## `[v0.4.2]` - Unreleased
+
+### Fixed
+* `[ui]` Drop the `fullscreen` paging workaround (Pi 0.84.2 delivers `PgUp/PgDn` to the view in both TUI modes)
+
+
 ## `[v0.4.1]` - 10.08.2026
 
 ### Changed
