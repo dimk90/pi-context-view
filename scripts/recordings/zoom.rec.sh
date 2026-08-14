@@ -32,7 +32,7 @@ SetOutput "$REPO_ROOT/doc/images/zoom.gif"
 
 SetCols 80
 SetRows 32
-SetFontSize 30
+SetFontSize 36
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'
 SetTypingSpeed 0.1

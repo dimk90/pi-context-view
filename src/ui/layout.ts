@@ -1,18 +1,11 @@
 /**
  * Shared pi-native fullscreen-view helpers: indentation constants,
  * terminal-height viewport math, width fitting, hint-row formatting, and
- * navigation key matching used by the Usage and Injections views. Pure
+ * step-navigation key matching used by the Usage and Injections views. Pure
  * string/number logic — no pi access.
  */
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import {
-	Key,
-	matchesKey,
-	truncateToWidth,
-	type TuiMode,
-	visibleWidth,
-	wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 /** Hint-row key label for the single-step navigation keys both views accept. */
 export const STEP_KEY_HINT = "↑↓/jk";
@@ -62,38 +55,6 @@ export function isStepBackKey(data: string): boolean {
 /** Whether input requests one step forwards: Down or vim-style `j`. */
 export function isStepForwardKey(data: string): boolean {
 	return matchesKey(data, Key.down) || data === "j";
-}
-
-/**
- * Whether input requests one page backwards: PgUp or `Ctrl+U`.
- *
- * Pi's fullscreen renderer scrolls its own viewport from a global input
- * listener that runs before overlays are offered the key, so it swallows PgUp,
- * PgDn, Home, and End there. The extra keys below are the only page and jump
- * navigation that reaches this view in both TUI modes.
- */
-export function isPageBackKey(data: string): boolean {
-	return matchesKey(data, Key.pageUp) || matchesKey(data, Key.ctrl("u"));
-}
-
-/** Whether input requests one page forwards: PgDn or `Ctrl+D`. */
-export function isPageForwardKey(data: string): boolean {
-	return matchesKey(data, Key.pageDown) || matchesKey(data, Key.ctrl("d"));
-}
-
-/** Whether input jumps to the first row or line: Home or vim-style `g`. */
-export function isJumpStartKey(data: string): boolean {
-	return matchesKey(data, Key.home) || matchesKey(data, "g");
-}
-
-/** Whether input jumps to the last row or line: End or vim-style `G`. */
-export function isJumpEndKey(data: string): boolean {
-	return matchesKey(data, Key.end) || matchesKey(data, "shift+g");
-}
-
-/** Hint-row key label naming only the paging keys the active TUI mode delivers. */
-export function pageKeyHint(mode: TuiMode): string {
-	return mode === "fullscreen" ? "Ctrl+U/D" : "PgUp/PgDn";
 }
 
 /** Truncate one rendered line to the supplied width. */
