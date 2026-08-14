@@ -37,21 +37,21 @@ injected by other extensions.
 
 See what fills your context, for example, what survives compaction:
 
-![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/100b63fb4c91b380bfe9fc72e33eb385850ca881/doc/images/context-usage.gif)
+![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/df9b7bae3d090492640c31b584374e3e2ddb7874/doc/images/context-usage.gif)
 
 
 ### `/context injections`
 
 Inspect hidden parts of the context, such as tool definitions:
 
-![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/100b63fb4c91b380bfe9fc72e33eb385850ca881/doc/images/context-injections.gif)
+![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/df9b7bae3d090492640c31b584374e3e2ddb7874/doc/images/context-injections.gif)
 
 ### Zoom
 
 Zoom in for a more detailed breakdown of large context windows, such as
 1M-token windows:
 
-![Zoom feature](https://media.githubusercontent.com/media/dimk90/pi-context-view/d24c88eb8a9f89fb9acc9bd4cbdfec283a1de8b7/doc/images/zoom.gif)
+![Zoom feature](https://media.githubusercontent.com/media/dimk90/pi-context-view/df9b7bae3d090492640c31b584374e3e2ddb7874/doc/images/zoom.gif)
 
 ## Install
 
