@@ -10,10 +10,10 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 
 # pi is started as `pi -e .`, so the recorded shell has to sit in the repo root
-cd "$REPO_ROOT" || exit 1 # TODO return back to starting dir
+cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.2.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.3.0) && wait "$!" || exit 1
 
 
 ## Constants
