@@ -14,6 +14,8 @@ set -uo pipefail
 readonly _RELEASE_PACKAGE_NAME='pi-context-view'
 readonly _RELEASE_GITHUB_REPOSITORY='dimk90/pi-context-view'
 readonly _RELEASE_NPM_REGISTRY='https://registry.npmjs.org/'
+readonly _RELEASE_PUBLICATION_ATTEMPTS=90
+readonly _RELEASE_PUBLICATION_INTERVAL=10
 readonly _RELEASE_DEVELOP_BRANCH='develop'
 readonly _RELEASE_MASTER_BRANCH='master'
 readonly _RELEASE_ALLOWED_PATHS=(
@@ -84,6 +86,7 @@ _RELEASE_MERGE_COMMIT=''
 _RELEASE_STEP_NUMBER=0
 _RELEASE_DEVELOP_PUSHED='not pushed'
 _RELEASE_TAG_PUSHED='not pushed'
+_RELEASE_GITHUB_STATE='not observed'
 _RELEASE_NPM_STATE='not attempted'
 
 
@@ -111,6 +114,7 @@ main() {
     _release_merge_into_master
     _release_tag_master
     _release_push_master_and_tag
+    _release_wait_for_github_release
     _release_publish_to_npm
     _release_return_to_develop
     _release_report_success
@@ -146,7 +150,7 @@ _release_require_environment() {
         exit 2
     fi
 
-    for tool in gum git node pnpm pi; do
+    for tool in curl gum git node pnpm pi; do
         command -v "$tool" >/dev/null 2>&1 || missing_tools+=("$tool")
     done
     if ((${#missing_tools[@]} > 0)); then
@@ -872,8 +876,9 @@ _release_print_release_plan() {
         ' 4. Update master, merge develop with --no-ff, and revalidate the exact tree'
         " 5. Verify version and clean state, then tag ${_RELEASE_TARGET_TAG}"
         ' 6. Atomically push master and only the target tag (starts GitHub release workflow)'
-        ' 7. Publish the tagged tree to public npm and verify the version'
-        ' 8. Return to develop and verify a clean worktree'
+        ' 7. Wait for the matching GitHub release'
+        ' 8. Publish the tagged tree to public npm and wait for the version'
+        ' 9. Return to develop and verify a clean worktree'
     )
     gum style --border rounded --border-foreground 244 --padding '0 2' --margin '1 0 0 0' -- \
               "${plan_lines[@]}"
@@ -1149,9 +1154,50 @@ _release_push_master_and_tag() {
 }
 
 
+_release_wait_for_github_release() {
+    #
+    # Wait until GitHub publishes the release created by the tag workflow.
+    #
+    # Parameters:
+    #   None.
+    #
+    # Example:
+    #   _release_wait_for_github_release
+    #
+    local release_url
+    local status='request failed'
+    local attempt
+
+    _release_begin_step 'Wait for the GitHub release'
+    release_url="https://github.com/${_RELEASE_GITHUB_REPOSITORY}/releases/tag/${_RELEASE_TARGET_TAG}"
+    _release_info "waiting for ${release_url}"
+
+    for ((attempt = 1; attempt <= _RELEASE_PUBLICATION_ATTEMPTS; attempt++)); do
+        if status="$(_release_http_status "${release_url}?attempt=${attempt}" \
+                                              2>"$_RELEASE_LOG_FILE")" &&
+           [[ $status == 200 ]]; then
+            _RELEASE_GITHUB_STATE="published ${_RELEASE_TARGET_TAG}"
+            _release_pass "GitHub publishes ${_RELEASE_TARGET_TAG}"
+            return 0
+        fi
+
+        if ((attempt < _RELEASE_PUBLICATION_ATTEMPTS)); then
+            if ((attempt % 6 == 0)); then
+                _release_info "still waiting for the GitHub release (HTTP ${status}, attempt ${attempt})"
+            fi
+            sleep "$_RELEASE_PUBLICATION_INTERVAL"
+        fi
+    done
+
+    _RELEASE_GITHUB_STATE="not observed (last HTTP status: ${status})"
+    _release_stop 'the GitHub release was not published in time' \
+                  "inspect https://github.com/${_RELEASE_GITHUB_REPOSITORY}/actions/workflows/release.yml"
+}
+
+
 _release_publish_to_npm() {
     #
-    # Publish the tagged tree and confirm the registry serves the version.
+    # Publish the tagged tree and wait until the registry serves the version.
     #
     # Parameters:
     #   None.
@@ -1159,23 +1205,14 @@ _release_publish_to_npm() {
     # Example:
     #   _release_publish_to_npm
     #
-    local publish_status published attempt
+    local publish_status published
 
     _release_begin_step 'Publish the tagged tree to npm'
     publish_status=0
     pnpm publish --no-git-checks --access public \
                  --registry="$_RELEASE_NPM_REGISTRY" || publish_status=$?
     published=false
-    for attempt in 1 2 3; do
-        if _release_capture "verifying npm publication (attempt ${attempt})" \
-                            pnpm view "${_RELEASE_PACKAGE_NAME}@${_RELEASE_TARGET_VERSION}" version \
-                                 --registry="$_RELEASE_NPM_REGISTRY" &&
-           [[ $(tr -d '"\r\n' <"$_RELEASE_LOG_FILE") == "$_RELEASE_TARGET_VERSION" ]]; then
-            published=true
-            break
-        fi
-        ((attempt < 3)) && sleep 5 # allow for registry propagation
-    done
+    _release_wait_for_npm_publication && published=true
 
     if ((publish_status != 0)); then
         if [[ $published == true ]]; then
@@ -1183,15 +1220,47 @@ _release_publish_to_npm() {
         else
             _RELEASE_NPM_STATE="unknown after pnpm publish exited ${publish_status}"
         fi
-        _release_stop 'npm publish failed after the tag was pushed; this is a partial release'
+        _release_stop 'npm publish failed after the GitHub release; this is a partial release'
     fi
     if [[ $published != true ]]; then
-        _RELEASE_NPM_STATE='publish command succeeded, registry verification pending'
-        _release_stop 'npm did not report the published version; this is a partial release' \
+        _RELEASE_NPM_STATE='publish command succeeded; registry verification timed out'
+        _release_stop 'npm did not report the published version in time; this is a partial release' \
                       "$(tail -n 10 "$_RELEASE_LOG_FILE")"
     fi
     _RELEASE_NPM_STATE="published ${_RELEASE_TARGET_VERSION}"
     _release_pass "npm publishes ${_RELEASE_PACKAGE_NAME}@${_RELEASE_TARGET_VERSION}"
+}
+
+
+_release_wait_for_npm_publication() {
+    #
+    # Wait until the registry reports the exact target package version.
+    #
+    # Parameters:
+    #   None.
+    #
+    # Example:
+    #   _release_wait_for_npm_publication
+    #
+    local attempt
+
+    for ((attempt = 1; attempt <= _RELEASE_PUBLICATION_ATTEMPTS; attempt++)); do
+        if _release_capture "verifying npm publication (attempt ${attempt})" \
+                            pnpm view "${_RELEASE_PACKAGE_NAME}@${_RELEASE_TARGET_VERSION}" version \
+                                 --registry="$_RELEASE_NPM_REGISTRY" &&
+           [[ $(tr -d '"\r\n' <"$_RELEASE_LOG_FILE") == "$_RELEASE_TARGET_VERSION" ]]; then
+            return 0
+        fi
+
+        if ((attempt < _RELEASE_PUBLICATION_ATTEMPTS)); then
+            if ((attempt % 6 == 0)); then
+                _release_info "still waiting for the npm registry (attempt ${attempt})"
+            fi
+            sleep "$_RELEASE_PUBLICATION_INTERVAL"
+        fi
+    done
+
+    return 1
 }
 
 
@@ -1393,6 +1462,23 @@ _release_apply_command() {
 }
 
 
+_release_http_status() {
+    #
+    # Print the final HTTP status for a URL without writing its response body.
+    #
+    # Parameters:
+    #   $1 - url - HTTP URL to request.
+    #
+    # Example:
+    #   status="$(_release_http_status "$release_url")"
+    #
+    local url="$1"
+
+    curl -L -sS -H 'Cache-Control: no-cache' \
+         -o /dev/null -w '%{http_code}' "$url"
+}
+
+
 _release_package_value() {
     #
     # Read a dot-separated field path from package.json.
@@ -1455,7 +1541,7 @@ _release_begin_step() {
 
     _RELEASE_STEP_NUMBER=$((_RELEASE_STEP_NUMBER + 1))
     printf '\n%s %s\n' \
-           "$(gum style --bold --foreground 212 "[${_RELEASE_STEP_NUMBER}/8]")" "$title"
+           "$(gum style --bold --foreground 212 "[${_RELEASE_STEP_NUMBER}/9]")" "$title"
 }
 
 
@@ -1483,6 +1569,7 @@ _release_stop() {
     _release_info "branch: ${branch:-detached}, head: ${head:-unknown}"
     _release_info "develop push: ${_RELEASE_DEVELOP_PUSHED}"
     _release_info "master and ${_RELEASE_TARGET_TAG} push: ${_RELEASE_TAG_PUSHED}"
+    _release_info "GitHub: ${_RELEASE_GITHUB_STATE}"
     _release_info "npm: ${_RELEASE_NPM_STATE}"
     _release_info "local ${_RELEASE_TARGET_TAG}: ${tag_target:-absent}"
     _release_info 'no later step ran; inspect this state before retrying'
