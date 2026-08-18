@@ -6,6 +6,8 @@
 - [doc/UI.md](doc/UI.md) - the UI specification;
 - [doc/HISTORY.md](doc/HISTORY.md) - legacy, superseded designs and architecture decisions;
 - [CHANGELOG.md](CHANGELOG.md) for completed work.
+
+
 ## v0.4.3
 
 - [x] Refine category preview for context usage view:
