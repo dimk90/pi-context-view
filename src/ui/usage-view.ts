@@ -52,7 +52,7 @@ const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 /** The block view adds the block identity header and its preceding separator to the preview frame. */
 const BLOCK_FIXED_LINE_COUNT = PREVIEW_FIXED_LINE_COUNT + 2;
-const PREVIEW_ENTRY_MAX_LINES = 14;
+const PREVIEW_BLOCK_MAX_LINES = 14;
 const BLOCK_GUTTER = "┃";
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_LEGEND_VALUE_COLUMN = 32;
@@ -202,7 +202,8 @@ export class UsageView {
 	/** Handle category navigation, preview opening, and close keys. */
 	public handleInput(data: string): void {
 		if (this.previewRow !== undefined) {
-			if (this.openBlockIndex === undefined) this.handlePreviewInput(data);
+			// Route on the same predicate the renderer uses, so keys always target the visible level.
+			if (this.openBlockEntry(this.previewRow) === undefined) this.handlePreviewInput(data);
 			else this.handleBlockInput(data);
 			return;
 		}
@@ -744,7 +745,7 @@ export class UsageView {
 
 		const lines: string[] = [border, "", this.categoryHeaderLine(row, width), ""];
 		lines.push(...this.previewStreamLines(stream, viewport.visibleCount, width));
-		if (viewport.showScroll && stream.blocks.length > 0) {
+		if (viewport.showScroll) {
 			lines.push(
 				this.fit(
 					theme.fg("dim", `${BODY_INDENT}(${this.blockNavigator.selected + 1}/${stream.blocks.length})`),
@@ -754,7 +755,7 @@ export class UsageView {
 		}
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
-		lines.push(this.fit(hintRow(theme, this.previewHints(stream.blocks.length)), width));
+		lines.push(this.fit(hintRow(theme, previewHints(stream.blocks.length)), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
@@ -816,14 +817,6 @@ export class UsageView {
 		return spreadLine(title, meta, width);
 	}
 
-	/** Hints for the block stream; the selected block itself carries any open affordance. */
-	private previewHints(blockCount: number): Array<readonly [string, string]> {
-		if (blockCount === 0) {
-			return [[STEP_KEY_HINT, "Scroll"], ["PgUp/PgDn", "Page"], ["Esc", "Back"]];
-		}
-		return [[STEP_KEY_HINT, "Navigate"], ["PgUp/PgDn", "Page"], ["Esc", "Back"]];
-	}
-
 	/** Visible window of the block stream, or the message an empty category shows instead. */
 	private previewStreamLines(stream: PreviewStream, visibleCount: number, width: number): string[] {
 		if (stream.blocks.length === 0) {
@@ -866,14 +859,13 @@ export class UsageView {
 		return `${marker}${separator}${action}`;
 	}
 
-
 	/** Cached blocks and their flattened line layout: bracket headers plus capped sanitized content. */
 	private previewStream(width: number, row: CategoryLegendRow): PreviewStream {
 		const wrapWidth = previewWrapWidth(width);
 		if (this.cachedStream !== undefined && this.cachedStream.wrapWidth === wrapWidth) return this.cachedStream;
 		const compactSkills = row.rootId === "user-messages";
 		const blocks = this.previewEntries(row).map((entry) => {
-			const content = this.entryContentLines(entry, wrapWidth, compactSkills, PREVIEW_ENTRY_MAX_LINES);
+			const content = this.entryContentLines(entry, wrapWidth, compactSkills, PREVIEW_BLOCK_MAX_LINES);
 			return {
 				lines: [this.entryHeader(entry), ...content.lines],
 				hiddenLineCount: content.hiddenLineCount,
@@ -1014,9 +1006,18 @@ function buildCategoryLegendRows(categories: readonly UsageCategory[]): Category
 	return rows;
 }
 
-/** Content wrap width shared by both preview levels: gutter, inner indent, and one spare column. */
+/**
+ * Content wrap width shared by both preview levels: gutter, inner indent, and one spare column.
+ * The block view keeps the stream's narrower width, so the `… +N lines` count it opens stays exact.
+ */
 function previewWrapWidth(width: number): number {
 	return Math.max(10, width - BODY_INDENT.length * 2 - 1);
+}
+
+/** Block stream hints; the selected block carries the open affordance, and an empty stream moves nowhere. */
+function previewHints(blockCount: number): Array<readonly [string, string]> {
+	if (blockCount === 0) return [["Esc", "Back"]];
+	return [[STEP_KEY_HINT, "Navigate"], ["PgUp/PgDn", "Page"], ["Esc", "Back"]];
 }
 
 /** Stream lines one block occupies, including its truncation marker row. */

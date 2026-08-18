@@ -271,7 +271,8 @@ category header, one blank separator row, the selected entry header, and its
 complete uncapped content. That level uses line and page scrolling with
 `↑↓/jk Scroll · PgUp/PgDn Page · Esc Back`, and Escape returns to the same block
 and viewport. A category without entries instead shows
-`No content captured for this category.` without a gutter; Enter is a no-op.
+`No content captured for this category.` without a gutter; Enter is a no-op and
+the hint row offers `Esc Back` alone.
 Unknown usage after compaction retains an explicit preview state.
 
 ## Injections view

@@ -763,6 +763,9 @@ test("UsageView previews empty categories, free space, and long content safely",
 	assert.ok(leafPreview.some((line) => line.includes("No content captured for this category.")));
 	assert.ok(!leafPreview.some((line) => line.includes("┃")));
 	assert.ok(!leafPreview.some((line) => line.includes("Enter")));
+	// Nothing to navigate or page: the empty stream offers Escape alone.
+	const emptyHints = leafPreview.find((line) => line.includes("Esc Back"));
+	assert.equal(emptyHints?.trim(), "Esc Back");
 	view.handleInput("\r");
 	assert.equal(view.render(80).join("\n"), emptyFrame, "Enter is a no-op without blocks");
 	view.handleInput("\u001b");
