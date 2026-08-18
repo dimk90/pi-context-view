@@ -124,9 +124,9 @@ interface PreviewStream {
 	readonly layout: PreviewLayout;
 }
 
-/** Width-dependent uncapped content cached for the open block. */
+/** Uncapped content of the open block, wrapped and fitted for one terminal width. */
 interface BlockBody {
-	readonly wrapWidth: number;
+	readonly width: number;
 	readonly lines: readonly string[];
 }
 
@@ -887,15 +887,19 @@ export class UsageView {
 		return this.cachedStream;
 	}
 
-	/** Cached uncapped content of the open block, indented in place of the stream gutter. */
+	/**
+	 * Cached uncapped content of the open block, indented in place of the stream gutter. These lines
+	 * are already fitted, so the cache key is the terminal width: narrow widths share a clamped wrap
+	 * width while still needing their own truncation.
+	 */
 	private blockBodyLines(width: number, row: CategoryLegendRow, entry: UsagePreviewEntry): readonly string[] {
-		const wrapWidth = previewWrapWidth(width);
-		if (this.cachedBlockBody !== undefined && this.cachedBlockBody.wrapWidth === wrapWidth) {
+		if (this.cachedBlockBody !== undefined && this.cachedBlockBody.width === width) {
 			return this.cachedBlockBody.lines;
 		}
+		const wrapWidth = previewWrapWidth(width);
 		const content = this.entryContentLines(entry, wrapWidth, row.rootId === "user-messages");
 		const lines = content.lines.map((line) => line === "" ? "" : this.fit(`${BODY_INDENT}${line}`, width));
-		this.cachedBlockBody = { wrapWidth, lines };
+		this.cachedBlockBody = { width, lines };
 		return lines;
 	}
 

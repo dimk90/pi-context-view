@@ -904,6 +904,39 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	assert.match(view.render(100)[header] ?? "", /\u001b\[38;2;22;23;24mBase Prompt/);
 });
 
+test("UsageView refits open block content when narrow widths share a wrap width", () => {
+	// Unbreakable tokens keep wrapped lines at the clamped minimum wrap width, where widths 15 and 12
+	// wrap identically but must still truncate differently.
+	const wideText = Array.from({ length: 30 }, (_, line) => `L${line + 1}_${"x".repeat(20)}`).join("\n");
+	const wideUsage: ContextUsageSnapshot = {
+		...usage(1_000),
+		categories: [{
+			id: "tool-output",
+			label: "Tool Output",
+			tokens: 1_000,
+			entries: [{
+				timestamp: Date.UTC(2026, 6, 11, 15, 0, 0),
+				breadcrumb: ["assistant", "bash"],
+				tokens: 1_000,
+				text: wideText,
+			}],
+		}],
+		estimatedTokens: 1_000,
+	};
+	const view = new UsageView(createTheme(), { usage: wideUsage }, () => {}, () => 40);
+
+	view.render(15);
+	view.handleInput("\r"); // category block stream
+	view.render(15);
+	view.handleInput("\r"); // full content of the capped block
+	assert.ok(view.render(15).map(stripSgr).some((line) => line.includes("L1_")), "the block view is open");
+	for (const width of [12, 15, 12]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `full block line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+	}
+});
+
 test("UsageView compacts attached skills into pi-colored badges only in user previews", () => {
 	const longUnsafeName = `unsafe-${"very-long-".repeat(3)}skill`;
 	const rawText = [

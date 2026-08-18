@@ -1,7 +1,7 @@
 # pi-context-view
 
 <p align="center">
-  <img width="456" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/1485fe4da1ddefc832230b14bcc949f2a53d87a2/doc/images/pi-context-view.png">
+  <img width="458" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/1485fe4da1ddefc832230b14bcc949f2a53d87a2/doc/images/pi-context-view.png">
   <br>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
   <a href="https://www.npmjs.com/package/pi-context-view"><img src="https://img.shields.io/npm/v/pi-context-view?style=flat-square&amp;logoColor=white" alt="npm version"></a>
