@@ -6,6 +6,15 @@
 - [doc/UI.md](doc/UI.md) - the UI specification;
 - [doc/HISTORY.md](doc/HISTORY.md) - legacy, superseded designs and architecture decisions;
 - [CHANGELOG.md](CHANGELOG.md) for completed work.
+## v0.4.3
+
+- [x] Refine category preview for context usage view:
+  - Change scrolling from current line by line to block by block.
+  - Full content preview of capped blocks with `Enter`; complete blocks have no open action.
+  - Cap block streams at 14 content lines and keep their collapse indicator left-aligned.
+  - Highlight the selected block with an accent `┃` gutter.
+- [ ] Add mouse wheel support for scrolling.
+- [ ] Add `Ctrl+u/d` as alias for `PgUp/PgDn`.
 
 
 ## v0.5.0

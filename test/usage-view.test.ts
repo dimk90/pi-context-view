@@ -522,7 +522,7 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 	}
 });
 
-test("UsageView opens a category content preview and returns to the same row", () => {
+test("UsageView opens a category block stream and skips full previews for complete blocks", () => {
 	let closed = false;
 	const view = new UsageView(createTheme(), { usage: usage() }, () => {
 		closed = true;
@@ -536,35 +536,54 @@ test("UsageView opens a category content preview and returns to the same row", (
 
 	view.handleInput("\r");
 	const preview = view.render(80);
-	const plain = preview.map(stripSgr);
+	const plain = preview.map((line) => stripSgr(line).trimEnd());
 	assert.equal(plain[2]?.indexOf("Tool Output"), 0);
 	assert.match(preview[2] ?? "", /\u001b\[38;2;1;2;3m.*Tool Output/);
 	assert.match(plain[2] ?? "", /5k · 0\.5%/);
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b/);
 	assert.equal(preview[3], "");
 
-	// Entries render chronologically: bracketed dim datetime + mdHeading lead breadcrumb + dim tokens.
+	// Blocks render chronologically: bracketed dim datetime + mdHeading lead breadcrumb + dim tokens.
+	// The first block is selected, so its lines carry the accent gutter instead of the plain indent.
 	const searchHeader = plain.findIndex((line) =>
-		/^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[web_search\] 2k$/.test(line)
+		/^┃ \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[web_search\] 2k$/.test(line)
 	);
 	const readHeader = plain.findIndex((line) =>
 		/^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[read\] 3k$/.test(line)
 	);
 	assert.ok(searchHeader >= 0 && readHeader >= 0);
 	assert.ok(searchHeader < readHeader, "entries are chronological, not size-ordered");
+	assert.match(preview[searchHeader] ?? "", /\u001b\[38;2;1;2;3m┃ /);
+	assert.doesNotMatch(preview[searchHeader] ?? "", /\u001b\[48;/);
 	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;16;17;18m\[\d{2}-\d{2}-\d{4}/);
 	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;22;23;24mread/);
-	// Content indented two spaces past the header; blank row between entries.
-	assert.equal(plain[searchHeader + 1], "    search result content");
+	// Content indented two spaces past the header; unmarked blank row between blocks.
+	assert.equal(plain[searchHeader + 1], "┃   search result content");
 	assert.equal(plain[searchHeader + 2], "");
 	assert.equal(plain[readHeader + 1], "    read result content line");
 	assert.equal(plain[readHeader + 2], "    second line");
 	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
-	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Scroll"));
+	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(hintIndex > 0);
-	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
+	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Navigate · PgUp\/PgDn Page · Esc Back/);
+	assert.ok(!plain[hintIndex]?.includes("Enter"));
 
-	// First Escape returns to the same selected list row; second closes the view.
+	// Down moves the gutter to the next block without touching the entry order.
+	view.handleInput("\u001b[B");
+	const movedFrame = view.render(80).join("\n");
+	const movedRaw = movedFrame.split("\n");
+	const moved = movedRaw.map((line) => stripSgr(line).trimEnd());
+	assert.match(moved[searchHeader] ?? "", /^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[web_search\] 2k$/);
+	assert.match(moved[readHeader] ?? "", /^┃ \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[read\] 3k$/);
+	assert.equal(moved[readHeader + 1], "┃   read result content line");
+	assert.doesNotMatch(movedRaw[searchHeader] ?? "", /\u001b\[48;/);
+	assert.doesNotMatch(movedRaw[readHeader] ?? "", /\u001b\[48;/);
+
+	// Complete blocks already expose all content, so Enter leaves the stream untouched.
+	view.handleInput("\r");
+	assert.equal(view.render(80).join("\n"), movedFrame);
+
+	// Escape returns to the same selected list row; one more closes the view.
 	view.handleInput("\u001b");
 	assert.equal(closed, false);
 	assert.equal(view.render(80).join("\n"), listBefore);
@@ -614,7 +633,7 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.match(stripSgr(frame(vim)), /→\s+• tool_5 \.{2,}/);
 	assert.equal(frame(vim), frame(arrows));
 
-	// Preview scrolling: j and k move the aggregate entry stream, and neither key closes the view.
+	// Preview navigation: j and k move the selected block, and neither key closes the view.
 	arrows.handleInput("\u001b[1~"); // Home → the overflowing Tool Output aggregate
 	vim.handleInput("\u001b[1~");
 	arrows.handleInput("\r");
@@ -632,7 +651,7 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.equal(frame(vim), frame(arrows));
 
 	const hints = frame(vim).split("\n").map(stripSgr);
-	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
+	assert.ok(hints.some((line) => line.includes("↑↓/jk Navigate")));
 });
 
 test("UsageView explains invisible reasoning once and keeps its estimates distinct", () => {
@@ -677,7 +696,7 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	view.render(80);
 	view.handleInput("\r");
 	const rendered = view.render(80);
-	const plain = rendered.map(stripSgr);
+	const plain = rendered.map((line) => stripSgr(line).trimEnd());
 	const reportedHeader = plain.findIndex((line) =>
 		/\[assistant\] 594 \+ Encoded ≈547 \(≈1\.1k\)$/.test(line)
 	);
@@ -691,7 +710,7 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	assert.match(rendered[unsignedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Reasoning ≈30 \(≈80\)/);
 
 	const descriptionStart = plain.findIndex((line) => line.includes("Entry headers read:"));
-	const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Scroll"));
+	const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(descriptionStart > unsignedHeader && hintsIndex > descriptionStart);
 	assert.equal(plain[hintsIndex - 1], "");
 	assert.equal(
@@ -738,9 +757,14 @@ test("UsageView previews empty categories, free space, and long content safely",
 	// Category without entries: explicit empty message instead of raw content.
 	view.render(80);
 	view.handleInput("\r");
-	const leafPreview = view.render(80).map(stripSgr);
+	const emptyFrame = view.render(80).join("\n");
+	const leafPreview = emptyFrame.split("\n").map(stripSgr);
 	assert.equal(leafPreview[2]?.indexOf("User Messages"), 0);
 	assert.ok(leafPreview.some((line) => line.includes("No content captured for this category.")));
+	assert.ok(!leafPreview.some((line) => line.includes("┃")));
+	assert.ok(!leafPreview.some((line) => line.includes("Enter")));
+	view.handleInput("\r");
+	assert.equal(view.render(80).join("\n"), emptyFrame, "Enter is a no-op without blocks");
 	view.handleInput("\u001b");
 
 	// Aggregate overflow: entry stream scrolls and stays bounded.
@@ -749,12 +773,18 @@ test("UsageView previews empty categories, free space, and long content safely",
 	const top = view.render(80).map(stripSgr);
 	assert.ok(top.some((line) => line.includes("[tool_1]")));
 	assert.ok(!top.some((line) => line.includes("[tool_30]")));
-	assert.ok(top.some((line) => /\(\d+\/\d+\)/.test(line)));
+	assert.ok(top.some((line) => line.includes("(1/30)")), "counter reports the selected block");
+	for (let page = 0; page < 20; page++) view.handleInput("\u001b[6~");
+	const pagedBottom = view.render(80).map(stripSgr);
+	assert.ok(pagedBottom.some((line) => line.includes("[tool_30]")));
+	assert.ok(pagedBottom.some((line) => line.includes("(30/30)")), "Page Down reaches the last block");
+	view.handleInput("\u001b[1~"); // Home
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("[tool_1]")));
 	view.handleInput("\u001b[4~"); // End
 	const bottom = view.render(80).map(stripSgr);
 	assert.ok(bottom.some((line) => line.includes("[tool_30]")));
 	assert.ok(!bottom.some((line) => line.includes("[tool_1]")));
-	assert.ok(bottom.some((line) => /\((\d+)\/\1\)/.test(line)), "counter reaches total at the end");
+	assert.ok(bottom.some((line) => line.includes("(30/30)")), "counter reaches total at the end");
 	view.handleInput("\u001b[1~"); // Home
 	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("[tool_1]")));
 	view.handleInput("\u001b");
@@ -815,21 +845,50 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	};
 	const view = new UsageView(createTheme(), { usage: cappedUsage }, () => {}, () => 40);
 
-	// Tool Output: 20 content lines then a dim overflow marker; escapes stripped.
+	// Tool Output: 14 content lines then a dim overflow marker; escapes stripped.
 	view.render(100);
 	view.handleInput("\r");
 	const capped = view.render(100);
-	const plainCapped = capped.map(stripSgr);
+	const plainCapped = capped.map((line) => stripSgr(line).trimEnd());
 	// Lead breadcrumb cell is mdHeading; later cells stay muted.
 	const cappedHeader = capped.find((line) => stripSgr(line).includes("[assistant] [bash]"));
 	assert.match(cappedHeader ?? "", /\u001b\[38;2;22;23;24massistant/);
 	assert.match(cappedHeader ?? "", /\u001b\[38;2;7;8;9mbash/);
-	assert.ok(plainCapped.some((line) => line === "    line 20"));
-	assert.ok(!plainCapped.some((line) => line.includes("line 21")));
-	const marker = plainCapped.findIndex((line) => line === "    … +10 lines");
+	assert.ok(plainCapped.some((line) => line === "┃   line 14"));
+	assert.ok(!plainCapped.some((line) => line.includes("line 15")));
+	const marker = plainCapped.findIndex((line) => line === "┃   … +16 lines · Enter - View Block");
 	assert.ok(marker >= 0);
-	assert.match(capped[marker] ?? "", /\u001b\[38;2;16;17;18m… \+10 lines/);
+	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3m┃ /);
+	assert.equal((plainCapped[marker] ?? "").indexOf("… +16 lines"), 4, "the marker is left-aligned");
+	assert.doesNotMatch(capped[marker] ?? "", /\u001b\[48;/);
+	assert.match(capped[marker] ?? "", /\u001b\[38;2;16;17;18m… \+16 lines/);
+	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3mEnter - View Block/);
+	const cappedHints = plainCapped.find((line) => line.includes("↑↓/jk Navigate"));
+	assert.ok(cappedHints !== undefined && !cappedHints.includes("Enter"));
 	assert.ok(!capped.some((line) => line.includes("\u0007") || line.includes("evil")));
+	for (const width of [24, 40, 100]) {
+		const resized = view.render(width);
+		assert.ok(resized.every((line) => visibleWidth(line) <= width));
+		const resizedPlain = resized.map((line) => stripSgr(line).trimEnd());
+		assert.ok(resizedPlain.some((line) => line.startsWith("┃   … +16 lines")));
+		if (width >= 40) assert.ok(resizedPlain.some((line) => line.endsWith("Enter - View Block")));
+	}
+
+	// Enter opens all 30 lines without the stream's cap or gutter.
+	view.handleInput("\r");
+	const full = view.render(100).map(stripSgr);
+	assert.equal(full[3], "", "the category and block headers have a blank separator");
+	assert.match(full[4] ?? "", /^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[assistant\] \[bash\] 1k$/);
+	assert.equal(full[5], "");
+	assert.ok(full.some((line) => line === "    line 30"));
+	assert.ok(!full.some((line) => line.includes("… +")));
+	assert.ok(!full.some((line) => line.includes("┃")));
+	for (const width of [24, 40, 100]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `full block line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+	}
+	view.handleInput("\u001b");
 	view.handleInput("\u001b");
 
 	// Snapshot-backed category: breadcrumb-only header without a datetime cell.
@@ -837,10 +896,10 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
-	const snapshotPreview = view.render(100).map(stripSgr);
-	const header = snapshotPreview.findIndex((line) => /^  \[Base Prompt\] 1k$/.test(line));
+	const snapshotPreview = view.render(100).map((line) => stripSgr(line).trimEnd());
+	const header = snapshotPreview.findIndex((line) => /^┃ \[Base Prompt\] 1k$/.test(line));
 	assert.ok(header >= 0, "snapshot entry header has no datetime cell");
-	assert.equal(snapshotPreview[header + 1], "    You are pi.");
+	assert.equal(snapshotPreview[header + 1], "┃   You are pi.");
 	// Without a datetime, the lead breadcrumb cell still uses mdHeading.
 	assert.match(view.render(100)[header] ?? "", /\u001b\[38;2;22;23;24mBase Prompt/);
 });
@@ -881,7 +940,7 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 	view.render(100);
 	view.handleInput("\r");
 	const wide = view.render(100);
-	const plain = wide.map(stripSgr);
+	const plain = wide.map((line) => stripSgr(line).trimEnd());
 	const firstBadge = wide.find((line) => stripSgr(line).includes("[skill] code-style"));
 	assert.ok(firstBadge !== undefined);
 	assert.match(firstBadge, /\u001b\[38;2;31;32;33m.*\[skill\]/);
@@ -900,7 +959,7 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 	for (const line of narrow) {
 		assert.ok(visibleWidth(line) <= 24, `skill preview line exceeds width: ${JSON.stringify(line)}`);
 	}
-	const narrowPlain = narrow.map(stripSgr);
+	const narrowPlain = narrow.map((line) => stripSgr(line).trimEnd());
 	assert.ok(narrowPlain.some((line) => line.includes("[skill]")));
 	assert.ok(narrowPlain.some((line) => line.includes("unsafe-very-long-")));
 	assert.ok(!narrowPlain.some((line) => line.includes(longUnsafeName)), "long badge name wraps across lines");

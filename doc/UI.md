@@ -1,6 +1,6 @@
 # UI specification
 
-This is the canonical UI reference for pi-context-view v0.3.0. Both `/context`
+This is the canonical UI reference for pi-context-view v0.4.3. Both `/context`
 views are focused fullscreen TUI overlays. Usage and Injections are separate
 views; there is no tab state.
 
@@ -36,14 +36,17 @@ case.
 
 ## Interaction
 
-Both views have `list` and `preview` states:
+The Injections view has list and raw-preview states. The Usage view has a
+category legend, a category block stream, and a full-content view for one block:
 
-- Up/Down, and the vim-style `k`/`j`, navigate selectable rows and scroll
-  previews. Hints render the pair as one `↑↓/jk` key label.
-- PgUp/PgDn page through lists or previews.
+- Up/Down, and the vim-style `k`/`j`, navigate selectable rows or blocks and
+  scroll full-content previews. Hints render the pair as one `↑↓/jk` key label.
+- PgUp/PgDn page through lists or previews. From the first or last page of a
+  Usage block stream, another page key selects the first or last block.
 - Home/End jump to boundaries.
-- Enter opens the selected row's preview.
-- Escape returns to the same list row, then closes the view.
+- Enter opens the selected row's preview; in a Usage block stream it opens full
+  content only when the selected block is capped.
+- Escape returns one level while preserving selection, then closes the view.
 
 Views may add their own keys; the Usage view adds `z` for the map scale.
 
@@ -235,13 +238,41 @@ and before the hints; it opens with the schematic header pattern
 `[DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total)`, then defines
 `≈`, `~`, and `Encoded`. Never render, preview, or log raw signature bytes.
 
-Indent content by two spaces and separate entries with one blank row. In User
-Messages only, replace complete attached `<skill name="…">…</skill>` expansions
-with pi-colored `[skill] name` badges; leave malformed wrappers visible. This is
-a preview-only transformation, and the full content still contributes to token
-estimates. Cap each entry at 20 wrapped lines and append a dim `… +N lines`
-marker. Empty categories and unknown usage after compaction must have explicit
-preview states.
+Treat each entry as one navigable block. Reserve a two-column gutter before its
+header and content. Mark every line of the selected block, including blank
+content lines, with an accent `┃`; leave the blank separator row between blocks
+unmarked. Unselected blocks retain the same two-column spacing with no gutter.
+When the stream overflows, show the selected block ordinal as a dim `(i/n)`
+counter.
+
+Up/Down and `k`/`j` move block by block. Keep the selected block fully visible
+with minimal scrolling when it fits. If it is taller than the viewport, expose
+its approached edge and scroll line by line within it before moving to the next
+block. PgUp/PgDn move by the viewport height and select the first fully visible
+block, falling back to the first intersecting block. Once paging reaches the
+first or last viewport, the next PgUp/PgDn selects the corresponding boundary
+block so paging alone can reach `(1/n)` and `(n/n)`. Home/End select the first or
+last block.
+
+Indent content by two spaces after the gutter and separate blocks with one blank
+row. In User Messages only, replace complete attached
+`<skill name="…">…</skill>` expansions with pi-colored `[skill] name` badges;
+leave malformed wrappers visible. This is a preview-only transformation, and
+the full content still contributes to token estimates.
+
+Cap each block at 14 wrapped content lines. When content is hidden, left-align a
+dim `… +N lines` marker with the block content. For the selected block only,
+append dim ` · ` and accent `Enter - View Block`. Do not repeat that action in
+the footer hint row. Fully visible blocks show no Enter action, and Enter is a
+no-op for them.
+
+Enter on a capped block opens a separate fullscreen level containing the
+category header, one blank separator row, the selected entry header, and its
+complete uncapped content. That level uses line and page scrolling with
+`↑↓/jk Scroll · PgUp/PgDn Page · Esc Back`, and Escape returns to the same block
+and viewport. A category without entries instead shows
+`No content captured for this category.` without a gutter; Enter is a no-op.
+Unknown usage after compaction retains an explicit preview state.
 
 ## Injections view
 
