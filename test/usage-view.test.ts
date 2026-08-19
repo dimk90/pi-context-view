@@ -654,6 +654,73 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.ok(hints.some((line) => line.includes("↑↓/jk Navigate")));
 });
 
+test("UsageView accepts Ctrl+u/d wherever it accepts the page keys", () => {
+	const longText = Array.from({ length: 40 }, (_, line) => `line ${line + 1}`).join("\n");
+	const tools = Array.from({ length: 20 }, (_, index) => ({
+		id: `tool-result:tool_${index + 1}`,
+		label: `tool_${index + 1}`,
+		tokens: 100,
+		entries: [{
+			timestamp: Date.UTC(2026, 6, 11, 14, 0, index + 1),
+			breadcrumb: [`tool_${index + 1}`],
+			tokens: 100,
+			text: longText,
+		}],
+	}));
+	const scrollUsage: ContextUsageSnapshot = {
+		...usage(2_000),
+		categories: [{ id: "tool-output", label: "Tool Output", tokens: 2_000, children: tools }],
+		estimatedTokens: 2_000,
+	};
+	const createScrollView = () =>
+		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
+	const pageKeys = createScrollView();
+	const aliases = createScrollView();
+	const frame = (view: UsageView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const dashboardTop = frame(aliases);
+	assert.equal(frame(pageKeys), dashboardTop);
+
+	pageKeys.handleInput("\u001b[6~"); // PgDn
+	aliases.handleInput("\u0004"); // Ctrl+D
+	assert.notEqual(frame(aliases), dashboardTop);
+	assert.equal(frame(aliases), frame(pageKeys));
+	pageKeys.handleInput("\u001b[5~"); // PgUp
+	aliases.handleInput("\u0015"); // Ctrl+U
+	assert.equal(frame(aliases), dashboardTop);
+	assert.equal(frame(pageKeys), dashboardTop);
+
+	pageKeys.handleInput("\r");
+	aliases.handleInput("\r");
+	const streamTop = frame(aliases);
+	assert.equal(frame(pageKeys), streamTop);
+
+	pageKeys.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), streamTop);
+	assert.equal(frame(aliases), frame(pageKeys));
+	pageKeys.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), streamTop);
+	assert.equal(frame(pageKeys), streamTop);
+
+	pageKeys.handleInput("\r");
+	aliases.handleInput("\r");
+	const blockTop = frame(aliases);
+	assert.match(stripSgr(blockTop), /line 1\b/);
+	assert.equal(frame(pageKeys), blockTop);
+
+	pageKeys.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), blockTop);
+	assert.equal(frame(aliases), frame(pageKeys));
+	pageKeys.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), blockTop);
+	assert.equal(frame(pageKeys), blockTop);
+});
+
 test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", () => {
 	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences.
 	const wheelUp = "\u001b[<64;20;5M";

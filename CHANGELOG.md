@@ -6,6 +6,7 @@
 * `[usage]` Add a full-content view for collapsed blocks.
 * `[usage]` Change category-view scrolling from line-by-line to block-by-block.
 * `[ui]` Add experimental mouse-wheel scrolling support (`fullscreen` mode only).
+* `[ui]` Add `Ctrl+U`/`Ctrl+D` aliases for page navigation.
 
 
 ## `[v0.4.2]` - 14.08.2026

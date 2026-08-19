@@ -22,6 +22,8 @@ import {
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
+	isPageBackKey,
+	isPageForwardKey,
 	isStepBackKey,
 	isStepForwardKey,
 	normalizeTerminalRows,
@@ -238,9 +240,9 @@ export class UsageView {
 			if (this.navigator.moveBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.navigator.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.navigator.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.navigator.moveTo(0)) this.clearCache();
@@ -675,9 +677,9 @@ export class UsageView {
 			if (this.blockNavigator.stepBack()) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.blockNavigator.stepForward()) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.blockNavigator.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.blockNavigator.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.blockNavigator.moveToFirst()) this.clearCache();
@@ -701,9 +703,9 @@ export class UsageView {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.previewScroller.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.previewScroller.scrollTo(0)) this.clearCache();

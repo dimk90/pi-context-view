@@ -41,8 +41,9 @@ category legend, a category block stream, and a full-content view for one block:
 
 - Up/Down, and the vim-style `k`/`j`, navigate selectable rows or blocks and
   scroll full-content previews. Hints render the pair as one `↑↓/jk` key label.
-- PgUp/PgDn page through lists or previews. From the first or last page of a
-  Usage block stream, another page key selects the first or last block.
+- PgUp/PgDn, and `Ctrl+U`/`Ctrl+D`, page through lists or previews. From the
+  first or last page of a Usage block stream, another page key selects the
+  first or last block.
 - Home/End jump to boundaries.
 - Enter opens the selected row's preview; in a Usage block stream it opens full
   content only when the selected block is capped.

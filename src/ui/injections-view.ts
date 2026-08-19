@@ -22,6 +22,8 @@ import {
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
+	isPageBackKey,
+	isPageForwardKey,
 	isStepBackKey,
 	isStepForwardKey,
 	normalizeTerminalRows,
@@ -129,9 +131,9 @@ export class InjectionsView {
 			if (this.navigator.moveBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.navigator.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.navigator.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.navigator.moveTo(0)) this.clearCache();
@@ -212,9 +214,9 @@ export class InjectionsView {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.previewScroller.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.previewScroller.scrollTo(0)) this.clearCache();

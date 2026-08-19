@@ -393,6 +393,41 @@ test("InjectionsView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
 });
 
+test("InjectionsView accepts Ctrl+u/d wherever it accepts the page keys", () => {
+	const pageKeys = createView(30);
+	const aliases = createView(30);
+	const frame = (view: InjectionsView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const listTop = frame(aliases);
+	assert.equal(frame(pageKeys), listTop);
+
+	pageKeys.handleInput("\u001b[6~"); // PgDn
+	aliases.handleInput("\u0004"); // Ctrl+D
+	assert.notEqual(frame(aliases), listTop);
+	assert.equal(frame(aliases), frame(pageKeys));
+	pageKeys.handleInput("\u001b[5~"); // PgUp
+	aliases.handleInput("\u0015"); // Ctrl+U
+	assert.equal(frame(aliases), listTop);
+	assert.equal(frame(pageKeys), listTop);
+
+	pageKeys.handleInput("\u001b[B");
+	aliases.handleInput("\u001b[B");
+	pageKeys.handleInput("\r");
+	aliases.handleInput("\r");
+	const previewTop = frame(aliases);
+	assert.equal(frame(pageKeys), previewTop);
+
+	pageKeys.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), previewTop);
+	assert.equal(frame(aliases), frame(pageKeys));
+	pageKeys.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), previewTop);
+	assert.equal(frame(pageKeys), previewTop);
+});
+
 test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step", () => {
 	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences.
 	const wheelUp = "\u001b[<64;20;5M";

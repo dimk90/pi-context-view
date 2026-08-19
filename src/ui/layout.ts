@@ -57,6 +57,16 @@ export function isStepForwardKey(data: string): boolean {
 	return matchesKey(data, Key.down) || data === "j";
 }
 
+/** Whether input requests one page backwards: PgUp or `Ctrl+U`. */
+export function isPageBackKey(data: string): boolean {
+	return matchesKey(data, Key.pageUp) || matchesKey(data, Key.ctrl("u"));
+}
+
+/** Whether input requests one page forwards: PgDn or `Ctrl+D`. */
+export function isPageForwardKey(data: string): boolean {
+	return matchesKey(data, Key.pageDown) || matchesKey(data, Key.ctrl("d"));
+}
+
 /** Truncate one rendered line to the supplied width. */
 export function fitLine(line: string, width: number): string {
 	return truncateToWidth(line, width, "…");
