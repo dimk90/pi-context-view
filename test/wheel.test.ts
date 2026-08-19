@@ -38,6 +38,7 @@ test("parseWheelDirection decodes vertical SGR and X10 notches only", () => {
 });
 
 test("readWheelScrollLines honors pi's own step and falls back when it is unreadable", () => {
+	assert.equal(DEFAULT_WHEEL_SCROLL_LINES, 3);
 	assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(4)), 4);
 	assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(1)), 1);
 	assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(2.7)), 2);

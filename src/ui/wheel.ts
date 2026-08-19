@@ -9,7 +9,7 @@
 import type { TUI } from "@earendil-works/pi-tui";
 
 /** Lines one notch scrolls when the TUI exposes no step of its own. */
-export const DEFAULT_WHEEL_SCROLL_LINES = 1;
+export const DEFAULT_WHEEL_SCROLL_LINES = 3;
 
 /** SGR wheel report: `ESC [ < button ; column ; row` closed by `M` or `m`. */
 const SGR_WHEEL_PATTERN = /^\x1b\[<(\d+);\d+;\d+[Mm]$/;

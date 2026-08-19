@@ -56,7 +56,7 @@ Older releases consume them for the transcript viewport in fullscreen mode.
 
 The mouse wheel scrolls wherever the keys navigate: one notch moves the
 selection one row or one block, and scrolls a full-content preview by the step
-pi's own viewport uses, defaulting to one line when that step is unreadable.
+pi's own viewport uses, defaulting to three lines when that step is unreadable.
 Only fullscreen mode enables mouse reporting, so in regular mode the wheel keeps
 scrolling the terminal's scrollback and no view ever sees it. Hint rows stay
 keyboard-only, since they must not advertise an affordance one mode lacks.
