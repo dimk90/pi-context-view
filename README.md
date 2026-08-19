@@ -38,7 +38,7 @@ injected by other extensions.
 
 See what fills your context, for example, what survives compaction:
 
-![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/df9b7bae3d090492640c31b584374e3e2ddb7874/doc/images/context-usage.gif)
+![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/ec65cc1cbfafcb699471c9ac4a0b63ec4189ff8c/doc/images/context-usage.gif)
 
 
 ### `/context injections`
