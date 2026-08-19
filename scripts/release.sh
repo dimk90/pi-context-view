@@ -304,7 +304,7 @@ _release_check_repository_state() {
 
 _release_check_candidate_paths() {
     #
-    # Classify the candidate as a worktree or committed change set and block
+    # Classify the candidate as a worktree or committed change set and warn
     # when the worktree holds anything outside the release paths.
     #
     # Parameters:
@@ -325,15 +325,18 @@ _release_check_candidate_paths() {
     if ((${#_RELEASE_CANDIDATE_PATHS[@]} == 0)); then
         _RELEASE_CANDIDATE_MODE='committed'
         _release_pass 'the worktree is clean; checking the committed develop tree'
-    elif ((${#unexpected_paths[@]} > 0)); then
-        _release_block 'the worktree holds changes outside the release paths' \
-                       "$(printf '%s\n' "${unexpected_paths[@]}")"
-    else
-        _RELEASE_CANDIDATE_MODE='worktree'
-        _release_pass "the worktree holds ${#_RELEASE_CANDIDATE_PATHS[@]} release path(s) and nothing else"
-        _release_check_required_candidates 'the prepared release' '' \
-                                           "${_RELEASE_CANDIDATE_PATHS[@]}"
+        return 0
     fi
+
+    _RELEASE_CANDIDATE_MODE='worktree'
+    if ((${#unexpected_paths[@]} > 0)); then
+        _release_warn 'the worktree holds changes outside the release paths' \
+                      "$(printf '%s\n' "${unexpected_paths[@]}")"
+    else
+        _release_pass "the worktree holds ${#_RELEASE_CANDIDATE_PATHS[@]} release path(s) and nothing else"
+    fi
+    _release_check_required_candidates 'the prepared release' '' \
+                                       "${_RELEASE_CANDIDATE_PATHS[@]}"
 }
 
 
@@ -1337,6 +1340,25 @@ _release_info() {
     local message="$1"
 
     printf '%s %s\n' "$(gum style --foreground 244 '•')" "$message"
+}
+
+
+_release_warn() {
+    #
+    # Print a non-blocking warning with optional supporting detail.
+    #
+    # Parameters:
+    #   $1 - message - concise warning description.
+    #   $2 - detail - (optional) - evidence for the warning.
+    #
+    # Example:
+    #   _release_warn 'the candidate includes an unexpected path' 'notes.txt'
+    #
+    local message="$1"
+    local detail="${2-}"
+
+    printf '%s %s\n' "$(gum style --foreground 214 '⚠')" "$message"
+    _release_detail "$detail"
 }
 
 
