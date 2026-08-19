@@ -121,13 +121,7 @@ absent, and present the fallback as approximate.
 
 ## Preview presentation
 
-Entry headers show the visible-text estimate first, then the invisible
-reasoning estimate, then their total in parentheses. `≈` marks a
-provider-reported (`usage.reasoning`) derivation. `~` marks the rough chars/4
-signature proxy when no reasoning breakdown is available. If
-provider-reported reasoning exceeds the visible estimate without either
-signature, `+ Reasoning ≈N (≈T)` keeps the counted share explicit. Zero-size
-invisible shares render no extra cell.
+[UI.md](UI.md) owns the preview notation. The estimate surfaces like this:
 
 ```text
 Agent Thinking Messages                                      1.4k
@@ -152,11 +146,9 @@ Agent Thinking Messages                                      1.4k
   ↑↓ Scroll · PgUp/PgDn Page · Esc Back
 ```
 
-The `+ Encoded ≈N (≈T)`, `+ Encoded ~N (~T)`, or
-`+ Reasoning ≈N (≈T)` header cell uses the same dim treatment as the token
-count. One dim, width-wrapped description appears after the scrollable entries
-and before the hotkeys row; there are no per-entry marker rows. Raw signature
-bytes are never rendered, previewed, or logged.
+The three header cells stay visually distinct because they mean different
+things: `≈ Encoded` and `≈ Reasoning` report a share already inside the
+category total, while `~ Encoded` is the chars/4 proxy excluded from it.
 
 ## Reading provider counters
 
