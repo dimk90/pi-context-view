@@ -1,6 +1,6 @@
 # Changelog
 
-## `[v0.4.3]` - Unreleased
+## `[v0.4.3]` - 19.08.2026
 
 ### Changed
 * `[usage]` Add a full-content view for collapsed blocks.
