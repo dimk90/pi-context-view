@@ -1,154 +1,37 @@
 # pi-context-view
 
-Pi extension with two TUI-only views:
+TypeScript pi extension (`src/index.ts`) with two TUI-only overlays:
 
-- `/context` or `/context usage` — estimated context composition.
-- `/context injections` — frozen Initial snapshot with explicit raw-text
-  previews.
+- `/context` or `/context usage` — estimate current context composition.
+- `/context injections` — inspect the frozen Initial snapshot with opt-in raw previews.
 
-Runtime inspection is roadmap-only; see [PLAN.md](PLAN.md). The command accepts
-only `usage` and `injections`, including completions, and rejects non-TUI modes.
+The command accepts only `usage` and `injections`; keep it unavailable outside TUI mode.
 
-## Capture architecture
+## Sources of truth
 
-### Initial snapshot
+| Path | Read before |
+| --- | --- |
+| `doc/ARCHITECTURE.md` | Changing lifecycle capture, silent probes, attribution, usage accounting, the semantic model, or privacy behavior. |
+| `doc/UI.md` | Changing rendering, interaction, previews, responsive behavior, or release media. |
+| `doc/THINKING.md` | Changing reasoning-token accounting, signature handling, or thinking-preview notation. |
+| `doc/PLAN.md` | Adding commands, configuration, runtime inspection, or other roadmap work. |
+| `doc/HISTORY.md` | Reusing the removed CLI lifecycle or investigating older capture and transport approaches. |
+| `doc/RELEASE.md` | Changing versions, tagging, publishing, or preparing a release. |
 
-Capture Initial once per extension runtime:
+## Repository rules
 
-```text
-before_agent_start → own structured prompt options
-context            → read the final system prompt and active tools, then freeze
-                     prompt, tools, and injected messages as owned copies
-```
-
-Structured prompt options are available as `event.systemPromptOptions` in
-`before_agent_start`, not `session_start`. Do not
-freeze the prompt or active tools there: later handlers may edit the prompt or
-call `pi.setActiveTools()`. Finalize in the first `context` event using
-`ctx.getSystemPrompt()` and pi's then-active tool set.
-
-The snapshot represents the first observable run, real or synthetic, and is
-never overwritten. Conditional additions inactive during that run are absent.
-Prompt and tool capture is load-order independent; message changes from later
-`context` handlers and provider-payload rewrites are not observable.
-
-### On-demand silent probe
-
-If a view is requested before a real turn, allow one explicit probe per
-extension runtime:
-
-```text
-/context           → wait idle; while compaction runs, use the degraded fallback
-                   → otherwise hide working row, sendUserMessage("")
-before_agent_start → prepare Initial
-turn_start         → abort before provider
-context            → finalize Initial; filter synthetic user message
-message_end        → sanitize only the synthetic aborted assistant
-agent_settled      → restore UI, resolve command, open the requested view
-```
-
-Never probe automatically. Track the synthetic user and assistant by exact
-role and timestamp; remove only those entries from later model contexts and
-Usage so genuine aborts remain visible. Probe entries remain in pi's session
-tree, and other extensions still observe the lifecycle. Identities (role and
-timestamp only, never content) are persisted as a
-`pi-context-view:probe-identities` custom entry on `agent_settled` and
-`session_shutdown`, then restored on `session_start`, so filtering survives
-resume, reload, and fork without identifying probes by empty content.
-
-`pi.sendMessage(..., { triggerTurn: true })` cannot replace
-`sendUserMessage()` because it bypasses `before_agent_start`. Abort at
-`turn_start`; do not rely on `before_provider_request`, which some transports
-skip. `waitForIdle()` does not cover manual compaction, so track
-`session_before_compact` until `session_compact`, signal abort, or
-`agent_settled`, and never start a probe while that state is active. Always
-restore UI state in `finally`. On failure, timeout, or active compaction, return
-a pi-native fallback with a precise degraded-capture reason.
-
-## Usage and attribution
-
-Compute Usage on demand from the exported
-`buildSessionContext(session entries, leaf id).messages`, after synthetic
-filtering. Do not use `buildContextEntries()`, which includes non-context
-metadata. Use `ctx.getContextUsage()` separately for pi's reported usage and
-window.
-
-Estimates need not reconcile exactly with pi or provider totals because of
-serialization, images, tokenizer differences, compaction timing, handler load
-order, and payload rewrites. Per-message role and block framing is a known
-residual: it may be real but is provider-internal and not exactly measurable,
-so no framing constant is added to totals. Protocol metadata such as
-`ToolCall.id`, `ToolResultMessage.toolCallId`, and `toolName` is likewise not
-counted; wire presence does not prove a field is tokenized.
-
-Messages whose provider-bound text pi's `convertToLlm` transform expands —
-compaction and branch summaries, and context-visible `bashExecution`
-messages — are estimated from the converted message
-(`estimateTokens(convertToLlm([message])[0])`), not the raw message. The
-extension may consequently exceed pi's own heuristic estimate, which has the
-same undercount; counting provider-bound text is intentional.
-
-Count thinking once per assistant message as
-`max(ceil(visibleThinkingChars / 4), usage.reasoning ?? 0)`, accepting only a
-finite, non-negative provider count. Attach any provider-reported excess over
-the visible estimate once as invisible-reasoning metadata. Without that count,
-`ceil(signatureChars / 4)` is a rough preview-only proxy excluded from category
-totals, not an upper bound; `signatureChars` sums all `thinkingSignature` and
-`thoughtSignature` character lengths. Never
-retain, tokenize, render, preview, or log raw signature bytes. See
-[doc/THINKING.md](doc/THINKING.md) for model retention, measurements, and UI
-notation.
-
-Keep source, kind, and hierarchy in typed model fields; never recover semantics
-from display labels. Further rules:
-
-- tool ownership comes from `ToolInfo.sourceInfo`;
-- chained prompt edits form one unattributable extension aggregate;
-- `customType` identifies an injected message type, not necessarily its package;
-- role-only injection detection misses non-custom messages and requires
-  session-branch diffing;
-- children break down parent contributions and are not counted again in totals.
-
-## Privacy
-
-Raw prompt and message content stays process-local and is terminal-sanitized.
-Show it only after explicit Enter preview. Never log it, persist additional
-copies, include it in notifications, or inject captured content into later
-requests.
-
-## UI
-
-[doc/UI.md](doc/UI.md) is the canonical specification for rendering,
-interaction, responsive behavior, previews, and release media.
+- **Architecture contract.** Preserve the invariants in `doc/ARCHITECTURE.md`; update that document with any lifecycle, capture, attribution, or usage behavior change.
+- **Privacy gate.** Keep raw prompts and messages process-local and terminal-sanitized; expose them only after explicit Enter preview, and never log them, persist extra copies, include them in notifications, or inject them into later requests.
+- **Module boundaries.** Keep `src/index.ts` to pi event and command wiring; put independently testable state, measurement, and rendering behavior in focused modules under `src/` and `src/ui/`.
+- **Command contract.** Keep parsing, completions, registration text, README usage, and command tests synchronized whenever the `/context` grammar or mode guard changes.
+- **UI contract.** Treat `doc/UI.md` as canonical; update it and focused tests whenever the specified TUI behavior changes.
+- **Dependency contract.** Keep both pi packages as `"*"` peer dependencies and exact development pins matching `pi --version`; run `pnpm install` after changing either pin.
 
 ## Verification
 
-Run `pnpm check`. Follow the `pi-extension` skill for provider smoke tests
-and real-PTY testing. Lifecycle coverage must load `test/fixtures/marker.ts` in
-both orders and use an `after_provider_response` sentinel for probes.
+```bash
+pnpm check
+```
 
-Required invariants:
-
-- normal turns are unchanged when inspection is not invoked;
-- probes make no provider request and leave no visible transcript artifact;
-- active compaction uses the degraded fallback without consuming the probe attempt;
-- genuine aborts remain visible;
-- synthetic entries never reach later model contexts or Usage;
-- Initial freezes once per extension runtime;
-- Runtime state, commands, completions, focus, and toggles remain absent until
-  their roadmap step;
-- raw content appears only after Enter and is never logged or newly persisted;
-- every rendered line respects width, and views reflow with width and height.
-
-## Dependencies
-
-Keep `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` as `"*"`
-peer dependencies and exact development pins matching `pi --version`. Run
-`pnpm install` after changing the pins.
-
-The extension registers no tools and imports no schema library, so `typebox`
-stays out of `package.json` and the APIs pi 0.83 dropped with typebox 1.3
-(`Type.Base`, `Type.Awaited`, `Type.Promise`, `Type.AsyncIterator`,
-`Type.Iterator`, `Type.Options`, `Value.Mutate`) are unreachable here. If a tool
-is ever added, declare `typebox` as a `"*"` peer dependency and build schemas
-from `Type.Unsafe` plus `Type.Refine` instead of the removed types.
+- **Lifecycle changes.** Load `test/fixtures/marker.ts` in both extension orders and use an `after_provider_response` sentinel to prove a probe makes no provider request.
+- **TUI changes.** Follow the `pi-extension` skill for real-PTY and provider smoke tests, and exercise the dimensions and interactions required by `doc/UI.md`.
