@@ -3,10 +3,13 @@
 # Release pi-context-view from develop to master, npm, and GitHub.
 #
 # Prepare the version bump, dated changelog, completed-plan removal, README,
-# images, and dependency pins before running this script. The prepared tree may
-# be uncommitted or already committed and pushed to develop. The script performs
-# all mechanical checks before asking for one approval, then stops on the first
-# failed release step without attempting rollback.
+# and dependency pins before running this script. The prepared tree may be
+# uncommitted or already committed and pushed to develop. The release commit
+# carries only the release paths; commit everything else, including reviewed
+# image captures, beforehand. Unrelated worktree changes are reported and left
+# untouched. The script performs all mechanical checks before asking for one
+# approval, then stops on the first failed release step without attempting
+# rollback.
 #
 
 set -uo pipefail
@@ -72,6 +75,7 @@ readonly _RELEASE_NPM_OWNER_CHECK_SCRIPT='
 
 _RELEASE_BLOCKERS=()
 _RELEASE_CANDIDATE_PATHS=()
+_RELEASE_UNRELATED_PATHS=()
 _RELEASE_CANDIDATE_MODE='invalid'
 _RELEASE_TMP_DIR=''
 _RELEASE_LOG_FILE=''
@@ -304,8 +308,9 @@ _release_check_repository_state() {
 
 _release_check_candidate_paths() {
     #
-    # Classify the candidate as a worktree or committed change set and warn
-    # when the worktree holds anything outside the release paths.
+    # Split the worktree into release paths and unrelated paths, classify the
+    # candidate as a worktree or committed change set, and block when the index
+    # already stages a path the release commit must not carry.
     #
     # Parameters:
     #   None.
@@ -313,28 +318,40 @@ _release_check_candidate_paths() {
     # Example:
     #   _release_check_candidate_paths
     #
-    local unexpected_paths=()
+    local staged_unrelated_paths=()
     local path
 
     while IFS= read -r -d '' path; do
-        _RELEASE_CANDIDATE_PATHS+=("$path")
-        _release_is_allowed_path "$path" || unexpected_paths+=("$path")
+        if _release_is_allowed_path "$path"; then
+            _RELEASE_CANDIDATE_PATHS+=("$path")
+        else
+            _RELEASE_UNRELATED_PATHS+=("$path")
+        fi
     done < <(git diff HEAD --name-only -z
              git ls-files --others --exclude-standard -z)
 
+    # a release commit publishes the whole index, so staged strays must go first
+    while IFS= read -r -d '' path; do
+        _release_is_allowed_path "$path" || staged_unrelated_paths+=("$path")
+    done < <(git diff --cached --name-only -z)
+    if ((${#staged_unrelated_paths[@]} > 0)); then
+        _release_block 'the index stages paths outside the release paths; unstage them first' \
+                       "$(printf '%s\n' "${staged_unrelated_paths[@]}")"
+    fi
+
+    if ((${#_RELEASE_UNRELATED_PATHS[@]} > 0)); then
+        _release_warn "leaving ${#_RELEASE_UNRELATED_PATHS[@]} unrelated worktree path(s) uncommitted" \
+                      "$(printf '%s\n' "${_RELEASE_UNRELATED_PATHS[@]}")"
+    fi
+
     if ((${#_RELEASE_CANDIDATE_PATHS[@]} == 0)); then
         _RELEASE_CANDIDATE_MODE='committed'
-        _release_pass 'the worktree is clean; checking the committed develop tree'
+        _release_pass 'no release path changed; checking the committed develop tree'
         return 0
     fi
 
     _RELEASE_CANDIDATE_MODE='worktree'
-    if ((${#unexpected_paths[@]} > 0)); then
-        _release_warn 'the worktree holds changes outside the release paths' \
-                      "$(printf '%s\n' "${unexpected_paths[@]}")"
-    else
-        _release_pass "the worktree holds ${#_RELEASE_CANDIDATE_PATHS[@]} release path(s) and nothing else"
-    fi
+    _release_pass "the worktree changes ${#_RELEASE_CANDIDATE_PATHS[@]} release path(s)"
     _release_check_required_candidates 'the prepared release' '' \
                                        "${_RELEASE_CANDIDATE_PATHS[@]}"
 }
@@ -857,7 +874,7 @@ _release_print_release_plan() {
         candidate_plan=' 2. Use the reviewed release tree already committed on develop'
     else
         candidate_summary="uncommitted: ${_RELEASE_CANDIDATE_PATHS[*]}"
-        candidate_plan=" 2. Commit reviewed release paths as [doc] Release ${_RELEASE_TARGET_TAG}"
+        candidate_plan=" 2. Commit only the reviewed release paths as [doc] Release ${_RELEASE_TARGET_TAG}"
     fi
 
     _release_heading "Release plan for ${_RELEASE_TARGET_TAG}"
@@ -869,6 +886,9 @@ _release_print_release_plan() {
         "npm        ${_RELEASE_NPM_ACCOUNT} at ${_RELEASE_NPM_REGISTRY}"
         "candidate  ${candidate_summary}"
     )
+    if ((${#_RELEASE_UNRELATED_PATHS[@]} > 0)); then
+        summary_lines+=("untouched  ${_RELEASE_UNRELATED_PATHS[*]}")
+    fi
     gum style --border rounded --border-foreground 212 --padding '0 2' --margin '1 0 0 0' -- \
               "${summary_lines[@]}"
 
@@ -914,7 +934,8 @@ _release_validate_release_tree() {
                                    "refs/remotes/origin/${_RELEASE_MASTER_BRANCH}" \
                                    "refs/heads/${_RELEASE_DEVELOP_BRANCH}"
     else
-        _release_apply_command 'checking the candidate diff' git diff --check
+        _release_apply_command 'checking the candidate diff' \
+                               git diff --check -- "${_RELEASE_CANDIDATE_PATHS[@]}"
     fi
     _release_apply_command 'running pnpm check' pnpm check
     if _release_capture 'packing a dry run' pnpm pack --dry-run; then
@@ -958,10 +979,7 @@ _release_use_committed_release() {
     if [[ $(git rev-parse HEAD) != "$_RELEASE_APPROVED_HEAD" ]]; then
         _release_stop 'develop moved while validating the committed release'
     fi
-    if [[ -n $(git status --porcelain) ]]; then
-        _release_stop 'the committed release worktree is no longer clean' \
-                      "$(git status --short)"
-    fi
+    _release_require_clean_release_state 'the committed release tree holds uncommitted release changes'
     _RELEASE_RELEASE_COMMIT="$_RELEASE_APPROVED_HEAD"
     _release_pass "release commit: $(git log -1 --format='%h %s')"
 }
@@ -977,15 +995,15 @@ _release_create_release_commit() {
     # Example:
     #   _release_create_release_commit
     #
-    local expected_paths staged_paths commit_message
+    local expected_paths staged_paths pending_paths commit_message
 
     _release_begin_step 'Commit the release on develop'
     if ! git add -- "${_RELEASE_CANDIDATE_PATHS[@]}"; then
         _release_stop 'unable to stage the reviewed release paths'
     fi
-    if ! git diff --quiet || [[ -n $(git ls-files --others --exclude-standard) ]]; then
-        _release_stop 'unstaged or untracked changes appeared after staging' \
-                      "$(git status --short)"
+    pending_paths="$(_release_uncommitted_release_paths)"
+    if [[ -n $pending_paths ]]; then
+        _release_stop 'release paths changed after staging' "$pending_paths"
     fi
     expected_paths="$(printf '%s\n' "${_RELEASE_CANDIDATE_PATHS[@]}" | sort)"
     staged_paths="$(git diff --cached --name-only | sort)"
@@ -997,10 +1015,7 @@ _release_create_release_commit() {
     if ! git commit -m "$commit_message"; then
         _release_stop 'release commit failed'
     fi
-    if [[ -n $(git status --porcelain) ]]; then
-        _release_stop 'the worktree is not clean after the release commit' \
-                      "$(git status --short)"
-    fi
+    _release_require_clean_release_state 'the release commit left release changes behind'
     _RELEASE_RELEASE_COMMIT="$(git rev-parse HEAD)"
     _release_pass "release commit: $(git log -1 --format='%h %s')"
 }
@@ -1072,9 +1087,7 @@ _release_merge_into_master() {
         _release_stop 'the master merge tree differs from the reviewed release tree' \
                       "$(git diff --name-only "$_RELEASE_RELEASE_COMMIT" HEAD)"
     fi
-    if [[ -n $(git status --porcelain) ]]; then
-        _release_stop 'the master worktree is not clean after the merge' "$(git status --short)"
-    fi
+    _release_require_clean_release_state 'master holds uncommitted release changes after the merge'
     _release_apply_command 'rechecking the frozen lockfile on master' \
                            pnpm install --frozen-lockfile --ignore-scripts
     _release_apply_command 'rerunning pnpm check on master' pnpm check
@@ -1105,9 +1118,10 @@ _release_tag_master() {
         _release_stop 'master package version changed unexpectedly' \
                       "found: ${master_version}; expected: ${_RELEASE_TARGET_VERSION}"
     fi
-    if [[ -n $(git status --porcelain) || $(git rev-parse HEAD) != "$_RELEASE_MERGE_COMMIT" ]]; then
-        _release_stop 'master moved or became dirty before tagging'
+    if [[ $(git rev-parse HEAD) != "$_RELEASE_MERGE_COMMIT" ]]; then
+        _release_stop 'master moved before tagging'
     fi
+    _release_require_clean_release_state 'master holds uncommitted release changes before tagging'
     if ! git tag "$_RELEASE_TARGET_TAG"; then
         _release_stop "unable to create tag ${_RELEASE_TARGET_TAG}"
     fi
@@ -1281,9 +1295,7 @@ _release_return_to_develop() {
     if ! git switch "$_RELEASE_DEVELOP_BRANCH"; then
         _release_stop 'unable to return to develop'
     fi
-    if [[ -n $(git status --porcelain) ]]; then
-        _release_stop 'develop is not clean after the release' "$(git status --short)"
-    fi
+    _release_require_clean_release_state 'develop holds uncommitted release changes after the release'
     if [[ $(git rev-parse HEAD) != "$_RELEASE_RELEASE_COMMIT" ]]; then
         _release_stop 'develop no longer identifies the release commit'
     fi
@@ -1530,6 +1542,9 @@ _release_is_allowed_path() {
     #
     # Determine whether a changed path may belong to the release commit.
     #
+    # Everything else, including reviewed image captures, belongs to its own
+    # commit made before the release run.
+    #
     # Parameters:
     #   $1 - path - repository-relative path.
     #
@@ -1543,9 +1558,60 @@ _release_is_allowed_path() {
         [[ $path == "$allowed_path" ]] && return 0
     done
 
-    # reviewed image captures are optional release files
-    [[ $path == doc/images/* ]] && return 0
     return 1
+}
+
+
+_release_uncommitted_release_paths() {
+    #
+    # Print every release path holding uncommitted worktree or untracked
+    # changes, ignoring the unrelated paths the release leaves untouched.
+    #
+    # Parameters:
+    #   None.
+    #
+    # Example:
+    #   pending_paths="$(_release_uncommitted_release_paths)"
+    #
+    local paths=()
+    local path
+
+    while IFS= read -r -d '' path; do
+        _release_is_allowed_path "$path" && paths+=("$path")
+    done < <(git diff --name-only -z
+             git ls-files --others --exclude-standard -z)
+
+    ((${#paths[@]} > 0)) && printf '%s\n' "${paths[@]}"
+    return 0
+}
+
+
+_release_require_clean_release_state() {
+    #
+    # Stop unless the index is empty and every release path is committed.
+    #
+    # Unrelated worktree changes stay out of the release, so they must not
+    # fail this checkpoint.
+    #
+    # Parameters:
+    #   $1 - message - failed checkpoint description.
+    #
+    # Example:
+    #   _release_require_clean_release_state 'develop is not clean'
+    #
+    local message="$1"
+    local offending_lines=()
+    local path
+
+    while IFS= read -r -d '' path; do
+        offending_lines+=("staged: ${path}")
+    done < <(git diff --cached --name-only -z)
+    while IFS= read -r path; do
+        offending_lines+=("uncommitted: ${path}")
+    done < <(_release_uncommitted_release_paths)
+
+    ((${#offending_lines[@]} == 0)) && return 0
+    _release_stop "$message" "$(printf '%s\n' "${offending_lines[@]}")"
 }
 
 
