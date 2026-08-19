@@ -54,6 +54,13 @@ Pi 0.84.2 delivers PgUp, PgDn, Home, and End to a focused overlay in both TUI
 modes, so every key above works identically in regular and fullscreen mode.
 Older releases consume them for the transcript viewport in fullscreen mode.
 
+The mouse wheel scrolls wherever the keys navigate: one notch moves the
+selection one row or one block, and scrolls a full-content preview by the step
+pi's own viewport uses, defaulting to one line when that step is unreadable.
+Only fullscreen mode enables mouse reporting, so in regular mode the wheel keeps
+scrolling the terminal's scrollback and no view ever sees it. Hint rows stay
+keyboard-only, since they must not advertise an affordance one mode lacks.
+
 Navigation skips non-selectable rows and remains bounded after terminal resize.
 All content is terminal-sanitized before rendering. Raw content appears only
 after explicit Enter selection.

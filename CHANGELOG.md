@@ -3,8 +3,9 @@
 ## `[v0.4.3]` - Unreleased
 
 ### Changed
-* `[usage]`Add a full-content view for collapsed blocks.
+* `[usage]` Add a full-content view for collapsed blocks.
 * `[usage]` Change category-view scrolling from line-by-line to block-by-block.
+* `[ui]` Add experimental mouse-wheel scrolling support (`fullscreen` mode only).
 
 
 ## `[v0.4.2]` - 14.08.2026

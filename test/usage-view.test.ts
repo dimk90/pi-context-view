@@ -654,6 +654,76 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.ok(hints.some((line) => line.includes("↑↓/jk Navigate")));
 });
 
+test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", () => {
+	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences.
+	const wheelUp = "\u001b[<64;20;5M";
+	const wheelDown = "\u001b[<65;20;5M";
+	const longText = Array.from({ length: 60 }, (_, line) => `line ${line + 1}`).join("\n");
+	const wheelUsage: ContextUsageSnapshot = {
+		...usage(1_000),
+		categories: [
+			{ id: "system-prompt", label: "System Prompt", tokens: 500 },
+			{
+				id: "tool-output",
+				label: "Tool Output",
+				tokens: 500,
+				entries: [1, 2].map((second) => ({
+					timestamp: Date.UTC(2026, 6, 11, 15, 0, second),
+					breadcrumb: ["assistant", "bash"],
+					tokens: 250,
+					text: longText,
+				})),
+			},
+		],
+		estimatedTokens: 1_000,
+	};
+	// A terminal short enough to cap both blocks, so the full-content level scrolls.
+	const createWheelView = (wheelScrollLines?: number) =>
+		new UsageView(createTheme(), { usage: wheelUsage }, () => {}, () => 24, wheelScrollLines);
+	const arrows = createWheelView();
+	const wheel = createWheelView(4);
+	const frame = (view: UsageView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const start = frame(wheel);
+	assert.equal(frame(arrows), start);
+
+	// Legend: one notch selects one row, regardless of the scroll step.
+	arrows.handleInput("\u001b[B");
+	wheel.handleInput(wheelDown);
+	assert.match(stripSgr(frame(wheel)), /→ ■ Tool Output \.{2,}/);
+	assert.equal(frame(wheel), frame(arrows));
+
+	// Block stream: blocks are selected, so one notch steps exactly one block.
+	arrows.handleInput("\r");
+	wheel.handleInput("\r");
+	const streamTop = frame(wheel);
+	assert.equal(frame(arrows), streamTop);
+	arrows.handleInput("\u001b[B");
+	wheel.handleInput(wheelDown);
+	assert.notEqual(frame(wheel), streamTop);
+	assert.equal(frame(wheel), frame(arrows));
+	arrows.handleInput("\u001b[A");
+	wheel.handleInput(wheelUp);
+	assert.equal(frame(wheel), streamTop);
+	assert.equal(frame(arrows), streamTop);
+
+	// Full block content: one notch scrolls pi's own line step.
+	arrows.handleInput("\r");
+	wheel.handleInput("\r");
+	const blockTop = frame(wheel);
+	assert.equal(frame(arrows), blockTop);
+	assert.match(stripSgr(blockTop), /line 1\b/);
+	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[B");
+	wheel.handleInput(wheelDown);
+	assert.notEqual(frame(wheel), blockTop);
+	assert.equal(frame(wheel), frame(arrows));
+	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[A");
+	wheel.handleInput(wheelUp);
+	assert.equal(frame(wheel), blockTop);
+	assert.equal(frame(arrows), blockTop);
+});
+
 test("UsageView explains invisible reasoning once and keeps its estimates distinct", () => {
 	const thinkingUsage: ContextUsageSnapshot = {
 		computedAt: new Date("2026-07-24T12:00:00Z"),

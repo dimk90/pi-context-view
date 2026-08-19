@@ -15,7 +15,7 @@
   - Full content preview of capped blocks with `Enter`; complete blocks have no open action.
   - Cap block streams at 14 content lines and keep their collapse indicator left-aligned.
   - Highlight the selected block with an accent `┃` gutter.
-- [ ] Add mouse wheel support for scrolling.
+- [x] Add mouse wheel support for scrolling.
 - [ ] Add `Ctrl+u/d` as alias for `PgUp/PgDn`.
 - [x] Reduce amount of block's lines when terminal shrinks.
 

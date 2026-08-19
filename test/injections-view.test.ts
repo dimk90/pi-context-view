@@ -393,6 +393,39 @@ test("InjectionsView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
 });
 
+test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step", () => {
+	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences.
+	const wheelUp = "\u001b[<64;20;5M";
+	const wheelDown = "\u001b[<65;20;5M";
+	const arrows = createView(8);
+	const wheel = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => {}, () => 24, 4);
+	const frame = (view: InjectionsView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const start = frame(wheel);
+	assert.equal(frame(arrows), start);
+
+	// List: one notch selects one row, regardless of the scroll step.
+	arrows.handleInput("\u001b[B");
+	wheel.handleInput(wheelDown);
+	assert.match(stripSgr(frame(wheel)), /→ ├─ pi-0/);
+	assert.equal(frame(wheel), frame(arrows));
+
+	// Preview: one notch scrolls pi's own line step.
+	arrows.handleInput("\r");
+	wheel.handleInput("\r");
+	const previewTop = frame(wheel);
+	assert.equal(frame(arrows), previewTop);
+	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[B");
+	wheel.handleInput(wheelDown);
+	assert.notEqual(frame(wheel), previewTop);
+	assert.equal(frame(wheel), frame(arrows));
+	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[A");
+	wheel.handleInput(wheelUp);
+	assert.equal(frame(wheel), previewTop);
+	assert.equal(frame(arrows), previewTop);
+});
+
 test("InjectionsView navigation scrolls the non-selectable total and Escape closes", () => {
 	let closed = false;
 	const view = new InjectionsView(createTheme(), { snapshot: snapshot(30) }, () => {

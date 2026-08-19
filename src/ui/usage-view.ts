@@ -39,6 +39,7 @@ import {
 	type UsageMapCell,
 } from "./usage-map.ts";
 import { BlockNavigator, layoutPreviewBlocks, type PreviewLayout } from "./usage-preview.ts";
+import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 const USAGE_DESCRIPTION = "Estimated context for the next model request. " +
 	"Token counts are approximate and may differ from the provider's estimate.";
@@ -148,7 +149,7 @@ interface BlockBody {
 export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new UsageView(theme, input, done, () => tui.terminal.rows);
+			const view = new UsageView(theme, input, done, () => tui.terminal.rows, readWheelScrollLines(tui));
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
@@ -171,6 +172,7 @@ export class UsageView {
 	private readonly input: UsageViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
+	private readonly wheelScrollLines: number;
 	private readonly usage: ContextUsageSnapshot;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
@@ -195,11 +197,13 @@ export class UsageView {
 		input: UsageViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
+		wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES,
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
+		this.wheelScrollLines = wheelScrollLines;
 		this.usage = input.usage;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
@@ -218,6 +222,12 @@ export class UsageView {
 		}
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.done(undefined);
+			return;
+		}
+		// One notch moves the selection one row, like a single step key.
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			if (this.navigator.moveBy(wheel)) this.clearCache();
 			return;
 		}
 		if (matchesKey(data, "z")) {
@@ -652,6 +662,13 @@ export class UsageView {
 			this.closePreview();
 			return;
 		}
+		// Blocks are selected rather than scrolled, so one notch steps one block.
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			const moved = wheel < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
+			if (moved) this.clearCache();
+			return;
+		}
 		if (matchesKey(data, Key.enter)) {
 			this.openBlock();
 		} else if (isStepBackKey(data)) {
@@ -673,6 +690,11 @@ export class UsageView {
 	private handleBlockInput(data: string): void {
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.closeBlock();
+			return;
+		}
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
 			return;
 		}
 		if (isStepBackKey(data)) {
