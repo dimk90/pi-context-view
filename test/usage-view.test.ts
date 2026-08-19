@@ -522,7 +522,7 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 	}
 });
 
-test("UsageView opens a category content preview and returns to the same row", () => {
+test("UsageView opens a category block stream and skips full previews for complete blocks", () => {
 	let closed = false;
 	const view = new UsageView(createTheme(), { usage: usage() }, () => {
 		closed = true;
@@ -536,35 +536,54 @@ test("UsageView opens a category content preview and returns to the same row", (
 
 	view.handleInput("\r");
 	const preview = view.render(80);
-	const plain = preview.map(stripSgr);
+	const plain = preview.map((line) => stripSgr(line).trimEnd());
 	assert.equal(plain[2]?.indexOf("Tool Output"), 0);
 	assert.match(preview[2] ?? "", /\u001b\[38;2;1;2;3m.*Tool Output/);
 	assert.match(plain[2] ?? "", /5k · 0\.5%/);
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b/);
 	assert.equal(preview[3], "");
 
-	// Entries render chronologically: bracketed dim datetime + mdHeading lead breadcrumb + dim tokens.
+	// Blocks render chronologically: bracketed dim datetime + mdHeading lead breadcrumb + dim tokens.
+	// The first block is selected, so its lines carry the accent gutter instead of the plain indent.
 	const searchHeader = plain.findIndex((line) =>
-		/^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[web_search\] 2k$/.test(line)
+		/^┃ \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[web_search\] 2k$/.test(line)
 	);
 	const readHeader = plain.findIndex((line) =>
 		/^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[read\] 3k$/.test(line)
 	);
 	assert.ok(searchHeader >= 0 && readHeader >= 0);
 	assert.ok(searchHeader < readHeader, "entries are chronological, not size-ordered");
+	assert.match(preview[searchHeader] ?? "", /\u001b\[38;2;1;2;3m┃ /);
+	assert.doesNotMatch(preview[searchHeader] ?? "", /\u001b\[48;/);
 	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;16;17;18m\[\d{2}-\d{2}-\d{4}/);
 	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;22;23;24mread/);
-	// Content indented two spaces past the header; blank row between entries.
-	assert.equal(plain[searchHeader + 1], "    search result content");
+	// Content indented two spaces past the header; unmarked blank row between blocks.
+	assert.equal(plain[searchHeader + 1], "┃   search result content");
 	assert.equal(plain[searchHeader + 2], "");
 	assert.equal(plain[readHeader + 1], "    read result content line");
 	assert.equal(plain[readHeader + 2], "    second line");
 	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
-	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Scroll"));
+	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(hintIndex > 0);
-	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
+	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Navigate · PgUp\/PgDn Page · Esc Back/);
+	assert.ok(!plain[hintIndex]?.includes("Enter"));
 
-	// First Escape returns to the same selected list row; second closes the view.
+	// Down moves the gutter to the next block without touching the entry order.
+	view.handleInput("\u001b[B");
+	const movedFrame = view.render(80).join("\n");
+	const movedRaw = movedFrame.split("\n");
+	const moved = movedRaw.map((line) => stripSgr(line).trimEnd());
+	assert.match(moved[searchHeader] ?? "", /^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[web_search\] 2k$/);
+	assert.match(moved[readHeader] ?? "", /^┃ \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[read\] 3k$/);
+	assert.equal(moved[readHeader + 1], "┃   read result content line");
+	assert.doesNotMatch(movedRaw[searchHeader] ?? "", /\u001b\[48;/);
+	assert.doesNotMatch(movedRaw[readHeader] ?? "", /\u001b\[48;/);
+
+	// Complete blocks already expose all content, so Enter leaves the stream untouched.
+	view.handleInput("\r");
+	assert.equal(view.render(80).join("\n"), movedFrame);
+
+	// Escape returns to the same selected list row; one more closes the view.
 	view.handleInput("\u001b");
 	assert.equal(closed, false);
 	assert.equal(view.render(80).join("\n"), listBefore);
@@ -614,7 +633,7 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.match(stripSgr(frame(vim)), /→\s+• tool_5 \.{2,}/);
 	assert.equal(frame(vim), frame(arrows));
 
-	// Preview scrolling: j and k move the aggregate entry stream, and neither key closes the view.
+	// Preview navigation: j and k move the selected block, and neither key closes the view.
 	arrows.handleInput("\u001b[1~"); // Home → the overflowing Tool Output aggregate
 	vim.handleInput("\u001b[1~");
 	arrows.handleInput("\r");
@@ -632,7 +651,144 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.equal(frame(vim), frame(arrows));
 
 	const hints = frame(vim).split("\n").map(stripSgr);
-	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
+	assert.ok(hints.some((line) => line.includes("↑↓/jk Navigate")));
+});
+
+test("UsageView accepts Ctrl+u/d wherever it accepts the page keys", () => {
+	const longText = Array.from({ length: 40 }, (_, line) => `line ${line + 1}`).join("\n");
+	const tools = Array.from({ length: 20 }, (_, index) => ({
+		id: `tool-result:tool_${index + 1}`,
+		label: `tool_${index + 1}`,
+		tokens: 100,
+		entries: [{
+			timestamp: Date.UTC(2026, 6, 11, 14, 0, index + 1),
+			breadcrumb: [`tool_${index + 1}`],
+			tokens: 100,
+			text: longText,
+		}],
+	}));
+	const scrollUsage: ContextUsageSnapshot = {
+		...usage(2_000),
+		categories: [{ id: "tool-output", label: "Tool Output", tokens: 2_000, children: tools }],
+		estimatedTokens: 2_000,
+	};
+	const createScrollView = () =>
+		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
+	const pageKeys = createScrollView();
+	const aliases = createScrollView();
+	const frame = (view: UsageView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const dashboardTop = frame(aliases);
+	assert.equal(frame(pageKeys), dashboardTop);
+
+	pageKeys.handleInput("\u001b[6~"); // PgDn
+	aliases.handleInput("\u0004"); // Ctrl+D
+	assert.notEqual(frame(aliases), dashboardTop);
+	assert.equal(frame(aliases), frame(pageKeys));
+	pageKeys.handleInput("\u001b[5~"); // PgUp
+	aliases.handleInput("\u0015"); // Ctrl+U
+	assert.equal(frame(aliases), dashboardTop);
+	assert.equal(frame(pageKeys), dashboardTop);
+
+	pageKeys.handleInput("\r");
+	aliases.handleInput("\r");
+	const streamTop = frame(aliases);
+	assert.equal(frame(pageKeys), streamTop);
+
+	pageKeys.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), streamTop);
+	assert.equal(frame(aliases), frame(pageKeys));
+	pageKeys.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), streamTop);
+	assert.equal(frame(pageKeys), streamTop);
+
+	pageKeys.handleInput("\r");
+	aliases.handleInput("\r");
+	const blockTop = frame(aliases);
+	assert.match(stripSgr(blockTop), /line 1\b/);
+	assert.equal(frame(pageKeys), blockTop);
+
+	pageKeys.handleInput("\u001b[6~");
+	aliases.handleInput("\u0004");
+	assert.notEqual(frame(aliases), blockTop);
+	assert.equal(frame(aliases), frame(pageKeys));
+	pageKeys.handleInput("\u001b[5~");
+	aliases.handleInput("\u0015");
+	assert.equal(frame(aliases), blockTop);
+	assert.equal(frame(pageKeys), blockTop);
+});
+
+test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", () => {
+	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences.
+	const wheelUp = "\u001b[<64;20;5M";
+	const wheelDown = "\u001b[<65;20;5M";
+	const longText = Array.from({ length: 60 }, (_, line) => `line ${line + 1}`).join("\n");
+	const wheelUsage: ContextUsageSnapshot = {
+		...usage(1_000),
+		categories: [
+			{ id: "system-prompt", label: "System Prompt", tokens: 500 },
+			{
+				id: "tool-output",
+				label: "Tool Output",
+				tokens: 500,
+				entries: [1, 2].map((second) => ({
+					timestamp: Date.UTC(2026, 6, 11, 15, 0, second),
+					breadcrumb: ["assistant", "bash"],
+					tokens: 250,
+					text: longText,
+				})),
+			},
+		],
+		estimatedTokens: 1_000,
+	};
+	// A terminal short enough to cap both blocks, so the full-content level scrolls.
+	const createWheelView = (wheelScrollLines?: number) =>
+		new UsageView(createTheme(), { usage: wheelUsage }, () => {}, () => 24, wheelScrollLines);
+	const arrows = createWheelView();
+	const wheel = createWheelView(4);
+	const frame = (view: UsageView) => view.render(80).join("\n");
+
+	// Both views must render once so the viewport size is known before any input.
+	const start = frame(wheel);
+	assert.equal(frame(arrows), start);
+
+	// Legend: one notch selects one row, regardless of the scroll step.
+	arrows.handleInput("\u001b[B");
+	wheel.handleInput(wheelDown);
+	assert.match(stripSgr(frame(wheel)), /→ ■ Tool Output \.{2,}/);
+	assert.equal(frame(wheel), frame(arrows));
+
+	// Block stream: blocks are selected, so one notch steps exactly one block.
+	arrows.handleInput("\r");
+	wheel.handleInput("\r");
+	const streamTop = frame(wheel);
+	assert.equal(frame(arrows), streamTop);
+	arrows.handleInput("\u001b[B");
+	wheel.handleInput(wheelDown);
+	assert.notEqual(frame(wheel), streamTop);
+	assert.equal(frame(wheel), frame(arrows));
+	arrows.handleInput("\u001b[A");
+	wheel.handleInput(wheelUp);
+	assert.equal(frame(wheel), streamTop);
+	assert.equal(frame(arrows), streamTop);
+
+	// Full block content: one notch scrolls pi's own line step.
+	arrows.handleInput("\r");
+	wheel.handleInput("\r");
+	const blockTop = frame(wheel);
+	assert.equal(frame(arrows), blockTop);
+	assert.match(stripSgr(blockTop), /line 1\b/);
+	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[B");
+	wheel.handleInput(wheelDown);
+	assert.notEqual(frame(wheel), blockTop);
+	assert.equal(frame(wheel), frame(arrows));
+	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[A");
+	wheel.handleInput(wheelUp);
+	assert.equal(frame(wheel), blockTop);
+	assert.equal(frame(arrows), blockTop);
 });
 
 test("UsageView explains invisible reasoning once and keeps its estimates distinct", () => {
@@ -677,7 +833,7 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	view.render(80);
 	view.handleInput("\r");
 	const rendered = view.render(80);
-	const plain = rendered.map(stripSgr);
+	const plain = rendered.map((line) => stripSgr(line).trimEnd());
 	const reportedHeader = plain.findIndex((line) =>
 		/\[assistant\] 594 \+ Encoded ≈547 \(≈1\.1k\)$/.test(line)
 	);
@@ -691,7 +847,7 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	assert.match(rendered[unsignedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Reasoning ≈30 \(≈80\)/);
 
 	const descriptionStart = plain.findIndex((line) => line.includes("Entry headers read:"));
-	const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Scroll"));
+	const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(descriptionStart > unsignedHeader && hintsIndex > descriptionStart);
 	assert.equal(plain[hintsIndex - 1], "");
 	assert.equal(
@@ -738,9 +894,17 @@ test("UsageView previews empty categories, free space, and long content safely",
 	// Category without entries: explicit empty message instead of raw content.
 	view.render(80);
 	view.handleInput("\r");
-	const leafPreview = view.render(80).map(stripSgr);
+	const emptyFrame = view.render(80).join("\n");
+	const leafPreview = emptyFrame.split("\n").map(stripSgr);
 	assert.equal(leafPreview[2]?.indexOf("User Messages"), 0);
 	assert.ok(leafPreview.some((line) => line.includes("No content captured for this category.")));
+	assert.ok(!leafPreview.some((line) => line.includes("┃")));
+	assert.ok(!leafPreview.some((line) => line.includes("Enter")));
+	// Nothing to navigate or page: the empty stream offers Escape alone.
+	const emptyHints = leafPreview.find((line) => line.includes("Esc Back"));
+	assert.equal(emptyHints?.trim(), "Esc Back");
+	view.handleInput("\r");
+	assert.equal(view.render(80).join("\n"), emptyFrame, "Enter is a no-op without blocks");
 	view.handleInput("\u001b");
 
 	// Aggregate overflow: entry stream scrolls and stays bounded.
@@ -749,12 +913,18 @@ test("UsageView previews empty categories, free space, and long content safely",
 	const top = view.render(80).map(stripSgr);
 	assert.ok(top.some((line) => line.includes("[tool_1]")));
 	assert.ok(!top.some((line) => line.includes("[tool_30]")));
-	assert.ok(top.some((line) => /\(\d+\/\d+\)/.test(line)));
+	assert.ok(top.some((line) => line.includes("(1/30)")), "counter reports the selected block");
+	for (let page = 0; page < 20; page++) view.handleInput("\u001b[6~");
+	const pagedBottom = view.render(80).map(stripSgr);
+	assert.ok(pagedBottom.some((line) => line.includes("[tool_30]")));
+	assert.ok(pagedBottom.some((line) => line.includes("(30/30)")), "Page Down reaches the last block");
+	view.handleInput("\u001b[1~"); // Home
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("[tool_1]")));
 	view.handleInput("\u001b[4~"); // End
 	const bottom = view.render(80).map(stripSgr);
 	assert.ok(bottom.some((line) => line.includes("[tool_30]")));
 	assert.ok(!bottom.some((line) => line.includes("[tool_1]")));
-	assert.ok(bottom.some((line) => /\((\d+)\/\1\)/.test(line)), "counter reaches total at the end");
+	assert.ok(bottom.some((line) => line.includes("(30/30)")), "counter reaches total at the end");
 	view.handleInput("\u001b[1~"); // Home
 	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("[tool_1]")));
 	view.handleInput("\u001b");
@@ -815,21 +985,50 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	};
 	const view = new UsageView(createTheme(), { usage: cappedUsage }, () => {}, () => 40);
 
-	// Tool Output: 20 content lines then a dim overflow marker; escapes stripped.
+	// Tool Output at 40 rows: 10 content lines then a dim overflow marker; escapes stripped.
 	view.render(100);
 	view.handleInput("\r");
 	const capped = view.render(100);
-	const plainCapped = capped.map(stripSgr);
+	const plainCapped = capped.map((line) => stripSgr(line).trimEnd());
 	// Lead breadcrumb cell is mdHeading; later cells stay muted.
 	const cappedHeader = capped.find((line) => stripSgr(line).includes("[assistant] [bash]"));
 	assert.match(cappedHeader ?? "", /\u001b\[38;2;22;23;24massistant/);
 	assert.match(cappedHeader ?? "", /\u001b\[38;2;7;8;9mbash/);
-	assert.ok(plainCapped.some((line) => line === "    line 20"));
-	assert.ok(!plainCapped.some((line) => line.includes("line 21")));
-	const marker = plainCapped.findIndex((line) => line === "    … +10 lines");
+	assert.ok(plainCapped.some((line) => line === "┃   line 10"));
+	assert.ok(!plainCapped.some((line) => line.includes("line 11")));
+	const marker = plainCapped.findIndex((line) => line === "┃   … +20 lines · Enter - View Block");
 	assert.ok(marker >= 0);
-	assert.match(capped[marker] ?? "", /\u001b\[38;2;16;17;18m… \+10 lines/);
+	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3m┃ /);
+	assert.equal((plainCapped[marker] ?? "").indexOf("… +20 lines"), 4, "the marker is left-aligned");
+	assert.doesNotMatch(capped[marker] ?? "", /\u001b\[48;/);
+	assert.match(capped[marker] ?? "", /\u001b\[38;2;16;17;18m… \+20 lines/);
+	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3mEnter - View Block/);
+	const cappedHints = plainCapped.find((line) => line.includes("↑↓/jk Navigate"));
+	assert.ok(cappedHints !== undefined && !cappedHints.includes("Enter"));
 	assert.ok(!capped.some((line) => line.includes("\u0007") || line.includes("evil")));
+	for (const width of [24, 40, 100]) {
+		const resized = view.render(width);
+		assert.ok(resized.every((line) => visibleWidth(line) <= width));
+		const resizedPlain = resized.map((line) => stripSgr(line).trimEnd());
+		assert.ok(resizedPlain.some((line) => line.startsWith("┃   … +20 lines")));
+		if (width >= 40) assert.ok(resizedPlain.some((line) => line.endsWith("Enter - View Block")));
+	}
+
+	// Enter opens all 30 lines without the stream's cap or gutter.
+	view.handleInput("\r");
+	const full = view.render(100).map(stripSgr);
+	assert.equal(full[3], "", "the category and block headers have a blank separator");
+	assert.match(full[4] ?? "", /^  \[\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\] \[assistant\] \[bash\] 1k$/);
+	assert.equal(full[5], "");
+	assert.ok(full.some((line) => line === "    line 30"));
+	assert.ok(!full.some((line) => line.includes("… +")));
+	assert.ok(!full.some((line) => line.includes("┃")));
+	for (const width of [24, 40, 100]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `full block line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+	}
+	view.handleInput("\u001b");
 	view.handleInput("\u001b");
 
 	// Snapshot-backed category: breadcrumb-only header without a datetime cell.
@@ -837,12 +1036,93 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
-	const snapshotPreview = view.render(100).map(stripSgr);
-	const header = snapshotPreview.findIndex((line) => /^  \[Base Prompt\] 1k$/.test(line));
+	const snapshotPreview = view.render(100).map((line) => stripSgr(line).trimEnd());
+	const header = snapshotPreview.findIndex((line) => /^┃ \[Base Prompt\] 1k$/.test(line));
 	assert.ok(header >= 0, "snapshot entry header has no datetime cell");
-	assert.equal(snapshotPreview[header + 1], "    You are pi.");
+	assert.equal(snapshotPreview[header + 1], "┃   You are pi.");
 	// Without a datetime, the lead breadcrumb cell still uses mdHeading.
 	assert.match(view.render(100)[header] ?? "", /\u001b\[38;2;22;23;24mBase Prompt/);
+});
+
+test("UsageView shrinks the block cap with terminal height and re-caps on resize", () => {
+	const longText = Array.from({ length: 30 }, (_, line) => `line ${line + 1}`).join("\n");
+	const entry = (second: number) => ({
+		timestamp: Date.UTC(2026, 6, 11, 15, 0, second),
+		breadcrumb: ["assistant", "bash"],
+		tokens: 500,
+		text: longText,
+	});
+	const pairUsage: ContextUsageSnapshot = {
+		...usage(1_000),
+		categories: [{
+			id: "tool-output",
+			label: "Tool Output",
+			tokens: 1_000,
+			entries: [entry(1), entry(2)],
+		}],
+		estimatedTokens: 1_000,
+	};
+	let rows = 40;
+	const view = new UsageView(createTheme(), { usage: pairUsage }, () => {}, () => rows);
+	const plain = () => view.render(80).map((line) => stripSgr(line).trimEnd());
+	const headerCount = (lines: string[]) => lines.filter((line) => line.includes("[assistant] [bash]")).length;
+
+	view.render(80);
+	view.handleInput("\r");
+	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Block"), "40 rows keep 10 lines");
+
+	// 24 rows: five content lines per block, so both blocks stay whole instead of scrolling through one.
+	rows = 24;
+	const short = plain();
+	assert.ok(short.some((line) => line === "┃   … +25 lines · Enter - View Block"));
+	assert.ok(short.some((line) => line === "┃   line 5"));
+	assert.ok(!short.some((line) => line.includes("line 6")));
+	assert.equal(headerCount(short), 2, "both entry headers stay visible");
+
+	// The floor keeps a readable peek once no height can fit two blocks.
+	rows = 18;
+	const floored = plain();
+	assert.ok(floored.some((line) => line === "┃   … +26 lines · Enter - View Block"));
+	assert.ok(floored.some((line) => line === "┃   line 4"));
+	assert.ok(!floored.some((line) => line.includes("line 5")));
+	assert.ok(floored.some((line) => line.includes("(1/2)")), "the shortened stream still scrolls");
+
+	// Growing back re-caps: the stream cache keys on the cap, not on the unchanged width alone.
+	rows = 40;
+	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Block"));
+});
+
+test("UsageView refits open block content when narrow widths share a wrap width", () => {
+	// Unbreakable tokens keep wrapped lines at the clamped minimum wrap width, where widths 15 and 12
+	// wrap identically but must still truncate differently.
+	const wideText = Array.from({ length: 30 }, (_, line) => `L${line + 1}_${"x".repeat(20)}`).join("\n");
+	const wideUsage: ContextUsageSnapshot = {
+		...usage(1_000),
+		categories: [{
+			id: "tool-output",
+			label: "Tool Output",
+			tokens: 1_000,
+			entries: [{
+				timestamp: Date.UTC(2026, 6, 11, 15, 0, 0),
+				breadcrumb: ["assistant", "bash"],
+				tokens: 1_000,
+				text: wideText,
+			}],
+		}],
+		estimatedTokens: 1_000,
+	};
+	const view = new UsageView(createTheme(), { usage: wideUsage }, () => {}, () => 40);
+
+	view.render(15);
+	view.handleInput("\r"); // category block stream
+	view.render(15);
+	view.handleInput("\r"); // full content of the capped block
+	assert.ok(view.render(15).map(stripSgr).some((line) => line.includes("L1_")), "the block view is open");
+	for (const width of [12, 15, 12]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `full block line exceeds width ${width}: ${JSON.stringify(line)}`);
+		}
+	}
 });
 
 test("UsageView compacts attached skills into pi-colored badges only in user previews", () => {
@@ -881,7 +1161,7 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 	view.render(100);
 	view.handleInput("\r");
 	const wide = view.render(100);
-	const plain = wide.map(stripSgr);
+	const plain = wide.map((line) => stripSgr(line).trimEnd());
 	const firstBadge = wide.find((line) => stripSgr(line).includes("[skill] code-style"));
 	assert.ok(firstBadge !== undefined);
 	assert.match(firstBadge, /\u001b\[38;2;31;32;33m.*\[skill\]/);
@@ -900,7 +1180,7 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 	for (const line of narrow) {
 		assert.ok(visibleWidth(line) <= 24, `skill preview line exceeds width: ${JSON.stringify(line)}`);
 	}
-	const narrowPlain = narrow.map(stripSgr);
+	const narrowPlain = narrow.map((line) => stripSgr(line).trimEnd());
 	assert.ok(narrowPlain.some((line) => line.includes("[skill]")));
 	assert.ok(narrowPlain.some((line) => line.includes("unsafe-very-long-")));
 	assert.ok(!narrowPlain.some((line) => line.includes(longUnsafeName)), "long badge name wraps across lines");

@@ -10,10 +10,10 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 
 # pi is started as `pi -e .`, so the recorded shell has to sit in the repo root
-cd "$REPO_ROOT" || exit 1 # TODO return back to starting dir
+cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.2.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.3.0) && wait "$!" || exit 1
 
 
 ## Constants
@@ -24,6 +24,7 @@ PI_COMMAND='pi -e . --session 019f7c38-d958-7d36-8d86-e22832c0d227'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/pi-web-providers'
 PI_COMMAND+=' --thinking xhigh'
+PI_COMMAND+=' --tui-mode regular'
 
 
 ## Configuration
@@ -54,15 +55,19 @@ Sleep 1
 # Open the injections view:
 # - the first Enter takes the completion;
 # - the second one submits the command;
-Type '/context injections'
+Type '/context'
+Sleep 0.5
+Type ' '
+Sleep 0.5
+Type 'injections'
 Sleep 1
 Enter 2
 
 Wait 'Context Injections'
-Sleep 3
+Sleep 2
 
 # Walk the items
-Down 19 0.1
+Down 20 0.07
 Sleep 1
 
 # Preview the selected item, then close

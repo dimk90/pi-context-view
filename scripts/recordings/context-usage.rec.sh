@@ -13,7 +13,7 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.2.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.3.0) && wait "$!" || exit 1
 
 
 ## Constants
@@ -23,6 +23,7 @@ source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.2.0) && wait "$!" || exit 
 PI_COMMAND='pi -e . --session 019f7c38-d958-7d36-8d86-e22832c0d227'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
+PI_COMMAND+=' --tui-mode regular'
 
 
 ## Configuration
@@ -56,20 +57,22 @@ Type '/context'
 Sleep 1
 Enter
 Wait 'Context Usage'
-Sleep 3
+Sleep 2
 
 # Walk a few legend categories
-Down 3 0.2
+Down 7 0.2
 Sleep 1
 Enter
-Wait 'Skills'
+Wait 'Agent Tool Call Messages'
 Sleep 2
 
 # Preview the selected category, scroll through it, then close
-Down 12 0.1
-Sleep 2
+Down 3 0.5
+Sleep 1
+Up 1
+Sleep 3
 
 Escape
-Sleep 4
+Sleep 3
 
 Render

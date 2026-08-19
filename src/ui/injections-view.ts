@@ -22,6 +22,8 @@ import {
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
+	isPageBackKey,
+	isPageForwardKey,
 	isStepBackKey,
 	isStepForwardKey,
 	normalizeTerminalRows,
@@ -29,6 +31,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
+import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 const LIST_FIXED_LINE_COUNT = 10;
 const PREVIEW_FIXED_LINE_COUNT = 8;
@@ -55,7 +58,7 @@ export async function showInjectionsView(
 ): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows);
+			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows, readWheelScrollLines(tui));
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
@@ -78,6 +81,7 @@ export class InjectionsView {
 	private readonly input: InjectionsViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
+	private readonly wheelScrollLines: number;
 	private readonly rows: InjectionRow[];
 	private readonly navigator: ListNavigator;
 	private readonly itemsById: Map<string, InjectionItem>;
@@ -94,11 +98,13 @@ export class InjectionsView {
 		input: InjectionsViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
+		wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES,
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
+		this.wheelScrollLines = wheelScrollLines;
 		this.rows = buildInjectionRows(input.snapshot);
 		this.navigator = new ListNavigator(this.rows.length, 1, this.rows.length - 2);
 		this.itemsById = collectItemsById(input.snapshot);
@@ -113,15 +119,21 @@ export class InjectionsView {
 			this.done(undefined);
 			return;
 		}
+		// One notch moves the selection one row, like a single step key.
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			if (this.navigator.moveBy(wheel)) this.clearCache();
+			return;
+		}
 		if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
 			if (this.navigator.moveBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.navigator.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.navigator.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.navigator.moveTo(0)) this.clearCache();
@@ -193,13 +205,18 @@ export class InjectionsView {
 			this.closePreview();
 			return;
 		}
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
+			return;
+		}
 		if (isStepBackKey(data)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.previewScroller.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.previewScroller.scrollTo(0)) this.clearCache();

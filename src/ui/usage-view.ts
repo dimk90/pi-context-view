@@ -1,7 +1,8 @@
 /**
  * Focused `/context usage` view: estimated context composition with a
  * proportional context-window map, pi-reported metadata, selectable category
- * rows, and an Enter-opened chronological content preview.
+ * rows, an Enter-opened chronological block stream, and uncapped content for
+ * a selected block that hides lines.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
@@ -21,6 +22,8 @@ import {
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
+	isPageBackKey,
+	isPageForwardKey,
 	isStepBackKey,
 	isStepForwardKey,
 	normalizeTerminalRows,
@@ -37,6 +40,8 @@ import {
 	type UsageMap,
 	type UsageMapCell,
 } from "./usage-map.ts";
+import { BlockNavigator, layoutPreviewBlocks, type PreviewLayout } from "./usage-preview.ts";
+import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 const USAGE_DESCRIPTION = "Estimated context for the next model request. " +
 	"Token counts are approximate and may differ from the provider's estimate.";
@@ -48,7 +53,13 @@ const INVISIBLE_REASONING_DESCRIPTION =
 const USAGE_TAIL_FIXED_LINE_COUNT = 5;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
-const PREVIEW_ENTRY_MAX_LINES = 20;
+/** The block view adds the block identity header and its preceding separator to the preview frame. */
+const BLOCK_FIXED_LINE_COUNT = PREVIEW_FIXED_LINE_COUNT + 2;
+const PREVIEW_BLOCK_MAX_LINES = 10;
+const PREVIEW_BLOCK_MIN_LINES = 4;
+/** Stream rows two blocks spend around their content: both entry headers, both markers, one separator. */
+const TWO_BLOCK_FRAME_ROWS = 5;
+const BLOCK_GUTTER = "┃";
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_LEGEND_VALUE_COLUMN = 32;
 const LEGEND_VALUE_GAP = 2;
@@ -104,11 +115,43 @@ interface LegendColumns {
 	readonly tokenWidth: number;
 }
 
+/** One navigable preview block: an entry header plus its capped content lines. */
+interface PreviewBlock {
+	/** Rendered after the two-column gutter, with the entry header first. */
+	readonly lines: readonly string[];
+	/** Content lines the per-block cap removed, shown as a trailing marker row. */
+	readonly hiddenLineCount: number;
+}
+
+/** Width- and cap-dependent block rendering cached for one category preview. */
+interface PreviewStream {
+	readonly wrapWidth: number;
+	readonly maxLines: number;
+	readonly blocks: readonly PreviewBlock[];
+	readonly layout: PreviewLayout;
+}
+
+/** Wrapped, indented content lines of one preview entry, before any cap. */
+type EntryLines = readonly string[];
+
+/** Uncapped content of every entry in the open category, wrapped for one width. */
+interface PreviewContent {
+	readonly wrapWidth: number;
+	/** Positionally aligned with the category's preview entries. */
+	readonly entries: readonly EntryLines[];
+}
+
+/** Uncapped content of the open block, wrapped and fitted for one terminal width. */
+interface BlockBody {
+	readonly width: number;
+	readonly lines: readonly string[];
+}
+
 /** Open the Usage view as a fullscreen overlay. */
 export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new UsageView(theme, input, done, () => tui.terminal.rows);
+			const view = new UsageView(theme, input, done, () => tui.terminal.rows, readWheelScrollLines(tui));
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
@@ -131,17 +174,21 @@ export class UsageView {
 	private readonly input: UsageViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
+	private readonly wheelScrollLines: number;
 	private readonly usage: ContextUsageSnapshot;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
 	private readonly previewScroller = new PreviewScroller();
+	private readonly blockNavigator = new BlockNavigator();
 	private readonly fitMapScale: number | undefined;
 	private mapScale: UsageMapScale = "window";
 	private currentWidth: number | undefined;
 	private previewRow: CategoryLegendRow | undefined;
 	private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
-	private previewLines: string[] | undefined;
-	private previewWrapWidth: number | undefined;
+	private cachedContent: PreviewContent | undefined;
+	private cachedStream: PreviewStream | undefined;
+	private openBlockIndex: number | undefined;
+	private cachedBlockBody: BlockBody | undefined;
 	private cachedWidth: number | undefined;
 	private cachedTerminalRows: number | undefined;
 	private cachedLines: string[] | undefined;
@@ -152,11 +199,13 @@ export class UsageView {
 		input: UsageViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
+		wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES,
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
+		this.wheelScrollLines = wheelScrollLines;
 		this.usage = input.usage;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
@@ -168,11 +217,19 @@ export class UsageView {
 	/** Handle category navigation, preview opening, and close keys. */
 	public handleInput(data: string): void {
 		if (this.previewRow !== undefined) {
-			this.handlePreviewInput(data);
+			// Route on the same predicate the renderer uses, so keys always target the visible level.
+			if (this.openBlockEntry(this.previewRow) === undefined) this.handlePreviewInput(data);
+			else this.handleBlockInput(data);
 			return;
 		}
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.done(undefined);
+			return;
+		}
+		// One notch moves the selection one row, like a single step key.
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			if (this.navigator.moveBy(wheel)) this.clearCache();
 			return;
 		}
 		if (matchesKey(data, "z")) {
@@ -183,9 +240,9 @@ export class UsageView {
 			if (this.navigator.moveBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.navigator.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.navigator.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.navigator.moveTo(0)) this.clearCache();
@@ -206,9 +263,7 @@ export class UsageView {
 			return this.cachedLines;
 		}
 
-		const lines = this.previewRow === undefined
-			? this.renderDashboard(width, terminalRows)
-			: this.renderPreview(width, terminalRows, this.previewRow);
+		const lines = this.renderActiveMode(width, terminalRows);
 		this.cachedWidth = width;
 		this.cachedTerminalRows = terminalRows;
 		this.cachedLines = lines;
@@ -217,9 +272,17 @@ export class UsageView {
 
 	/** Invalidate theme-dependent rendered output. */
 	public invalidate(): void {
-		this.previewLines = undefined;
-		this.previewWrapWidth = undefined;
+		this.clearPreviewContent();
 		this.clearCache();
+	}
+
+	/** Render the active level: dashboard, category block stream, or one full block. */
+	private renderActiveMode(width: number, terminalRows: number): string[] {
+		const row = this.previewRow;
+		if (row === undefined) return this.renderDashboard(width, terminalRows);
+		const entry = this.openBlockEntry(row);
+		if (entry === undefined) return this.renderPreview(width, terminalRows, row);
+		return this.renderBlockView(width, terminalRows, row, entry);
 	}
 
 	// === Dashboard mode ===
@@ -595,19 +658,54 @@ export class UsageView {
 
 	// === Preview mode ===
 
-	/** Preview scrolling and return-to-list keys. */
+	/** Block navigation, block opening, and return-to-list keys. */
 	private handlePreviewInput(data: string): void {
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.closePreview();
+			return;
+		}
+		// Blocks are selected rather than scrolled, so one notch steps one block.
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			const moved = wheel < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
+			if (moved) this.clearCache();
+			return;
+		}
+		if (matchesKey(data, Key.enter)) {
+			this.openBlock();
+		} else if (isStepBackKey(data)) {
+			if (this.blockNavigator.stepBack()) this.clearCache();
+		} else if (isStepForwardKey(data)) {
+			if (this.blockNavigator.stepForward()) this.clearCache();
+		} else if (isPageBackKey(data)) {
+			if (this.blockNavigator.page(-1)) this.clearCache();
+		} else if (isPageForwardKey(data)) {
+			if (this.blockNavigator.page(1)) this.clearCache();
+		} else if (matchesKey(data, Key.home)) {
+			if (this.blockNavigator.moveToFirst()) this.clearCache();
+		} else if (matchesKey(data, Key.end)) {
+			if (this.blockNavigator.moveToLast()) this.clearCache();
+		}
+	}
+
+	/** Full-block scrolling and return-to-blocks keys. */
+	private handleBlockInput(data: string): void {
+		if (matchesKey(data, Key.escape) || data === "q") {
+			this.closeBlock();
+			return;
+		}
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
 			return;
 		}
 		if (isStepBackKey(data)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
 			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageUp)) {
+		} else if (isPageBackKey(data)) {
 			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (matchesKey(data, Key.pageDown)) {
+		} else if (isPageForwardKey(data)) {
 			if (this.previewScroller.page(1)) this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
 			if (this.previewScroller.scrollTo(0)) this.clearCache();
@@ -616,63 +714,114 @@ export class UsageView {
 		}
 	}
 
-	/** Open the selected category's content preview; free space has no preview. */
+	/** Open the selected category's block stream; free space has no preview. */
 	private openPreview(): void {
 		const row = this.legendRows[this.navigator.selected];
 		if (row === undefined || row.type !== "category") return;
 		this.previewRow = row;
 		this.cachedPreviewEntries = undefined;
-		this.previewLines = undefined;
-		this.previewWrapWidth = undefined;
-		this.previewScroller.reset();
+		this.clearPreviewContent();
+		this.blockNavigator.reset();
 		this.clearCache();
 	}
 
 	/** Return to the list with the same selected row. */
 	private closePreview(): void {
 		this.previewRow = undefined;
+		this.openBlockIndex = undefined;
 		this.cachedPreviewEntries = undefined;
-		this.previewLines = undefined;
-		this.previewWrapWidth = undefined;
+		this.clearPreviewContent();
 		this.clearCache();
 	}
 
-	/** Scrollable chronological content stream for one category. */
+	/** Open hidden content from the selected capped block; complete and empty blocks have nothing to open. */
+	private openBlock(): void {
+		// The rendered stream carries the height-dependent cap the user sees, so it decides what Enter opens.
+		const index = this.blockNavigator.selected;
+		const block = this.cachedStream?.blocks[index];
+		if (block === undefined || block.hiddenLineCount === 0) return;
+		this.openBlockIndex = index;
+		this.cachedBlockBody = undefined;
+		this.previewScroller.reset();
+		this.clearCache();
+	}
+
+	/** Return to the block stream with the same selected block. */
+	private closeBlock(): void {
+		this.openBlockIndex = undefined;
+		this.cachedBlockBody = undefined;
+		this.clearCache();
+	}
+
+	/** Drop width- and theme-dependent preview rendering. */
+	private clearPreviewContent(): void {
+		this.cachedContent = undefined;
+		this.cachedStream = undefined;
+		this.cachedBlockBody = undefined;
+	}
+
+	/** Scrollable chronological block stream for one category. */
 	private renderPreview(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const body = this.previewBodyLines(width, row);
 		const descriptionLines = this.previewDescriptionLines(width, row);
 		const descriptionLineCount = descriptionLines.length === 0 ? 0 : descriptionLines.length + 1;
+		const stream = this.previewStream(width, previewBlockMaxLines(terminalRows, descriptionLineCount), row);
 		const viewport = calculateViewport(
-			body.length,
+			Math.max(1, stream.layout.lines.length),
 			terminalRows,
 			PREVIEW_FIXED_LINE_COUNT,
 			descriptionLineCount,
 		);
+		this.blockNavigator.setExtent(stream.layout, viewport.visibleCount);
+
+		const lines: string[] = [border, "", this.categoryHeaderLine(row, width), ""];
+		lines.push(...this.previewStreamLines(stream, viewport.visibleCount, width));
+		if (viewport.showScroll) {
+			lines.push(
+				this.fit(
+					theme.fg("dim", `${BODY_INDENT}(${this.blockNavigator.selected + 1}/${stream.blocks.length})`),
+					width,
+				),
+			);
+		}
+		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
+		lines.push("");
+		lines.push(this.fit(hintRow(theme, previewHints(stream.blocks.length)), width));
+		lines.push("", border);
+		return fitToTerminalHeight(lines, terminalRows, border);
+	}
+
+	/** Full, uncapped content of the open block below its identity header. */
+	private renderBlockView(
+		width: number,
+		terminalRows: number,
+		row: CategoryLegendRow,
+		entry: UsagePreviewEntry,
+	): string[] {
+		const theme = this.theme;
+		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
+		const body = this.blockBodyLines(width, row, entry);
+		const viewport = calculateViewport(body.length, terminalRows, BLOCK_FIXED_LINE_COUNT);
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
 
-		const lines: string[] = [border, ""];
-		const title = theme.fg("accent", theme.bold(normalizeInlineText(row.category.label)));
-		const percent = this.plainLegendPercent(row.category.tokens);
-		const meta = theme.fg(
-			"muted",
-			`${formatTokens(row.category.tokens)}${percent === "" ? "" : ` · ${percent}`} `,
-		);
-		lines.push(spreadLine(title, meta, width));
-		lines.push("");
-
+		const lines: string[] = [
+			border,
+			"",
+			this.categoryHeaderLine(row, width),
+			"",
+			this.fit(`${BODY_INDENT}${this.entryHeader(entry)}`, width),
+			"",
+		];
 		const start = this.previewScroller.offset;
 		for (let index = start; index < start + viewport.visibleCount; index++) {
 			lines.push(body[index] ?? "");
 		}
-
 		if (viewport.showScroll) {
 			lines.push(
 				this.fit(theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${body.length})`), width),
 			);
 		}
-		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(
 			this.fit(
@@ -688,22 +837,119 @@ export class UsageView {
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
-	/** Cached wrapped entry stream: bracket headers plus capped sanitized content. */
-	private previewBodyLines(width: number, row: CategoryLegendRow): string[] {
-		const wrapWidth = Math.max(10, width - BODY_INDENT.length * 2 - 1);
-		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-		const entries = this.previewEntries(row);
+	/** Accent category title with its token and percentage metadata, shared by both preview levels. */
+	private categoryHeaderLine(row: CategoryLegendRow, width: number): string {
+		const theme = this.theme;
+		const title = theme.fg("accent", theme.bold(normalizeInlineText(row.category.label)));
+		const percent = this.plainLegendPercent(row.category.tokens);
+		const meta = theme.fg(
+			"muted",
+			`${formatTokens(row.category.tokens)}${percent === "" ? "" : ` · ${percent}`} `,
+		);
+		return spreadLine(title, meta, width);
+	}
+
+	/** Visible window of the block stream, or the message an empty category shows instead. */
+	private previewStreamLines(stream: PreviewStream, visibleCount: number, width: number): string[] {
+		if (stream.blocks.length === 0) {
+			const message = this.theme.fg("muted", `${BODY_INDENT}No content captured for this category.`);
+			return Array.from({ length: visibleCount }, (_, index) => index === 0 ? this.fit(message, width) : "");
+		}
+		const start = this.blockNavigator.offset;
+		return Array.from(
+			{ length: visibleCount },
+			(_, index) => this.previewStreamLine(stream, start + index, width),
+		);
+	}
+
+	/** One stream line: blank separator, block content, or the block's truncation marker. */
+	private previewStreamLine(stream: PreviewStream, index: number, width: number): string {
+		const ref = stream.layout.lines[index];
+		if (ref === undefined) return "";
+		const block = stream.blocks[ref.blockIndex];
+		if (block === undefined) return "";
+		const selected = ref.blockIndex === this.blockNavigator.selected;
+		const line = ref.lineIndex < block.lines.length
+			? block.lines[ref.lineIndex] ?? ""
+			: this.truncationMarker(block.hiddenLineCount, selected);
+		const gutter = this.blockGutter(selected, line === "");
+		return this.fit(`${gutter}${line}`, width);
+	}
+
+	/** Accent bar marking the selected block, or the plain two-column indent. */
+	private blockGutter(selected: boolean, blankLine: boolean): string {
+		if (!selected) return blankLine ? "" : BODY_INDENT;
+		return this.theme.fg("accent", blankLine ? BLOCK_GUTTER : `${BLOCK_GUTTER} `);
+	}
+
+	/** Left-aligned truncation marker with a brighter action label on the selected block only. */
+	private truncationMarker(hiddenLineCount: number, selected: boolean): string {
+		const marker = `${BODY_INDENT}${this.theme.fg("dim", `… +${hiddenLineCount} lines`)}`;
+		if (!selected) return marker;
+		const separator = this.theme.fg("dim", " · ");
+		const action = this.theme.fg("accent", "Enter - View Block");
+		return `${marker}${separator}${action}`;
+	}
+
+	/** Cached blocks and their flattened line layout: bracket headers plus capped sanitized content. */
+	private previewStream(width: number, maxLines: number, row: CategoryLegendRow): PreviewStream {
+		const wrapWidth = previewWrapWidth(width);
+		const cached = this.cachedStream;
+		if (cached !== undefined && cached.wrapWidth === wrapWidth && cached.maxLines === maxLines) return cached;
+		const content = this.previewContent(width, row);
+		const blocks = this.previewEntries(row).map((entry, index) => {
+			const lines = content[index] ?? [];
+			return {
+				lines: [this.entryHeader(entry), ...lines.slice(0, maxLines)],
+				hiddenLineCount: Math.max(0, lines.length - maxLines),
+			};
+		});
+		this.cachedStream = {
+			wrapWidth,
+			maxLines,
+			blocks,
+			layout: layoutPreviewBlocks(blocks.map(blockHeight)),
+		};
+		return this.cachedStream;
+	}
+
+	/**
+	 * Cached uncapped content of the open category, one wrapped array per entry.
+	 * Wrapping is the expensive step and depends on width alone, so a cap that
+	 * shrinks with terminal height re-slices these lines instead of redoing it.
+	 */
+	private previewContent(width: number, row: CategoryLegendRow): readonly EntryLines[] {
+		const wrapWidth = previewWrapWidth(width);
+		if (this.cachedContent !== undefined && this.cachedContent.wrapWidth === wrapWidth) {
+			return this.cachedContent.entries;
+		}
 		const compactSkills = row.rootId === "user-messages";
-		const lines = entries.length === 0
-			? [this.fit(this.theme.fg("muted", `${BODY_INDENT}No content captured for this category.`), width)]
-			: entries.flatMap((entry, index) => [
-				...(index === 0 ? [] : [""]),
-				this.fit(`${BODY_INDENT}${this.entryHeader(entry)}`, width),
-				...this.entryContentLines(entry, wrapWidth, compactSkills),
-			]);
-		this.previewLines = lines;
-		this.previewWrapWidth = wrapWidth;
+		const entries = this.previewEntries(row)
+			.map((entry) => this.entryContentLines(entry, wrapWidth, compactSkills));
+		this.cachedContent = { wrapWidth, entries };
+		return entries;
+	}
+
+	/**
+	 * Cached uncapped content of the open block, indented in place of the stream gutter. These lines
+	 * are already fitted, so the cache key is the terminal width: narrow widths share a clamped wrap
+	 * width while still needing their own truncation.
+	 */
+	private blockBodyLines(width: number, row: CategoryLegendRow, entry: UsagePreviewEntry): readonly string[] {
+		if (this.cachedBlockBody !== undefined && this.cachedBlockBody.width === width) {
+			return this.cachedBlockBody.lines;
+		}
+		const wrapWidth = previewWrapWidth(width);
+		const content = this.entryContentLines(entry, wrapWidth, row.rootId === "user-messages");
+		const lines = content.map((line) => line === "" ? "" : this.fit(`${BODY_INDENT}${line}`, width));
+		this.cachedBlockBody = { width, lines };
 		return lines;
+	}
+
+	/** Entry behind the open block, or undefined while the block view is inactive. */
+	private openBlockEntry(row: CategoryLegendRow): UsagePreviewEntry | undefined {
+		if (this.openBlockIndex === undefined) return undefined;
+		return this.previewEntries(row)[this.openBlockIndex];
 	}
 
 	/** Collect and cache the immutable entries shared by preview body and description rendering. */
@@ -748,21 +994,15 @@ export class UsageView {
 			: [];
 	}
 
-	/** Sanitized, wrapped, per-entry-capped content lines indented under the header. */
+	/** Complete sanitized, wrapped content lines indented under the entry header. */
 	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
-		const indent = BODY_INDENT.repeat(2);
 		const lines: string[] = [];
-		let hidden = 0;
 		for (const paragraph of this.entryPreviewText(entry.text, compactSkills).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			const paragraphLines = wrapped.length === 0 ? [""] : wrapped;
-			for (const line of paragraphLines) {
-				if (lines.length < PREVIEW_ENTRY_MAX_LINES) lines.push(line === "" ? "" : `${indent}${line}`);
-				else hidden++;
-			}
+			for (const line of paragraphLines) lines.push(line === "" ? "" : `${BODY_INDENT}${line}`);
 		}
-		if (hidden === 0) return lines;
-		return [...lines, `${indent}${this.theme.fg("dim", `… +${hidden} lines`)}`];
+		return lines;
 	}
 
 	/** Sanitize raw entry text and replace complete attached skills with pi-colored badges. */
@@ -806,6 +1046,38 @@ function buildCategoryLegendRows(categories: readonly UsageCategory[]): Category
 		}
 	}
 	return rows;
+}
+
+/**
+ * Content wrap width shared by both preview levels: gutter, inner indent, and one spare column.
+ * The block view keeps the stream's narrower width, so the `… +N lines` count it opens stays exact.
+ */
+function previewWrapWidth(width: number): number {
+	return Math.max(10, width - BODY_INDENT.length * 2 - 1);
+}
+
+/**
+ * Content lines one block may show at this terminal height: enough for two whole
+ * blocks, clamped between the readable floor and the standard cap. Derived from
+ * the height alone, never from the viewport, whose scroll counter depends on the
+ * stream this cap produces.
+ */
+function previewBlockMaxLines(terminalRows: number, descriptionLineCount: number): number {
+	// Assume the counter row; a stream short enough to drop it loses at most one line per block.
+	const visibleCount = terminalRows - PREVIEW_FIXED_LINE_COUNT - descriptionLineCount - 1;
+	const fitted = Math.floor((visibleCount - TWO_BLOCK_FRAME_ROWS) / 2);
+	return Math.max(PREVIEW_BLOCK_MIN_LINES, Math.min(PREVIEW_BLOCK_MAX_LINES, fitted));
+}
+
+/** Block stream hints; the selected block carries the open affordance, and an empty stream moves nowhere. */
+function previewHints(blockCount: number): Array<readonly [string, string]> {
+	if (blockCount === 0) return [["Esc", "Back"]];
+	return [[STEP_KEY_HINT, "Navigate"], ["PgUp/PgDn", "Page"], ["Esc", "Back"]];
+}
+
+/** Stream lines one block occupies, including its truncation marker row. */
+function blockHeight(block: PreviewBlock): number {
+	return block.lines.length + (block.hiddenLineCount > 0 ? 1 : 0);
 }
 
 /** Entry-header datetime: DD-MM-YYYY HH:MM:SS in local time. */

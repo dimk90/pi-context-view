@@ -1,9 +1,18 @@
 # Changelog
 
+## `[v0.4.3]` - 19.08.2026
+
+### Changed
+* `[usage]` Add a full-content view for collapsed blocks.
+* `[usage]` Change category-view scrolling from line-by-line to block-by-block.
+* `[ui]` Add experimental mouse-wheel scrolling support (`fullscreen` mode only).
+* `[ui]` Add `Ctrl+U`/`Ctrl+D` aliases for page navigation.
+
+
 ## `[v0.4.2]` - 14.08.2026
 
 ### Fixed
-* `[ui]` Drop the `fullscreen` paging workaround (Pi 0.84.2 delivers `PgUp/PgDn` to the view in both TUI modes)
+* `[ui]` Drop the `fullscreen` paging workaround (Pi 0.84.2 delivers `PgUp/PgDn` to the view in both TUI modes).
 
 
 ## `[v0.4.1]` - 10.08.2026
