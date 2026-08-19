@@ -23,6 +23,7 @@ source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.3.0) && wait "$!" || exit 
 PI_COMMAND='pi -e . --session 019f7c38-d958-7d36-8d86-e22832c0d227'
 PI_COMMAND+=' --model anthropic/claude-opus-5 --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
+PI_COMMAND+=' --tui-mode regular'
 
 
 ## Configuration

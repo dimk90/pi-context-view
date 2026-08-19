@@ -24,6 +24,7 @@ PI_COMMAND='pi -e . --session 019f7c38-d958-7d36-8d86-e22832c0d227'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/pi-web-providers'
 PI_COMMAND+=' --thinking xhigh'
+PI_COMMAND+=' --tui-mode regular'
 
 
 ## Configuration
@@ -54,15 +55,19 @@ Sleep 1
 # Open the injections view:
 # - the first Enter takes the completion;
 # - the second one submits the command;
-Type '/context injections'
+Type '/context'
+Sleep 0.5
+Type ' '
+Sleep 0.5
+Type 'injections'
 Sleep 1
 Enter 2
 
 Wait 'Context Injections'
-Sleep 3
+Sleep 2
 
 # Walk the items
-Down 19 0.1
+Down 20 0.07
 Sleep 1
 
 # Preview the selected item, then close
