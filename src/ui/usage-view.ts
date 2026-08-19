@@ -52,7 +52,10 @@ const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 /** The block view adds the block identity header and its preceding separator to the preview frame. */
 const BLOCK_FIXED_LINE_COUNT = PREVIEW_FIXED_LINE_COUNT + 2;
-const PREVIEW_BLOCK_MAX_LINES = 14;
+const PREVIEW_BLOCK_MAX_LINES = 10;
+const PREVIEW_BLOCK_MIN_LINES = 4;
+/** Stream rows two blocks spend around their content: both entry headers, both markers, one separator. */
+const TWO_BLOCK_FRAME_ROWS = 5;
 const BLOCK_GUTTER = "┃";
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_LEGEND_VALUE_COLUMN = 32;
@@ -117,23 +120,28 @@ interface PreviewBlock {
 	readonly hiddenLineCount: number;
 }
 
-/** Width-dependent block rendering cached for one category preview. */
+/** Width- and cap-dependent block rendering cached for one category preview. */
 interface PreviewStream {
 	readonly wrapWidth: number;
+	readonly maxLines: number;
 	readonly blocks: readonly PreviewBlock[];
 	readonly layout: PreviewLayout;
+}
+
+/** Wrapped, indented content lines of one preview entry, before any cap. */
+type EntryLines = readonly string[];
+
+/** Uncapped content of every entry in the open category, wrapped for one width. */
+interface PreviewContent {
+	readonly wrapWidth: number;
+	/** Positionally aligned with the category's preview entries. */
+	readonly entries: readonly EntryLines[];
 }
 
 /** Uncapped content of the open block, wrapped and fitted for one terminal width. */
 interface BlockBody {
 	readonly width: number;
 	readonly lines: readonly string[];
-}
-
-/** Wrapped entry content with the number of lines the per-block cap removed. */
-interface EntryContent {
-	readonly lines: readonly string[];
-	readonly hiddenLineCount: number;
 }
 
 /** Open the Usage view as a fullscreen overlay. */
@@ -173,6 +181,7 @@ export class UsageView {
 	private currentWidth: number | undefined;
 	private previewRow: CategoryLegendRow | undefined;
 	private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
+	private cachedContent: PreviewContent | undefined;
 	private cachedStream: PreviewStream | undefined;
 	private openBlockIndex: number | undefined;
 	private cachedBlockBody: BlockBody | undefined;
@@ -703,11 +712,9 @@ export class UsageView {
 
 	/** Open hidden content from the selected capped block; complete and empty blocks have nothing to open. */
 	private openBlock(): void {
-		const row = this.previewRow;
-		const width = this.currentWidth;
-		if (row === undefined || width === undefined) return;
+		// The rendered stream carries the height-dependent cap the user sees, so it decides what Enter opens.
 		const index = this.blockNavigator.selected;
-		const block = this.previewStream(width, row).blocks[index];
+		const block = this.cachedStream?.blocks[index];
 		if (block === undefined || block.hiddenLineCount === 0) return;
 		this.openBlockIndex = index;
 		this.cachedBlockBody = undefined;
@@ -724,6 +731,7 @@ export class UsageView {
 
 	/** Drop width- and theme-dependent preview rendering. */
 	private clearPreviewContent(): void {
+		this.cachedContent = undefined;
 		this.cachedStream = undefined;
 		this.cachedBlockBody = undefined;
 	}
@@ -732,9 +740,9 @@ export class UsageView {
 	private renderPreview(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const stream = this.previewStream(width, row);
 		const descriptionLines = this.previewDescriptionLines(width, row);
 		const descriptionLineCount = descriptionLines.length === 0 ? 0 : descriptionLines.length + 1;
+		const stream = this.previewStream(width, previewBlockMaxLines(terminalRows, descriptionLineCount), row);
 		const viewport = calculateViewport(
 			Math.max(1, stream.layout.lines.length),
 			terminalRows,
@@ -860,23 +868,42 @@ export class UsageView {
 	}
 
 	/** Cached blocks and their flattened line layout: bracket headers plus capped sanitized content. */
-	private previewStream(width: number, row: CategoryLegendRow): PreviewStream {
+	private previewStream(width: number, maxLines: number, row: CategoryLegendRow): PreviewStream {
 		const wrapWidth = previewWrapWidth(width);
-		if (this.cachedStream !== undefined && this.cachedStream.wrapWidth === wrapWidth) return this.cachedStream;
-		const compactSkills = row.rootId === "user-messages";
-		const blocks = this.previewEntries(row).map((entry) => {
-			const content = this.entryContentLines(entry, wrapWidth, compactSkills, PREVIEW_BLOCK_MAX_LINES);
+		const cached = this.cachedStream;
+		if (cached !== undefined && cached.wrapWidth === wrapWidth && cached.maxLines === maxLines) return cached;
+		const content = this.previewContent(width, row);
+		const blocks = this.previewEntries(row).map((entry, index) => {
+			const lines = content[index] ?? [];
 			return {
-				lines: [this.entryHeader(entry), ...content.lines],
-				hiddenLineCount: content.hiddenLineCount,
+				lines: [this.entryHeader(entry), ...lines.slice(0, maxLines)],
+				hiddenLineCount: Math.max(0, lines.length - maxLines),
 			};
 		});
 		this.cachedStream = {
 			wrapWidth,
+			maxLines,
 			blocks,
 			layout: layoutPreviewBlocks(blocks.map(blockHeight)),
 		};
 		return this.cachedStream;
+	}
+
+	/**
+	 * Cached uncapped content of the open category, one wrapped array per entry.
+	 * Wrapping is the expensive step and depends on width alone, so a cap that
+	 * shrinks with terminal height re-slices these lines instead of redoing it.
+	 */
+	private previewContent(width: number, row: CategoryLegendRow): readonly EntryLines[] {
+		const wrapWidth = previewWrapWidth(width);
+		if (this.cachedContent !== undefined && this.cachedContent.wrapWidth === wrapWidth) {
+			return this.cachedContent.entries;
+		}
+		const compactSkills = row.rootId === "user-messages";
+		const entries = this.previewEntries(row)
+			.map((entry) => this.entryContentLines(entry, wrapWidth, compactSkills));
+		this.cachedContent = { wrapWidth, entries };
+		return entries;
 	}
 
 	/**
@@ -890,7 +917,7 @@ export class UsageView {
 		}
 		const wrapWidth = previewWrapWidth(width);
 		const content = this.entryContentLines(entry, wrapWidth, row.rootId === "user-messages");
-		const lines = content.lines.map((line) => line === "" ? "" : this.fit(`${BODY_INDENT}${line}`, width));
+		const lines = content.map((line) => line === "" ? "" : this.fit(`${BODY_INDENT}${line}`, width));
 		this.cachedBlockBody = { width, lines };
 		return lines;
 	}
@@ -943,24 +970,15 @@ export class UsageView {
 			: [];
 	}
 
-	/** Sanitized, wrapped content lines indented under the header, optionally capped. */
-	private entryContentLines(
-		entry: UsagePreviewEntry,
-		wrapWidth: number,
-		compactSkills: boolean,
-		maxLines = Number.POSITIVE_INFINITY,
-	): EntryContent {
+	/** Complete sanitized, wrapped content lines indented under the entry header. */
+	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
 		const lines: string[] = [];
-		let hidden = 0;
 		for (const paragraph of this.entryPreviewText(entry.text, compactSkills).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			const paragraphLines = wrapped.length === 0 ? [""] : wrapped;
-			for (const line of paragraphLines) {
-				if (lines.length < maxLines) lines.push(line === "" ? "" : `${BODY_INDENT}${line}`);
-				else hidden++;
-			}
+			for (const line of paragraphLines) lines.push(line === "" ? "" : `${BODY_INDENT}${line}`);
 		}
-		return { lines, hiddenLineCount: hidden };
+		return lines;
 	}
 
 	/** Sanitize raw entry text and replace complete attached skills with pi-colored badges. */
@@ -1012,6 +1030,19 @@ function buildCategoryLegendRows(categories: readonly UsageCategory[]): Category
  */
 function previewWrapWidth(width: number): number {
 	return Math.max(10, width - BODY_INDENT.length * 2 - 1);
+}
+
+/**
+ * Content lines one block may show at this terminal height: enough for two whole
+ * blocks, clamped between the readable floor and the standard cap. Derived from
+ * the height alone, never from the viewport, whose scroll counter depends on the
+ * stream this cap produces.
+ */
+function previewBlockMaxLines(terminalRows: number, descriptionLineCount: number): number {
+	// Assume the counter row; a stream short enough to drop it loses at most one line per block.
+	const visibleCount = terminalRows - PREVIEW_FIXED_LINE_COUNT - descriptionLineCount - 1;
+	const fitted = Math.floor((visibleCount - TWO_BLOCK_FRAME_ROWS) / 2);
+	return Math.max(PREVIEW_BLOCK_MIN_LINES, Math.min(PREVIEW_BLOCK_MAX_LINES, fitted));
 }
 
 /** Block stream hints; the selected block carries the open affordance, and an empty stream moves nowhere. */

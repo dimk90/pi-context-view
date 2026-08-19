@@ -17,6 +17,7 @@
   - Highlight the selected block with an accent `┃` gutter.
 - [ ] Add mouse wheel support for scrolling.
 - [ ] Add `Ctrl+u/d` as alias for `PgUp/PgDn`.
+- [x] Reduce amount of block's lines when terminal shrinks.
 
 
 ## v0.5.0
