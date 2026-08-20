@@ -84,6 +84,18 @@ Keep semantics in typed model fields rather than display labels:
 - detect non-custom context-only injections by diffing against the session branch;
 - treat children as a breakdown of their parent, never additional tokens in totals.
 
+## Configuration
+
+Every user-configurable value follows one contract, whatever it configures:
+
+- defaults live in code, and the global `getAgentDir()/extensions/context-view.json` carries overrides only, so later default changes still reach users who never overrode them;
+- never auto-create the file and never write missing defaults into it; only an explicit user action may create or modify it;
+- load lazily at view-open time, never in the extension factory, which also runs in invocations that never start a session; cache per runtime and re-read on mtime change;
+- a missing, unparseable, or out-of-range entry degrades to its built-in default and warns once, never failing a view;
+- writes are atomic through temp file plus rename, debounced, skipped outside `ctx.mode === "tui"`, and merged over a fresh read so concurrent edits and unknown keys survive.
+
+Configuration holds preferences only; the privacy contract below forbids storing captured prompt or message content there. [PLAN.md](PLAN.md) tracks which values are configurable, and [UI.md](UI.md) owns the rendering rules for configurable colors and map geometry.
+
 ## Privacy
 
 Raw prompt and message content stays process-local. Sanitize it before terminal rendering and reveal it only after explicit Enter preview. Never log it, add it to notifications, persist additional copies, or inject it into a later model request.

@@ -31,15 +31,18 @@
   - Writes are atomic (tmp file + rename), debounced, and skipped outside
     `ctx.mode === "tui"`; re-read and merge before writing so concurrent edits
     and unknown keys survive.
-  - Add "Customization" section to README with:
+- [ ] Add "Customization" section to README with:
     - Short tip to start with `/context config`.
-    - Link to md file with content of default config file + descriptions.
-    - "Category Colors" subsection:
+    - Link to md file with content of the default settings (json) + description.
+    - "Category Colors" sub-section:
       - Supported theme-depended and independent colors.
       - Link to the theme color names & default dark theme visualization (doc/PI-THEME-COLORS.md)
+      - Any idea for color demo distinguishable from the current one?
 - [ ] **Make context usage map size (rows, cols) configurable**:
   - Add rows and cols parameters to the config.
   - Increase default rows and cols, especially rows.
+  - Add subsection "Map Size" to README "Customization" section.
+  - Add image with demo for different map shapes.
 
 
 ## Backlog

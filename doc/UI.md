@@ -28,6 +28,13 @@ border colorizers. Never hardcode ANSI escapes, hex values, or named terminal
 colors. Use pi's injected keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and theme invalidation.
 
+A color exposed for user configuration is named by pi theme color key alone, so
+configured views still track the active theme; hex values, ANSI escapes, and
+terminal color names stay invalid in configuration as well as in code. An
+unrecognized key falls back to the built-in color for that element and warns
+once instead of failing the view. [PI-THEME-COLORS.md](PI-THEME-COLORS.md)
+lists the available keys.
+
 Titles, section names, and hint labels use Title Case (`Context Injections`,
 `Esc Close`). Key names use conventional casing (`PgUp/PgDn`). Preserve literal
 identifiers such as `pi`, `edit`, and `web_search`; descriptions use sentence
@@ -110,12 +117,17 @@ summaries. Preserve `≈` when the usage total is estimated.
 ### Context map
 
 The overview pairs a proportional map, 14×14 cells by default, with an
-interactive category legend. Cells use themed `■` for full occupancy, `◧` for
-partial occupancy, `▦` for compacted data, dim `⛝` for the auto-compact buffer,
-and dim `⛶` for free space. Allocate occupied cells from estimated category
-totals against the current map scale, which is the context window unless Fit is
-active (see [Map scale](#map-scale)); display pi-reported usage separately
-because the values may differ.
+interactive category legend. Map geometry is an input rather than a constant:
+derive the key, Block Size, and every layout decision from the live geometry,
+and clamp a requested size to what the viewport can render, so the rules in
+[Responsive rendering](#responsive-rendering) always win over a requested size.
+
+Cells use themed `■` for full occupancy, `◧` for partial occupancy, `▦` for
+compacted data, dim `⛝` for the auto-compact buffer, and dim `⛶` for free
+space. Allocate occupied cells from estimated category totals against the
+current map scale, which is the context window unless Fit is active (see
+[Map scale](#map-scale)); display pi-reported usage separately because the
+values may differ.
 
 A dedicated key appears beside the map, below the `Category:` legend and its
 scroll counter, separated from them by one empty detail row:
