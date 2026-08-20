@@ -996,13 +996,13 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	assert.match(cappedHeader ?? "", /\u001b\[38;2;7;8;9mbash/);
 	assert.ok(plainCapped.some((line) => line === "┃   line 10"));
 	assert.ok(!plainCapped.some((line) => line.includes("line 11")));
-	const marker = plainCapped.findIndex((line) => line === "┃   … +20 lines · Enter - View Block");
+	const marker = plainCapped.findIndex((line) => line === "┃   … +20 lines · Enter - View Content");
 	assert.ok(marker >= 0);
 	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3m┃ /);
 	assert.equal((plainCapped[marker] ?? "").indexOf("… +20 lines"), 4, "the marker is left-aligned");
 	assert.doesNotMatch(capped[marker] ?? "", /\u001b\[48;/);
 	assert.match(capped[marker] ?? "", /\u001b\[38;2;16;17;18m… \+20 lines/);
-	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3mEnter - View Block/);
+	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3mEnter - View Content/);
 	const cappedHints = plainCapped.find((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(cappedHints !== undefined && !cappedHints.includes("Enter"));
 	assert.ok(!capped.some((line) => line.includes("\u0007") || line.includes("evil")));
@@ -1011,7 +1011,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 		assert.ok(resized.every((line) => visibleWidth(line) <= width));
 		const resizedPlain = resized.map((line) => stripSgr(line).trimEnd());
 		assert.ok(resizedPlain.some((line) => line.startsWith("┃   … +20 lines")));
-		if (width >= 40) assert.ok(resizedPlain.some((line) => line.endsWith("Enter - View Block")));
+		if (width >= 40) assert.ok(resizedPlain.some((line) => line.endsWith("Enter - View Content")));
 	}
 
 	// Enter opens all 30 lines without the stream's cap or gutter.
@@ -1069,12 +1069,12 @@ test("UsageView shrinks the block cap with terminal height and re-caps on resize
 
 	view.render(80);
 	view.handleInput("\r");
-	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Block"), "40 rows keep 10 lines");
+	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Content"), "40 rows keep 10 lines");
 
 	// 24 rows: five content lines per block, so both blocks stay whole instead of scrolling through one.
 	rows = 24;
 	const short = plain();
-	assert.ok(short.some((line) => line === "┃   … +25 lines · Enter - View Block"));
+	assert.ok(short.some((line) => line === "┃   … +25 lines · Enter - View Content"));
 	assert.ok(short.some((line) => line === "┃   line 5"));
 	assert.ok(!short.some((line) => line.includes("line 6")));
 	assert.equal(headerCount(short), 2, "both entry headers stay visible");
@@ -1082,14 +1082,14 @@ test("UsageView shrinks the block cap with terminal height and re-caps on resize
 	// The floor keeps a readable peek once no height can fit two blocks.
 	rows = 18;
 	const floored = plain();
-	assert.ok(floored.some((line) => line === "┃   … +26 lines · Enter - View Block"));
+	assert.ok(floored.some((line) => line === "┃   … +26 lines · Enter - View Content"));
 	assert.ok(floored.some((line) => line === "┃   line 4"));
 	assert.ok(!floored.some((line) => line.includes("line 5")));
 	assert.ok(floored.some((line) => line.includes("(1/2)")), "the shortened stream still scrolls");
 
 	// Growing back re-caps: the stream cache keys on the cap, not on the unchanged width alone.
 	rows = 40;
-	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Block"));
+	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Content"));
 });
 
 test("UsageView refits open block content when narrow widths share a wrap width", () => {

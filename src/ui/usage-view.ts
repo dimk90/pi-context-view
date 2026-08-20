@@ -887,7 +887,7 @@ export class UsageView {
 		const marker = `${BODY_INDENT}${this.theme.fg("dim", `… +${hiddenLineCount} lines`)}`;
 		if (!selected) return marker;
 		const separator = this.theme.fg("dim", " · ");
-		const action = this.theme.fg("accent", "Enter - View Block");
+		const action = this.theme.fg("accent", "Enter - View Content");
 		return `${marker}${separator}${action}`;
 	}
 

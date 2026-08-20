@@ -269,7 +269,7 @@ Cap each block so two whole blocks stay visible: derive the cap from terminal
 height alone — never from the viewport, whose counter row depends on the capped
 stream — and clamp it between 4 and 10 wrapped content lines. When content is
 hidden, left-align a dim `… +N lines` marker with the block content. For the
-selected block only, append dim ` · ` and accent `Enter - View Block`. Do not
+selected block only, append dim ` · ` and accent `Enter - View Content`. Do not
 repeat that action in the footer hint row. Fully visible blocks show no Enter
 action, and Enter is a no-op for them.
 
