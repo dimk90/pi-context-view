@@ -11,12 +11,32 @@
 ## v0.5.0
 
 - [ ] **Add config file for customization**:
-  - Should be created on the first run if missing.
-  - Introduce class for holding configurable state.
-  - Missing default values (from configurable state) should be stored to the config file.
+  - Override-only: defaults live in code, the file is never auto-created on
+    first run and never backfilled with missing defaults, so later default
+    changes still reach users who did not override them.
+  - Global `getAgentDir()/extensions/pi-context-view.json` only; no project-local
+    override, so no `ctx.isProjectTrusted()` gate is needed.
+  - Load lazily on first `/context` open, never in the factory; cache per
+    runtime and re-read on mtime change so edits apply without restarting pi.
+  - Failure = defaults: a missing, unparseable, or invalid entry (unknown key,
+    unknown color name, out-of-range size) falls back to the built-in value and
+    warns once, never fails the view.
+  - Introduce a class in `src/config.ts` holding configurable state.
   - Make colors configurable for all categories.
   - The Pi's theme color names should be allowed in config.
-  - Add "Customization" section to README with note about configurable colors.
+  - Add `/context config` to write the file populated with defaults; refuse and
+    print the path when it already exists. Keep parsing, completions,
+    registration text, README usage, and command tests synchronized with the
+    new grammar.
+  - Writes are atomic (tmp file + rename), debounced, and skipped outside
+    `ctx.mode === "tui"`; re-read and merge before writing so concurrent edits
+    and unknown keys survive.
+  - Add "Customization" section to README with:
+    - Short tip to start with `/context config`.
+    - Link to md file with content of default config file + descriptions.
+    - "Category Colors" subsection:
+      - Supported theme-depended and independent colors.
+      - Link to the theme color names & default dark theme visualization (doc/PI-THEME-COLORS.md)
 - [ ] **Make context usage map size (rows, cols) configurable**:
   - Add rows and cols parameters to the config.
   - Increase default rows and cols, especially rows.
