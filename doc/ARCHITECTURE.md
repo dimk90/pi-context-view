@@ -8,6 +8,7 @@ Canonical contract for how pi-context-view captures hidden context, estimates cu
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `src/index.ts`            | Register pi lifecycle handlers, dispatch `/context`, and assemble view inputs.            |
 | `src/command.ts`          | Parse command arguments and resolve Initial through capture, probe, or degraded fallback. |
+| `src/config.ts`           | Load, validate, cache, and resolve global override-only user configuration.               |
 | `src/capture.ts`          | Own Initial, silent-probe, compaction, identity persistence, and injected-message state.  |
 | `src/measure.ts`          | Carve and estimate prompt and tool contributions without pi API access.                   |
 | `src/usage.ts`            | Classify provider-bound messages and build current usage totals and previews.             |
@@ -88,10 +89,10 @@ Keep semantics in typed model fields rather than display labels:
 
 Every user-configurable value follows one contract, whatever it configures:
 
-- defaults live in code, and the global `getAgentDir()/extensions/context-view.json` carries overrides only, so later default changes still reach users who never overrode them;
+- defaults live in code, and the global `getAgentDir()/extensions/pi-context-view.json` carries overrides only, so later default changes still reach users who never overrode them;
 - never auto-create the file and never write missing defaults into it; only an explicit user action may create or modify it;
 - load lazily at view-open time, never in the extension factory, which also runs in invocations that never start a session; cache per runtime and re-read on mtime change;
-- a missing, unparseable, or out-of-range entry degrades to its built-in default and warns once, never failing a view;
+- an absent file and omitted keys silently use defaults; an unreadable or unparseable file, unknown key, unrecognized color, or out-of-range value falls back to the applicable default and warns once per file revision, never failing a view;
 - writes are atomic through temp file plus rename, debounced, skipped outside `ctx.mode === "tui"`, and merged over a fresh read so concurrent edits and unknown keys survive.
 
 Configuration holds preferences only; the privacy contract below forbids storing captured prompt or message content there. [PLAN.md](PLAN.md) tracks which values are configurable, and [UI.md](UI.md) owns the rendering rules for configurable colors and map geometry.

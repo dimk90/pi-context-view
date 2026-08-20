@@ -123,9 +123,10 @@ and clamp a requested size to what the viewport can render, so the rules in
 [Responsive rendering](#responsive-rendering) always win over a requested size.
 
 Cells use themed `■` for full occupancy, `◧` for partial occupancy, `▦` for
-compacted data, dim `⛝` for the auto-compact buffer, and dim `⛶` for free
-space. Allocate occupied cells from estimated category totals against the
-current map scale, which is the context window unless Fit is active (see
+compacted data, `⛝` for the auto-compact buffer, and `⛶` for free space. Each
+glyph follows its category color; buffer and free space are dim by default.
+Allocate occupied cells from estimated category totals against the current map
+scale, which is the context window unless Fit is active (see
 [Map scale](#map-scale)); display pi-reported usage separately because the
 values may differ.
 
@@ -198,12 +199,16 @@ The view opens at Window and holds the chosen scale only until it closes.
 
 ### Category legend
 
-The legend uses a distinct semantic theme color for each top-level category,
-except the intentionally shared System Prompt/System Tools color. Category
-names have no trailing colons. Fill the gap before values with `dim` dot
-leaders; shorten or remove leaders before truncating labels or values. Token
-and percentage values align in separate columns, and both always denominate
-against the true context window regardless of map scale. Categories include:
+The legend uses a configurable semantic theme color for each top-level
+category; the built-in defaults are distinct except for the intentionally
+shared System Prompt/System Tools color. A category override colors its map
+cells and legend marker, while labels and values retain the shared selector
+styles. Buffer and free-space overrides also color their map cells, legend
+markers, and Block Size key glyph. Category names have no trailing colons. Fill
+the gap before values with `dim` dot leaders; shorten or remove leaders before
+truncating labels or values. Token and percentage values align in separate
+columns. Both always denominate against the true context window regardless of
+map scale. Categories include:
 
 - System Prompt, System Tools, Custom Tools, and MCP Tools;
 - Memory (`AGENTS.md`) and Skills;
