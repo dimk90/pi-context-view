@@ -13,6 +13,7 @@ Canonical contract for how pi-context-view captures hidden context, estimates cu
 | `src/measure.ts`          | Carve and estimate prompt and tool contributions without pi API access.                   |
 | `src/usage.ts`            | Classify provider-bound messages and build current usage totals and previews.             |
 | `src/model.ts`            | Define semantic capture and usage types, ownership, hierarchy, and grouping.              |
+| `src/text.ts`             | Sanitize dynamic text for the terminal before reporting or rendering it.                  |
 | `src/ui/`                 | Keep navigation, layout, preview shaping, and fullscreen rendering isolated from capture. |
 | `test/fixtures/marker.ts` | Exercise capture visibility and extension load order in lifecycle smoke tests.            |
 

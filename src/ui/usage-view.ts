@@ -10,18 +10,13 @@ import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works
 import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
 	type CategoryColors,
-	DEFAULT_CATEGORY_COLORS,
 	FREE_SPACE_CATEGORY_ID,
 	resolveCategoryColor,
 } from "../config.ts";
 import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
+import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { collectPreviewEntries } from "../usage.ts";
-import {
-	ListNavigator,
-	normalizeInlineText,
-	normalizePreviewText,
-	PreviewScroller,
-} from "./injections-model.ts";
+import { ListNavigator, PreviewScroller } from "./injections-model.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
@@ -93,8 +88,8 @@ const MAP_KEY_COMPACT_SPARE_ROWS = 2;
 export interface UsageViewInput {
 	readonly usage: ContextUsageSnapshot;
 	readonly degradedReason?: string;
-	/** Resolved global overrides; omitted by direct tests to retain built-in defaults. */
-	readonly categoryColors?: CategoryColors;
+	/** Category colors resolved from user overrides, or `DEFAULT_CATEGORY_COLORS`. */
+	readonly categoryColors: CategoryColors;
 }
 
 /** View-local denominator selected for the context map. */
@@ -217,7 +212,7 @@ export class UsageView {
 		this.getTerminalRows = getTerminalRows;
 		this.wheelScrollLines = wheelScrollLines;
 		this.usage = input.usage;
-		this.categoryColors = input.categoryColors ?? DEFAULT_CATEGORY_COLORS;
+		this.categoryColors = input.categoryColors;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
 		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable.

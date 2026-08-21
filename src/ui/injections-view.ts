@@ -6,13 +6,12 @@ import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-a
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { InitialSnapshot, InjectionItem } from "../model.ts";
+import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import {
 	buildInjectionRows,
 	collectItemsById,
 	type InjectionRow,
 	ListNavigator,
-	normalizeInlineText,
-	normalizePreviewText,
 	PreviewScroller,
 } from "./injections-model.ts";
 import {

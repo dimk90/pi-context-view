@@ -12,8 +12,11 @@ import {
 	type SilentProbeState,
 } from "./capture.ts";
 import type { InitialSnapshot } from "./model.ts";
+import { normalizePreviewText } from "./text.ts";
 
 const COMMAND_USAGE = "Usage: /context [usage|injections]";
+/** Cap for reported messages, which may quote configuration files and OS error text. */
+const MAX_REPORTED_MESSAGE_LENGTH = 500;
 const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
@@ -96,17 +99,27 @@ export async function resolveInitialCapture(
 	}
 }
 
-/** Report command errors in both interactive and headless modes. */
+/**
+ * Report command errors in both interactive and headless modes. Messages can
+ * quote untrusted text such as configuration keys, so they are sanitized and
+ * capped before reaching the terminal.
+ */
 export function reportCommandMessage(
 	context: ExtensionCommandContext,
 	message: string,
 	type: "info" | "warning" | "error",
 ): void {
+	const safeMessage = truncate(normalizePreviewText(message), MAX_REPORTED_MESSAGE_LENGTH);
 	if (context.hasUI) {
-		context.ui.notify(message, type);
+		context.ui.notify(safeMessage, type);
 		return;
 	}
-	process.stderr.write(`${message}\n`);
+	process.stderr.write(`${safeMessage}\n`);
+}
+
+/** Shorten over-long text with an ellipsis marker. */
+function truncate(text: string, maxLength: number): string {
+	return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
 }
 
 /** Explain why a silent probe cannot run now, or undefined when it can. */
