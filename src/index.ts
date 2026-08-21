@@ -138,10 +138,6 @@ export default function (pi: ExtensionAPI) {
 				reportCommandMessage(ctx, "/context requires TUI mode.", "warning");
 				return;
 			}
-			const loadedConfig = configStore.load();
-			if (loadedConfig.warnings.length > 0) {
-				reportCommandMessage(ctx, loadedConfig.warnings.join(" "), "warning");
-			}
 			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
 			if (command.view === "injections") {
 				await showInjectionsView(ctx, {
@@ -149,6 +145,11 @@ export default function (pi: ExtensionAPI) {
 					degradedReason: initial.degradedReason,
 				});
 				return;
+			}
+			// Loaded only for the Usage view, the sole consumer of configured colors.
+			const loadedConfig = configStore.load();
+			if (loadedConfig.warnings.length > 0) {
+				reportCommandMessage(ctx, loadedConfig.warnings.join(" "), "warning");
 			}
 			const current = buildNativeSnapshot({
 				systemPrompt: ctx.getSystemPrompt(),
