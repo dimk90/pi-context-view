@@ -39,6 +39,16 @@ const THEME_COLOR_NAMES = [
 	"thinkingXhigh", "thinkingMax", "bashMode",
 ] as const satisfies readonly ThemeColor[];
 
+/** Resolves to its argument only for `never`, turning a non-empty type into a compile error. */
+type AssertNever<T extends never> = T;
+
+/**
+ * Compile-time proof that the list above stays complete. `satisfies` alone
+ * rejects only removed or renamed keys; this fails the build when pi adds a
+ * theme color, which would otherwise be silently rejected as unconfigurable.
+ */
+type _EveryThemeColorIsListed = AssertNever<Exclude<ThemeColor, (typeof THEME_COLOR_NAMES)[number]>>;
+
 /**
  * Every configurable usage color: the category id the view resolves, the flat
  * config key overriding it, and the built-in default.

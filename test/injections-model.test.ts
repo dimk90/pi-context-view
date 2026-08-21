@@ -2,14 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { InitialSnapshot, InjectionItem } from "../src/model.ts";
-import {
-	buildInjectionRows,
-	collectItemsById,
-	ListNavigator,
-	normalizeInlineText,
-	normalizePreviewText,
-	PreviewScroller,
-} from "../src/ui/injections-model.ts";
+import { buildInjectionRows, collectItemsById, ListNavigator, PreviewScroller } from "../src/ui/injections-model.ts";
 
 function item(id: string, sourceId: string, native: boolean, tokens: number): InjectionItem {
 	return {
@@ -92,17 +85,6 @@ test("collectItemsById indexes every snapshot item including children", () => {
 		["base-prompt", "skills", "tool:builtin", "tool:builtin:bash", "tool:builtin:read", "web_search"],
 	);
 	assert.equal(items.get("tool:builtin:read")?.tokens, 20);
-});
-
-test("normalizePreviewText normalizes whitespace and removes terminal controls", () => {
-	assert.equal(normalizePreviewText("a\r\nb\rc\td"), "a\nb\nc    d");
-	assert.equal(normalizePreviewText("plain \u001b[31mansi\u001b[0m"), "plain ansi");
-	assert.equal(normalizePreviewText("before\u001b]0;owned\u0007after\u0008!"), "beforeafter!");
-	assert.equal(normalizePreviewText("before\u001bPpayload\u001b\\after\u009B2J"), "beforeafter");
-});
-
-test("normalizeInlineText removes terminal controls and embedded line breaks", () => {
-	assert.equal(normalizeInlineText("tool\tname\nnext\u001b]0;owned\u0007"), "tool name next");
 });
 
 test("PreviewScroller clamps scrolling to the wrapped extent", () => {

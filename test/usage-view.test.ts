@@ -6,11 +6,12 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
+	type CategoryColors,
 	DEFAULT_CATEGORY_COLORS,
 	FREE_SPACE_CATEGORY_ID,
 } from "../src/config.ts";
 import type { ContextUsageSnapshot } from "../src/model.ts";
-import { formatPercent, formatTokens, UsageView } from "../src/ui/usage-view.ts";
+import { formatPercent, formatTokens, UsageView, type UsageViewInput } from "../src/ui/usage-view.ts";
 
 const FG_COLORS: ThemeColor[] = [
 	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text",
@@ -118,9 +119,21 @@ function stripSgr(text: string): string {
 	return text.replace(/\u001b\[[\d;]*m/g, "");
 }
 
+/** Build a view over the built-in colors unless a test overrides them. */
+function createView(
+	theme: Theme,
+	input: Omit<UsageViewInput, "categoryColors"> & { readonly categoryColors?: CategoryColors },
+	done: (result: undefined) => void,
+	getTerminalRows?: () => number,
+	wheelScrollLines?: number,
+): UsageView {
+	const colors = input.categoryColors ?? DEFAULT_CATEGORY_COLORS;
+	return new UsageView(theme, { ...input, categoryColors: colors }, done, getTerminalRows, wheelScrollLines);
+}
+
 test("UsageView renders the 14x14 map and matching category legend with semantic colors", () => {
 	// Tall enough for the whole legend to sit beside the map without scrolling.
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 33);
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 33);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
@@ -220,7 +233,7 @@ test("UsageView applies configured colors to category, buffer, and free-space ma
 	categoryColors.set(AUTO_COMPACT_BUFFER_CATEGORY_ID, "warning");
 	categoryColors.set(FREE_SPACE_CATEGORY_ID, "error");
 	const configuredUsage = { ...usage(), autoCompactReserveTokens: 100_000 };
-	const view = new UsageView(createTheme(), { usage: configuredUsage, categoryColors }, () => {}, () => 34);
+	const view = createView(createTheme(), { usage: configuredUsage, categoryColors }, () => {}, () => 34);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
@@ -240,7 +253,7 @@ test("UsageView applies configured colors to category, buffer, and free-space ma
 
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
 	const zoomUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
-	const view = new UsageView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
+	const view = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
 	const windowFrame = view.render(80);
 	const windowPlain = windowFrame.map(stripSgr);
 	const windowMap = windowPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
@@ -294,7 +307,7 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 
 	view.handleInput("z");
 	assert.deepEqual(view.render(80), windowFrame);
-	const reopened = new UsageView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
+	const reopened = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
 	assert.ok(!reopened.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
 });
 
@@ -302,7 +315,7 @@ test("UsageView collapses the map key before the legend loses a row", () => {
 	// The fixture legend has 16 rows, so its counter names them as (visible/16).
 	const scrollCounter = /\(\d+\/16\)/;
 	let rows = 33;
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => rows);
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => rows);
 	assert.ok(view.render(80).map(stripSgr).some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
 
 	rows = 32;
@@ -341,18 +354,18 @@ test("UsageView collapses the map key before the legend loses a row", () => {
 });
 
 test("UsageView hides the zoom binding when its map cannot benefit", () => {
-	const narrow = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	const narrow = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	assert.ok(!narrow.render(51).map(stripSgr).some((line) => line.includes("Z Zoom")));
 	narrow.handleInput("z");
 	assert.ok(!narrow.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
 
-	const threshold = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	const threshold = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	assert.ok(threshold.render(52).map(stripSgr).some((line) => line.includes("Z Zoom")));
 	threshold.handleInput("z");
 	assert.ok(threshold.render(52).map(stripSgr).some((line) => line.includes("Zoom 1M → 51k")));
 
 	const unknownUsage: ContextUsageSnapshot = { ...usage(), reported: undefined };
-	const unknown = new UsageView(createTheme(), { usage: unknownUsage }, () => {}, () => 30);
+	const unknown = createView(createTheme(), { usage: unknownUsage }, () => {}, () => 30);
 	const unknownFrame = unknown.render(80);
 	assert.ok(!unknownFrame.map(stripSgr).some((line) => line.includes("Z Zoom")));
 	unknown.handleInput("z");
@@ -364,7 +377,7 @@ test("UsageView hides the zoom binding when its map cannot benefit", () => {
 		categories: [{ id: "user-messages", label: "User Messages", tokens: 900_000 }],
 		estimatedTokens: 900_000,
 	};
-	const full = new UsageView(createTheme(), { usage: fullUsage }, () => {}, () => 30);
+	const full = createView(createTheme(), { usage: fullUsage }, () => {}, () => 30);
 	const fullFrame = full.render(80);
 	assert.ok(!fullFrame.map(stripSgr).some((line) => line.includes("Z Zoom")));
 	full.handleInput("z");
@@ -383,7 +396,7 @@ test("UsageView drops model metadata and splits an oversized Fit label responsiv
 		categories: [{ id: "user-messages", label: "User Messages", tokens: 100_000_000_000 }],
 		estimatedTokens: 100_000_000_000,
 	};
-	const view = new UsageView(createTheme(), { usage: hugeUsage }, () => {}, () => 30);
+	const view = createView(createTheme(), { usage: hugeUsage }, () => {}, () => 30);
 	view.render(52);
 	view.handleInput("z");
 	const lines = view.render(52).map(stripSgr);
@@ -397,7 +410,7 @@ test("UsageView drops model metadata and splits an oversized Fit label responsiv
 
 test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space", () => {
 	const bufferUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
-	const view = new UsageView(createTheme(), { usage: bufferUsage }, () => {}, () => 34);
+	const view = createView(createTheme(), { usage: bufferUsage }, () => {}, () => 34);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
@@ -429,7 +442,7 @@ test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space
 });
 
 test("UsageView hides the Auto-Compact Buffer when no reserve is provided", () => {
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 34);
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 34);
 	const plain = view.render(80).map(stripSgr);
 
 	assert.ok(!plain.some((line) => line.includes("Auto-Compact Buffer")));
@@ -438,7 +451,7 @@ test("UsageView hides the Auto-Compact Buffer when no reserve is provided", () =
 });
 
 test("UsageView wraps narrow descriptions instead of truncating them", () => {
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	const lines = view.render(40).map(stripSgr);
 	const descriptionStart = lines.findIndex((line) => line.includes("Estimated context"));
 	const hintsIndex = lines.findIndex((line) => line.includes("↑↓/jk Navigate"));
@@ -457,7 +470,7 @@ test("UsageView wraps narrow descriptions instead of truncating them", () => {
 
 test("UsageView falls back to estimated post-compaction usage and closes on Escape", () => {
 	let closed = false;
-	const view = new UsageView(
+	const view = createView(
 		createTheme(),
 		{
 			usage: {
@@ -502,7 +515,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 		],
 		estimatedTokens: 1_600,
 	};
-	const view = new UsageView(createTheme(), { usage: nestedUsage }, () => {}, () => 24);
+	const view = createView(createTheme(), { usage: nestedUsage }, () => {}, () => 24);
 	const initial = view.render(80).map(stripSgr);
 	assert.ok(initial.some((line) => /• tool_1 \.{2,}\s+100\s+0%/.test(line)));
 	assert.ok(!initial.some((line) => line.includes("tool_15")));
@@ -535,7 +548,7 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 		categories: [{ id: "tool-output", label: "Tool Output", tokens: 1_500, children: tools }],
 		estimatedTokens: 1_500,
 	};
-	const view = new UsageView(createTheme(), { usage: overflowUsage }, () => {}, () => rows);
+	const view = createView(createTheme(), { usage: overflowUsage }, () => {}, () => rows);
 
 	view.render(80);
 	for (let step = 0; step < 9; step++) view.handleInput("\u001b[B");
@@ -555,7 +568,7 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 
 test("UsageView opens a category block stream and skips full previews for complete blocks", () => {
 	let closed = false;
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {
+	const view = createView(createTheme(), { usage: usage() }, () => {
 		closed = true;
 	}, () => 24);
 
@@ -642,7 +655,7 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 		estimatedTokens: 3_000,
 	};
 	const createScrollView = () =>
-		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
+		createView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
 	const arrows = createScrollView();
 	const vim = createScrollView();
 	const frame = (view: UsageView) => view.render(80).join("\n");
@@ -704,7 +717,7 @@ test("UsageView accepts Ctrl+u/d wherever it accepts the page keys", () => {
 		estimatedTokens: 2_000,
 	};
 	const createScrollView = () =>
-		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
+		createView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
 	const pageKeys = createScrollView();
 	const aliases = createScrollView();
 	const frame = (view: UsageView) => view.render(80).join("\n");
@@ -777,7 +790,7 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 	};
 	// A terminal short enough to cap both blocks, so the full-content level scrolls.
 	const createWheelView = (wheelScrollLines?: number) =>
-		new UsageView(createTheme(), { usage: wheelUsage }, () => {}, () => 24, wheelScrollLines);
+		createView(createTheme(), { usage: wheelUsage }, () => {}, () => 24, wheelScrollLines);
 	const arrows = createWheelView();
 	const wheel = createWheelView(4);
 	const frame = (view: UsageView) => view.render(80).join("\n");
@@ -859,7 +872,7 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 		}],
 		estimatedTokens: 1_352,
 	};
-	const view = new UsageView(createTheme(), { usage: thinkingUsage }, () => {}, () => 40);
+	const view = createView(createTheme(), { usage: thinkingUsage }, () => {}, () => 40);
 
 	view.render(80);
 	view.handleInput("\r");
@@ -920,7 +933,7 @@ test("UsageView previews empty categories, free space, and long content safely",
 		],
 		estimatedTokens: 4_000,
 	};
-	const view = new UsageView(createTheme(), { usage: mixedUsage }, () => {}, () => 20);
+	const view = createView(createTheme(), { usage: mixedUsage }, () => {}, () => 20);
 
 	// Category without entries: explicit empty message instead of raw content.
 	view.render(80);
@@ -1014,7 +1027,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 		],
 		estimatedTokens: 2_000,
 	};
-	const view = new UsageView(createTheme(), { usage: cappedUsage }, () => {}, () => 40);
+	const view = createView(createTheme(), { usage: cappedUsage }, () => {}, () => 40);
 
 	// Tool Output at 40 rows: 10 content lines then a dim overflow marker; escapes stripped.
 	view.render(100);
@@ -1094,7 +1107,7 @@ test("UsageView shrinks the block cap with terminal height and re-caps on resize
 		estimatedTokens: 1_000,
 	};
 	let rows = 40;
-	const view = new UsageView(createTheme(), { usage: pairUsage }, () => {}, () => rows);
+	const view = createView(createTheme(), { usage: pairUsage }, () => {}, () => rows);
 	const plain = () => view.render(80).map((line) => stripSgr(line).trimEnd());
 	const headerCount = (lines: string[]) => lines.filter((line) => line.includes("[assistant] [bash]")).length;
 
@@ -1142,7 +1155,7 @@ test("UsageView refits open block content when narrow widths share a wrap width"
 		}],
 		estimatedTokens: 1_000,
 	};
-	const view = new UsageView(createTheme(), { usage: wideUsage }, () => {}, () => 40);
+	const view = createView(createTheme(), { usage: wideUsage }, () => {}, () => 40);
 
 	view.render(15);
 	view.handleInput("\r"); // category block stream
@@ -1187,7 +1200,7 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 		}],
 		estimatedTokens: userEntry.tokens,
 	};
-	const view = new UsageView(createTheme(), { usage: userUsage }, () => {}, () => 40);
+	const view = createView(createTheme(), { usage: userUsage }, () => {}, () => 40);
 
 	view.render(100);
 	view.handleInput("\r");
@@ -1233,7 +1246,7 @@ test("UsageView leaves skill-shaped content unchanged outside User Messages", ()
 		}],
 		estimatedTokens: 10,
 	};
-	const view = new UsageView(createTheme(), { usage: toolUsage }, () => {}, () => 24);
+	const view = createView(createTheme(), { usage: toolUsage }, () => {}, () => 24);
 
 	view.render(80);
 	view.handleInput("\r");
@@ -1258,7 +1271,7 @@ test("UsageView invalidation rebuilds theme-colored preview lines", () => {
 		}],
 		estimatedTokens: 1,
 	};
-	const view = new UsageView(theme, { usage: previewUsage }, () => {}, () => 20);
+	const view = createView(theme, { usage: previewUsage }, () => {}, () => 20);
 	view.render(80);
 	view.handleInput("\r");
 	const firstHeader = view.render(80).find((line) => stripSgr(line).includes("[user]"));
@@ -1273,7 +1286,7 @@ test("UsageView invalidation rebuilds theme-colored preview lines", () => {
 
 test("UsageView hides model metadata instead of abbreviating it", () => {
 	const modelLabel = `provider/${"very-long-model-name-".repeat(4)}`;
-	const view = new UsageView(
+	const view = createView(
 		createTheme(),
 		{ usage: { ...usage(), modelLabel } },
 		() => {},
@@ -1289,7 +1302,7 @@ test("UsageView respects width and height changes", () => {
 	// Tall enough for the detailed map key to survive beside the complete legend at width 60.
 	let rows = 36;
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
-	const view = new UsageView(createTheme(), { usage: usage(), degradedReason: reason }, () => {}, () => rows);
+	const view = createView(createTheme(), { usage: usage(), degradedReason: reason }, () => {}, () => rows);
 
 	for (const width of [24, 40, 60, 80, 120]) {
 		for (const line of view.render(width)) {

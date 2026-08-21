@@ -7,6 +7,7 @@ import { CompactionState, InitialCaptureState, SilentProbeState } from "../src/c
 import {
 	getContextArgumentCompletions,
 	parseContextCommand,
+	reportCommandMessage,
 	resolveInitialCapture,
 } from "../src/command.ts";
 
@@ -34,6 +35,21 @@ test("getContextArgumentCompletions exposes only v0.2.0 views", () => {
 	);
 	assert.equal(getContextArgumentCompletions("run"), null);
 	assert.equal(getContextArgumentCompletions("unknown"), null);
+});
+
+test("reportCommandMessage sanitizes and caps untrusted message text", () => {
+	const notified: Array<{ message: string; type: string }> = [];
+	const context = {
+		hasUI: true,
+		ui: { notify: (message: string, type: string) => notified.push({ message, type }) },
+	} as unknown as ExtensionCommandContext;
+
+	reportCommandMessage(context, 'Ignoring unknown key "\u001b[31mred\u0007"', "warning");
+	reportCommandMessage(context, "x".repeat(600), "error");
+
+	assert.deepEqual(notified[0], { message: 'Ignoring unknown key "red"', type: "warning" });
+	assert.equal(notified[1]?.message.length, 500);
+	assert.ok(notified[1]?.message.endsWith("\u2026"));
 });
 
 test("resolveInitialCapture skips the probe when compaction starts while waiting for idle", async () => {

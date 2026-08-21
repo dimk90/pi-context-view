@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 
 import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
@@ -14,14 +14,14 @@ import {
 } from "../src/config.ts";
 
 /** Create one isolated override path and remove its directory after the test. */
-function createConfigPath(cleanup: (callback: () => void) => void): string {
+function createConfigPath(context: TestContext): string {
 	const directory = mkdtempSync(join(tmpdir(), "pi-context-view-config-"));
-	cleanup(() => rmSync(directory, { recursive: true, force: true }));
+	context.after(() => rmSync(directory, { recursive: true, force: true }));
 	return join(directory, "pi-context-view.json");
 }
 
 test("loadConfigFile treats an absent override file as built-in defaults", (context) => {
-	const filePath = createConfigPath((callback) => context.after(callback));
+	const filePath = createConfigPath(context);
 	const result = loadConfigFile(filePath);
 
 	assert.equal(result.config, DEFAULT_CONFIG);
@@ -34,7 +34,7 @@ test("loadConfigFile treats an absent override file as built-in defaults", (cont
 });
 
 test("loadConfigFile applies every valid flat category color override", (context) => {
-	const filePath = createConfigPath((callback) => context.after(callback));
+	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({
 		systemPromptColor: "success",
 		systemToolsColor: "error",
@@ -74,7 +74,7 @@ test("loadConfigFile applies every valid flat category color override", (context
 });
 
 test("loadConfigFile ignores invalid entries without discarding valid siblings", (context) => {
-	const filePath = createConfigPath((callback) => context.after(callback));
+	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({
 		systemPromptColor: "success",
 		skillsColor: "#ff00ff",
@@ -94,7 +94,7 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 });
 
 test("loadConfigFile degrades invalid JSON and non-object roots to defaults", (context) => {
-	const filePath = createConfigPath((callback) => context.after(callback));
+	const filePath = createConfigPath(context);
 	writeFileSync(filePath, "{");
 	const invalidJson = loadConfigFile(filePath);
 	assert.equal(invalidJson.config, DEFAULT_CONFIG);
@@ -110,7 +110,7 @@ test("loadConfigFile degrades invalid JSON and non-object roots to defaults", (c
 });
 
 test("ConfigStore warns once per revision and reloads after mtime changes", (context) => {
-	const filePath = createConfigPath((callback) => context.after(callback));
+	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({ unknownColor: "accent" }));
 	const store = new ConfigStore(filePath);
 
