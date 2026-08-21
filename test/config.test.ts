@@ -1,0 +1,132 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+
+import {
+	AUTO_COMPACT_BUFFER_CATEGORY_ID,
+	ConfigStore,
+	DEFAULT_CONFIG,
+	FREE_SPACE_CATEGORY_ID,
+	loadConfigFile,
+	resolveCategoryColor,
+} from "../src/config.ts";
+
+/** Create one isolated override path and remove its directory after the test. */
+function createConfigPath(cleanup: (callback: () => void) => void): string {
+	const directory = mkdtempSync(join(tmpdir(), "pi-context-view-config-"));
+	cleanup(() => rmSync(directory, { recursive: true, force: true }));
+	return join(directory, "pi-context-view.json");
+}
+
+test("loadConfigFile treats an absent override file as built-in defaults", (context) => {
+	const filePath = createConfigPath((callback) => context.after(callback));
+	const result = loadConfigFile(filePath);
+
+	assert.equal(result.config, DEFAULT_CONFIG);
+	assert.deepEqual(result.warnings, []);
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "mdHeading");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-tools"), "mdHeading");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, AUTO_COMPACT_BUFFER_CATEGORY_ID), "dim");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "dim");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "unknown-category"), "muted");
+});
+
+test("loadConfigFile applies every valid flat category color override", (context) => {
+	const filePath = createConfigPath((callback) => context.after(callback));
+	writeFileSync(filePath, JSON.stringify({
+		systemPromptColor: "success",
+		systemToolsColor: "error",
+		customToolsColor: "warning",
+		mcpToolsColor: "muted",
+		memoryColor: "dim",
+		skillsColor: "text",
+		userMessagesColor: "thinkingText",
+		agentTextMessagesColor: "searchMatchText",
+		agentThinkingMessagesColor: "thinkingMax",
+		agentToolCallMessagesColor: "mdCode",
+		toolOutputColor: "syntaxNumber",
+		extensionsColor: "syntaxOperator",
+		compactedDataColor: "thinkingLow",
+		autoCompactBufferColor: "borderMuted",
+		freeSpaceColor: "accent",
+	}));
+
+	const result = loadConfigFile(filePath);
+
+	assert.deepEqual(result.warnings, []);
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "success");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-tools"), "error");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "custom-tools"), "warning");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "mcp-tools"), "muted");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "context-files"), "dim");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "skills"), "text");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "user-messages"), "thinkingText");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-text-messages"), "searchMatchText");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-thinking-messages"), "thinkingMax");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-tool-call-messages"), "mdCode");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "tool-output"), "syntaxNumber");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "extension-messages"), "syntaxOperator");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "compacted-data"), "thinkingLow");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, AUTO_COMPACT_BUFFER_CATEGORY_ID), "borderMuted");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "accent");
+});
+
+test("loadConfigFile ignores invalid entries without discarding valid siblings", (context) => {
+	const filePath = createConfigPath((callback) => context.after(callback));
+	writeFileSync(filePath, JSON.stringify({
+		systemPromptColor: "success",
+		skillsColor: "#ff00ff",
+		userMessagesColor: 42,
+		unknownColor: "accent",
+	}));
+
+	const result = loadConfigFile(filePath);
+
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "success");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "skills"), "customMessageLabel");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "user-messages"), "syntaxString");
+	assert.equal(result.warnings.length, 3);
+	assert.ok(result.warnings.some((warning) => warning.includes("skillsColor")));
+	assert.ok(result.warnings.some((warning) => warning.includes("userMessagesColor")));
+	assert.ok(result.warnings.some((warning) => warning.includes("unknownColor")));
+});
+
+test("loadConfigFile degrades invalid JSON and non-object roots to defaults", (context) => {
+	const filePath = createConfigPath((callback) => context.after(callback));
+	writeFileSync(filePath, "{");
+	const invalidJson = loadConfigFile(filePath);
+	assert.equal(invalidJson.config, DEFAULT_CONFIG);
+	assert.equal(invalidJson.warnings.length, 1);
+	assert.match(invalidJson.warnings[0] ?? "", /Cannot parse/);
+
+	writeFileSync(filePath, "[]");
+	const invalidRoot = loadConfigFile(filePath);
+	assert.equal(invalidRoot.config, DEFAULT_CONFIG);
+	assert.deepEqual(invalidRoot.warnings, [
+		"pi-context-view.json must contain a JSON object. Using default configuration.",
+	]);
+});
+
+test("ConfigStore warns once per revision and reloads after mtime changes", (context) => {
+	const filePath = createConfigPath((callback) => context.after(callback));
+	writeFileSync(filePath, JSON.stringify({ unknownColor: "accent" }));
+	const store = new ConfigStore(filePath);
+
+	const first = store.load();
+	assert.equal(first.warnings.length, 1);
+	assert.deepEqual(store.load().warnings, []);
+
+	writeFileSync(filePath, JSON.stringify({ systemPromptColor: "success" }));
+	const future = new Date(Date.now() + 2_000);
+	utimesSync(filePath, future, future);
+	const changed = store.load();
+	assert.deepEqual(changed.warnings, []);
+	assert.equal(resolveCategoryColor(changed.config.categoryColors, "system-prompt"), "success");
+
+	unlinkSync(filePath);
+	const removed = store.load();
+	assert.equal(removed.config, DEFAULT_CONFIG);
+	assert.deepEqual(removed.warnings, []);
+});

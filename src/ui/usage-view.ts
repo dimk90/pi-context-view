@@ -7,6 +7,13 @@
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
+import {
+	AUTO_COMPACT_BUFFER_CATEGORY_ID,
+	type CategoryColors,
+	DEFAULT_CATEGORY_COLORS,
+	FREE_SPACE_CATEGORY_ID,
+	resolveCategoryColor,
+} from "../config.ts";
 import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
 import { collectPreviewEntries } from "../usage.ts";
 import {
@@ -86,6 +93,8 @@ const MAP_KEY_COMPACT_SPARE_ROWS = 2;
 export interface UsageViewInput {
 	readonly usage: ContextUsageSnapshot;
 	readonly degradedReason?: string;
+	/** Resolved global overrides; omitted by direct tests to retain built-in defaults. */
+	readonly categoryColors?: CategoryColors;
 }
 
 /** View-local denominator selected for the context map. */
@@ -176,6 +185,7 @@ export class UsageView {
 	private readonly getTerminalRows: () => number;
 	private readonly wheelScrollLines: number;
 	private readonly usage: ContextUsageSnapshot;
+	private readonly categoryColors: CategoryColors;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
 	private readonly previewScroller = new PreviewScroller();
@@ -207,6 +217,7 @@ export class UsageView {
 		this.getTerminalRows = getTerminalRows;
 		this.wheelScrollLines = wheelScrollLines;
 		this.usage = input.usage;
+		this.categoryColors = input.categoryColors ?? DEFAULT_CATEGORY_COLORS;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
 		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable.
@@ -485,7 +496,14 @@ export class UsageView {
 			this.fit(theme.fg("mdHeading", theme.bold("Map:")), width),
 			this.fit(this.mapKeyEntry("text", FULL_CELL, theme.fg("muted", MAP_KEY_FULL_DESCRIPTION)), width),
 			this.fit(this.mapKeyEntry("text", PARTIAL_CELL, theme.fg("muted", MAP_KEY_PART_DESCRIPTION)), width),
-			this.fit(this.mapKeyEntry("dim", FREE_CELL, `${sizeLabel}${this.blockSizeText(map, true)}`), width),
+			this.fit(
+				this.mapKeyEntry(
+					this.categoryColor(FREE_SPACE_CATEGORY_ID),
+					FREE_CELL,
+					`${sizeLabel}${this.blockSizeText(map, true)}`,
+				),
+				width,
+			),
 		];
 	}
 
@@ -502,7 +520,7 @@ export class UsageView {
 		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One category")}`;
 		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Mixed")}`;
 		const size = (withPercent: boolean) =>
-			`${theme.fg("dim", FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
+			`${theme.fg(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
 		const prefix = `${heading} ${full}${separator}${partial}${separator}`;
 		const detailed = `${prefix}${size(true)}`;
 		if (visibleWidth(detailed) <= width) return detailed;
@@ -620,13 +638,15 @@ export class UsageView {
 	/** Themed hierarchy label; the marker keeps its map color even when selected. */
 	private styledLegendLabel(row: LegendRow, selected: boolean): string {
 		if (row.type === "buffer") {
-			return `${this.theme.fg("dim", BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
+			const color = this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID);
+			return `${this.theme.fg(color, BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
 		}
 		if (row.type === "free") {
-			return `${this.theme.fg("dim", FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
+			const color = this.categoryColor(FREE_SPACE_CATEGORY_ID);
+			return `${this.theme.fg(color, FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
 		}
 		const indent = "  ".repeat(row.depth);
-		const color = categoryColor(row.rootId);
+		const color = this.categoryColor(row.rootId);
 		const marker = this.theme.fg(color, categoryMarker(row.category.id, row.depth));
 		const labelColor = selected ? "accent" : row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
 		return `${indent}${marker} ${this.theme.fg(labelColor, normalizeInlineText(row.category.label))}`;
@@ -641,12 +661,19 @@ export class UsageView {
 
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */
 	private mapCell(cell: UsageMapCell): string {
-		if (cell.fill === "buffer") return this.theme.fg("dim", BUFFER_CELL);
-		if (cell.fill === "free") return this.theme.fg("dim", FREE_CELL);
+		if (cell.fill === "buffer") {
+			return this.theme.fg(this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID), BUFFER_CELL);
+		}
+		if (cell.fill === "free") return this.theme.fg(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
 		const glyph = cell.categoryId === "compacted-data"
 			? COMPACTED_CELL
 			: cell.fill === "full" ? FULL_CELL : PARTIAL_CELL;
-		return this.theme.fg(categoryColor(cell.categoryId), glyph);
+		return this.theme.fg(this.categoryColor(cell.categoryId), glyph);
+	}
+
+	/** Resolve one category through user overrides, with a safe fallback for unknown ids. */
+	private categoryColor(categoryId: string | undefined): ThemeColor {
+		return resolveCategoryColor(this.categoryColors, categoryId);
 	}
 
 	/** Wrapped degraded-capture warning placed above the dashboard. */
@@ -1097,39 +1124,6 @@ function categoryMarker(categoryId: string, depth: number): string {
 /** Token estimate carried by category, buffer, or free-space legend rows. */
 function legendTokens(row: LegendRow): number {
 	return row.type === "category" ? row.category.tokens : row.tokens;
-}
-
-/** Stable semantic theme color for one category across map cells and legend markers. */
-function categoryColor(categoryId: string | undefined): ThemeColor {
-	switch (categoryId) {
-		case "system-prompt":
-		case "system-tools":
-			return "mdHeading";
-		case "custom-tools":
-			return "accent";
-		case "mcp-tools":
-			return "mdLink";
-		case "context-files":
-			return "mdCodeBlock";
-		case "skills":
-			return "customMessageLabel";
-		case "user-messages":
-			return "syntaxString";
-		case "agent-text-messages":
-			return "syntaxFunction";
-		case "agent-thinking-messages":
-			return "thinkingXhigh";
-		case "agent-tool-call-messages":
-			return "syntaxKeyword";
-		case "tool-output":
-			return "toolOutput";
-		case "extension-messages":
-			return "syntaxType";
-		case "compacted-data":
-			return "thinkingHigh";
-		default:
-			return "muted";
-	}
 }
 
 /** Compact token count: 951, 3.7k, 43.8k, 1M. */

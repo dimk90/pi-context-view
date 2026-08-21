@@ -11,6 +11,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
+import { ConfigStore } from "./config.ts";
 import {
 	getContextArgumentCompletions,
 	parseContextCommand,
@@ -34,6 +35,7 @@ export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
 	const probe = new SilentProbeState();
 	const compaction = new CompactionState();
+	const configStore = new ConfigStore();
 	let persistedIdentityCount = 0;
 
 	/** Persist identities (role and timestamp only, never content) not yet written this runtime. */
@@ -136,6 +138,10 @@ export default function (pi: ExtensionAPI) {
 				reportCommandMessage(ctx, "/context requires TUI mode.", "warning");
 				return;
 			}
+			const loadedConfig = configStore.load();
+			if (loadedConfig.warnings.length > 0) {
+				reportCommandMessage(ctx, loadedConfig.warnings.join(" "), "warning");
+			}
 			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
 			if (command.view === "injections") {
 				await showInjectionsView(ctx, {
@@ -162,6 +168,7 @@ export default function (pi: ExtensionAPI) {
 					autoCompactReserveTokens: readAutoCompactReserveTokens(ctx),
 				}),
 				degradedReason: initial.degradedReason,
+				categoryColors: loadedConfig.config.categoryColors,
 			});
 		},
 	});

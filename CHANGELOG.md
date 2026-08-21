@@ -1,5 +1,11 @@
 # Changelog
 
+## `[v0.5.0]` - Unreleased
+
+### New
+* `[config]` Add an override-only global config for Usage category colors.
+
+
 ## `[v0.4.3]` - 19.08.2026
 
 ### Changed

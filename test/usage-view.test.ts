@@ -4,6 +4,11 @@ import { test } from "node:test";
 import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import {
+	AUTO_COMPACT_BUFFER_CATEGORY_ID,
+	DEFAULT_CATEGORY_COLORS,
+	FREE_SPACE_CATEGORY_ID,
+} from "../src/config.ts";
 import type { ContextUsageSnapshot } from "../src/model.ts";
 import { formatPercent, formatTokens, UsageView } from "../src/ui/usage-view.ts";
 
@@ -28,6 +33,8 @@ function createTheme(): Theme {
 		muted: "#070809",
 		dim: "#101112",
 		warning: "#131415",
+		success: "#373839",
+		error: "#3a3b3c",
 		mdHeading: "#161718",
 		mdLink: "#191a1b",
 		mdCodeBlock: "#1c1d1e",
@@ -205,6 +212,30 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.match(selectedRow, /\u001b\[38;2;16;17;18m\.+/);
 	assert.match(selectedRow, /\u001b\[38;2;1;2;3m3\.7k/);
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
+});
+
+test("UsageView applies configured colors to category, buffer, and free-space markers", () => {
+	const categoryColors = new Map(DEFAULT_CATEGORY_COLORS);
+	categoryColors.set("system-prompt", "success");
+	categoryColors.set(AUTO_COMPACT_BUFFER_CATEGORY_ID, "warning");
+	categoryColors.set(FREE_SPACE_CATEGORY_ID, "error");
+	const configuredUsage = { ...usage(), autoCompactReserveTokens: 100_000 };
+	const view = new UsageView(createTheme(), { usage: configuredUsage, categoryColors }, () => {}, () => 34);
+	const lines = view.render(80);
+	const plain = lines.map(stripSgr);
+
+	const promptLine = plain.findIndex((line) => line.includes("System Prompt"));
+	const bufferLine = plain.findIndex((line) => line.includes("Auto-Compact Buffer"));
+	const freeLine = plain.findIndex((line) => line.includes("Free Space"));
+	assert.notEqual(promptLine, -1);
+	assert.notEqual(bufferLine, -1);
+	assert.notEqual(freeLine, -1);
+	assert.match(lines[promptLine] ?? "", /\u001b\[38;2;55;56;57m■/);
+	assert.match(lines[bufferLine] ?? "", /\u001b\[38;2;19;20;21m⛝/);
+	assert.match(lines[freeLine] ?? "", /\u001b\[38;2;58;59;60m⛶/);
+	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;55;56;57m■/.test(line)));
+	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;19;20;21m⛝/.test(line)));
+	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;58;59;60m⛶/.test(line)));
 });
 
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
