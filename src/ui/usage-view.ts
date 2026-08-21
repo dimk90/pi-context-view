@@ -63,6 +63,8 @@ const PREVIEW_BLOCK_MIN_LINES = 4;
 const TWO_BLOCK_FRAME_ROWS = 5;
 const BLOCK_GUTTER = "┃";
 const CURSOR_COLUMN_WIDTH = 2;
+/** Rows the notice block may occupy before it starts crowding out the map. */
+const MAX_NOTICE_LINES = 3;
 const MAX_LEGEND_VALUE_COLUMN = 32;
 const LEGEND_VALUE_GAP = 2;
 const LEGEND_LEADER_GAP = 4;
@@ -88,6 +90,8 @@ const MAP_KEY_COMPACT_SPARE_ROWS = 2;
 export interface UsageViewInput {
 	readonly usage: ContextUsageSnapshot;
 	readonly degradedReason?: string;
+	/** Non-fatal problems shown under the header, such as ignored configuration entries. */
+	readonly notices?: readonly string[];
 	/** Category colors resolved from user overrides, or `DEFAULT_CATEGORY_COLORS`. */
 	readonly categoryColors: CategoryColors;
 }
@@ -297,7 +301,7 @@ export class UsageView {
 	private renderDashboard(width: number, terminalRows: number): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const prefix = [border, "", ...this.headerLines(width), "", ...this.degradedWarningLines(width)];
+		const prefix = [border, "", ...this.headerLines(width), "", ...this.noticeLines(width)];
 		const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, "dim", width);
 		const availableDashboardRows = Math.max(
 			1,
@@ -671,11 +675,25 @@ export class UsageView {
 		return resolveCategoryColor(this.categoryColors, categoryId);
 	}
 
-	/** Wrapped degraded-capture warning placed above the dashboard. */
-	private degradedWarningLines(width: number): string[] {
-		if (this.input.degradedReason === undefined) return [];
-		const reason = normalizeInlineText(this.input.degradedReason);
-		return wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${reason}`), width);
+	/**
+	 * Wrapped notices placed above the dashboard: the degraded-capture reason
+	 * first, then configuration problems. Capped so a broken configuration file
+	 * cannot push the map and legend off the frame.
+	 */
+	private noticeLines(width: number): string[] {
+		const degraded = this.input.degradedReason === undefined ? [] : [this.input.degradedReason];
+		const blocks = [...degraded, ...this.input.notices ?? []]
+			.map((notice) => this.wrapNotice(notice, width));
+		const lines = blocks.flat();
+		if (lines.length <= MAX_NOTICE_LINES) return lines;
+		const kept = lines.slice(0, MAX_NOTICE_LINES - 1);
+		const hidden = blocks.length - countWholeBlocks(blocks, kept.length);
+		return [...kept, ...this.wrapNotice(`… +${hidden} more`, width)];
+	}
+
+	/** One sanitized notice wrapped to the available width, indented on every line. */
+	private wrapNotice(notice: string, width: number): string[] {
+		return wrapDescriptionLines(this.theme, normalizeInlineText(notice), "warning", width);
 	}
 
 	// === Preview mode ===
@@ -1095,6 +1113,18 @@ function previewBlockMaxLines(terminalRows: number, descriptionLineCount: number
 function previewHints(blockCount: number): Array<readonly [string, string]> {
 	if (blockCount === 0) return [["Esc", "Back"]];
 	return [[STEP_KEY_HINT, "Navigate"], ["PgUp/PgDn", "Page"], ["Esc", "Back"]];
+}
+
+/** Notices whose wrapped lines fit entirely into the first `keptLines` rows. */
+function countWholeBlocks(blocks: readonly (readonly string[])[], keptLines: number): number {
+	let used = 0;
+	let whole = 0;
+	for (const block of blocks) {
+		if (used + block.length > keptLines) break;
+		used += block.length;
+		whole += 1;
+	}
+	return whole;
 }
 
 /** Stream lines one block occupies, including its truncation marker row. */

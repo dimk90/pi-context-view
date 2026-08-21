@@ -251,6 +251,35 @@ test("UsageView applies configured colors to category, buffer, and free-space ma
 	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;58;59;60m⛶/.test(line)));
 });
 
+test("UsageView renders sanitized notices above the dashboard and caps the block", () => {
+	const view = createView(
+		createTheme(),
+		{
+			usage: usage(),
+			degradedReason: "Silent probe unavailable: no model is selected.",
+			notices: [
+				"Ignoring unknown pi-context-view.json key \u001b[31m\"evil\"\u001b[0m.",
+				"Ignoring invalid theme color for \"skillsColor\"; using its default.",
+				"Ignoring unknown pi-context-view.json key \"mapColor\".",
+			],
+		},
+		() => {},
+		() => 34,
+	);
+	const lines = view.render(80);
+	const plain = lines.map(stripSgr);
+
+	assert.equal(lines.length, 34);
+	assert.equal(plain[4], "  Silent probe unavailable: no model is selected.");
+	assert.equal(plain[5], "  Ignoring unknown pi-context-view.json key \"evil\".");
+	assert.equal(plain[6], "  … +2 more");
+	// Notices are warning-colored and stripped of escapes carried in configuration text.
+	assert.match(lines[4] ?? "", /\u001b\[38;2;19;20;21m/);
+	assert.doesNotMatch(lines[5] ?? "", /\u001b\[31m/);
+	assert.ok(!plain.some((line) => line.includes("skillsColor")));
+	assert.ok(plain.some((line) => /^  [■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
+});
+
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
 	const zoomUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
 	const view = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);

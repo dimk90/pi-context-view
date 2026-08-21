@@ -114,6 +114,14 @@ scale and in the narrow layout.
 Do not append the redundant word `tokens` to Usage header or category-preview
 summaries. Preserve `≈` when the usage total is estimated.
 
+Non-fatal problems appear as `warning` notices between the header and the
+dashboard, indented like other body content and wrapped to the width: the
+degraded-capture reason first, then configuration problems such as ignored
+entries. Sanitize every notice, since configuration text is untrusted. Report
+them here rather than through a notification, which the fullscreen overlay
+hides. Cap the block at three rows; when notices do not fit, keep the rows that
+fit and close with `… +N more`, counting the notices not shown in full.
+
 ### Context map
 
 The overview pairs a proportional map, 14×14 cells by default, with an
@@ -355,7 +363,7 @@ text must never appear in row descriptions.
 ## Responsive rendering
 
 Every rendered line must fit the supplied width. Fullscreen output must respect
-both terminal width and height, including borders, wrapped degraded warnings,
+both terminal width and height, including borders, wrapped notices,
 descriptions, hints, counters, and blank rows. Cache keys must include all
 layout-affecting dimensions and theme state. State changed from within a view,
 such as the Usage map scale, must invalidate cached output instead.

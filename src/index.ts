@@ -148,9 +148,6 @@ export default function (pi: ExtensionAPI) {
 			}
 			// Loaded only for the Usage view, the sole consumer of configured colors.
 			const loadedConfig = configStore.load();
-			if (loadedConfig.warnings.length > 0) {
-				reportCommandMessage(ctx, loadedConfig.warnings.join(" "), "warning");
-			}
 			const current = buildNativeSnapshot({
 				systemPrompt: ctx.getSystemPrompt(),
 				options: ctx.getSystemPromptOptions(),
@@ -169,6 +166,8 @@ export default function (pi: ExtensionAPI) {
 					autoCompactReserveTokens: readAutoCompactReserveTokens(ctx),
 				}),
 				degradedReason: initial.degradedReason,
+				// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
+				notices: loadedConfig.warnings,
 				categoryColors: loadedConfig.config.categoryColors,
 			});
 		},
