@@ -1,12 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import {
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	unlinkSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
 	ConfigStore,
+	createDefaultConfigFile,
 	DEFAULT_CONFIG,
 	FREE_SPACE_CATEGORY_ID,
 	loadConfigFile,
@@ -19,6 +28,45 @@ function createConfigPath(context: TestContext): string {
 	context.after(() => rmSync(directory, { recursive: true, force: true }));
 	return join(directory, "pi-context-view.json");
 }
+
+test("createDefaultConfigFile atomically creates every built-in default", (context) => {
+	const filePath = join(dirname(createConfigPath(context)), "extensions", "pi-context-view.json");
+
+	assert.deepEqual(createDefaultConfigFile(filePath), { type: "created", filePath });
+	const text = readFileSync(filePath, "utf8");
+	assert.ok(text.endsWith("\n"));
+	assert.deepEqual(JSON.parse(text), {
+		systemPromptColor: "mdHeading",
+		systemToolsColor: "mdHeading",
+		customToolsColor: "accent",
+		mcpToolsColor: "mdLink",
+		memoryColor: "mdCodeBlock",
+		skillsColor: "customMessageLabel",
+		userMessagesColor: "syntaxString",
+		agentTextMessagesColor: "syntaxFunction",
+		agentThinkingMessagesColor: "thinkingXhigh",
+		agentToolCallMessagesColor: "syntaxKeyword",
+		toolOutputColor: "toolOutput",
+		extensionsColor: "syntaxType",
+		compactedDataColor: "thinkingHigh",
+		autoCompactBufferColor: "dim",
+		freeSpaceColor: "dim",
+	});
+	assert.deepEqual(readdirSync(dirname(filePath)), ["pi-context-view.json"]);
+
+	const loaded = loadConfigFile(filePath);
+	assert.deepEqual(loaded.warnings, []);
+	assert.deepEqual(loaded.config.categoryColors, DEFAULT_CONFIG.categoryColors);
+});
+
+test("createDefaultConfigFile refuses to overwrite an existing file", (context) => {
+	const filePath = createConfigPath(context);
+	const existing = '{"futureSetting":true}\n';
+	writeFileSync(filePath, existing);
+
+	assert.deepEqual(createDefaultConfigFile(filePath), { type: "exists", filePath });
+	assert.equal(readFileSync(filePath, "utf8"), existing);
+});
 
 test("loadConfigFile treats an absent override file as built-in defaults", (context) => {
 	const filePath = createConfigPath(context);

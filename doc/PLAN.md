@@ -18,13 +18,13 @@
   - Keep configurable state and validation in `src/config.ts`.
   - Accept Pi foreground theme color names for every Usage category, the
     auto-compact buffer, and free space.
-- [ ] **Add `/context config` writer**:
+- [x] **Add `/context config` writer**:
   - Write the file populated with defaults; refuse and print the path when it
     already exists. Keep parsing, completions, registration text, README usage,
     and command tests synchronized with the new grammar.
-  - Writes are atomic (tmp file + rename), debounced, and skipped outside
-    `ctx.mode === "tui"`; re-read and merge before writing so concurrent edits
-    and unknown keys survive.
+  - The create-only write is atomic (tmp file + rename) and skipped outside
+    `ctx.mode === "tui"`. Debouncing and fresh-read merging remain requirements
+    for later actions that update an existing file.
 - [ ] Add "Customization" section to README with:
     - Short tip to start with `/context config`.
     - Link to md file with content of the default settings (json) + description.

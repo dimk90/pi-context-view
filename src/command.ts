@@ -14,13 +14,17 @@ import {
 import type { InitialSnapshot } from "./model.ts";
 import { normalizePreviewText } from "./text.ts";
 
-const COMMAND_USAGE = "Usage: /context [usage|injections]";
+const COMMAND_USAGE = "Usage: /context [usage|injections|config]";
+/** Slash-command palette text kept beside the grammar it describes. */
+export const CONTEXT_COMMAND_DESCRIPTION =
+	"[usage|injections|config] — Inspect context usage, injections, or create config";
 /** Cap for reported messages, which may quote configuration files and OS error text. */
 const MAX_REPORTED_MESSAGE_LENGTH = 500;
 const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
 	{ value: "injections", label: "injections", description: "Explore initial context injections" },
+	{ value: "config", label: "config", description: "Create the default configuration file" },
 ] satisfies AutocompleteItem[];
 
 /** The focused view a `/context` invocation requests. */
@@ -29,6 +33,7 @@ export type ContextView = "usage" | "injections";
 /** Parsed `/context` argument grammar. */
 export type ContextCommand =
 	| { readonly type: "view"; readonly view: ContextView }
+	| { readonly type: "config" }
 	| { readonly type: "invalid"; readonly message: string };
 
 /** Resolved Initial capture, possibly degraded to the pi-native fallback. */
@@ -48,6 +53,9 @@ export function parseContextCommand(argumentsText: string): ContextCommand {
 	}
 	if (words.length === 1 && words[0] === "injections") {
 		return { type: "view", view: "injections" };
+	}
+	if (words.length === 1 && words[0] === "config") {
+		return { type: "config" };
 	}
 	return { type: "invalid", message: COMMAND_USAGE };
 }

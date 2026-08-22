@@ -1,5 +1,5 @@
 /**
- * pi-context-view — inspect what occupies the model context.
+ * pi-context-view - inspect what occupies the model context.
  *
  * Passively captures the first real turn, or runs one on-demand silent probe
  * when a context view is opened before any real turn.
@@ -11,8 +11,9 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-import { ConfigStore } from "./config.ts";
+import { createDefaultConfigFile, type ConfigCreationResult, ConfigStore } from "./config.ts";
 import {
+	CONTEXT_COMMAND_DESCRIPTION,
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
@@ -126,7 +127,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("context", {
 		// RegisteredCommand has no argumentHint; mimic pi's `<hint> — <description>` style.
-		description: "[usage|injections] — Inspect context usage or injections",
+		description: CONTEXT_COMMAND_DESCRIPTION,
 		getArgumentCompletions: getContextArgumentCompletions,
 		handler: async (args, ctx) => {
 			const command = parseContextCommand(args);
@@ -136,6 +137,10 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (ctx.mode !== "tui") {
 				reportCommandMessage(ctx, "/context requires TUI mode.", "warning");
+				return;
+			}
+			if (command.type === "config") {
+				reportConfigCreation(ctx, createDefaultConfigFile());
 				return;
 			}
 			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
@@ -172,6 +177,30 @@ export default function (pi: ExtensionAPI) {
 			});
 		},
 	});
+}
+
+/** Report the outcome of the explicit create-only configuration command. */
+function reportConfigCreation(context: ExtensionCommandContext, result: ConfigCreationResult): void {
+	switch (result.type) {
+		case "created":
+			reportCommandMessage(context,
+				`Created default configuration: ${result.filePath}`,
+				"info",
+			);
+			break;
+		case "exists":
+			reportCommandMessage(context,
+				`Configuration already exists; left unchanged: ${result.filePath}`,
+				"warning",
+			);
+			break;
+		case "failed":
+			reportCommandMessage(context,
+				`Cannot create configuration at ${result.filePath}: ${result.reason}`,
+				"error",
+			);
+			break;
+	}
 }
 
 /**

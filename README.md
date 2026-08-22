@@ -30,6 +30,8 @@ injected by other extensions.
 - `/context usage` - open the context usage visualization.
 - `/context injections` - show the hidden parts of the context captured at
   session start or resume.
+- `/context config` - create the global configuration file populated with
+  defaults, useful for customization.
 
 ## Demo
 
@@ -64,10 +66,9 @@ pi install npm:pi-context-view
 
 `pi-context-view` does not add any instructions or messages to the model context.
 
-## Related Projects
+## My Other Stuff
 
-📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create
-  the demo GIFs.
+📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create the demo GIFs.
 
 ## License
 

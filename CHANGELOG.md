@@ -4,6 +4,7 @@
 
 ### New
 * `[config]` Add an override-only global config for Usage category colors.
+* `[config]` Add `/context config` to create a defaults-populated config file.
 
 
 ## `[v0.4.3]` - 19.08.2026
