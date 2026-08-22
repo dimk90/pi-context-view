@@ -136,12 +136,13 @@ export default function (pi: ExtensionAPI) {
 				reportCommandMessage(ctx, command.message, "error");
 				return;
 			}
-			if (ctx.mode !== "tui") {
-				reportTuiOnly(ctx, command);
-				return;
-			}
+			// Creating the file needs no UI, so it stays available in every run mode.
 			if (command.type === "config") {
 				reportConfigCreation(ctx, createDefaultConfigFile());
+				return;
+			}
+			if (ctx.mode !== "tui") {
+				reportTuiOnly(ctx, command.view);
 				return;
 			}
 			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);

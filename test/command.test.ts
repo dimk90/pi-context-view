@@ -73,17 +73,16 @@ test("reportCommandMessage sanitizes and caps untrusted message text", () => {
 	assert.ok(notified[1]?.message.endsWith("\u2026"));
 });
 
-test("reportTuiOnly names the invoked form instead of the whole command", () => {
+test("reportTuiOnly names the refused view instead of the whole command", () => {
 	const { context, notified } = createNotifyingContext();
 
-	reportTuiOnly(context, { type: "view", view: "usage" });
-	reportTuiOnly(context, { type: "view", view: "injections" });
-	reportTuiOnly(context, { type: "config" });
+	reportTuiOnly(context, "usage");
+	reportTuiOnly(context, "injections");
 
+	// Only views are refused; /context config needs no UI and runs in every mode.
 	assert.deepEqual(notified, [
 		{ message: "/context usage is available in TUI mode only.", type: "warning" },
 		{ message: "/context injections is available in TUI mode only.", type: "warning" },
-		{ message: "/context config is available in TUI mode only.", type: "warning" },
 	]);
 });
 

@@ -22,9 +22,9 @@
   - Write the file populated with defaults; refuse and print the path when it
     already exists. Keep parsing, completions, registration text, README usage,
     and command tests synchronized with the new grammar.
-  - The create-only write is one atomic `O_EXCL` create and skipped outside
-    `ctx.mode === "tui"`. Debouncing and fresh-read merging remain requirements
-    for later actions that update an existing file.
+  - The create-only write is one atomic `O_EXCL` create, available in every run
+    mode because it opens no view. Debouncing and fresh-read merging remain
+    requirements for later actions that update an existing file.
 - [ ] Add "Customization" section to README with:
     - Short tip to start with `/context config`.
     - Link to md file with content of the default settings (json) + description.

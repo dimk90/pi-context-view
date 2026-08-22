@@ -2,9 +2,10 @@
 
 This is the canonical UI reference for pi-context-view. Both `/context` views
 are focused fullscreen TUI overlays. Usage and Injections are separate views;
-there is no tab state. `/context config` is a TUI-only utility command rather
-than a third view; it reports creation, refusal, or failure through a
-notification.
+there is no tab state. `/context config` is a utility command rather than a
+third view: it opens no overlay, so it runs in every run mode and reports
+creation, refusal, or failure through a notification, or through stderr where
+no UI is available.
 
 ## Shared layout and styling
 

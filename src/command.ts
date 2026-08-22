@@ -40,9 +40,6 @@ export type ContextCommand =
 	| { readonly type: "config" }
 	| { readonly type: "invalid"; readonly message: string };
 
-/** A `/context` invocation that parsed, so it names exactly one supported form. */
-export type ValidContextCommand = Exclude<ContextCommand, { readonly type: "invalid" }>;
-
 /** Resolved Initial capture, possibly degraded to the pi-native fallback. */
 export interface InitialCaptureResult {
 	readonly snapshot: InitialSnapshot;
@@ -132,9 +129,9 @@ export function reportCommandMessage(
 	process.stderr.write(`${safeMessage}\n`);
 }
 
-/** Refuse a parsed invocation outside TUI mode, naming the form the user typed. */
-export function reportTuiOnly(context: ExtensionCommandContext, command: ValidContextCommand): void {
-	reportCommandMessage(context, `${describeContextCommand(command)} is available in TUI mode only.`, "warning");
+/** Refuse a view outside TUI mode, naming the form the user typed. */
+export function reportTuiOnly(context: ExtensionCommandContext, view: ContextView): void {
+	reportCommandMessage(context, `/context ${view} is available in TUI mode only.`, "warning");
 }
 
 /** Report the outcome of the explicit create-only configuration command. */
@@ -155,11 +152,6 @@ export function reportConfigCreation(context: ExtensionCommandContext, result: C
 			return _exhaustive;
 		}
 	}
-}
-
-/** Name the invoked form, for messages that must not describe the whole command. */
-function describeContextCommand(command: ValidContextCommand): string {
-	return command.type === "config" ? "/context config" : `/context ${command.view}`;
 }
 
 /** Shorten over-long text with an ellipsis marker. */
