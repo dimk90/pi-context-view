@@ -94,7 +94,7 @@ Every user-configurable value follows one contract, whatever it configures:
 - never auto-create the file and never write missing defaults into it; only an explicit user action may create or modify it;
 - load lazily at view-open time, never in the extension factory, which also runs in invocations that never start a session; cache per runtime and re-read on mtime change;
 - an absent file and omitted keys silently use defaults; an unreadable or unparseable file, unknown key, unrecognized color, or out-of-range value falls back to the applicable default and warns once per file revision, never failing a view;
-- `/context config` is the explicit create-only action: it is skipped outside `ctx.mode === "tui"`, writes every default atomically through a temporary file plus rename, and refuses to modify an existing path;
+- `/context config` is the explicit create-only action: it is skipped outside `ctx.mode === "tui"`, writes every default through one atomic `O_EXCL` create, and never overwrites or modifies an existing path;
 - later actions that update an existing file must be debounced and merge over a fresh read so concurrent edits and unknown keys survive.
 
 Configuration holds preferences only; the privacy contract below forbids storing captured prompt or message content there. [PLAN.md](PLAN.md) tracks which values are configurable, and [UI.md](UI.md) owns the rendering rules for configurable colors and map geometry.

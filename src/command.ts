@@ -15,9 +15,12 @@ import type { InitialSnapshot } from "./model.ts";
 import { normalizePreviewText } from "./text.ts";
 
 const COMMAND_USAGE = "Usage: /context [usage|injections|config]";
-/** Slash-command palette text kept beside the grammar it describes. */
+/**
+ * Slash-command palette text, kept beside the grammar it describes.
+ * RegisteredCommand has no argumentHint; mimic pi's `<hint> — <description>` style.
+ */
 export const CONTEXT_COMMAND_DESCRIPTION =
-	"[usage|injections|config] — Inspect context usage, injections, or create config";
+	"[usage|injections|config] - Inspect context usage, injections";
 /** Cap for reported messages, which may quote configuration files and OS error text. */
 const MAX_REPORTED_MESSAGE_LENGTH = 500;
 const DEFAULT_VIEW: ContextView = "usage";
@@ -35,6 +38,9 @@ export type ContextCommand =
 	| { readonly type: "view"; readonly view: ContextView }
 	| { readonly type: "config" }
 	| { readonly type: "invalid"; readonly message: string };
+
+/** A `/context` invocation that parsed, so it names exactly one supported form. */
+export type ValidContextCommand = Exclude<ContextCommand, { readonly type: "invalid" }>;
 
 /** Resolved Initial capture, possibly degraded to the pi-native fallback. */
 export interface InitialCaptureResult {
@@ -58,6 +64,11 @@ export function parseContextCommand(argumentsText: string): ContextCommand {
 		return { type: "config" };
 	}
 	return { type: "invalid", message: COMMAND_USAGE };
+}
+
+/** Name the invoked form, for messages that must not describe the whole command. */
+export function describeContextCommand(command: ValidContextCommand): string {
+	return command.type === "config" ? "/context config" : `/context ${command.view}`;
 }
 
 /** Complete full argument values for the supported `/context` grammar. */

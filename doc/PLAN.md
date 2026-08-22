@@ -22,7 +22,7 @@
   - Write the file populated with defaults; refuse and print the path when it
     already exists. Keep parsing, completions, registration text, README usage,
     and command tests synchronized with the new grammar.
-  - The create-only write is atomic (tmp file + rename) and skipped outside
+  - The create-only write is one atomic `O_EXCL` create and skipped outside
     `ctx.mode === "tui"`. Debouncing and fresh-read merging remain requirements
     for later actions that update an existing file.
 - [ ] Add "Customization" section to README with:

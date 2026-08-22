@@ -59,6 +59,17 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(loaded.config.categoryColors, DEFAULT_CONFIG.categoryColors);
 });
 
+test("createDefaultConfigFile reports an unusable path instead of claiming the file exists", (context) => {
+	const blockingFile = createConfigPath(context);
+	writeFileSync(blockingFile, "not a directory");
+	const filePath = join(blockingFile, "pi-context-view.json");
+
+	// mkdir reports EEXIST for a parent that is a file; only the write may mean "exists".
+	const result = createDefaultConfigFile(filePath);
+	assert.equal(result.type, "failed");
+	assert.equal(result.filePath, filePath);
+});
+
 test("createDefaultConfigFile refuses to overwrite an existing file", (context) => {
 	const filePath = createConfigPath(context);
 	const existing = '{"futureSetting":true}\n';

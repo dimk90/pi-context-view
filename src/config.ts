@@ -8,9 +8,8 @@
  * absent file or omitted value is silent; unreadable, unparseable, and invalid
  * configuration warns and degrades to defaults instead of failing a view.
  */
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { getAgentDir, type ThemeColor } from "@earendil-works/pi-coding-agent";
 
@@ -115,25 +114,23 @@ export function getConfigFilePath(): string {
 }
 
 /**
- * Atomically create the global override file populated with every built-in
- * default. An existing path is never overwritten or modified.
+ * Create the global override file populated with every built-in default. The
+ * single `O_EXCL` write is atomic and never overwrites or modifies an existing
+ * path, so a concurrent creator loses the race instead of the file's content.
  */
 export function createDefaultConfigFile(filePath: string = getConfigFilePath()): ConfigCreationResult {
-	if (existsSync(filePath)) return { type: "exists", filePath };
-
-	const directory = dirname(filePath);
-	const temporaryPath = join(directory, `.${basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
 	try {
-		mkdirSync(directory, { recursive: true });
-		writeFileSync(temporaryPath, serializeDefaultConfig(), { encoding: "utf8", flag: "wx" });
-		if (existsSync(filePath)) return { type: "exists", filePath };
-		renameSync(temporaryPath, filePath);
+		// Separate from the write below: mkdir also reports EEXIST, for a parent that is a file.
+		mkdirSync(dirname(filePath), { recursive: true });
+	} catch (error) {
+		return { type: "failed", filePath, reason: describeError(error) };
+	}
+	try {
+		writeFileSync(filePath, serializeDefaultConfig(), { encoding: "utf8", flag: "wx" });
 		return { type: "created", filePath };
 	} catch (error) {
-		if (existsSync(filePath)) return { type: "exists", filePath };
+		if (hasErrorCode(error, "EEXIST")) return { type: "exists", filePath };
 		return { type: "failed", filePath, reason: describeError(error) };
-	} finally {
-		removeTemporaryFile(temporaryPath);
 	}
 }
 
@@ -180,7 +177,8 @@ export function loadConfigFile(filePath: string): ConfigLoadResult {
 	try {
 		text = readFileSync(filePath, "utf8");
 	} catch (error) {
-		if (isMissingFileError(error)) return { config: DEFAULT_CONFIG, warnings: [] };
+		// An absent file is the expected state for users who never configured anything.
+		if (hasErrorCode(error, "ENOENT")) return { config: DEFAULT_CONFIG, warnings: [] };
 		return degraded(`Cannot read ${filePath}: ${describeError(error)}.`);
 	}
 	try {
@@ -202,15 +200,6 @@ function serializeDefaultConfig(): string {
 		Object.values(CATEGORY_COLOR_SPECS).map((spec) => [spec.key, spec.color]),
 	);
 	return `${JSON.stringify(defaults, undefined, 2)}\n`;
-}
-
-/** Best-effort cleanup for a temporary file that may already have been renamed. */
-function removeTemporaryFile(filePath: string): void {
-	try {
-		rmSync(filePath, { force: true });
-	} catch {
-		// A cleanup failure must not hide the create result.
-	}
 }
 
 /** Merge valid overrides onto the built-in defaults, reporting every ignored entry. */
@@ -254,9 +243,9 @@ function readModifiedTime(filePath: string): number | undefined {
 	}
 }
 
-/** Recognize an absent file, the expected state for users who never configured anything. */
-function isMissingFileError(error: unknown): boolean {
-	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+/** Recognize one errno code: an absent file to read, or a create-only write refusing to clobber. */
+function hasErrorCode(error: unknown, code: "ENOENT" | "EEXIST"): boolean {
+	return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 /** Normalize an unknown throw into a short reportable reason. */

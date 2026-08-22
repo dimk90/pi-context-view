@@ -11,9 +11,10 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-import { createDefaultConfigFile, type ConfigCreationResult, ConfigStore } from "./config.ts";
+import { type ConfigCreationResult, ConfigStore, createDefaultConfigFile } from "./config.ts";
 import {
 	CONTEXT_COMMAND_DESCRIPTION,
+	describeContextCommand,
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
@@ -126,7 +127,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("context", {
-		// RegisteredCommand has no argumentHint; mimic pi's `<hint> — <description>` style.
 		description: CONTEXT_COMMAND_DESCRIPTION,
 		getArgumentCompletions: getContextArgumentCompletions,
 		handler: async (args, ctx) => {
@@ -136,7 +136,8 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			if (ctx.mode !== "tui") {
-				reportCommandMessage(ctx, "/context requires TUI mode.", "warning");
+				const form = describeContextCommand(command);
+				reportCommandMessage(ctx, `${form} is available in TUI mode only.`, "warning");
 				return;
 			}
 			if (command.type === "config") {
@@ -200,6 +201,11 @@ function reportConfigCreation(context: ExtensionCommandContext, result: ConfigCr
 				"error",
 			);
 			break;
+		default: {
+			// Compile-time proof that every result variant is reported.
+			const _exhaustive: never = result;
+			return _exhaustive;
+		}
 	}
 }
 
