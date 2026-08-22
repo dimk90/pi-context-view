@@ -11,13 +11,14 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-import { type ConfigCreationResult, ConfigStore, createDefaultConfigFile } from "./config.ts";
+import { ConfigStore, createDefaultConfigFile } from "./config.ts";
 import {
 	CONTEXT_COMMAND_DESCRIPTION,
-	describeContextCommand,
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
+	reportConfigCreation,
+	reportTuiOnly,
 	resolveInitialCapture,
 } from "./command.ts";
 import {
@@ -136,8 +137,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			if (ctx.mode !== "tui") {
-				const form = describeContextCommand(command);
-				reportCommandMessage(ctx, `${form} is available in TUI mode only.`, "warning");
+				reportTuiOnly(ctx, command);
 				return;
 			}
 			if (command.type === "config") {
@@ -178,35 +178,6 @@ export default function (pi: ExtensionAPI) {
 			});
 		},
 	});
-}
-
-/** Report the outcome of the explicit create-only configuration command. */
-function reportConfigCreation(context: ExtensionCommandContext, result: ConfigCreationResult): void {
-	switch (result.type) {
-		case "created":
-			reportCommandMessage(context,
-				`Created default configuration: ${result.filePath}`,
-				"info",
-			);
-			break;
-		case "exists":
-			reportCommandMessage(context,
-				`Configuration already exists; left unchanged: ${result.filePath}`,
-				"warning",
-			);
-			break;
-		case "failed":
-			reportCommandMessage(context,
-				`Cannot create configuration at ${result.filePath}: ${result.reason}`,
-				"error",
-			);
-			break;
-		default: {
-			// Compile-time proof that every result variant is reported.
-			const _exhaustive: never = result;
-			return _exhaustive;
-		}
-	}
 }
 
 /**

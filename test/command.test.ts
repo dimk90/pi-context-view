@@ -9,8 +9,23 @@ import {
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
+	reportConfigCreation,
+	reportTuiOnly,
 	resolveInitialCapture,
 } from "../src/command.ts";
+
+/** Collect what a command reports through the TUI notification path. */
+function createNotifyingContext(): {
+	context: ExtensionCommandContext;
+	notified: Array<{ message: string; type: string }>;
+} {
+	const notified: Array<{ message: string; type: string }> = [];
+	const context = {
+		hasUI: true,
+		ui: { notify: (message: string, type: string) => notified.push({ message, type }) },
+	} as unknown as ExtensionCommandContext;
+	return { context, notified };
+}
 
 test("parseContextCommand defaults to Usage and accepts the explicit grammar", () => {
 	assert.deepEqual(parseContextCommand(""), { type: "view", view: "usage" });
@@ -29,7 +44,7 @@ test("parseContextCommand defaults to Usage and accepts the explicit grammar", (
 test("command registration and completions expose the supported grammar", () => {
 	assert.equal(
 		CONTEXT_COMMAND_DESCRIPTION,
-		"[usage|injections|config] — Inspect context usage, injections, or create config",
+		"[usage|injections|config] - Inspect context usage, injections",
 	);
 	assert.deepEqual(
 		getContextArgumentCompletions("")?.map((item) => item.value),
@@ -48,11 +63,7 @@ test("command registration and completions expose the supported grammar", () => 
 });
 
 test("reportCommandMessage sanitizes and caps untrusted message text", () => {
-	const notified: Array<{ message: string; type: string }> = [];
-	const context = {
-		hasUI: true,
-		ui: { notify: (message: string, type: string) => notified.push({ message, type }) },
-	} as unknown as ExtensionCommandContext;
+	const { context, notified } = createNotifyingContext();
 
 	reportCommandMessage(context, 'Ignoring unknown key "\u001b[31mred\u0007"', "warning");
 	reportCommandMessage(context, "x".repeat(600), "error");
@@ -60,6 +71,36 @@ test("reportCommandMessage sanitizes and caps untrusted message text", () => {
 	assert.deepEqual(notified[0], { message: 'Ignoring unknown key "red"', type: "warning" });
 	assert.equal(notified[1]?.message.length, 500);
 	assert.ok(notified[1]?.message.endsWith("\u2026"));
+});
+
+test("reportTuiOnly names the invoked form instead of the whole command", () => {
+	const { context, notified } = createNotifyingContext();
+
+	reportTuiOnly(context, { type: "view", view: "usage" });
+	reportTuiOnly(context, { type: "view", view: "injections" });
+	reportTuiOnly(context, { type: "config" });
+
+	assert.deepEqual(notified, [
+		{ message: "/context usage is available in TUI mode only.", type: "warning" },
+		{ message: "/context injections is available in TUI mode only.", type: "warning" },
+		{ message: "/context config is available in TUI mode only.", type: "warning" },
+	]);
+});
+
+test("reportConfigCreation reports every create outcome with its own severity", () => {
+	const { context, notified } = createNotifyingContext();
+	const filePath = "/agent/extensions/pi-context-view.json";
+
+	reportConfigCreation(context, { type: "created", filePath });
+	reportConfigCreation(context, { type: "exists", filePath });
+	// OS error text is untrusted, so it must reach the terminal sanitized.
+	reportConfigCreation(context, { type: "failed", filePath, reason: "EACCES: \u001b[31mdenied\u0007" });
+
+	assert.deepEqual(notified, [
+		{ message: `Created default configuration: ${filePath}`, type: "info" },
+		{ message: `Configuration already exists; left unchanged: ${filePath}`, type: "warning" },
+		{ message: `Cannot create configuration at ${filePath}: EACCES: denied`, type: "error" },
+	]);
 });
 
 test("resolveInitialCapture skips the probe when compaction starts while waiting for idle", async () => {

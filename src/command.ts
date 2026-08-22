@@ -11,6 +11,7 @@ import {
 	type InitialCaptureState,
 	type SilentProbeState,
 } from "./capture.ts";
+import type { ConfigCreationResult } from "./config.ts";
 import type { InitialSnapshot } from "./model.ts";
 import { normalizePreviewText } from "./text.ts";
 
@@ -64,11 +65,6 @@ export function parseContextCommand(argumentsText: string): ContextCommand {
 		return { type: "config" };
 	}
 	return { type: "invalid", message: COMMAND_USAGE };
-}
-
-/** Name the invoked form, for messages that must not describe the whole command. */
-export function describeContextCommand(command: ValidContextCommand): string {
-	return command.type === "config" ? "/context config" : `/context ${command.view}`;
 }
 
 /** Complete full argument values for the supported `/context` grammar. */
@@ -134,6 +130,36 @@ export function reportCommandMessage(
 		return;
 	}
 	process.stderr.write(`${safeMessage}\n`);
+}
+
+/** Refuse a parsed invocation outside TUI mode, naming the form the user typed. */
+export function reportTuiOnly(context: ExtensionCommandContext, command: ValidContextCommand): void {
+	reportCommandMessage(context, `${describeContextCommand(command)} is available in TUI mode only.`, "warning");
+}
+
+/** Report the outcome of the explicit create-only configuration command. */
+export function reportConfigCreation(context: ExtensionCommandContext, result: ConfigCreationResult): void {
+	switch (result.type) {
+		case "created":
+			reportCommandMessage(context, `Created default configuration: ${result.filePath}`, "info");
+			break;
+		case "exists":
+			reportCommandMessage(context, `Configuration already exists; left unchanged: ${result.filePath}`, "warning");
+			break;
+		case "failed":
+			reportCommandMessage(context, `Cannot create configuration at ${result.filePath}: ${result.reason}`, "error");
+			break;
+		default: {
+			// Compile-time proof that every result variant is reported.
+			const _exhaustive: never = result;
+			return _exhaustive;
+		}
+	}
+}
+
+/** Name the invoked form, for messages that must not describe the whole command. */
+function describeContextCommand(command: ValidContextCommand): string {
+	return command.type === "config" ? "/context config" : `/context ${command.view}`;
 }
 
 /** Shorten over-long text with an ellipsis marker. */

@@ -57,6 +57,10 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	const loaded = loadConfigFile(filePath);
 	assert.deepEqual(loaded.warnings, []);
 	assert.deepEqual(loaded.config.categoryColors, DEFAULT_CONFIG.categoryColors);
+
+	// Repeating the command hits the write's EEXIST, the only branch that may report "exists".
+	assert.deepEqual(createDefaultConfigFile(filePath), { type: "exists", filePath });
+	assert.equal(readFileSync(filePath, "utf8"), text);
 });
 
 test("createDefaultConfigFile reports an unusable path instead of claiming the file exists", (context) => {
@@ -77,6 +81,20 @@ test("createDefaultConfigFile refuses to overwrite an existing file", (context) 
 
 	assert.deepEqual(createDefaultConfigFile(filePath), { type: "exists", filePath });
 	assert.equal(readFileSync(filePath, "utf8"), existing);
+});
+
+test("ConfigStore picks up a file created after its first load", (context) => {
+	const filePath = createConfigPath(context);
+	const store = new ConfigStore(filePath);
+	assert.equal(store.load().config, DEFAULT_CONFIG);
+
+	assert.equal(createDefaultConfigFile(filePath).type, "created");
+
+	const created = store.load();
+	assert.deepEqual(created.warnings, []);
+	assert.deepEqual(created.config.categoryColors, DEFAULT_CONFIG.categoryColors);
+	// A re-read builds its own map; the shared default instance would prove a stale cache.
+	assert.notEqual(created.config, DEFAULT_CONFIG);
 });
 
 test("loadConfigFile treats an absent override file as built-in defaults", (context) => {
