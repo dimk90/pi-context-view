@@ -57,7 +57,7 @@ Track synthetic user and assistant messages only by exact role and timestamp. Fi
 
 Persist role-and-timestamp identities, never content, in `pi-context-view:probe-identities` custom entries on `agent_settled` and `session_shutdown`. Restore all prior identities on `session_start` so filtering survives resume, reload, and fork. Never infer probe identity from empty content.
 
-`waitForIdle()` does not cover manual compaction. Track `session_before_compact` until `session_compact`, signal abort, `agent_settled`, or a subsequent agent run proves compaction ended. While compaction is active, return the degraded fallback without starting or consuming the probe attempt.
+`waitForIdle()` does not cover manual compaction. Track `session_before_compact` until its signal aborts or pi reports the outcome: pi 0.84.3 and newer close every observed compaction with exactly one of `session_compact` or `session_compact_failed`, so do not re-derive the end from later runs. On older pi the failure event never arrives and a failed compaction keeps the degraded fallback until the session ends. While compaction is active, return the degraded fallback without starting or consuming the probe attempt.
 
 Always restore the working-row state in `finally`. A missing model, missing authentication, startup failure, timeout, or active compaction returns a current pi-native prompt/tool snapshot with a precise reason that extension additions were not observed. A timed-out run remains owned until it settles so its delayed synthetic messages are still sanitized and filtered.
 

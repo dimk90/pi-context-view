@@ -61,7 +61,12 @@ export default function (pi: ExtensionAPI) {
 		compaction.begin(event.signal);
 	});
 
+	// Pi ends every observed compaction with exactly one of these two events.
 	pi.on("session_compact", () => {
+		compaction.finish();
+	});
+
+	pi.on("session_compact_failed", () => {
 		compaction.finish();
 	});
 
@@ -70,8 +75,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", (event) => {
-		// Any new run proves a failed or cancelled manual compaction has ended.
-		compaction.finish();
 		probe.beginRun(event.prompt);
 		capture.prepare(event.systemPromptOptions);
 	});
@@ -107,8 +110,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
-		// Auto-compaction failures have no session_compact event.
-		compaction.finish();
 		if (!probe.isCurrentRun) return;
 		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
 		probe.settle(capture.snapshot !== undefined);

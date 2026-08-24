@@ -1,5 +1,12 @@
 # Changelog
 
+## `[v0.5.0]` - Unreleased
+
+### Fixed
+* `[context]` Rebuild the session baseline once, not on every LLM request ([#1](https://github.com/dimk90/pi-context-view/pull/1) by  [@kaushikvira](https://github.com/kaushikvira)).
+* `[probe]` Unblock the silent probe after a failed compaction (Pi `0.84.3` `session_compact_failed`).
+
+
 ## `[v0.4.3]` - 19.08.2026
 
 ### Changed
