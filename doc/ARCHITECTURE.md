@@ -30,6 +30,8 @@ context            → read the final system prompt and active tools, then freez
 
 `event.systemPromptOptions` is available in `before_agent_start`, not `session_start`. Copy the structured options there, but do not freeze the prompt or tool set: later `before_agent_start` handlers may edit the prompt or call `pi.setActiveTools()`. Finalize in the first `context` event with `ctx.getSystemPrompt()` and pi's then-active tools.
 
+Once frozen, later `context` events skip the `buildSessionContext()` baseline rebuild and the `finalize()` call, which would only return the existing snapshot, while still filtering persisted synthetic identities from the event messages.
+
 Initial represents the first context observable by this extension runtime, whether from a real turn or the explicit silent probe. Never overwrite it. Conditional contributions inactive for that run are absent. Prompt and tool capture is load-order independent; message changes from later `context` handlers and provider-payload rewrites remain unobservable.
 
 Compare context-event messages with `buildSessionContext()` for the current session branch. Preserve custom messages and structurally unmatched non-custom messages so provider-context-only injections are not lost. Own every nested prompt, tool, message, source, and child value retained by the snapshot.
