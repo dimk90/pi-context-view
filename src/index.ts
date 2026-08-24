@@ -91,22 +91,18 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("context", (event, ctx) => {
 		const messages = probe.filterMessages(event.messages);
-		// The Initial snapshot freezes on the first context event; a repeat
-		// finalize would discard its inputs, so skip the O(session) baseline
-		// rebuild and the no-op finalize once the snapshot exists.
-		if (capture.snapshot === undefined) {
-			const baselineMessages = probe.filterMessages(
+		// Lazy: this event fires once per LLM request, but only the freezing call
+		// reads these inputs, and the baseline rebuild alone is O(session).
+		capture.finalize(() => ({
+			systemPrompt: ctx.getSystemPrompt(),
+			messages,
+			baselineMessages: probe.filterMessages(
 				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
-			);
-			capture.finalize({
-				systemPrompt: ctx.getSystemPrompt(),
-				messages,
-				baselineMessages,
-				allTools: pi.getAllTools(),
-				activeToolNames: pi.getActiveTools(),
-				origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
-			});
-		}
+			),
+			allTools: pi.getAllTools(),
+			activeToolNames: pi.getActiveTools(),
+			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
+		}));
 		return messages === event.messages ? undefined : { messages };
 	});
 

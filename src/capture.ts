@@ -111,11 +111,14 @@ export class InitialCaptureState {
 	/**
 	 * Freeze the Initial snapshot from the first context event. Returns the
 	 * existing snapshot on repeat calls, or undefined when `prepare()` never ran.
+	 * `buildInput` runs only on the call that freezes, so callers may collect
+	 * expensive inputs there without paying for them once per later event.
 	 */
-	public finalize(input: CaptureFinalization): InitialSnapshot | undefined {
+	public finalize(buildInput: () => CaptureFinalization): InitialSnapshot | undefined {
 		if (this.initialSnapshot !== undefined) return this.initialSnapshot;
 		if (this.pendingPreparation === undefined) return undefined;
 
+		const input = buildInput();
 		const preparation = this.pendingPreparation;
 		const tools = captureActiveTools(input.allTools, input.activeToolNames, {
 			toolSnippets: preparation.toolSnippets,

@@ -169,14 +169,14 @@ test("InitialCaptureState owns prepared options before later handlers can mutate
 	state.prepare(options);
 	if (options.toolSnippets !== undefined) options.toolSnippets.search = "Changed snippet";
 
-	const snapshot = state.finalize({
+	const snapshot = state.finalize(() => ({
 		systemPrompt: "Base\n- search: Original snippet",
 		messages: [],
 		baselineMessages: [],
 		allTools: [tool("search", "npm:web")],
 		activeToolNames: ["search"],
 		origin: "real-turn",
-	});
+	}));
 
 	assert.ok(snapshot !== undefined);
 	const search = snapshot.groups.flatMap((group) => group.items).find((entry) => entry.label === "search");
@@ -192,7 +192,7 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 
 	state.prepare(firstOptions);
 	state.prepare(finalOptions);
-	const first = state.finalize({
+	const first = state.finalize(() => ({
 		systemPrompt: "CUSTOM",
 		messages: [message],
 		baselineMessages: [message],
@@ -200,7 +200,7 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 		activeToolNames: [],
 		origin: "real-turn",
 		capturedAt,
-	});
+	}));
 	assert.ok(first !== undefined);
 	assert.equal(first.groups[0]?.items[0]?.label, "Custom Prompt (--system-prompt)");
 	assert.equal(first.groups[1]?.items[0]?.text, "captured");
@@ -208,14 +208,14 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 	if (message.role === "custom") message.content = "changed";
 	capturedAt.setFullYear(2000);
 	state.prepare({ cwd: "/different" });
-	const second = state.finalize({
+	const second = state.finalize(() => ({
 		systemPrompt: "DIFFERENT",
 		messages: [],
 		baselineMessages: [],
 		allTools: [],
 		activeToolNames: [],
 		origin: "synthetic-probe",
-	});
+	}));
 
 	assert.strictEqual(second, first);
 	assert.equal(second.groups[1]?.items[0]?.text, "captured");
@@ -225,14 +225,14 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 test("InitialCaptureState does not finalize before prepare", () => {
 	const state = new InitialCaptureState();
 	assert.equal(
-		state.finalize({
+		state.finalize(() => ({
 			systemPrompt: "prompt",
 			messages: [],
 			baselineMessages: [],
 			allTools: [],
 			activeToolNames: [],
 			origin: "real-turn",
-		}),
+		})),
 		undefined,
 	);
 });
