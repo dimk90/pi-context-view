@@ -139,6 +139,53 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	assert.equal(builtin?.tokens, childTokens);
 });
 
+test("analyzeSystemPrompt breaks tool items into reconciling prompt and definition sections", () => {
+	const guidelines = ["Use search when the user asks for current information", "Cite sources"];
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		selectedTools: ["read", "search"],
+		toolSnippets: { read: "Read files", search: "Search the web" },
+		promptGuidelines: guidelines,
+	});
+	const tools: ToolSlice[] = [
+		{
+			name: "read",
+			description: "Read files",
+			parametersJson: "{}",
+			snippet: "Read files",
+			guidelines: [],
+			source: "builtin",
+		},
+		{
+			name: "search",
+			description: "Search",
+			parametersJson: '{"q":"string"}',
+			snippet: "Search the web",
+			guidelines,
+			source: "npm:web",
+		},
+	];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, tools);
+	const search = items.find((entry) => entry.id === "tool:npm:web:search");
+	assert.deepEqual(
+		search?.sections?.map((section) => section.label),
+		["Prompt Snippet", "Guidelines", "Definition"],
+	);
+	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
+	assert.equal(search?.sections?.[1]?.text, `\n- ${guidelines[0]}\n- ${guidelines[1]}`);
+	assert.equal(search?.sections?.[2]?.text, 'search: Search\n{"q":"string"}');
+	// Sections partition the item without changing what it contributes.
+	assert.equal(search?.sections?.map((section) => section.text).join(""), search?.text);
+	assert.equal(search?.sections?.reduce((sum, section) => sum + section.tokens, 0), search?.tokens);
+
+	const builtin = items.find((entry) => entry.id === "tool:builtin")?.children?.[0];
+	assert.deepEqual(builtin?.sections?.map((section) => section.label), ["Definition"]);
+	assert.equal(builtin?.sections?.[0]?.tokens, builtin?.tokens);
+	const base = items.find((entry) => entry.id === "base-prompt");
+	assert.doesNotMatch(base?.text ?? "", /Cite sources|search: Search the web/);
+});
+
 test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt tool guidance", () => {
 	const filePath = "./AGENTS.md";
 	const contextBlock = [
@@ -172,6 +219,7 @@ test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.equal(search?.text, "search: Search\n{}");
+	assert.deepEqual(search?.sections?.map((section) => section.label), ["Definition"]);
 	assert.equal(base?.text.trim(), "CUSTOM PROMPT");
 });
 

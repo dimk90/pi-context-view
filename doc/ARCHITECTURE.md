@@ -85,7 +85,9 @@ Keep semantics in typed model fields rather than display labels:
 - represent chained prompt edits as one unattributable extension aggregate;
 - treat `customType` as a message type, not necessarily a package identity;
 - detect non-custom context-only injections by diffing against the session branch;
-- treat children as a breakdown of their parent, never additional tokens in totals.
+- treat children as a breakdown of their parent, never additional tokens in totals;
+- retain labeled preview sections as typed parts of an item, with token shares
+  that reconcile to the parent rather than adding to it.
 
 ## Configuration
 

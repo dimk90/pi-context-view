@@ -5,7 +5,7 @@
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { InitialSnapshot, InjectionItem } from "../model.ts";
+import type { InitialSnapshot, InjectionItem, InjectionSection } from "../model.ts";
 import {
 	buildInjectionRows,
 	collectItemsById,
@@ -195,6 +195,7 @@ export class InjectionsView {
 	}
 
 	public invalidate(): void {
+		this.clearPreviewContent();
 		this.clearCache();
 	}
 
@@ -231,17 +232,21 @@ export class InjectionsView {
 		const item = this.itemsById.get(row.itemId);
 		if (item === undefined) return;
 		this.previewItem = item;
-		this.previewLines = undefined;
-		this.previewWrapWidth = undefined;
+		this.clearPreviewContent();
 		this.previewScroller.reset();
 		this.clearCache();
 	}
 
 	private closePreview(): void {
 		this.previewItem = undefined;
+		this.clearPreviewContent();
+		this.clearCache();
+	}
+
+	/** Drop width- and theme-dependent preview rendering. */
+	private clearPreviewContent(): void {
 		this.previewLines = undefined;
 		this.previewWrapWidth = undefined;
-		this.clearCache();
 	}
 
 	private renderPreview(width: number, terminalRows: number, item: InjectionItem): string[] {
@@ -282,9 +287,38 @@ export class InjectionsView {
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-		const text = normalizePreviewText(item.text);
+		const lines = this.previewBodyLines(item, wrapWidth);
+		this.previewLines = lines;
+		this.previewWrapWidth = wrapWidth;
+		return lines;
+	}
+
+	/** Label every known part of an item; render raw text when no breakdown exists. */
+	private previewBodyLines(item: InjectionItem, wrapWidth: number): string[] {
+		const sections = item.sections ?? [];
+		if (sections.length === 0) return this.wrappedTextLines(item.text, wrapWidth);
 		const lines: string[] = [];
-		for (const paragraph of text.split("\n")) {
+		for (const section of sections) {
+			if (lines.length > 0) lines.push("");
+			lines.push(...this.sectionHeaderLines(section, wrapWidth));
+			// Carved prompt lines start with the break that separated them; drop it to sit under the subheader.
+			lines.push(...this.wrappedTextLines(section.text.replace(/^\n+/, ""), wrapWidth));
+		}
+		return lines;
+	}
+
+	/** Bold subheader naming one section and its share of the item estimate. */
+	private sectionHeaderLines(section: InjectionSection, wrapWidth: number): string[] {
+		const theme = this.theme;
+		const label = theme.fg("mdHeading", theme.bold(normalizeInlineText(section.label)));
+		const tokens = theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
+		return wrapTextWithAnsi(`${label}${tokens}`, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
+	}
+
+	/** Wrap sanitized text into indented preview lines, keeping blank lines. */
+	private wrappedTextLines(text: string, wrapWidth: number): string[] {
+		const lines: string[] = [];
+		for (const paragraph of normalizePreviewText(text).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			if (wrapped.length === 0) {
 				lines.push("");
@@ -292,8 +326,6 @@ export class InjectionsView {
 			}
 			for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
 		}
-		this.previewLines = lines;
-		this.previewWrapWidth = wrapWidth;
 		return lines;
 	}
 

@@ -352,6 +352,14 @@ source, and estimated tokens in the header; wrap content to available width and
 support arrow and page scrolling. Escape returns to the same selected row. Raw
 text must never appear in row descriptions.
 
+When a tool item has multiple captured parts, separate them under `Prompt
+Snippet`, `Guidelines`, and `Definition` subheaders as applicable. Render each
+subheader bold in `mdHeading`, followed by its muted ` · N tokens` share, and
+place one blank row between sections. Section shares must reconcile exactly
+with the item estimate and never add to it. Show the applicable subheader even
+when `Definition` is the tool's only captured part; omit sections that have no
+captured text rather than rendering zero-token placeholders.
+
 ## Responsive rendering
 
 Every rendered line must fit the supplied width. Fullscreen output must respect

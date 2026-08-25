@@ -15,6 +15,7 @@ import {
 	AGGREGATE_SOURCE_ID,
 	type InjectionItem,
 	type InjectionKind,
+	type InjectionSection,
 	type InjectionSource,
 	PI_SOURCE_ID,
 } from "./model.ts";
@@ -104,7 +105,12 @@ export function analyzeSystemPrompt(
 
 /** Same chars/4 heuristic pi's estimateTokens uses for text content. */
 export function textTokens(text: string): number {
-	return Math.ceil(text.length / 4);
+	return charTokens(text.length);
+}
+
+/** Token estimate for an already known character count. */
+function charTokens(chars: number): number {
+	return Math.ceil(chars / 4);
 }
 
 /**
@@ -115,28 +121,17 @@ export function textTokens(text: string): number {
 function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], carvedSpans: Span[]): void {
 	const builtinChildren: InjectionItem[] = [];
 	for (const tool of tools) {
-		const definition = `${tool.name}: ${tool.description}\n${tool.parametersJson}`;
+		const definition: SectionDraft = {
+			label: "Definition",
+			text: `${tool.name}: ${tool.description}\n${tool.parametersJson}`,
+		};
 		if (tool.source === "builtin") {
-			builtinChildren.push(createItem(`tool:builtin:${tool.name}`, "tool", PI_SOURCE, tool.name, definition));
+			builtinChildren.push(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, [definition]));
 			continue;
 		}
-		let promptText = "";
-		if (tool.snippet !== undefined) {
-			const span = findExactSpan(base, `\n- ${tool.name}: ${tool.snippet}`);
-			if (span !== undefined) {
-				promptText += base.slice(span.start, span.end);
-				carvedSpans.push(span);
-			}
-		}
-		for (const guideline of tool.guidelines) {
-			const span = findExactSpan(base, `\n- ${guideline.trim()}`);
-			if (span !== undefined) {
-				promptText += base.slice(span.start, span.end);
-				carvedSpans.push(span);
-			}
-		}
+		const sections = [...carveToolPromptSections(base, tool, carvedSpans), definition];
 		const source = extensionSource(tool.source);
-		items.push(createItem(`tool:${tool.source}:${tool.name}`, "tool", source, tool.name, promptText + definition));
+		items.push(createToolItem(`tool:${tool.source}:${tool.name}`, source, tool.name, sections));
 	}
 	if (builtinChildren.length > 0) {
 		builtinChildren.sort((a, b) => b.tokens - a.tokens);
@@ -149,6 +144,39 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 			children: builtinChildren,
 		});
 	}
+}
+
+/** One labeled part of a tool item's text, before it receives its token share. */
+interface SectionDraft {
+	readonly label: string;
+	readonly text: string;
+}
+
+/**
+ * Carve the Available tools snippet and the Guidelines bullets this tool
+ * contributes out of the base prompt, so its prompt lines are attributed to
+ * the tool that produced them.
+ */
+function carveToolPromptSections(base: string, tool: ToolSlice, carvedSpans: Span[]): SectionDraft[] {
+	const sections: SectionDraft[] = [];
+	const snippet = tool.snippet === undefined
+		? undefined
+		: carvePromptLine(base, `\n- ${tool.name}: ${tool.snippet}`, carvedSpans);
+	if (snippet !== undefined) sections.push({ label: "Prompt Snippet", text: snippet });
+	let guidelines = "";
+	for (const guideline of tool.guidelines) {
+		guidelines += carvePromptLine(base, `\n- ${guideline.trim()}`, carvedSpans) ?? "";
+	}
+	if (guidelines.length > 0) sections.push({ label: "Guidelines", text: guidelines });
+	return sections;
+}
+
+/** Record one exact prompt line as carved and return its text, when present. */
+function carvePromptLine(base: string, line: string, carvedSpans: Span[]): string | undefined {
+	const span = findExactSpan(base, line);
+	if (span === undefined) return undefined;
+	carvedSpans.push(span);
+	return base.slice(span.start, span.end);
 }
 
 /** Measure context-file contents without counting pi's XML transport scaffolding. */
@@ -238,6 +266,34 @@ function createItem(
 		tokens: textTokens(text),
 		text,
 	};
+}
+
+/** Build a tool item whose raw text is exactly the concatenation of its sections. */
+function createToolItem(
+	id: string,
+	source: InjectionSource,
+	label: string,
+	sections: SectionDraft[],
+): InjectionItem {
+	const text = sections.map((section) => section.text).join("");
+	return { ...createItem(id, "tool", source, label, text), sections: allocateSectionTokens(sections) };
+}
+
+/**
+ * Give each section its share of the item estimate. Shares are cumulative
+ * differences rather than independently rounded counts, so they always sum to
+ * the item total.
+ */
+function allocateSectionTokens(sections: SectionDraft[]): InjectionSection[] {
+	let chars = 0;
+	let allocated = 0;
+	return sections.map((section) => {
+		chars += section.text.length;
+		const cumulative = charTokens(chars);
+		const tokens = cumulative - allocated;
+		allocated = cumulative;
+		return { ...section, tokens };
+	});
 }
 
 /** Build an aggregate whose totals exactly reconcile with its child items. */

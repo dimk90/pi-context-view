@@ -348,6 +348,108 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	assert.match(view.render(80).join("\n"), /preview line 0 /);
 });
 
+test("InjectionsView preview labels every known section", () => {
+	const snippet = "\n- search: Search the web";
+	const guidelines = "\n- Use search when the user asks for current information\n- Cite sources";
+	const definition = 'search: Search\n{"q":"string"}';
+	const sectioned: InjectionItem = {
+		...item("search", "npm:web", false, 30),
+		kind: "tool",
+		text: `${snippet}${guidelines}${definition}`,
+		sections: [
+			{ label: "Prompt Snippet", text: snippet, tokens: 6 },
+			{ label: "Guidelines", text: guidelines, tokens: 17 },
+			{ label: "Definition", text: definition, tokens: 7 },
+		],
+	};
+	const plain: InjectionItem = {
+		...item("read", "npm:web", false, 7),
+		kind: "tool",
+		text: definition,
+		sections: [{ label: "Definition", text: definition, tokens: 7 }],
+	};
+	const toolGroup = group("npm:web", false, [sectioned, plain]);
+	const theme = createTheme();
+	const view = new InjectionsView(theme, {
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-10T12:00:00Z"),
+			groups: [toolGroup],
+			totalTokens: toolGroup.totalTokens,
+		},
+	}, () => {});
+
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	for (const width of [60, 80, 120]) {
+		const rendered = view.render(width);
+		for (const line of rendered) {
+			assert.ok(visibleWidth(line) <= width, `preview line exceeds width ${width}: ${line}`);
+		}
+		assert.match(rendered.map((line) => stripSgr(line)).join("\n"), /Prompt Snippet · 6 tokens/);
+	}
+	const lines = view.render(80);
+	const plainLines = lines.map((line) => stripSgr(line));
+	const snippetIndex = plainLines.indexOf("  Prompt Snippet · 6 tokens");
+	const guidelinesIndex = plainLines.indexOf("  Guidelines · 17 tokens");
+	const definitionIndex = plainLines.indexOf("  Definition · 7 tokens");
+	assert.ok(snippetIndex > 0, "missing Prompt Snippet subheader");
+	assert.ok(guidelinesIndex > snippetIndex, "Guidelines does not follow Prompt Snippet");
+	assert.ok(definitionIndex > guidelinesIndex, "Definition does not follow Guidelines");
+	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("mdHeading", theme.bold("Guidelines"))));
+	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("muted", " · 17 tokens")));
+	// Section bodies start directly below their subheader, separated only between sections.
+	assert.equal(plainLines[snippetIndex + 1], "  - search: Search the web");
+	assert.equal(plainLines[guidelinesIndex + 1], "  - Use search when the user asks for current information");
+	assert.equal(plainLines[guidelinesIndex + 2], "  - Cite sources");
+	assert.equal(plainLines[guidelinesIndex - 1], "");
+	assert.equal(plainLines[definitionIndex + 1], "  search: Search");
+
+	// A single known section retains the same labeled structure.
+	view.handleInput("\u001b");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const singleSection = view.render(80).map((line) => stripSgr(line));
+	const singleDefinitionIndex = singleSection.indexOf("  Definition · 7 tokens");
+	assert.ok(singleDefinitionIndex > 0, "missing Definition subheader");
+	assert.equal(singleSection[singleDefinitionIndex + 1], "  search: Search");
+});
+
+test("InjectionsView invalidation rebuilds theme-colored section subheaders", () => {
+	const theme = createTheme();
+	const originalFg = theme.fg.bind(theme);
+	let colorCode = 31;
+	theme.fg = (color, text) => `\u001b[${colorCode}m${originalFg(color, text)}\u001b[0m`;
+	const definition = 'search: Search\n{"q":"string"}';
+	const tool: InjectionItem = {
+		...item("search", "npm:web", false, 7),
+		kind: "tool",
+		text: definition,
+		sections: [{ label: "Definition", text: definition, tokens: 7 }],
+	};
+	const toolGroup = group("npm:web", false, [tool]);
+	const view = new InjectionsView(theme, {
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-10T12:00:00Z"),
+			groups: [toolGroup],
+			totalTokens: toolGroup.totalTokens,
+		},
+	}, () => {});
+
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const findSubheader = (): string | undefined =>
+		view.render(80).find((line) => stripSgr(line).includes("Definition · 7 tokens"));
+	assert.match(findSubheader() ?? "", /\u001b\[31m/);
+
+	colorCode = 32;
+	view.invalidate();
+	const recolored = findSubheader() ?? "";
+	assert.match(recolored, /\u001b\[32m/);
+	assert.doesNotMatch(recolored, /\u001b\[31m/);
+});
+
 test("InjectionsView accepts j/k wherever it accepts the arrow keys", () => {
 	let closed = false;
 	const arrows = createView(8);
