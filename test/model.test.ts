@@ -61,6 +61,7 @@ test("groupInjections orders pi items base, built-in tools, tools, skills, then 
 
 test("buildSnapshot owns nested input data and computes the total", () => {
 	const source = { id: "message-type:test", label: "test", native: false };
+	const sections = [{ label: "Definition", text: "hello world!", tokens: 3 }];
 	const input: InjectionItem = {
 		id: "message:test:0",
 		phase: "initial",
@@ -70,14 +71,17 @@ test("buildSnapshot owns nested input data and computes the total", () => {
 		chars: 12,
 		tokens: 3,
 		text: "hello world!",
+		sections,
 	};
 	const capturedAt = new Date("2026-07-10T12:00:00Z");
 	const snapshot = buildSnapshot([input], "real-turn", capturedAt);
 
 	source.label = "changed";
+	sections[0]!.label = "changed";
 	capturedAt.setFullYear(2000);
 
 	assert.equal(snapshot.groups[0]?.source.label, "test");
+	assert.equal(snapshot.groups[0]?.items[0]?.sections?.[0]?.label, "Definition");
 	assert.equal(snapshot.capturedAt.toISOString(), "2026-07-10T12:00:00.000Z");
 	assert.equal(snapshot.totalTokens, 3);
 });

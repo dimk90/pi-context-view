@@ -256,7 +256,13 @@ function leafFromItem(item: InjectionItem): UsageCategory {
 		id: `item:${item.id}`,
 		label: item.label,
 		tokens: item.tokens,
-		entries: [{ breadcrumb: [item.label], tokens: item.tokens, text: item.text }],
+		entries: [{
+			breadcrumb: [item.label],
+			tokens: item.tokens,
+			text: item.text,
+			// Tool parts stay a preview breakdown of the same estimate, never separate entries.
+			sections: item.sections,
+		}],
 	};
 }
 

@@ -66,7 +66,12 @@ export default function (pi: ExtensionAPI) {
 		compaction.begin(event.signal);
 	});
 
+	// Pi ends every observed compaction with exactly one of these two events.
 	pi.on("session_compact", () => {
+		compaction.finish();
+	});
+
+	pi.on("session_compact_failed", () => {
 		compaction.finish();
 	});
 
@@ -75,8 +80,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", (event) => {
-		// Any new run proves a failed or cancelled manual compaction has ended.
-		compaction.finish();
 		probe.beginRun(event.prompt);
 		capture.prepare(event.systemPromptOptions);
 	});
@@ -96,23 +99,22 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("context", (event, ctx) => {
 		const messages = probe.filterMessages(event.messages);
-		const baselineMessages = probe.filterMessages(
-			buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
-		);
-		capture.finalize({
+		// Lazy: this event fires once per LLM request, but only the freezing call
+		// reads these inputs, and the baseline rebuild alone is O(session).
+		capture.finalize(() => ({
 			systemPrompt: ctx.getSystemPrompt(),
 			messages,
-			baselineMessages,
+			baselineMessages: probe.filterMessages(
+				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
+			),
 			allTools: pi.getAllTools(),
 			activeToolNames: pi.getActiveTools(),
 			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
-		});
+		}));
 		return messages === event.messages ? undefined : { messages };
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
-		// Auto-compaction failures have no session_compact event.
-		compaction.finish();
 		if (!probe.isCurrentRun) return;
 		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
 		probe.settle(capture.snapshot !== undefined);

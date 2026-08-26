@@ -3,8 +3,16 @@
 ## `[v0.5.0]` - Unreleased
 
 ### New
-* `[config]` Add an override-only global config for Usage category colors.
+* `[config]` Add an override-only global config for `Usage` category colors.
 * `[config]` Add `/context config` to create a defaults-populated config file.
+
+### Changed
+* `[injections]` Label tool prompt snippets, guidelines, and definitions in Injections and `Usage` previews ([#2](https://github.com/dimk90/pi-context-view/issues/2)).
+
+### Fixed
+* `[injections]` Count a guideline bullet shared by several tools once, like Pi renders it.
+* `[context]` Rebuild the session baseline once, not on every LLM request ([#1](https://github.com/dimk90/pi-context-view/pull/1) by  [@kaushikvira](https://github.com/kaushikvira)).
+* `[probe]` Unblock the silent probe after a failed compaction (Pi `0.84.3` `session_compact_failed`).
 
 
 ## `[v0.4.3]` - 19.08.2026

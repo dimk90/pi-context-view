@@ -49,8 +49,13 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	const extensionAddition = "\nEXTENSION INSTRUCTION";
 	const systemPrompt = [
 		"BASE PROMPT",
+		"",
+		"Available tools:",
 		"- search: Search the web",
+		"",
+		"Guidelines:",
 		"- Cite sources",
+		"",
 		contextBlock,
 		skillsBlock,
 		append,
@@ -139,6 +144,166 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	assert.equal(builtin?.tokens, childTokens);
 });
 
+test("analyzeSystemPrompt breaks tool items into reconciling prompt and definition sections", () => {
+	const guidelines = ["Use search when the user asks for current information", "Cite sources"];
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		selectedTools: ["read", "search"],
+		toolSnippets: { read: "Read files", search: "Search the web" },
+		promptGuidelines: guidelines,
+	});
+	const tools: ToolSlice[] = [
+		{
+			name: "read",
+			description: "Read files",
+			parametersJson: "{}",
+			snippet: "Read files",
+			guidelines: [],
+			source: "builtin",
+		},
+		{
+			name: "search",
+			description: "Search",
+			parametersJson: '{"q":"string"}',
+			snippet: "Search the web",
+			guidelines,
+			source: "npm:web",
+		},
+	];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, tools);
+	const search = items.find((entry) => entry.id === "tool:npm:web:search");
+	assert.deepEqual(
+		search?.sections?.map((section) => section.label),
+		["Prompt Snippet", "Guidelines", "Definition"],
+	);
+	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
+	assert.equal(search?.sections?.[1]?.text, `\n- ${guidelines[0]}\n- ${guidelines[1]}`);
+	assert.equal(search?.sections?.[2]?.text, 'search: Search\n{"q":"string"}');
+	// Sections partition the item without changing what it contributes.
+	assert.equal(search?.sections?.map((section) => section.text).join(""), search?.text);
+	assert.equal(search?.sections?.reduce((sum, section) => sum + section.tokens, 0), search?.tokens);
+
+	const builtin = items.find((entry) => entry.id === "tool:builtin")?.children?.[0];
+	assert.deepEqual(builtin?.sections?.map((section) => section.label), ["Definition"]);
+	assert.equal(builtin?.sections?.[0]?.tokens, builtin?.tokens);
+	const base = items.find((entry) => entry.id === "base-prompt");
+	assert.doesNotMatch(base?.text ?? "", /Cite sources|search: Search the web/);
+});
+
+test("analyzeSystemPrompt gives a repeated guideline bullet to the tool pi renders it for", () => {
+	const shared = "Cite sources";
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		selectedTools: ["search", "fetch"],
+		toolSnippets: { search: "Search the web", fetch: "Fetch a URL" },
+		promptGuidelines: [shared, shared],
+	});
+	const tools: ToolSlice[] = [
+		{
+			name: "search",
+			description: "Search",
+			parametersJson: "{}",
+			snippet: "Search the web",
+			guidelines: [shared],
+			source: "npm:web",
+		},
+		{
+			name: "fetch",
+			description: "Fetch",
+			parametersJson: "{}",
+			snippet: "Fetch a URL",
+			guidelines: [shared],
+			source: "npm:web",
+		},
+	];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, tools);
+	const search = items.find((entry) => entry.id === "tool:npm:web:search");
+	const fetch = items.find((entry) => entry.id === "tool:npm:web:fetch");
+	assert.deepEqual(
+		search?.sections?.map((section) => section.label),
+		["Prompt Snippet", "Guidelines", "Definition"],
+	);
+	assert.equal(search?.sections?.[1]?.text, `\n- ${shared}`);
+	// Pi renders the shared bullet once, so the later tool contributes no bullet.
+	assert.deepEqual(fetch?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	assert.equal(items.filter((entry) => entry.text.includes(shared)).length, 1);
+});
+
+test("analyzeSystemPrompt leaves pi's own and built-in tool bullets in the base prompt", () => {
+	const builtinGuideline = "Use read to examine files instead of cat or sed.";
+	const piGuideline = "Use bash for file operations like ls, rg, find";
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		selectedTools: ["read", "bash", "search"],
+		toolSnippets: { read: "Read files", bash: "Run commands", search: "Search the web" },
+		promptGuidelines: [builtinGuideline, builtinGuideline, piGuideline],
+	});
+	const tools: ToolSlice[] = [
+		{
+			name: "read",
+			description: "Read files",
+			parametersJson: "{}",
+			snippet: "Read files",
+			guidelines: [builtinGuideline],
+			source: "builtin",
+		},
+		{
+			name: "bash",
+			description: "Run commands",
+			parametersJson: "{}",
+			snippet: "Run commands",
+			guidelines: [],
+			source: "builtin",
+		},
+		{
+			name: "search",
+			description: "Search",
+			parametersJson: "{}",
+			snippet: "Search the web",
+			guidelines: [builtinGuideline, piGuideline],
+			source: "npm:web",
+		},
+	];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, tools);
+	const search = items.find((entry) => entry.id === "tool:npm:web:search");
+	// Pi credits one bullet to the built-in tool that declared it first and adds
+	// the file-exploration bullet itself, so the extension tool carves neither.
+	assert.deepEqual(search?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	const base = items.find((entry) => entry.id === "base-prompt");
+	assert.ok(base?.text.includes(`\n- ${builtinGuideline}`));
+	assert.ok(base?.text.includes(`\n- ${piGuideline}`));
+});
+
+test("analyzeSystemPrompt carves tool lines only from the blocks pi renders them into", () => {
+	const filePath = "./AGENTS.md";
+	const content = "- search: Search the web\n- Cite sources";
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		selectedTools: ["search"],
+		toolSnippets: { search: "Search the web" },
+		contextFiles: [{ path: filePath, content }],
+	});
+	const tools: ToolSlice[] = [{
+		name: "search",
+		description: "Search",
+		parametersJson: "{}",
+		snippet: "Search the web",
+		guidelines: ["Cite sources"],
+		source: "npm:web",
+	}];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD, contextFilePaths: [filePath] }, tools);
+	const search = items.find((entry) => entry.id === "tool:npm:web:search");
+	// The guideline never reached the Guidelines block, so the identical context
+	// file line stays with the file instead of being counted twice.
+	assert.deepEqual(search?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
+	assert.equal(items.find((entry) => entry.id === `context-file:${filePath}`)?.text, content);
+});
+
 test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt tool guidance", () => {
 	const filePath = "./AGENTS.md";
 	const contextBlock = [
@@ -172,6 +337,7 @@ test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.equal(search?.text, "search: Search\n{}");
+	assert.deepEqual(search?.sections?.map((section) => section.label), ["Definition"]);
 	assert.equal(base?.text.trim(), "CUSTOM PROMPT");
 });
 

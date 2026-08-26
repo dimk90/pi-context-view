@@ -111,11 +111,14 @@ export class InitialCaptureState {
 	/**
 	 * Freeze the Initial snapshot from the first context event. Returns the
 	 * existing snapshot on repeat calls, or undefined when `prepare()` never ran.
+	 * `buildInput` runs only on the call that freezes, so callers may collect
+	 * expensive inputs there without paying for them once per later event.
 	 */
-	public finalize(input: CaptureFinalization): InitialSnapshot | undefined {
+	public finalize(buildInput: () => CaptureFinalization): InitialSnapshot | undefined {
 		if (this.initialSnapshot !== undefined) return this.initialSnapshot;
 		if (this.pendingPreparation === undefined) return undefined;
 
+		const input = buildInput();
 		const preparation = this.pendingPreparation;
 		const tools = captureActiveTools(input.allTools, input.activeToolNames, {
 			toolSnippets: preparation.toolSnippets,
@@ -357,15 +360,20 @@ export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOpti
 	};
 }
 
-/** Snapshot the final active tool set with provenance and payload definitions. */
+/**
+ * Snapshot the final active tool set with provenance and payload definitions.
+ * Keep pi's active-tool order: it decides which tool owns a guideline bullet
+ * that several tools declare.
+ */
 export function captureActiveTools(
 	allTools: readonly ToolInfo[],
 	activeToolNames: readonly string[],
 	options: { readonly toolSnippets?: Readonly<Record<string, string>> },
 ): ToolSlice[] {
-	const active = new Set(activeToolNames);
-	return allTools
-		.filter((tool) => active.has(tool.name))
+	const byName = new Map(allTools.map((tool) => [tool.name, tool]));
+	return [...new Set(activeToolNames)]
+		.map((name) => byName.get(name))
+		.filter((tool) => tool !== undefined)
 		.map((tool) => ({
 			name: tool.name,
 			description: tool.description,

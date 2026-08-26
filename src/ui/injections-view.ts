@@ -30,6 +30,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
+import { previewBodyLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 const LIST_FIXED_LINE_COUNT = 10;
@@ -194,6 +195,7 @@ export class InjectionsView {
 	}
 
 	public invalidate(): void {
+		this.clearPreviewContent();
 		this.clearCache();
 	}
 
@@ -230,17 +232,21 @@ export class InjectionsView {
 		const item = this.itemsById.get(row.itemId);
 		if (item === undefined) return;
 		this.previewItem = item;
-		this.previewLines = undefined;
-		this.previewWrapWidth = undefined;
+		this.clearPreviewContent();
 		this.previewScroller.reset();
 		this.clearCache();
 	}
 
 	private closePreview(): void {
 		this.previewItem = undefined;
+		this.clearPreviewContent();
+		this.clearCache();
+	}
+
+	/** Drop width- and theme-dependent preview rendering. */
+	private clearPreviewContent(): void {
 		this.previewLines = undefined;
 		this.previewWrapWidth = undefined;
-		this.clearCache();
 	}
 
 	private renderPreview(width: number, terminalRows: number, item: InjectionItem): string[] {
@@ -281,9 +287,16 @@ export class InjectionsView {
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-		const text = normalizePreviewText(item.text);
+		const lines = previewBodyLines(this.theme, item, wrapWidth, (text) => this.wrappedTextLines(text, wrapWidth));
+		this.previewLines = lines;
+		this.previewWrapWidth = wrapWidth;
+		return lines;
+	}
+
+	/** Wrap sanitized text into indented preview lines, keeping blank lines. */
+	private wrappedTextLines(text: string, wrapWidth: number): string[] {
 		const lines: string[] = [];
-		for (const paragraph of text.split("\n")) {
+		for (const paragraph of normalizePreviewText(text).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			if (wrapped.length === 0) {
 				lines.push("");
@@ -291,8 +304,6 @@ export class InjectionsView {
 			}
 			for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
 		}
-		this.previewLines = lines;
-		this.previewWrapWidth = wrapWidth;
 		return lines;
 	}
 

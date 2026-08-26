@@ -31,6 +31,8 @@ context            → read the final system prompt and active tools, then freez
 
 `event.systemPromptOptions` is available in `before_agent_start`, not `session_start`. Copy the structured options there, but do not freeze the prompt or tool set: later `before_agent_start` handlers may edit the prompt or call `pi.setActiveTools()`. Finalize in the first `context` event with `ctx.getSystemPrompt()` and pi's then-active tools.
 
+Build the finalization inputs lazily: `context` fires once per request, but only the freezing call reads them, so later events skip the `buildSessionContext()` rebuild while still filtering persisted synthetic identities from the event messages.
+
 Initial represents the first context observable by this extension runtime, whether from a real turn or the explicit silent probe. Never overwrite it. Conditional contributions inactive for that run are absent. Prompt and tool capture is load-order independent; message changes from later `context` handlers and provider-payload rewrites remain unobservable.
 
 Compare context-event messages with `buildSessionContext()` for the current session branch. Preserve custom messages and structurally unmatched non-custom messages so provider-context-only injections are not lost. Own every nested prompt, tool, message, source, and child value retained by the snapshot.
@@ -56,7 +58,7 @@ Track synthetic user and assistant messages only by exact role and timestamp. Fi
 
 Persist role-and-timestamp identities, never content, in `pi-context-view:probe-identities` custom entries on `agent_settled` and `session_shutdown`. Restore all prior identities on `session_start` so filtering survives resume, reload, and fork. Never infer probe identity from empty content.
 
-`waitForIdle()` does not cover manual compaction. Track `session_before_compact` until `session_compact`, signal abort, `agent_settled`, or a subsequent agent run proves compaction ended. While compaction is active, return the degraded fallback without starting or consuming the probe attempt.
+`waitForIdle()` does not cover manual compaction. Track `session_before_compact` until its signal aborts or pi reports the outcome: pi 0.84.3 and newer close every observed compaction with exactly one of `session_compact` or `session_compact_failed`, so do not re-derive the end from later runs. On older pi the failure event never arrives and a failed compaction keeps the degraded fallback until the session ends. While compaction is active, return the degraded fallback without starting or consuming the probe attempt.
 
 Always restore the working-row state in `finally`. A missing model, missing authentication, startup failure, timeout, or active compaction returns a current pi-native prompt/tool snapshot with a precise reason that extension additions were not observed. A timed-out run remains owned until it settles so its delayed synthetic messages are still sanitized and filtered.
 
@@ -81,10 +83,16 @@ Follow [THINKING.md](THINKING.md) for reasoning counts, opaque signatures, model
 Keep semantics in typed model fields rather than display labels:
 
 - derive tool ownership from `ToolInfo.sourceInfo`;
+- carve a tool's prompt lines only from the blocks pi renders them into, and
+  give each rendered guideline bullet to the first tool that declares it in
+  pi's active-tool order, so a bullet several tools share is measured once and
+  pi's own bullets stay in the base prompt;
 - represent chained prompt edits as one unattributable extension aggregate;
 - treat `customType` as a message type, not necessarily a package identity;
 - detect non-custom context-only injections by diffing against the session branch;
-- treat children as a breakdown of their parent, never additional tokens in totals.
+- treat children as a breakdown of their parent, never additional tokens in totals;
+- retain labeled preview sections as typed parts of an item, with token shares
+  that reconcile to the parent rather than adding to it.
 
 ## Configuration
 
