@@ -64,25 +64,27 @@ pi install npm:pi-context-view
 
 ## Customization
 
-A config with current defaults is a good starting point for customization
-could be created with:
+A config populated with the current defaults is a good starting point for
+customization. Create it with:
 
 ```
 /context config
 ```
 > Creates `~/.pi/agent/extensions/pi-context-view.json`.
 
-See [doc/CONFIG](doc/CONFIG.md) for default values and meaning of each parameter.
+See [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md)
+for default values and the meaning of each parameter.
 
 ### Category Colors
 
-You can configure color for `Context Usage` map for a better synergy with your theme
-or set colors to theme independent hex-values.
+You can configure the `Context Usage` map colors to better match your theme, or set
+them to theme-independent hex values.
 
 > TODO: Color scheme example image.
 
 
-Find more details in [doc/CONFIG](doc/CONFIG.md) and [doc/PI-THEME-COLORS](https://github.com/dimk90/pi-context-view/blob/master/doc/PI-THEME-COLORS.md).
+Find more details in [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md)
+and [doc/PI-THEME-COLORS](https://github.com/dimk90/pi-context-view/blob/master/doc/PI-THEME-COLORS.md).
 
 
 ## Context Footprint

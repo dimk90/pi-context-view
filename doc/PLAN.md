@@ -18,7 +18,6 @@
   - The create-only write is one atomic `O_EXCL` create, available in every run
     mode because it opens no view. Debouncing and fresh-read merging remain
     requirements for later actions that update an existing file.
-
 - [x] **Add "Customization" section to README**:
   - Tip to start with `/context config`, plus the override-only semantics.
   - Link to [doc/CONFIGURATION.md](CONFIGURATION.md) with the default file and
@@ -36,6 +35,8 @@
   - [ ] New commands + SKILL.
   - [ ] Make zoom recording shorter (map only).
 
-- [ ] **Check if JSON prettified could be used**:
-  - For tools definition ? Other JSON objects?
-  - Is it possible to reliably detected JSON objects?
+- [ ] **Add a color customization demo to README**:
+  - Media distinguishable from the current usage GIF, which already shows the
+    default palette.
+  - Candidates: one before/after still of the same view under two palettes, or
+    a short recording of editing the file and reopening `/context`.

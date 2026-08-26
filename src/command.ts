@@ -28,7 +28,7 @@ const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
 	{ value: "injections", label: "injections", description: "Explore initial context injections" },
-	{ value: "config", label: "config", description: "Create the default configuration file" },
+	{ value: "config", label: "config", description: "Create config file populated with defaults" },
 ] satisfies AutocompleteItem[];
 
 /** The focused view a `/context` invocation requests. */
