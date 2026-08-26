@@ -43,11 +43,11 @@ export function previewBodyLines(
 
 /**
  * Bold subheader naming one part and its share of the parent estimate. Parts use
- * `syntaxFunction` rather than the usual `mdHeading` subheader color, because they
+ * `syntaxKeyword` rather than the usual `mdHeading` subheader color, because they
  * nest under item and entry headings that already carry `mdHeading`.
  */
 function sectionHeaderLines(theme: Theme, section: InjectionSection, wrapWidth: number): string[] {
-	const label = theme.fg("syntaxFunction", theme.bold(normalizeInlineText(section.label)));
+	const label = theme.fg("syntaxKeyword", theme.bold(normalizeInlineText(section.label)));
 	const tokens = theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
 	return wrapTextWithAnsi(`${label}${tokens}`, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
 }

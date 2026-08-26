@@ -708,9 +708,9 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 	assert.equal(streamPlain[entryHeader + 3], "┃");
 	assert.equal(streamPlain[entryHeader + 4], "┃   Guidelines · 17 tokens");
 	assert.equal(streamPlain[entryHeader + 5], "┃   - Use search when the user asks for current information");
-	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("syntaxFunction", theme.bold("Guidelines"))));
+	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));
 	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("muted", " · 17 tokens")));
-	// Parts use syntaxFunction so they stay distinct from the mdHeading entry header above them.
+	// Parts use syntaxKeyword so they stay distinct from the mdHeading entry header above them.
 	assert.ok((stream[entryHeader] ?? "").includes(theme.fg("mdHeading", theme.bold("search"))));
 	assert.doesNotMatch(stream[entryHeader + 4] ?? "", /\u001b\[38;2;22;23;24m/);
 	// The remaining parts stay behind the block cap until Enter opens the whole entry.

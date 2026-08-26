@@ -28,8 +28,8 @@ rows and values, and `dim` for deeper breakdowns. Selected labels and values use
 
 Preview content that decomposes into labeled parts — a tool's `Prompt Snippet`,
 `Guidelines`, and `Definition` — renders every part under its own bold
-`syntaxFunction` subheader followed by a muted ` · N tokens` share, with one blank
-row between parts. Parts keep `syntaxFunction` rather than the usual `mdHeading`
+`syntaxKeyword` subheader followed by a muted ` · N tokens` share, with one blank
+row between parts. Parts keep `syntaxKeyword` rather than the usual `mdHeading`
 subheader color because they nest under item and entry headings that already
 carry `mdHeading`. Part shares reconcile exactly with the item or entry estimate
 and never add to it.

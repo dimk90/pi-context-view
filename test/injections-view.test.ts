@@ -397,8 +397,8 @@ test("InjectionsView preview labels every known section", () => {
 	assert.ok(snippetIndex > 0, "missing Prompt Snippet subheader");
 	assert.ok(guidelinesIndex > snippetIndex, "Guidelines does not follow Prompt Snippet");
 	assert.ok(definitionIndex > guidelinesIndex, "Definition does not follow Guidelines");
-	// Parts use syntaxFunction, leaving mdHeading to the headings they nest under.
-	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("syntaxFunction", theme.bold("Guidelines"))));
+	// Parts use syntaxKeyword, leaving mdHeading to the headings they nest under.
+	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));
 	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("muted", " · 17 tokens")));
 	// Section bodies start directly below their subheader, separated only between sections.
 	assert.equal(plainLines[snippetIndex + 1], "  - search: Search the web");
