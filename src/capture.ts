@@ -360,15 +360,20 @@ export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOpti
 	};
 }
 
-/** Snapshot the final active tool set with provenance and payload definitions. */
+/**
+ * Snapshot the final active tool set with provenance and payload definitions.
+ * Keep pi's active-tool order: it decides which tool owns a guideline bullet
+ * that several tools declare.
+ */
 export function captureActiveTools(
 	allTools: readonly ToolInfo[],
 	activeToolNames: readonly string[],
 	options: { readonly toolSnippets?: Readonly<Record<string, string>> },
 ): ToolSlice[] {
-	const active = new Set(activeToolNames);
-	return allTools
-		.filter((tool) => active.has(tool.name))
+	const byName = new Map(allTools.map((tool) => [tool.name, tool]));
+	return [...new Set(activeToolNames)]
+		.map((name) => byName.get(name))
+		.filter((tool) => tool !== undefined)
 		.map((tool) => ({
 			name: tool.name,
 			description: tool.description,

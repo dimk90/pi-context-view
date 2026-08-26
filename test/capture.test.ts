@@ -98,6 +98,18 @@ test("captureActiveTools uses the final active set", () => {
 	assert.equal(tools[0]?.snippet, "Search the web");
 });
 
+test("captureActiveTools keeps pi's active-tool order and drops repeated names", () => {
+	const tools = captureActiveTools(
+		[tool("read", "builtin"), tool("search", "npm:web")],
+		["search", "read", "search"],
+		{},
+	);
+
+	// Guideline ownership follows this order, so it must match the order pi
+	// builds its Guidelines section from.
+	assert.deepEqual(tools.map((entry) => entry.name), ["search", "read"]);
+});
+
 test("copyPromptOptions owns decomposition metadata and keeps only visible skills", () => {
 	const contextFile = { path: "./AGENTS.md", content: "rules" };
 	const visibleSkill = skill("visible", false);
@@ -170,7 +182,7 @@ test("InitialCaptureState owns prepared options before later handlers can mutate
 	if (options.toolSnippets !== undefined) options.toolSnippets.search = "Changed snippet";
 
 	const snapshot = state.finalize(() => ({
-		systemPrompt: "Base\n- search: Original snippet",
+		systemPrompt: "Base\n\nAvailable tools:\n- search: Original snippet\n",
 		messages: [],
 		baselineMessages: [],
 		allTools: [tool("search", "npm:web")],

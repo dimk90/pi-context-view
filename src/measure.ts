@@ -7,6 +7,9 @@
  *
  * - context files: <project_instructions path="...">...</project_instructions>
  * - skills block: "The following skills provide..." through </available_skills>
+ * - tool prompt lines: the bullet blocks under "Available tools:" and
+ *   "Guidelines:", where pi renders each distinct bullet exactly once, in
+ *   active-tool order (verified against pi 0.84.3)
  * - base prompt ends before the "Current working directory" footer (pi 0.81),
  *   optionally preceded by a "Current date" line (pi 0.80)
  *   → anything after that footer was appended by before_agent_start handlers.
@@ -119,8 +122,14 @@ function charTokens(chars: number): number {
  * tools collapse into one aggregate pi-native item.
  */
 function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], carvedSpans: Span[]): void {
+	const carver = createPromptCarver(base, carvedSpans);
+	const claimedGuidelines = new Set(piOwnedGuidelines(tools));
 	const builtinChildren: InjectionItem[] = [];
 	for (const tool of tools) {
+		// Built-in tools claim their bullets without carving them, so a later
+		// extension tool repeating one cannot take a line pi already renders for
+		// pi itself or for a built-in tool.
+		const ownedGuidelines = claimGuidelines(tool, claimedGuidelines);
 		const definition: SectionDraft = {
 			label: "Definition",
 			text: `${tool.name}: ${tool.description}\n${tool.parametersJson}`,
@@ -129,7 +138,7 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 			builtinChildren.push(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, [definition]));
 			continue;
 		}
-		const sections = [...carveToolPromptSections(base, tool, carvedSpans), definition];
+		const sections = [...carveToolPromptSections(carver, tool, ownedGuidelines), definition];
 		const source = extensionSource(tool.source);
 		items.push(createToolItem(`tool:${tool.source}:${tool.name}`, source, tool.name, sections));
 	}
@@ -153,30 +162,107 @@ interface SectionDraft {
 }
 
 /**
- * Carve the Available tools snippet and the Guidelines bullets this tool
- * contributes out of the base prompt, so its prompt lines are attributed to
- * the tool that produced them.
+ * Carve this tool's Available tools snippet and the Guidelines bullets it owns
+ * out of the base prompt, so its prompt lines are attributed to the tool that
+ * produced them.
  */
-function carveToolPromptSections(base: string, tool: ToolSlice, carvedSpans: Span[]): SectionDraft[] {
+function carveToolPromptSections(
+	carver: PromptCarver,
+	tool: ToolSlice,
+	ownedGuidelines: string[],
+): SectionDraft[] {
 	const sections: SectionDraft[] = [];
 	const snippet = tool.snippet === undefined
 		? undefined
-		: carvePromptLine(base, `\n- ${tool.name}: ${tool.snippet}`, carvedSpans);
+		: carveBlockLine(carver, carver.toolsBlock, `\n- ${tool.name}: ${tool.snippet}`);
 	if (snippet !== undefined) sections.push({ label: "Prompt Snippet", text: snippet });
-	let guidelines = "";
-	for (const guideline of tool.guidelines) {
-		guidelines += carvePromptLine(base, `\n- ${guideline.trim()}`, carvedSpans) ?? "";
+	let bullets = "";
+	for (const guideline of ownedGuidelines) {
+		bullets += carveBlockLine(carver, carver.guidelinesBlock, `\n- ${guideline}`) ?? "";
 	}
-	if (guidelines.length > 0) sections.push({ label: "Guidelines", text: guidelines });
+	if (bullets.length > 0) sections.push({ label: "Guidelines", text: bullets });
 	return sections;
 }
 
-/** Record one exact prompt line as carved and return its text, when present. */
-function carvePromptLine(base: string, line: string, carvedSpans: Span[]): string | undefined {
-	const span = findExactSpan(base, line);
-	if (span === undefined) return undefined;
-	carvedSpans.push(span);
-	return base.slice(span.start, span.end);
+/** Base-prompt regions where pi renders tool prompt lines, plus the carve log to append to. */
+interface PromptCarver {
+	readonly base: string;
+	/** Bullet lines pi renders under "Available tools:". */
+	readonly toolsBlock: Span | undefined;
+	/** Bullet lines pi renders under "Guidelines:". */
+	readonly guidelinesBlock: Span | undefined;
+	readonly carvedSpans: Span[];
+}
+
+/** Locate the two bullet blocks pi renders tool prompt lines into. */
+function createPromptCarver(base: string, carvedSpans: Span[]): PromptCarver {
+	return {
+		base,
+		toolsBlock: findBulletBlock(base, "\nAvailable tools:\n"),
+		guidelinesBlock: findBulletBlock(base, "\nGuidelines:\n"),
+		carvedSpans,
+	};
+}
+
+/**
+ * Span of the bullet lines one section header introduces: from the line break
+ * before the first bullet to the blank line that closes the section. Bullets
+ * never contain a blank line, so the block ends exactly where pi ends it.
+ */
+function findBulletBlock(text: string, header: string): Span | undefined {
+	const headerStart = text.indexOf(header);
+	if (headerStart === -1) return undefined;
+	const start = headerStart + header.length - 1;
+	const blank = text.indexOf("\n\n", start);
+	return { start, end: blank === -1 ? text.length : blank };
+}
+
+/** Record one exact prompt line inside a bullet block as carved and return its text. */
+function carveBlockLine(carver: PromptCarver, block: Span | undefined, line: string): string | undefined {
+	if (block === undefined) return undefined;
+	const start = carver.base.indexOf(line, block.start);
+	if (start === -1 || start + line.length > block.end) return undefined;
+	const span = { start, end: start + line.length };
+	carver.carvedSpans.push(span);
+	return carver.base.slice(span.start, span.end);
+}
+
+/**
+ * Bullets pi's Guidelines section carries on its own behalf, reserved before
+ * any tool can claim one. Pi adds this file-exploration bullet ahead of tool
+ * guidelines, so an identical tool bullet is deduplicated away. Pi's two
+ * trailing bullets ("Be concise in your responses", "Show file paths clearly
+ * when working with files") need no reservation: pi appends them after tool
+ * guidelines, where a tool declaring one already owns the rendered line.
+ */
+function piOwnedGuidelines(tools: ToolSlice[]): string[] {
+	const names = new Set(tools.map((tool) => tool.name));
+	const shellOnly = (names.has("bash") || names.has("powershell")) &&
+		!names.has("grep") && !names.has("find") && !names.has("ls");
+	if (!shellOnly) return [];
+	if (names.has("bash") && names.has("powershell")) {
+		return ["Use bash or PowerShell for file operations like listing, searching, and finding files"];
+	}
+	if (names.has("powershell")) {
+		return ["Use PowerShell for file operations like listing, searching, and finding files"];
+	}
+	return ["Use bash for file operations like ls, rg, find"];
+}
+
+/**
+ * Guideline texts this tool is the first to declare, in pi's active-tool
+ * order. Pi renders each distinct bullet once, so a later tool repeating one
+ * contributes no prompt line and must not count its tokens again.
+ */
+function claimGuidelines(tool: ToolSlice, claimed: Set<string>): string[] {
+	const owned: string[] = [];
+	for (const guideline of tool.guidelines) {
+		const text = guideline.trim();
+		if (text.length === 0 || claimed.has(text)) continue;
+		claimed.add(text);
+		owned.push(text);
+	}
+	return owned;
 }
 
 /** Measure context-file contents without counting pi's XML transport scaffolding. */
@@ -366,12 +452,6 @@ function findBasePromptFooter(systemPrompt: string, cwd: string): Span | undefin
 		cwdStart = systemPrompt.lastIndexOf(cwdLine, cwdStart - 1);
 	}
 	return undefined;
-}
-
-/** Span of the first exact occurrence of needle, or undefined. */
-function findExactSpan(haystack: string, needle: string): Span | undefined {
-	const start = haystack.indexOf(needle);
-	return start === -1 ? undefined : { start, end: start + needle.length };
 }
 
 /** Span of pi's complete project-context transport section. */

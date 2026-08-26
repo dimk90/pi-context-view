@@ -82,6 +82,10 @@ Follow [THINKING.md](THINKING.md) for reasoning counts, opaque signatures, model
 Keep semantics in typed model fields rather than display labels:
 
 - derive tool ownership from `ToolInfo.sourceInfo`;
+- carve a tool's prompt lines only from the blocks pi renders them into, and
+  give each rendered guideline bullet to the first tool that declares it in
+  pi's active-tool order, so a bullet several tools share is measured once and
+  pi's own bullets stay in the base prompt;
 - represent chained prompt edits as one unattributable extension aggregate;
 - treat `customType` as a message type, not necessarily a package identity;
 - detect non-custom context-only injections by diffing against the session branch;
