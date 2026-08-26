@@ -42,12 +42,15 @@ border colorizers. Never hardcode ANSI escapes, hex values, or named terminal
 colors. Use pi's injected keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and theme invalidation.
 
-A color exposed for user configuration is named by pi theme color key alone, so
-configured views still track the active theme; hex values, ANSI escapes, and
-terminal color names stay invalid in configuration as well as in code. An
-unrecognized key falls back to the built-in color for that element and warns
-once instead of failing the view. [PI-THEME-COLORS.md](PI-THEME-COLORS.md)
-lists the available keys.
+A color exposed for user configuration names either a pi theme color key, which
+keeps the element tracking the active theme, or a literal `#rgb`/`#rrggbb`
+value, which pins it across themes. Literal values render through pi's own
+theme conversion, so they down-convert to the closest 256-color index wherever
+pi itself would; ANSI escapes and terminal color names stay invalid in
+configuration, and code keeps naming theme keys alone. An unrecognized value
+falls back to the built-in color for that element and warns once instead of
+failing the view. [PI-THEME-COLORS.md](PI-THEME-COLORS.md) lists the available
+keys.
 
 Titles, section names, and hint labels use Title Case (`Context Injections`,
 `Esc Close`). Key names use conventional casing (`PgUp/PgDn`). Preserve literal

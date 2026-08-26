@@ -150,11 +150,28 @@ test("loadConfigFile applies every valid flat category color override", (context
 	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "accent");
 });
 
+test("loadConfigFile accepts literal hex colors and normalizes them", (context) => {
+	const filePath = createConfigPath(context);
+	writeFileSync(filePath, JSON.stringify({
+		systemPromptColor: "#7AA2F7",
+		skillsColor: "#f0a",
+		freeSpaceColor: "#000000",
+	}));
+
+	const result = loadConfigFile(filePath);
+
+	assert.deepEqual(result.warnings, []);
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "#7aa2f7");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "skills"), "#ff00aa");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "#000000");
+});
+
 test("loadConfigFile ignores invalid entries without discarding valid siblings", (context) => {
 	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({
 		systemPromptColor: "success",
-		skillsColor: "#ff00ff",
+		skillsColor: "#ff00f",
+		memoryColor: "crimson",
 		userMessagesColor: 42,
 		unknownColor: "accent",
 	}));
@@ -163,9 +180,11 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "success");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "skills"), "customMessageLabel");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "context-files"), "mdCodeBlock");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "user-messages"), "syntaxString");
-	assert.equal(result.warnings.length, 3);
+	assert.equal(result.warnings.length, 4);
 	assert.ok(result.warnings.some((warning) => warning.includes("skillsColor")));
+	assert.ok(result.warnings.some((warning) => warning.includes("memoryColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("userMessagesColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("unknownColor")));
 });

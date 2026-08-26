@@ -9,6 +9,7 @@ import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works
 
 import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
+	type CategoryColor,
 	type CategoryColors,
 	FREE_SPACE_CATEGORY_ID,
 	resolveCategoryColor,
@@ -16,6 +17,7 @@ import {
 import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { collectPreviewEntries } from "../usage.ts";
+import { colorize } from "./color.ts";
 import { ListNavigator, PreviewScroller } from "./injections-model.ts";
 import {
 	BODY_INDENT,
@@ -508,8 +510,8 @@ export class UsageView {
 	}
 
 	/** One indented `glyph - text` key row. */
-	private mapKeyEntry(glyphColor: ThemeColor, glyph: string, text: string): string {
-		return `${BODY_INDENT}${this.theme.fg(glyphColor, glyph)}${this.theme.fg("dim", " - ")}${text}`;
+	private mapKeyEntry(glyphColor: CategoryColor, glyph: string, text: string): string {
+		return `${BODY_INDENT}${this.paint(glyphColor, glyph)}${this.theme.fg("dim", " - ")}${text}`;
 	}
 
 	/** Single-line key that drops detail in stages before it would truncate. */
@@ -520,7 +522,7 @@ export class UsageView {
 		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One category")}`;
 		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Mixed")}`;
 		const size = (withPercent: boolean) =>
-			`${theme.fg(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
+			`${this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
 		const prefix = `${heading} ${full}${separator}${partial}${separator}`;
 		const detailed = `${prefix}${size(true)}`;
 		if (visibleWidth(detailed) <= width) return detailed;
@@ -639,15 +641,15 @@ export class UsageView {
 	private styledLegendLabel(row: LegendRow, selected: boolean): string {
 		if (row.type === "buffer") {
 			const color = this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID);
-			return `${this.theme.fg(color, BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
+			return `${this.paint(color, BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
 		}
 		if (row.type === "free") {
 			const color = this.categoryColor(FREE_SPACE_CATEGORY_ID);
-			return `${this.theme.fg(color, FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
+			return `${this.paint(color, FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
 		}
 		const indent = "  ".repeat(row.depth);
 		const color = this.categoryColor(row.rootId);
-		const marker = this.theme.fg(color, categoryMarker(row.category.id, row.depth));
+		const marker = this.paint(color, categoryMarker(row.category.id, row.depth));
 		const labelColor = selected ? "accent" : row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
 		return `${indent}${marker} ${this.theme.fg(labelColor, normalizeInlineText(row.category.label))}`;
 	}
@@ -662,18 +664,23 @@ export class UsageView {
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */
 	private mapCell(cell: UsageMapCell): string {
 		if (cell.fill === "buffer") {
-			return this.theme.fg(this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID), BUFFER_CELL);
+			return this.paint(this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID), BUFFER_CELL);
 		}
-		if (cell.fill === "free") return this.theme.fg(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
+		if (cell.fill === "free") return this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
 		const glyph = cell.categoryId === "compacted-data"
 			? COMPACTED_CELL
 			: cell.fill === "full" ? FULL_CELL : PARTIAL_CELL;
-		return this.theme.fg(this.categoryColor(cell.categoryId), glyph);
+		return this.paint(this.categoryColor(cell.categoryId), glyph);
 	}
 
 	/** Resolve one category through user overrides, with a safe fallback for unknown ids. */
-	private categoryColor(categoryId: string | undefined): ThemeColor {
+	private categoryColor(categoryId: string | undefined): CategoryColor {
 		return resolveCategoryColor(this.categoryColors, categoryId);
+	}
+
+	/** Paint text with a configured color, which may name a theme color or a literal value. */
+	private paint(color: CategoryColor, text: string): string {
+		return colorize(this.theme, color, text);
 	}
 
 	/**

@@ -230,6 +230,8 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 test("UsageView applies configured colors to category, buffer, and free-space markers", () => {
 	const categoryColors = new Map(DEFAULT_CATEGORY_COLORS);
 	categoryColors.set("system-prompt", "success");
+	// A literal color must reach the same markers a theme color does.
+	categoryColors.set("tool-output", "#80ff01");
 	categoryColors.set(AUTO_COMPACT_BUFFER_CATEGORY_ID, "warning");
 	categoryColors.set(FREE_SPACE_CATEGORY_ID, "error");
 	const configuredUsage = { ...usage(), autoCompactReserveTokens: 100_000 };
@@ -238,15 +240,18 @@ test("UsageView applies configured colors to category, buffer, and free-space ma
 	const plain = lines.map(stripSgr);
 
 	const promptLine = plain.findIndex((line) => line.includes("System Prompt"));
+	const outputLine = plain.findIndex((line) => line.includes("Tool Output"));
 	const bufferLine = plain.findIndex((line) => line.includes("Auto-Compact Buffer"));
 	const freeLine = plain.findIndex((line) => line.includes("Free Space"));
 	assert.notEqual(promptLine, -1);
 	assert.notEqual(bufferLine, -1);
 	assert.notEqual(freeLine, -1);
 	assert.match(lines[promptLine] ?? "", /\u001b\[38;2;55;56;57m■/);
+	assert.match(lines[outputLine] ?? "", /\u001b\[38;2;128;255;1m■/);
 	assert.match(lines[bufferLine] ?? "", /\u001b\[38;2;19;20;21m⛝/);
 	assert.match(lines[freeLine] ?? "", /\u001b\[38;2;58;59;60m⛶/);
 	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;55;56;57m■/.test(line)));
+	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;128;255;1m[■◧]/.test(line)));
 	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;19;20;21m⛝/.test(line)));
 	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;58;59;60m⛶/.test(line)));
 });
@@ -259,7 +264,7 @@ test("UsageView renders sanitized notices above the dashboard and caps the block
 			degradedReason: "Silent probe unavailable: no model is selected.",
 			notices: [
 				"Ignoring unknown pi-context-view.json key \u001b[31m\"evil\"\u001b[0m.",
-				"Ignoring invalid theme color for \"skillsColor\"; using its default.",
+				"Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.",
 				"Ignoring unknown pi-context-view.json key \"mapColor\".",
 			],
 		},

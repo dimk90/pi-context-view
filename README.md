@@ -62,6 +62,29 @@ Zoom in for a more detailed breakdown of large context windows, such as
 pi install npm:pi-context-view
 ```
 
+## Customization
+
+A config with current defaults is a good starting point for customization
+could be created with:
+
+```
+/context config
+```
+> Creates `~/.pi/agent/extensions/pi-context-view.json`.
+
+See [doc/CONFIG](doc/CONFIG.md) for default values and meaning of each parameter.
+
+### Category Colors
+
+You can configure color for `Context Usage` map for a better synergy with your theme
+or set colors to theme independent hex-values.
+
+> TODO: Color scheme example image.
+
+
+Find more details in [doc/CONFIG](doc/CONFIG.md) and [doc/PI-THEME-COLORS](https://github.com/dimk90/pi-context-view/blob/master/doc/PI-THEME-COLORS.md).
+
+
 ## Context Footprint
 
 `pi-context-view` does not add any instructions or messages to the model context.

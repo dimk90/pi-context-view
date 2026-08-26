@@ -24,8 +24,11 @@ export const FREE_SPACE_CATEGORY_ID = "free-space";
 /** Color of a usage category without its own configurable entry, such as a tool-output child. */
 const FALLBACK_CATEGORY_COLOR: ThemeColor = "muted";
 
+/** Literal color values, accepted as `#rgb` or `#rrggbb` in either case. */
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
 /** Pi foreground theme color keys a configured category may name. */
-const THEME_COLOR_NAMES = [
+export const THEME_COLOR_NAMES = [
 	"accent", "border", "borderAccent", "borderMuted", "success",
 	"error", "warning", "muted", "dim", "text", "thinkingText",
 	"searchMatchText", "userMessageText", "customMessageText",
@@ -79,8 +82,17 @@ const CONFIG_KEY_CATEGORIES: ReadonlyMap<string, string> = new Map(
 /** Fast runtime membership check for configured Pi foreground color names. */
 const THEME_COLORS: ReadonlySet<string> = new Set(THEME_COLOR_NAMES);
 
+/** Theme-independent color, always stored expanded to a lowercase `#rrggbb`. */
+export type HexColor = `#${string}`;
+
+/**
+ * One configured color: a pi theme color key, which follows theme changes, or
+ * a literal hex value, which stays fixed across themes.
+ */
+export type CategoryColor = ThemeColor | HexColor;
+
 /** Resolved color of each configurable usage category, keyed by category id. */
-export type CategoryColors = ReadonlyMap<string, ThemeColor>;
+export type CategoryColors = ReadonlyMap<string, CategoryColor>;
 
 /** All user-configurable state of one runtime. */
 export interface ContextViewConfig {
@@ -189,9 +201,14 @@ export function loadConfigFile(filePath: string): ConfigLoadResult {
 }
 
 /** Color of one usage category, falling back for categories without a configurable entry. */
-export function resolveCategoryColor(colors: CategoryColors, categoryId: string | undefined): ThemeColor {
+export function resolveCategoryColor(colors: CategoryColors, categoryId: string | undefined): CategoryColor {
 	if (categoryId === undefined) return FALLBACK_CATEGORY_COLOR;
 	return colors.get(categoryId) ?? FALLBACK_CATEGORY_COLOR;
+}
+
+/** Whether a resolved color is a literal value rather than a theme color key. */
+export function isHexColor(color: CategoryColor): color is HexColor {
+	return color.startsWith("#");
 }
 
 /** Serialize every built-in default as an editable, flat override file. */
@@ -215,11 +232,12 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 			warnings.push(`Ignoring unknown ${CONFIG_FILE_NAME} key "${key}".`);
 			continue;
 		}
-		if (!isThemeColor(value)) {
-			warnings.push(`Ignoring invalid theme color for "${key}"; using its default.`);
+		const color = parseColor(value);
+		if (color === undefined) {
+			warnings.push(`Ignoring invalid color for "${key}"; expected a theme color name or a hex value.`);
 			continue;
 		}
-		colors.set(categoryId, value);
+		colors.set(categoryId, color);
 	}
 	return { config: { categoryColors: colors }, warnings };
 }
@@ -229,9 +247,24 @@ function degraded(reason: string): ConfigLoadResult {
 	return { config: DEFAULT_CONFIG, warnings: [`${reason} Using default configuration.`] };
 }
 
+/** Normalize one configured color value, or reject it as unusable. */
+function parseColor(value: unknown): CategoryColor | undefined {
+	if (typeof value !== "string") return undefined;
+	if (isThemeColor(value)) return value;
+	return parseHexColor(value);
+}
+
 /** Accept only theme color keys the active theme is guaranteed to define. */
 function isThemeColor(value: unknown): value is ThemeColor {
 	return typeof value === "string" && THEME_COLORS.has(value);
+}
+
+/** Expand shorthand and lowercase, so rendering always resolves six hex digits. */
+function parseHexColor(value: string): HexColor | undefined {
+	if (!HEX_COLOR_PATTERN.test(value)) return undefined;
+	const digits = value.slice(1).toLowerCase();
+	if (digits.length === 6) return `#${digits}`;
+	return `#${[...digits].map((digit) => `${digit}${digit}`).join("")}`;
 }
 
 /** Modification time in milliseconds, or undefined while the file is absent or unreadable. */
