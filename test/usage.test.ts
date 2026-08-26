@@ -197,6 +197,52 @@ test("computeUsage includes frozen context-only messages without recounting sess
 	assert.equal(collectPreviewEntries(extensions)[0]?.text, "context-only content");
 });
 
+test("computeUsage carries measured tool parts into tool preview entries", () => {
+	const snippet = "\n- web_search: Search the web";
+	const definition = "web_search: Search\n{}";
+	const customTool: InjectionItem = {
+		...item("web_search", "tool", 12, false),
+		text: `${snippet}${definition}`,
+		sections: [
+			{ label: "Prompt Snippet", text: snippet, tokens: 7 },
+			{ label: "Definition", text: definition, tokens: 5 },
+		],
+	};
+	const builtinChild: InjectionItem = {
+		...item("read", "tool", 3),
+		text: definition,
+		sections: [{ label: "Definition", text: definition, tokens: 3 }],
+	};
+	const piItems = [item("base", "base-prompt", 10), item("builtins", "tool", 3, true, [builtinChild])];
+	const usage = computeUsage({
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-11T12:00:00Z"),
+			groups: [
+				{ source: { id: "pi", label: "pi", native: true }, items: piItems, totalTokens: 13 },
+				{
+					source: { id: "npm:test", label: "npm:test", native: false },
+					items: [customTool],
+					totalTokens: customTool.tokens,
+				},
+			],
+			totalTokens: 25,
+		},
+		messages: [],
+	});
+
+	const customEntry = collectPreviewEntries(category(usage.categories, "custom-tools"))[0];
+	assert.deepEqual(customEntry?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	// Parts break the entry down; they never add tokens to it.
+	assert.equal(customEntry?.sections?.reduce((sum, section) => sum + section.tokens, 0), customEntry?.tokens);
+	assert.equal(customEntry?.sections?.map((section) => section.text).join(""), customEntry?.text);
+
+	const builtinEntry = collectPreviewEntries(category(usage.categories, "item:read"))[0];
+	assert.deepEqual(builtinEntry?.sections?.map((section) => section.label), ["Definition"]);
+	const promptEntry = collectPreviewEntries(category(usage.categories, "system-prompt"))[0];
+	assert.equal(promptEntry?.sections, undefined);
+});
+
 test("computeUsage drops empty categories and aggregates duplicate tool/custom message sources", () => {
 	const messages: ContextEvent["messages"] = [
 		{

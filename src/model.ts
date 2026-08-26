@@ -117,6 +117,8 @@ export interface UsagePreviewEntry {
 	readonly invisibleReasoning?: InvisibleReasoningEstimate;
 	/** Raw content for preview. Process-local; never log or persist. */
 	readonly text: string;
+	/** Labeled parts of `text`, carried from the measured item; never extra tokens. */
+	readonly sections?: readonly InjectionSection[];
 }
 
 /** Pi-reported usage; tokens/percent are omitted when unknown (e.g. right after compaction). */

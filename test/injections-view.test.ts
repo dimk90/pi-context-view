@@ -28,6 +28,7 @@ function createTheme(): Theme {
 		dim: "#101112",
 		error: "#131415",
 		mdHeading: "#161718",
+		syntaxFunction: "#1c1d1e",
 	};
 	const fgColors = Object.fromEntries(FG_COLORS.map((color) => [color, foregroundOverrides[color] ?? "#aabbcc"]));
 	const bgColors = Object.fromEntries(BG_COLORS.map((color) => [color, "#112233"]));
@@ -396,7 +397,8 @@ test("InjectionsView preview labels every known section", () => {
 	assert.ok(snippetIndex > 0, "missing Prompt Snippet subheader");
 	assert.ok(guidelinesIndex > snippetIndex, "Guidelines does not follow Prompt Snippet");
 	assert.ok(definitionIndex > guidelinesIndex, "Definition does not follow Guidelines");
-	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("mdHeading", theme.bold("Guidelines"))));
+	// Parts use syntaxFunction, leaving mdHeading to the headings they nest under.
+	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("syntaxFunction", theme.bold("Guidelines"))));
 	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("muted", " · 17 tokens")));
 	// Section bodies start directly below their subheader, separated only between sections.
 	assert.equal(plainLines[snippetIndex + 1], "  - search: Search the web");

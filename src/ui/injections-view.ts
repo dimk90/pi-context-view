@@ -5,7 +5,7 @@
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { InitialSnapshot, InjectionItem, InjectionSection } from "../model.ts";
+import type { InitialSnapshot, InjectionItem } from "../model.ts";
 import {
 	buildInjectionRows,
 	collectItemsById,
@@ -31,6 +31,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
+import { previewBodyLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 const LIST_FIXED_LINE_COUNT = 10;
@@ -287,32 +288,10 @@ export class InjectionsView {
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-		const lines = this.previewBodyLines(item, wrapWidth);
+		const lines = previewBodyLines(this.theme, item, wrapWidth, (text) => this.wrappedTextLines(text, wrapWidth));
 		this.previewLines = lines;
 		this.previewWrapWidth = wrapWidth;
 		return lines;
-	}
-
-	/** Label every known part of an item; render raw text when no breakdown exists. */
-	private previewBodyLines(item: InjectionItem, wrapWidth: number): string[] {
-		const sections = item.sections ?? [];
-		if (sections.length === 0) return this.wrappedTextLines(item.text, wrapWidth);
-		const lines: string[] = [];
-		for (const section of sections) {
-			if (lines.length > 0) lines.push("");
-			lines.push(...this.sectionHeaderLines(section, wrapWidth));
-			// Carved prompt lines start with the break that separated them; drop it to sit under the subheader.
-			lines.push(...this.wrappedTextLines(section.text.replace(/^\n+/, ""), wrapWidth));
-		}
-		return lines;
-	}
-
-	/** Bold subheader naming one section and its share of the item estimate. */
-	private sectionHeaderLines(section: InjectionSection, wrapWidth: number): string[] {
-		const theme = this.theme;
-		const label = theme.fg("mdHeading", theme.bold(normalizeInlineText(section.label)));
-		const tokens = theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
-		return wrapTextWithAnsi(`${label}${tokens}`, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
 	}
 
 	/** Wrap sanitized text into indented preview lines, keeping blank lines. */

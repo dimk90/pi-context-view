@@ -524,7 +524,8 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 
 test("UsageView opens a category block stream and skips full previews for complete blocks", () => {
 	let closed = false;
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {
+	const theme = createTheme();
+	const view = new UsageView(theme, { usage: usage() }, () => {
 		closed = true;
 	}, () => 24);
 
@@ -556,7 +557,7 @@ test("UsageView opens a category block stream and skips full previews for comple
 	assert.match(preview[searchHeader] ?? "", /\u001b\[38;2;1;2;3m┃ /);
 	assert.doesNotMatch(preview[searchHeader] ?? "", /\u001b\[48;/);
 	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;16;17;18m\[\d{2}-\d{2}-\d{4}/);
-	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;22;23;24mread/);
+	assert.ok((preview[readHeader] ?? "").includes(theme.fg("mdHeading", theme.bold("read"))));
 	// Content indented two spaces past the header; unmarked blank row between blocks.
 	assert.equal(plain[searchHeader + 1], "┃   search result content");
 	assert.equal(plain[searchHeader + 2], "");
@@ -589,6 +590,80 @@ test("UsageView opens a category block stream and skips full previews for comple
 	assert.equal(view.render(80).join("\n"), listBefore);
 	view.handleInput("\u001b");
 	assert.equal(closed, true);
+});
+
+test("UsageView labels tool parts inside the block and its full-content view", () => {
+	const snippet = "\n- search: Search the web";
+	const guidelines = "\n- Use search when the user asks for current information\n- Cite sources";
+	const definition = `search: Search\n${Array.from({ length: 14 }, (_, line) => `param ${line}`).join("\n")}`;
+	const toolUsage: ContextUsageSnapshot = {
+		...usage(30),
+		categories: [{
+			id: "custom-tools",
+			label: "Custom Tools",
+			tokens: 30,
+			children: [{
+				id: "item:tool:npm:web:search",
+				label: "search",
+				tokens: 30,
+				entries: [{
+					breadcrumb: ["search"],
+					tokens: 30,
+					text: `${snippet}${guidelines}${definition}`,
+					sections: [
+						{ label: "Prompt Snippet", text: snippet, tokens: 6 },
+						{ label: "Guidelines", text: guidelines, tokens: 17 },
+						{ label: "Definition", text: definition, tokens: 7 },
+					],
+				}],
+			}],
+		}],
+		estimatedTokens: 30,
+	};
+	const theme = createTheme();
+	const view = new UsageView(theme, { usage: toolUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const stream = view.render(80);
+	const streamPlain = stream.map((line) => stripSgr(line).trimEnd());
+	const entryHeader = streamPlain.indexOf("┃ [search] 30");
+	assert.ok(entryHeader > 0);
+	// Parts sit two columns under the entry header, which still carries the whole tool estimate.
+	assert.equal(streamPlain[entryHeader + 1], "┃   Prompt Snippet · 6 tokens");
+	assert.equal(streamPlain[entryHeader + 2], "┃   - search: Search the web");
+	assert.equal(streamPlain[entryHeader + 3], "┃");
+	assert.equal(streamPlain[entryHeader + 4], "┃   Guidelines · 17 tokens");
+	assert.equal(streamPlain[entryHeader + 5], "┃   - Use search when the user asks for current information");
+	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("syntaxFunction", theme.bold("Guidelines"))));
+	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("muted", " · 17 tokens")));
+	// Parts use syntaxFunction so they stay distinct from the mdHeading entry header above them.
+	assert.ok((stream[entryHeader] ?? "").includes(theme.fg("mdHeading", theme.bold("search"))));
+	assert.doesNotMatch(stream[entryHeader + 4] ?? "", /\u001b\[38;2;22;23;24m/);
+	// The remaining parts stay behind the block cap until Enter opens the whole entry.
+	assert.ok(!streamPlain.some((line) => line.includes("Definition · 7 tokens")));
+	assert.ok(streamPlain.some((line) => /… \+\d+ lines · Enter - View Content/.test(line)));
+
+	view.handleInput("\r");
+	for (const width of [60, 80, 120]) {
+		const block = view.render(width);
+		for (const line of block) {
+			assert.ok(visibleWidth(line) <= width, `block line exceeds width ${width}: ${line}`);
+		}
+		const plain = block.map((line) => stripSgr(line).trimEnd());
+		// The block view replaces the stream gutter with its own indent.
+		assert.ok(plain.some((line) => line === "    Prompt Snippet · 6 tokens"));
+		assert.ok(plain.some((line) => line === "    Guidelines · 17 tokens"));
+	}
+	const blockPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
+	const definitionHeader = blockPlain.indexOf("    Definition · 7 tokens");
+	assert.ok(definitionHeader > 0);
+	assert.equal(blockPlain[definitionHeader - 1], "");
+	assert.equal(blockPlain[definitionHeader + 1], "    search: Search");
+
+	// Escape returns to the stream with the same labeled block.
+	view.handleInput("\u001b");
+	assert.deepEqual(view.render(80), stream);
 });
 
 test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
@@ -983,16 +1058,17 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 		],
 		estimatedTokens: 2_000,
 	};
-	const view = new UsageView(createTheme(), { usage: cappedUsage }, () => {}, () => 40);
+	const theme = createTheme();
+	const view = new UsageView(theme, { usage: cappedUsage }, () => {}, () => 40);
 
 	// Tool Output at 40 rows: 10 content lines then a dim overflow marker; escapes stripped.
 	view.render(100);
 	view.handleInput("\r");
 	const capped = view.render(100);
 	const plainCapped = capped.map((line) => stripSgr(line).trimEnd());
-	// Lead breadcrumb cell is mdHeading; later cells stay muted.
+	// Lead breadcrumb cell is bold mdHeading; later cells stay muted.
 	const cappedHeader = capped.find((line) => stripSgr(line).includes("[assistant] [bash]"));
-	assert.match(cappedHeader ?? "", /\u001b\[38;2;22;23;24massistant/);
+	assert.ok((cappedHeader ?? "").includes(theme.fg("mdHeading", theme.bold("assistant"))));
 	assert.match(cappedHeader ?? "", /\u001b\[38;2;7;8;9mbash/);
 	assert.ok(plainCapped.some((line) => line === "┃   line 10"));
 	assert.ok(!plainCapped.some((line) => line.includes("line 11")));
@@ -1040,8 +1116,8 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	const header = snapshotPreview.findIndex((line) => /^┃ \[Base Prompt\] 1k$/.test(line));
 	assert.ok(header >= 0, "snapshot entry header has no datetime cell");
 	assert.equal(snapshotPreview[header + 1], "┃   You are pi.");
-	// Without a datetime, the lead breadcrumb cell still uses mdHeading.
-	assert.match(view.render(100)[header] ?? "", /\u001b\[38;2;22;23;24mBase Prompt/);
+	// Without a datetime, the lead breadcrumb cell still uses bold mdHeading.
+	assert.ok((view.render(100)[header] ?? "").includes(theme.fg("mdHeading", theme.bold("Base Prompt"))));
 });
 
 test("UsageView shrinks the block cap with terminal height and re-caps on resize", () => {

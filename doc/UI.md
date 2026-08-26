@@ -23,6 +23,17 @@ dialog descriptions, bright `text` for primary rows, `muted` for subordinate
 rows and values, and `dim` for deeper breakdowns. Selected labels and values use
 `accent` with no background. Subheaders are bold and use `mdHeading`.
 
+Preview content that decomposes into labeled parts — a tool's `Prompt Snippet`,
+`Guidelines`, and `Definition` — renders every part under its own bold
+`syntaxFunction` subheader followed by a muted ` · N tokens` share, with one blank
+row between parts. Parts keep `syntaxFunction` rather than the usual `mdHeading`
+subheader color because they nest under item and entry headings that already
+carry `mdHeading`. Part shares reconcile exactly with the item or entry estimate
+and never add to it.
+Show the applicable subheader even when `Definition` is the only captured part;
+omit parts that have no captured text rather than rendering zero-token
+placeholders.
+
 Always use current-theme semantic colors through `theme.fg(...)` and themed
 border colorizers. Never hardcode ANSI escapes, hex values, or named terminal
 colors. Use pi's injected keybindings, `matchesKey`, ANSI-aware width helpers,
@@ -242,8 +253,9 @@ like:
 [DD-MM-YYYY HH:MM:SS] [breadcrumb…] tokens
 ```
 
-Use dim for datetime and tokens, `mdHeading` for the first breadcrumb cell, and
-muted styling for the rest. Snapshot-backed categories omit datetime and retain
+Use dim for datetime and tokens, bold `mdHeading` for the first breadcrumb cell
+that names the producing tool, message role, or skill, and muted styling for the
+rest. Snapshot-backed categories omit datetime and retain
 category order. Assistant messages split into constituent text, thinking, and
 tool-call entries; tool calls include the tool name. Add a `text i/n` cell only
 for multi-block text or thinking content.
@@ -277,7 +289,9 @@ block so paging alone can reach `(1/n)` and `(n/n)`. Home/End select the first o
 last block.
 
 Indent content by two spaces after the gutter and separate blocks with one blank
-row. In User Messages only, replace complete attached
+row. A tool entry renders its labeled parts inside the block under the shared
+subheader rules; its entry header keeps the whole tool estimate. In User
+Messages only, replace complete attached
 `<skill name="…">…</skill>` expansions with pi-colored `[skill] name` badges;
 leave malformed wrappers visible. This is a preview-only transformation, and
 the full content still contributes to token estimates.
@@ -352,13 +366,8 @@ source, and estimated tokens in the header; wrap content to available width and
 support arrow and page scrolling. Escape returns to the same selected row. Raw
 text must never appear in row descriptions.
 
-When a tool item has multiple captured parts, separate them under `Prompt
-Snippet`, `Guidelines`, and `Definition` subheaders as applicable. Render each
-subheader bold in `mdHeading`, followed by its muted ` · N tokens` share, and
-place one blank row between sections. Section shares must reconcile exactly
-with the item estimate and never add to it. Show the applicable subheader even
-when `Definition` is the tool's only captured part; omit sections that have no
-captured text rather than rendering zero-token placeholders.
+A tool item renders its labeled parts under the shared subheader rules, in
+place of one undivided block of raw text.
 
 ## Responsive rendering
 

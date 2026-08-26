@@ -31,6 +31,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
+import { previewBodyLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import {
 	buildUsageMap,
@@ -966,9 +967,12 @@ export class UsageView {
 			cells.push(theme.fg("dim", `[${formatEntryTimestamp(entry.timestamp)}]`));
 		}
 		entry.breadcrumb.forEach((cell, index) => {
-			const color: ThemeColor = index === 0 ? "mdHeading" : "muted";
+			// The leading cell names the producer and heads the whole block, so it is bold.
+			const lead = index === 0;
+			const color: ThemeColor = lead ? "mdHeading" : "muted";
+			const name = normalizeInlineText(cell);
 			cells.push(
-				`${theme.fg("dim", "[")}${theme.fg(color, normalizeInlineText(cell))}${theme.fg("dim", "]")}`,
+				`${theme.fg("dim", "[")}${theme.fg(color, lead ? theme.bold(name) : name)}${theme.fg("dim", "]")}`,
 			);
 		});
 		cells.push(theme.fg("dim", formatTokens(entry.visibleTokens ?? entry.tokens)));
@@ -994,10 +998,20 @@ export class UsageView {
 			: [];
 	}
 
-	/** Complete sanitized, wrapped content lines indented under the entry header. */
+	/** Complete content lines under the entry header: labeled tool parts, or the whole raw entry. */
 	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
+		return previewBodyLines(
+			this.theme,
+			entry,
+			wrapWidth,
+			(text) => this.wrappedEntryLines(text, wrapWidth, compactSkills),
+		);
+	}
+
+	/** Sanitized, wrapped lines of one text run, indented under the entry header. */
+	private wrappedEntryLines(text: string, wrapWidth: number, compactSkills: boolean): string[] {
 		const lines: string[] = [];
-		for (const paragraph of this.entryPreviewText(entry.text, compactSkills).split("\n")) {
+		for (const paragraph of this.entryPreviewText(text, compactSkills).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			const paragraphLines = wrapped.length === 0 ? [""] : wrapped;
 			for (const line of paragraphLines) lines.push(line === "" ? "" : `${BODY_INDENT}${line}`);
