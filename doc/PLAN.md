@@ -31,12 +31,19 @@
   - Paint literal values through pi's own theme conversion, keeping its
     256-color down-conversion on terminals without truecolor.
 
-- [ ] Update demo recordings to S-VHS v0.4.0:
-  - [ ] New commands + SKILL.
-  - [ ] Make zoom recording shorter (map only).
+- [ ] Update demo recordings to S-VHS v0.4:
+  - [x] New commands + SKILL.
+  - [x] Make zoom recording shorter (map only).
+  - [ ] Update links in README.
 
-- [ ] **Add a color customization demo to README**:
+- [x] **Add a color customization demo to README**:
   - Media distinguishable from the current usage GIF, which already shows the
     default palette.
-  - Candidates: one before/after still of the same view under two palettes, or
-    a short recording of editing the file and reopening `/context`.
+  - One still of the same session per palette — defaults, `terrain`, `rainbow` —
+    composited side by side by `scripts/palettes.sh`.
+  - Example palettes live in `doc/palettes/` and double as the recording input;
+    each panel reads one through a throwaway mirror of the agent directory.
+
+- [ ] **Check if JSON prettified could be used**:
+  - For tools definition ? Other JSON objects?
+  - Is it possible to reliably detected JSON objects?

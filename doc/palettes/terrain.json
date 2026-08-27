@@ -1,0 +1,17 @@
+{
+  "systemPromptColor": "#1177dd",
+  "systemToolsColor": "#00a2e5",
+  "customToolsColor": "#00c480",
+  "mcpToolsColor": "#33d670",
+  "memoryColor": "#77e47e",
+  "skillsColor": "#bbf18b",
+  "userMessagesColor": "#ffff99",
+  "agentTextMessagesColor": "#ddd387",
+  "agentThinkingMessagesColor": "#bba874",
+  "agentToolCallMessagesColor": "#997c62",
+  "toolOutputColor": "#886760",
+  "extensionsColor": "#aa928d",
+  "compactedDataColor": "#ccbebb",
+  "autoCompactBufferColor": "dim",
+  "freeSpaceColor": "dim"
+}
