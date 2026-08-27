@@ -23,6 +23,7 @@ import {
 	BODY_INDENT,
 	calculateViewport,
 	DEFAULT_TERMINAL_ROWS,
+	descriptionBlockRows,
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
@@ -55,7 +56,8 @@ const INVISIBLE_REASONING_DESCRIPTION =
 	"≈ is a provider-reported count; ~ is a rough approximation when no breakdown " +
 	"is reported and excluded from category totals. " +
 	"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.";
-const USAGE_TAIL_FIXED_LINE_COUNT = 5;
+/** Dashboard rows below the content, excluding the collapsible description: blank, hints, blank, border. */
+const USAGE_TAIL_FIXED_LINE_COUNT = 4;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 /** The block view adds the block identity header and its preceding separator to the preview frame. */
@@ -305,16 +307,14 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const prefix = [border, "", ...this.headerLines(width), "", ...this.noticeLines(width)];
-		const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, "dim", width);
-		const availableDashboardRows = Math.max(
-			1,
-			terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT - descriptionLines.length,
-		);
-		const dashboard = this.dashboardLines(width, availableDashboardRows).slice(0, availableDashboardRows);
-		while (dashboard.length < availableDashboardRows) dashboard.push("");
+		const map = this.dashboardMap();
+		const availableRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT);
+		const descriptionLines = this.dashboardDescriptionLines(width, availableRows, map);
+		const dashboardRows = Math.max(1, availableRows - descriptionBlockRows(descriptionLines));
+		const dashboard = this.dashboardLines(width, dashboardRows, map).slice(0, dashboardRows);
+		while (dashboard.length < dashboardRows) dashboard.push("");
 		const tail = [
-			"",
-			...descriptionLines,
+			...(descriptionLines.length === 0 ? [] : ["", ...descriptionLines]),
 			"",
 			this.fit(
 				hintRow(theme, this.dashboardHints(width)),
@@ -413,15 +413,36 @@ export class UsageView {
 		return hints;
 	}
 
-	/** Render the map and legend side by side, or only details when width/window data is insufficient. */
-	private dashboardLines(width: number, rows: number): string[] {
+	/**
+	 * Dashboard description, collapsed whole as soon as the map, the complete
+	 * legend, or the full map key would lose a row to it. It is the least
+	 * important block on the frame, so it goes before any of them degrades.
+	 */
+	private dashboardDescriptionLines(width: number, availableRows: number, map: UsageMap | undefined): string[] {
+		const lines = wrapDescriptionLines(this.theme, USAGE_DESCRIPTION, "dim", width);
+		const required = this.fullDashboardRows(width, map) + descriptionBlockRows(lines);
+		return required <= availableRows ? lines : [];
+	}
+
+	/**
+	 * Rows the dashboard needs at full detail: the whole map beside the complete
+	 * legend and its full map key. The description yields to this height, so a
+	 * shrinking terminal drops it before the key degrades or the legend scrolls.
+	 */
+	private fullDashboardRows(width: number, map: UsageMap | undefined): number {
+		const detailRows = DETAIL_CATEGORY_HEADER_LINE_COUNT + this.legendRows.length;
+		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) return detailRows;
+		return Math.max(map.rows, detailRows + MAP_KEY_DETAILED_SPARE_ROWS);
+	}
+
+	/** Map for the active scale, or undefined without a usable context window. */
+	private dashboardMap(): UsageMap | undefined {
 		const scaleTokens = this.mapScale === "fit" ? this.fitMapScale : undefined;
-		const map = buildUsageMap(
-			this.usage,
-			DEFAULT_MAP_COLUMNS,
-			DEFAULT_MAP_ROWS,
-			scaleTokens,
-		);
+		return buildUsageMap(this.usage, DEFAULT_MAP_COLUMNS, DEFAULT_MAP_ROWS, scaleTokens);
+	}
+
+	/** Render the map and legend side by side, or only details when width/window data is insufficient. */
+	private dashboardLines(width: number, rows: number, map: UsageMap | undefined): string[] {
 		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) {
 			return this.detailLines(width, rows, undefined).map((line) => this.fit(line, width));
 		}

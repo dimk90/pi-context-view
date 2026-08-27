@@ -20,6 +20,19 @@ Follow pi's native selector style (`/settings`, `/model`):
 - dim key plus muted description hints joined by ` · `;
 - dim `(current/total)` shown only when content overflows.
 
+A description is the least important block on a frame: when the terminal is too
+short, it collapses whole — together with the blank row above it — and reappears
+once the terminal grows back. It is therefore rendered either completely or not
+at all, never as a partial sentence and never ellipsized. Each view names the
+content threshold that keeps its description, because the two views crowd
+differently: the Usage dashboard has a bounded legend and keeps its description
+only while the rest renders at full detail, while the unbounded Injections list
+keeps its description until the visible list window falls below a readable
+floor. Hints, borders, capture warnings, and configuration notices are not
+descriptions and never collapse; the Injections `[Degraded: …]` indicator
+belongs to its description block and collapses with it, while the wrapped reason
+below the header stays.
+
 Headers, subheaders, and the cursor start at column 0. Indent descriptions,
 scroll counters, hint rows, and preview bodies by two spaces. Use `dim` for
 dialog descriptions, bright `text` for primary rows, `muted` for subordinate
@@ -176,7 +189,8 @@ header's zoom label, so zooming visibly shrinks and highlights it.
 
 The key claims only the rows the complete legend leaves over, counted as the
 detail column minus the `Category:` heading and every legend row, so the key is
-what a shrinking terminal collapses first:
+the first dashboard element a shrinking terminal collapses once the description
+is already gone:
 
 - five or more spare rows: the full key;
 - two to four spare rows: the single-line
@@ -186,7 +200,9 @@ what a shrinking terminal collapses first:
 
 Only after the key is gone may the legend hide a category row or start
 scrolling, and the `Category:` heading with at least one legend row always
-survives.
+survives. The dashboard description precedes this whole sequence: it renders
+only while the map, the complete legend, and the full key all fit, and collapses
+before the key degrades.
 
 When auto-compaction is enabled, the tail of the map shows the settings
 `reserveTokens` reserve as `⛝` cells after the free cells: tokens that content
@@ -283,7 +299,9 @@ provider-reported count and `~` a rough proxy that must never be rendered as an
 upper bound; omit zero-size shares. Keep one wrapped dim explanation after the
 scrollable entries and before the hints; it opens with the schematic header
 pattern `[DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total)`, then
-defines `≈`, `~`, and `Encoded`. Never render, preview, or log raw signature
+defines `≈`, `~`, and `Encoded`. This explanation is view content rather than a
+dialog description — it decodes notation used by the entries above it — so it
+does not collapse on short terminals; the per-block cap shrinks around it. Never render, preview, or log raw signature
 bytes. [THINKING.md](THINKING.md) owns the underlying estimate.
 
 Treat each entry as one navigable block. Reserve a two-column gutter before its
@@ -369,6 +387,12 @@ Place one empty row before `TOTAL`. It is the last row in the scrollable Initial
 list, counts only the frozen Initial snapshot, and is not selectable. Cursor
 navigation, the selectable-row counter, and Enter preview skip it.
 
+The list description survives scrolling, since an Initial list long enough to
+overflow every terminal would otherwise hide it permanently. It renders while at
+least 26 list rows stay visible, or while a shorter list stays visible in full,
+and collapses whole below that floor. The `(current/total)` counter never
+collapses it by itself.
+
 When capture is degraded, wrap the precise reason below the header and show a
 `[Degraded: …]` indicator beside the description. Keep the fallback hierarchy
 usable.
@@ -393,5 +417,7 @@ such as the Usage map scale, must invalidate cached output instead.
 
 Test at 60, 80, and 120 columns, narrow fallbacks, short heights, height-only
 resizing, overflow navigation, preview return position, and theme invalidation.
+Cover description collapse and its restoration when the terminal grows, and
+prove no height ever renders a partial description.
 Cover both map scales, the header label's line-splitting fallback, the
 conditions that hide the zoom binding, and every map-key degradation.

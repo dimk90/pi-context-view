@@ -8,6 +8,7 @@
 
 ### Changed
 * `[injections]` Label tool prompt snippets, guidelines, and definitions in Injections and `Usage` previews ([#2](https://github.com/dimk90/pi-context-view/issues/2)).
+* `[ui]` Collapse view descriptions on short terminals before map, legend, or list rows.
 
 ### Fixed
 * `[injections]` Count a guideline bullet shared by several tools once, like Pi renders it.

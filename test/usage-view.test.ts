@@ -345,14 +345,25 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	assert.ok(!reopened.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
 });
 
-test("UsageView collapses the map key before the legend loses a row", () => {
+test("UsageView collapses the description, then the map key, before the legend loses a row", () => {
 	// The fixture legend has 16 rows, so its counter names them as (visible/16).
 	const scrollCounter = /\(\d+\/16\)/;
 	let rows = 33;
 	const view = createView(createTheme(), { usage: usage() }, () => {}, () => rows);
-	assert.ok(view.render(80).map(stripSgr).some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
+	const full = view.render(80).map(stripSgr);
+	assert.ok(full.some((line) => line.includes("Estimated context for the next model request")));
+	assert.ok(full.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
 
+	// One row short of the complete frame, the description goes whole and the key stays intact.
 	rows = 32;
+	const descriptionless = view.render(80).map(stripSgr);
+	assert.ok(!descriptionless.some((line) => line.includes("Estimated context")));
+	assert.ok(descriptionless.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
+	const hintsIndex = descriptionless.findIndex((line) => line.includes("↑↓/jk Navigate"));
+	assert.equal(hintsIndex, descriptionless.length - 3, "the hints keep their place below one blank row");
+	assert.equal(descriptionless[hintsIndex - 1], "", "the description takes its separating blank row with it");
+
+	rows = 29;
 	const compact = view.render(80).map(stripSgr);
 	assert.ok(compact.some((line) =>
 		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)")
@@ -373,18 +384,41 @@ test("UsageView collapses the map key before the legend loses a row", () => {
 	const narrow = view.render(52).map(stripSgr);
 	assert.ok(narrow.some((line) => line.endsWith("Map: ■ One · ◧ Mixed · ⛶ 5.1k")));
 
-	rows = 29;
+	rows = 26;
 	const keyless = view.render(80).map(stripSgr);
 	assert.ok(!keyless.some((line) => line.includes("Map:")));
 	assert.ok(keyless.some((line) => line.includes("⛶ Free Space")));
 	assert.ok(!keyless.some((line) => scrollCounter.test(line)), "the key goes before the legend scrolls");
 
-	rows = 27;
+	rows = 24;
 	const scrolled = view.render(80).map(stripSgr);
 	assert.ok(!scrolled.some((line) => line.includes("Map:")));
 	assert.ok(scrolled.some((line) => line.includes("Category:")));
 	assert.ok(scrolled.some((line) => line.includes("System Prompt")));
 	assert.ok(scrolled.some((line) => scrollCounter.test(line)));
+	assert.ok(!scrolled.some((line) => line.includes("Estimated context")));
+
+	// Growing the terminal restores the collapsed description.
+	rows = 33;
+	assert.deepEqual(view.render(80).map(stripSgr), full);
+});
+
+test("UsageView never renders a partially collapsed description", () => {
+	let rows = 24;
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => rows);
+	const sentence =
+		"Estimated context for the next model request. Token counts are approximate and may differ from the provider's estimate.";
+
+	for (rows = 12; rows <= 40; rows++) {
+		for (const width of [40, 60, 80, 120]) {
+			const plain = view.render(width).map(stripSgr);
+			const start = plain.findIndex((line) => line.includes("Estimated context"));
+			if (start < 0) continue;
+			const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
+			const description = plain.slice(start, hintsIndex - 1).map((line) => line.trim()).join(" ");
+			assert.equal(description, sentence, `truncated description at ${width}x${rows}`);
+		}
+	}
 });
 
 test("UsageView hides the zoom binding when its map cannot benefit", () => {
@@ -485,7 +519,8 @@ test("UsageView hides the Auto-Compact Buffer when no reserve is provided", () =
 });
 
 test("UsageView wraps narrow descriptions instead of truncating them", () => {
-	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	// Tall enough for the narrow legend to keep every row beside the wrapped description.
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 32);
 	const lines = view.render(40).map(stripSgr);
 	const descriptionStart = lines.findIndex((line) => line.includes("Estimated context"));
 	const hintsIndex = lines.findIndex((line) => line.includes("↑↓/jk Navigate"));
@@ -559,7 +594,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	const counterIndex = initial.findIndex((line) => /\(\d+\/18\)$/.test(line));
 	const lastRowIndex = initial.findLastIndex((line) => /• tool_\d+ \.{2,}/.test(line));
 	assert.ok(counterIndex >= 0 && counterIndex === lastRowIndex + 1, "counter follows the last legend row");
-	assert.match(initial[counterIndex] ?? "", /\s{2,}\(11\/18\)$/);
+	assert.match(initial[counterIndex] ?? "", /\s{2,}\(14\/18\)$/);
 	assert.ok(!initial.some((line) => /Category:.*\(\d+\/\d+\)/.test(line)), "no counter beside the heading");
 
 	view.handleInput("\u001b[4~"); // End

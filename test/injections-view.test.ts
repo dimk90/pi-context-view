@@ -202,6 +202,51 @@ test("InjectionsView wraps narrow descriptions instead of truncating them", () =
 	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
 });
 
+test("InjectionsView keeps the description while the list window stays readable", () => {
+	const scrollCounter = /\(\d+\/\d+\)/;
+	const visibleRowCount = (lines: string[]) => lines.filter((line) => /\s[\d,]+$/.test(line)).length;
+	// Sixteen items per group build a 36-row list, so it outgrows the 26-row description floor.
+	let rows = 46;
+	const view = createView(16, undefined, () => rows);
+	const full = view.render(80).map(stripSgr);
+	assert.ok(full.some((line) => line.includes("Injections into the model context")));
+	assert.ok(!full.some((line) => scrollCounter.test(line)), "every row fits beside the description");
+
+	// A scrolling list keeps its description: the counter alone never collapses it.
+	rows = 37;
+	const scrolled = view.render(80).map(stripSgr);
+	assert.ok(scrolled.some((line) => line.includes("Injections into the model context")));
+	assert.ok(scrolled.some((line) => scrollCounter.test(line)));
+
+	// One row further, the window would drop below the floor, so the description goes whole.
+	rows = 36;
+	const descriptionless = view.render(80).map(stripSgr);
+	assert.ok(!descriptionless.some((line) => line.includes("Injections into")));
+	const hintsIndex = descriptionless.findIndex((line) => line.includes("↑↓/jk Navigate"));
+	assert.equal(hintsIndex, descriptionless.length - 3, "the hints keep their place below one blank row");
+	assert.equal(descriptionless[hintsIndex - 1], "", "the description takes its separating blank row with it");
+	assert.ok(
+		visibleRowCount(descriptionless) > visibleRowCount(scrolled),
+		"the freed rows go to the list",
+	);
+
+	// Growing the terminal restores the collapsed description.
+	rows = 46;
+	assert.deepEqual(view.render(80).map(stripSgr), full);
+});
+
+test("InjectionsView keeps the description for lists shorter than the floor", () => {
+	// Two items per group build an 8-row list, so the floor is the list itself.
+	let rows = 18;
+	const view = createView(2, undefined, () => rows);
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("Injections into the model context")));
+
+	rows = 17;
+	const collapsed = view.render(80).map(stripSgr);
+	assert.ok(!collapsed.some((line) => line.includes("Injections into")));
+	assert.ok(collapsed.some((line) => line.includes("↑↓/jk Navigate")), "the hints never collapse");
+});
+
 test("InjectionsView adds degraded INITIAL capture to the dialog description", () => {
 	const plain = createView(4);
 	const plainLines = plain.render(80);
@@ -211,7 +256,8 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	assert.ok(!plainLines.some((line) => stripSgr(line).includes("Degraded:")));
 
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
-	const degraded = createView(4, reason);
+	// Tall enough for the wrapped reason, the whole list, and the description block at both widths.
+	const degraded = createView(4, reason, () => 40);
 	const degradedLines = degraded.render(80);
 	const degradedInitialIndex = degradedLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
 	assert.ok(degradedInitialIndex >= 0);
