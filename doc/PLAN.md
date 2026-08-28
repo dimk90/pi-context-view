@@ -43,9 +43,14 @@
   - Example palettes live in `doc/palettes/` and double as the recording input;
     each panel reads one through a throwaway mirror of the agent directory.
 
-- [ ] **Check if JSON prettified could be used**:
-  - For tools definition ? Other JSON objects?
-  - Is it possible to reliably detected JSON objects?
+- [x] **Prettify the JSON the model already knows about**:
+  - Mark serialized runs structurally instead of detecting JSON in text: tool
+    parameter schemas, tool-call arguments, and non-string message content.
+  - Expand a marked run only in full-content previews — the Injections item
+    preview and the Usage Enter level — so block caps and `… +N lines` counts
+    keep the compact provider-bound form.
+  - Keep it preview-only and always on: estimates stay on the compact text, and
+    a marked run that no longer parses renders unchanged.
 
 - [ ] Update links in README:
   - [ ] Abs links to master for md-files (npmjs compatibility).

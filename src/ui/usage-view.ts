@@ -19,6 +19,7 @@ import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { collectPreviewEntries } from "../usage.ts";
 import { colorize } from "./color.ts";
 import { ListNavigator, PreviewScroller } from "./injections-model.ts";
+import { expandJsonSpan } from "./json-preview.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
@@ -158,6 +159,14 @@ interface PreviewContent {
 interface BlockBody {
 	readonly width: number;
 	readonly lines: readonly string[];
+}
+
+/** How one entry's raw content is shaped for the level that renders it. */
+interface EntryContentOptions {
+	/** Collapse complete attached skills into badges; User Messages only. */
+	readonly compactSkills: boolean;
+	/** Expand the marked JSON run; the full-content level only. */
+	readonly expandJson: boolean;
 }
 
 /** Open the Usage view as a fullscreen overlay. */
@@ -992,9 +1001,10 @@ export class UsageView {
 		if (this.cachedContent !== undefined && this.cachedContent.wrapWidth === wrapWidth) {
 			return this.cachedContent.entries;
 		}
-		const compactSkills = row.rootId === "user-messages";
+		// The stream keeps the compact JSON the provider receives, so the per-block cap stays stable.
+		const options = { compactSkills: row.rootId === "user-messages", expandJson: false };
 		const entries = this.previewEntries(row)
-			.map((entry) => this.entryContentLines(entry, wrapWidth, compactSkills));
+			.map((entry) => this.entryContentLines(entry, wrapWidth, options));
 		this.cachedContent = { wrapWidth, entries };
 		return entries;
 	}
@@ -1009,7 +1019,10 @@ export class UsageView {
 			return this.cachedBlockBody.lines;
 		}
 		const wrapWidth = previewWrapWidth(width);
-		const content = this.entryContentLines(entry, wrapWidth, row.rootId === "user-messages");
+		const content = this.entryContentLines(entry, wrapWidth, {
+			compactSkills: row.rootId === "user-messages",
+			expandJson: true,
+		});
 		const lines = content.map((line) => line === "" ? "" : this.fit(`${BODY_INDENT}${line}`, width));
 		this.cachedBlockBody = { width, lines };
 		return lines;
@@ -1067,13 +1080,15 @@ export class UsageView {
 	}
 
 	/** Complete content lines under the entry header: labeled tool parts, or the whole raw entry. */
-	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
-		return previewBodyLines(
-			this.theme,
-			entry,
-			wrapWidth,
-			(text) => this.wrappedEntryLines(text, wrapWidth, compactSkills),
-		);
+	private entryContentLines(
+		entry: UsagePreviewEntry,
+		wrapWidth: number,
+		options: EntryContentOptions,
+	): string[] {
+		return previewBodyLines(this.theme, entry, wrapWidth, (text, jsonSpan) => {
+			const shaped = options.expandJson ? expandJsonSpan(text, jsonSpan) : text;
+			return this.wrappedEntryLines(shaped, wrapWidth, options.compactSkills);
+		});
 	}
 
 	/** Sanitized, wrapped lines of one text run, indented under the entry header. */

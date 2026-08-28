@@ -31,7 +31,8 @@ injected by other extensions.
 - `/context injections` - show the hidden parts of the context captured at
   session start or resume.
 - `/context config` - create the global configuration file populated with
-  defaults, useful for [customization](#customization).
+  defaults, useful for
+  [customization](https://github.com/dimk90/pi-context-view#customization).
 
 ## Demo
 

@@ -370,6 +370,10 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 		[20, ["assistant", "bash"]],
 	]);
 	assert.equal(callEntries[2]?.text, 'bash({"command":"ls"})');
+	// Arguments are marked where they were serialized, between the call parentheses.
+	const argumentsSpan = callEntries[2]?.jsonSpan;
+	assert.ok(argumentsSpan !== undefined);
+	assert.equal(callEntries[2]?.text.slice(argumentsSpan.start, argumentsSpan.end), '{"command":"ls"}');
 	const callCategory = category(usage.categories, "agent-tool-call-messages");
 	assert.equal(callCategory.tokens, callEntries.reduce((sum, entry) => sum + entry.tokens, 0));
 

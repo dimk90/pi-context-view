@@ -463,6 +463,56 @@ test("InjectionsView preview labels every known section", () => {
 	assert.equal(singleSection[singleDefinitionIndex + 1], "  search: Search");
 });
 
+test("InjectionsView preview expands the JSON runs the model marks", () => {
+	const heading = "search: Search\n";
+	const definition = `${heading}{"type":"object","properties":{"q":{"type":"string"}}}`;
+	const schemaTool: InjectionItem = {
+		...item("search", "npm:web", false, 30),
+		kind: "tool",
+		text: definition,
+		sections: [{
+			label: "Definition",
+			text: definition,
+			tokens: 30,
+			jsonSpan: { start: heading.length, end: definition.length },
+		}],
+	};
+	const content = '[{"type":"text","text":"injected"}]';
+	const serializedMessage: InjectionItem = {
+		...item("context message", "npm:web", false, 9),
+		text: content,
+		jsonSpan: { start: 0, end: content.length },
+	};
+	const toolGroup = group("npm:web", false, [schemaTool, serializedMessage]);
+	const view = new InjectionsView(createTheme(), {
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-10T12:00:00Z"),
+			groups: [toolGroup],
+			totalTokens: toolGroup.totalTokens,
+		},
+	}, () => {});
+
+	// The item preview is full content, so a labeled part expands its marked schema.
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const sectionLines = view.render(80).map((line) => stripSgr(line));
+	const definitionIndex = sectionLines.indexOf("  Definition · 30 tokens");
+	assert.ok(definitionIndex > 0, "missing Definition subheader");
+	assert.equal(sectionLines[definitionIndex + 1], "  search: Search");
+	assert.equal(sectionLines[definitionIndex + 2], "  {");
+	assert.equal(sectionLines[definitionIndex + 3], '    "type": "object",');
+
+	// An item without parts expands the whole marked text.
+	view.handleInput("\u001b");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const messageLines = view.render(80).map((line) => stripSgr(line));
+	assert.ok(messageLines.includes("  ["));
+	assert.ok(messageLines.includes('      "text": "injected"'));
+	assert.ok(!messageLines.some((line) => line.includes('[{"type"')));
+});
+
 test("InjectionsView invalidation rebuilds theme-colored section subheaders", () => {
 	const theme = createTheme();
 	const originalFg = theme.fg.bind(theme);

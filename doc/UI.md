@@ -50,6 +50,16 @@ Show the applicable subheader even when `Definition` is the only captured part;
 omit parts that have no captured text rather than rendering zero-token
 placeholders.
 
+Preview text may carry a JSON document that the model marks structurally — a
+tool's parameter schema, tool-call arguments, serialized message content. Only
+full-content previews, the Injections item preview and the Usage Enter level,
+re-serialize that run across lines indented two spaces per level. Every other
+level keeps the compact single-line form the provider receives, so block caps
+and `… +N lines` counts stay stable. Marking is structural, never heuristic:
+text that merely looks like JSON stays as captured, and a marked run that no
+longer parses renders unchanged. Like skill badges, this is a preview-only
+transformation that never changes token estimates.
+
 Always use current-theme semantic colors through `theme.fg(...)` and themed
 border colorizers. Never hardcode ANSI escapes, hex values, or named terminal
 colors. Use pi's injected keybindings, `matchesKey`, ANSI-aware width helpers,
@@ -340,7 +350,8 @@ Enter on a capped block opens a separate fullscreen level containing the
 category header, one blank separator row, the selected entry header, and its
 complete uncapped content. That level uses line and page scrolling with
 `↑↓/jk Scroll · PgUp/PgDn Page · Esc Back`, and Escape returns to the same block
-and viewport. A category without entries instead shows
+and viewport. It is also the only level that expands marked JSON, so a block
+that never caps keeps the compact form. A category without entries instead shows
 `No content captured for this category.` without a gutter; Enter is a no-op and
 the hint row offers `Esc Back` alone.
 Unknown usage after compaction retains an explicit preview state.
@@ -405,7 +416,8 @@ support arrow and page scrolling. Escape returns to the same selected row. Raw
 text must never appear in row descriptions.
 
 A tool item renders its labeled parts under the shared subheader rules, in
-place of one undivided block of raw text.
+place of one undivided block of raw text. The whole preview is full content, so
+marked JSON expands here.
 
 ## Responsive rendering
 

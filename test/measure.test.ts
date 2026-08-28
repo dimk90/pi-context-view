@@ -180,6 +180,12 @@ test("analyzeSystemPrompt breaks tool items into reconciling prompt and definiti
 	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
 	assert.equal(search?.sections?.[1]?.text, `\n- ${guidelines[0]}\n- ${guidelines[1]}`);
 	assert.equal(search?.sections?.[2]?.text, 'search: Search\n{"q":"string"}');
+	// The schema is marked where it was serialized, so previews expand it without detecting JSON.
+	const definition = search?.sections?.[2];
+	const schemaSpan = definition?.jsonSpan;
+	assert.ok(schemaSpan !== undefined);
+	assert.equal(definition?.text.slice(schemaSpan.start, schemaSpan.end), '{"q":"string"}');
+	assert.equal(search?.sections?.[0]?.jsonSpan, undefined);
 	// Sections partition the item without changing what it contributes.
 	assert.equal(search?.sections?.map((section) => section.text).join(""), search?.text);
 	assert.equal(search?.sections?.reduce((sum, section) => sum + section.tokens, 0), search?.tokens);

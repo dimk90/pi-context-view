@@ -20,6 +20,7 @@ import {
 	type InjectionKind,
 	type InjectionSection,
 	type InjectionSource,
+	type JsonSpan,
 	PI_SOURCE_ID,
 } from "./model.ts";
 
@@ -130,10 +131,7 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 		// extension tool repeating one cannot take a line pi already renders for
 		// pi itself or for a built-in tool.
 		const ownedGuidelines = claimGuidelines(tool, claimedGuidelines);
-		const definition: SectionDraft = {
-			label: "Definition",
-			text: `${tool.name}: ${tool.description}\n${tool.parametersJson}`,
-		};
+		const definition = createDefinitionSection(tool);
 		if (tool.source === "builtin") {
 			builtinChildren.push(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, [definition]));
 			continue;
@@ -159,6 +157,18 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 interface SectionDraft {
 	readonly label: string;
 	readonly text: string;
+	/** Serialized JSON inside `text`; marked here rather than detected in the preview. */
+	readonly jsonSpan?: JsonSpan;
+}
+
+/** The payload one tool sends with every request: its name, description, and parameter schema. */
+function createDefinitionSection(tool: ToolSlice): SectionDraft {
+	const heading = `${tool.name}: ${tool.description}\n`;
+	return {
+		label: "Definition",
+		text: `${heading}${tool.parametersJson}`,
+		jsonSpan: { start: heading.length, end: heading.length + tool.parametersJson.length },
+	};
 }
 
 /**

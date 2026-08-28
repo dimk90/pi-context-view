@@ -7,36 +7,40 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { InjectionSection } from "../model.ts";
+import type { InjectionSection, JsonSpan } from "../model.ts";
 import { normalizeInlineText } from "../text.ts";
+import { shiftJsonSpan } from "./json-preview.ts";
 import { BODY_INDENT } from "./layout.ts";
 
 /** Raw preview content plus the labeled parts it decomposes into, when known. */
 export interface SectionedContent {
 	readonly text: string;
+	readonly jsonSpan?: JsonSpan;
 	readonly sections?: readonly InjectionSection[];
 }
 
 /**
  * Preview body lines for one item or entry: labeled parts under their
  * subheaders, or the raw text when no breakdown exists. The caller supplies
- * `wrapText` so each view keeps its own sanitizing, wrapping, and indentation.
+ * `wrapText` so each view keeps its own sanitizing, wrapping, indentation, and
+ * choice of whether the marked JSON run is expanded at this level.
  */
 export function previewBodyLines(
 	theme: Theme,
 	content: SectionedContent,
 	wrapWidth: number,
-	wrapText: (text: string) => string[],
+	wrapText: (text: string, jsonSpan: JsonSpan | undefined) => string[],
 ): string[] {
 	const sections = content.sections ?? [];
-	if (sections.length === 0) return wrapText(content.text);
+	if (sections.length === 0) return wrapText(content.text, content.jsonSpan);
 	const lines: string[] = [];
 	for (const section of sections) {
 		if (lines.length > 0) lines.push("");
 		lines.push(...sectionHeaderLines(theme, section, wrapWidth));
 		// Carved prompt lines open with the newline that separated them in the
 		// prompt; drop it so the part starts directly under its subheader.
-		lines.push(...wrapText(section.text.replace(/^\n+/, "")));
+		const text = section.text.replace(/^\n+/, "");
+		lines.push(...wrapText(text, shiftJsonSpan(section.jsonSpan, section.text.length - text.length)));
 	}
 	return lines;
 }

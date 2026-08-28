@@ -779,6 +779,55 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 	assert.deepEqual(view.render(80), stream);
 });
 
+test("UsageView expands marked JSON in full content while the stream stays compact", () => {
+	const args = Object.fromEntries(
+		Array.from({ length: 20 }, (_, index) => [`key_${index}`, `value ${index} with enough text to wrap`]),
+	);
+	const argumentsJson = JSON.stringify(args);
+	const text = `read(${argumentsJson})`;
+	const callUsage: ContextUsageSnapshot = {
+		...usage(40),
+		categories: [{
+			id: "agent-tool-call-messages",
+			label: "Agent Tool Call Messages",
+			tokens: 40,
+			entries: [{
+				timestamp: Date.UTC(2026, 6, 11, 14, 2, 19),
+				breadcrumb: ["assistant", "read"],
+				tokens: 40,
+				text,
+				jsonSpan: { start: 5, end: text.length - 1 },
+			}],
+		}],
+		estimatedTokens: 40,
+	};
+	const view = createView(createTheme(), { usage: callUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const streamPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
+	// The capped stream keeps the compact form the provider receives.
+	assert.ok(streamPlain.some((line) => line.includes('read({"key_0":"value 0 with enough text to wrap"')));
+	assert.ok(streamPlain.some((line) => /… \+\d+ lines · Enter - View Content/.test(line)));
+
+	view.handleInput("\r");
+	for (const width of [60, 80, 120]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `block line exceeds width ${width}: ${line}`);
+		}
+	}
+	const blockPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
+	const callLine = blockPlain.indexOf("    read({");
+	assert.ok(callLine > 0);
+	assert.equal(blockPlain[callLine + 1], '      "key_0": "value 0 with enough text to wrap",');
+	assert.ok(!blockPlain.some((line) => line.includes('{"key_0":')));
+
+	// The expansion stays inside the captured text: scrolling reaches the closing call parenthesis.
+	view.handleInput("\u001b[4~"); // End
+	const tailPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
+	assert.ok(tailPlain.some((line) => line === "    })"));
+});
+
 test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 	const tools = Array.from({ length: 30 }, (_, index) => ({
 		id: `tool-result:tool_${index + 1}`,

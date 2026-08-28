@@ -92,7 +92,12 @@ Keep semantics in typed model fields rather than display labels:
 - detect non-custom context-only injections by diffing against the session branch;
 - treat children as a breakdown of their parent, never additional tokens in totals;
 - retain labeled preview sections as typed parts of an item, with token shares
-  that reconcile to the parent rather than adding to it.
+  that reconcile to the parent rather than adding to it;
+- mark JSON that capture and classification serialized themselves — tool
+  parameter schemas, tool-call arguments, non-string message content — with a
+  span on the item, section, or entry instead of detecting JSON in preview text;
+  the compact provider-bound form always backs the estimate, and expansion stays
+  a rendering concern owned by [UI.md](UI.md).
 
 ## Configuration
 

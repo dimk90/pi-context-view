@@ -14,6 +14,7 @@ import {
 	ListNavigator,
 	PreviewScroller,
 } from "./injections-model.ts";
+import { expandJsonSpan } from "./json-preview.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
@@ -297,7 +298,13 @@ export class InjectionsView {
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-		const lines = previewBodyLines(this.theme, item, wrapWidth, (text) => this.wrappedTextLines(text, wrapWidth));
+		// The item preview is the full-content level, so marked JSON expands here.
+		const lines = previewBodyLines(
+			this.theme,
+			item,
+			wrapWidth,
+			(text, jsonSpan) => this.wrappedTextLines(expandJsonSpan(text, jsonSpan), wrapWidth),
+		);
 		this.previewLines = lines;
 		this.previewWrapWidth = wrapWidth;
 		return lines;
