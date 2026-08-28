@@ -197,6 +197,41 @@ test("analyzeSystemPrompt breaks tool items into reconciling prompt and definiti
 	assert.doesNotMatch(base?.text ?? "", /Cite sources|search: Search the web/);
 });
 
+test("analyzeSystemPrompt exposes each aggregate child as a labeled part carrying its marked JSON", () => {
+	const systemPrompt = buildSystemPrompt({ cwd: CWD, selectedTools: ["read", "bash"] });
+	const tools: ToolSlice[] = [
+		{
+			name: "read",
+			description: "Read files",
+			parametersJson: '{"path":"string"}',
+			guidelines: [],
+			source: "builtin",
+		},
+		{
+			name: "bash",
+			description: "Run a bash command with a much longer description than read",
+			parametersJson: '{"command":"string"}',
+			guidelines: [],
+			source: "builtin",
+		},
+	];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, tools);
+	const builtin = items.find((entry) => entry.id === "tool:builtin");
+	assert.deepEqual(builtin?.sections?.map((section) => section.label), ["bash", "read"]);
+	// Parts partition the aggregate text and reconcile with the children they name.
+	assert.equal(builtin?.sections?.map((section) => section.text).join(""), builtin?.text);
+	assert.deepEqual(
+		builtin?.sections?.map((section) => section.tokens),
+		builtin?.children?.map((child) => child.tokens),
+	);
+	// Each part marks the schema of its own tool, including after the joining break.
+	assert.deepEqual(
+		builtin?.sections?.map((section) => section.text.slice(section.jsonSpan?.start, section.jsonSpan?.end)),
+		['{"command":"string"}', '{"path":"string"}'],
+	);
+});
+
 test("analyzeSystemPrompt gives a repeated guideline bullet to the tool pi renders it for", () => {
 	const shared = "Cite sources";
 	const systemPrompt = buildSystemPrompt({

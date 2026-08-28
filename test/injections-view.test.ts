@@ -513,6 +513,70 @@ test("InjectionsView preview expands the JSON runs the model marks", () => {
 	assert.ok(!messageLines.some((line) => line.includes('[{"type"')));
 });
 
+test("InjectionsView preview separates aggregate children and expands each child's JSON", () => {
+	const schema = '{"type":"object","properties":{"path":{"type":"string"}}}';
+	const child = (name: string, tokens: number): InjectionItem => {
+		const heading = `${name}: Do ${name} things\n`;
+		const text = `${heading}${schema}`;
+		return {
+			...item(name, "pi", true, tokens),
+			kind: "tool",
+			label: name,
+			text,
+			sections: [{
+				label: "Definition",
+				text,
+				tokens,
+				jsonSpan: { start: heading.length, end: text.length },
+			}],
+		};
+	};
+	const bash = child("bash", 20);
+	const read = child("read", 14);
+	const builtin: InjectionItem = {
+		...item("tool:builtin", "pi", true, 34),
+		kind: "tool",
+		label: "Built-in Tools (2)",
+		text: `${bash.text}\n${read.text}`,
+		sections: [
+			{ label: "bash", text: bash.text, tokens: 20, jsonSpan: bash.sections?.[0]?.jsonSpan },
+			{
+				label: "read",
+				text: `\n${read.text}`,
+				tokens: 14,
+				jsonSpan: { start: 1 + (read.sections?.[0]?.jsonSpan?.start ?? 0), end: 1 + read.text.length },
+			},
+		],
+		children: [bash, read],
+	};
+	const piGroup = group("pi", true, [builtin]);
+	const view = new InjectionsView(createTheme(), {
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-10T12:00:00Z"),
+			groups: [piGroup],
+			totalTokens: piGroup.totalTokens,
+		},
+	}, () => {}, () => 40);
+
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const lines = view.render(80).map((line) => stripSgr(line));
+
+	// Every child keeps its own subheader, token share, and expanded schema.
+	const bashIndex = lines.indexOf("  bash · 20 tokens");
+	const readIndex = lines.indexOf("  read · 14 tokens");
+	assert.ok(bashIndex > 0 && readIndex > bashIndex, "missing per-child subheaders");
+	assert.equal(lines[bashIndex + 1], "  bash: Do bash things");
+	assert.equal(lines[bashIndex + 2], "  {");
+	assert.equal(lines[readIndex + 1], "  read: Do read things");
+	assert.equal(lines[readIndex + 2], "  {");
+	assert.ok(!lines.some((line) => line.includes('{"type":"object"')), "schema left compact");
+	// One blank row separates the children instead of running them together.
+	assert.equal(lines[readIndex - 1], "");
+	assert.notEqual(lines[readIndex - 2], "");
+});
+
 test("InjectionsView invalidation rebuilds theme-colored section subheaders", () => {
 	const theme = createTheme();
 	const originalFg = theme.fg.bind(theme);

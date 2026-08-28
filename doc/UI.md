@@ -416,8 +416,11 @@ support arrow and page scrolling. Escape returns to the same selected row. Raw
 text must never appear in row descriptions.
 
 A tool item renders its labeled parts under the shared subheader rules, in
-place of one undivided block of raw text. The whole preview is full content, so
-marked JSON expands here.
+place of one undivided block of raw text. An item with children — Built-in
+Tools, Skills — renders one part per child under the same rules, so children
+stay separated by a blank line instead of running together. The whole preview
+is full content, so marked JSON expands here, in an aggregate part as much as
+in a tool's own definition.
 
 ## Responsive rendering
 
