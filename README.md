@@ -31,7 +31,7 @@ injected by other extensions.
 - `/context injections` - show the hidden parts of the context captured at
   session start or resume.
 - `/context config` - create the global configuration file populated with
-  defaults, useful for customization.
+  defaults, useful for [customization](#customization).
 
 ## Demo
 
@@ -64,28 +64,27 @@ pi install npm:pi-context-view
 
 ## Customization
 
+At the moment, only the `Context Usage` map colors are customizable.
+
 A config populated with the current defaults is a good starting point for
 customization. Create it with:
 
-```
+```text
 /context config
 ```
-> Creates `~/.pi/agent/extensions/pi-context-view.json`.
+> This creates `~/.pi/agent/extensions/pi-context-view.json`.
 
 See [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md)
-for default values and the meaning of each parameter.
+for each parameter's meaning and default value.
 
 ### Category Colors
 
 You can configure the `Context Usage` map colors to better match your theme, or set
-them to theme-independent hex values.
+them to theme-independent hex values. Here are examples of custom
+[terrain](https://github.com/dimk90/pi-context-view/blob/master/doc/palettes/terrain.json) and
+[rainbow](https://github.com/dimk90/pi-context-view/blob/master/doc/palettes/rainbow.json) palettes:
 
-> TODO: Color scheme example image.
-
-
-Find more details in [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md)
-and [doc/PI-THEME-COLORS](https://github.com/dimk90/pi-context-view/blob/master/doc/PI-THEME-COLORS.md).
-
+![Terrain and rainbow palettes](doc/images/color-palettes.png)
 
 ## Context Footprint
 

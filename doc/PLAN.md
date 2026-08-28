@@ -31,10 +31,9 @@
   - Paint literal values through pi's own theme conversion, keeping its
     256-color down-conversion on terminals without truecolor.
 
-- [ ] Update demo recordings to S-VHS v0.4:
+- [x] Update demo recordings to S-VHS v0.4:
   - [x] New commands + SKILL.
   - [x] Make zoom recording shorter (map only).
-  - [ ] Update links in README.
 
 - [x] **Add a color customization demo to README**:
   - Media distinguishable from the current usage GIF, which already shows the
@@ -47,3 +46,7 @@
 - [ ] **Check if JSON prettified could be used**:
   - For tools definition ? Other JSON objects?
   - Is it possible to reliably detected JSON objects?
+
+- [ ] Update links in README:
+  - [ ] Abs links to master for md-files (npmjs compatibility).
+  - [ ] Update demos and links.
