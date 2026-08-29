@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 #
-# s-vhs recording of one Context Usage panel, painted with one category palette.
+# s-vhs recording of one Context Usage panel repainted by each example category
+# palette in turn: default, terrain, rainbow, two seconds each.
 #
-# Usage: ./palette-panel.rec.sh <default|terrain|rainbow>
-#
-# Produces doc/images/palettes/<palette>.gif.
-#
-# palettes.sh runs this once per palette and composites into doc/images/color-palettes.png.
+# Produces doc/images/palettes.gif
 #
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -14,13 +11,6 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 
 # pi is started as `pi -e .`, so the recorded shell has to sit in the repo root
 cd "$REPO_ROOT" || exit 1
-
-# Usage message on run without arguments
-PALETTE="${1-}"
-if [[ ! $PALETTE =~ ^(default|terrain|rainbow)$ ]]; then
-    printf 'usage: %s <default|terrain|rainbow>\n' "$(basename "$0")" >&2
-    exit 1
-fi
 
 # shellcheck disable=SC1090
 source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 1
@@ -35,7 +25,16 @@ PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
 
-PANEL_DIR="doc/images/palettes"
+# Palette names from doc/palettes to record in addition to default palette
+PALETTES=('terrain' 'rainbow')
+# Demonstration time for each palette
+HOLD_SECONDS=2
+
+# Closing the view needs the raw byte a plain terminal sends: once a recorder
+# client has attached, tmux encodes the named Escape key for pi's extended-keys
+# mode, and the view never sees the press
+ESCAPE_KEY=$'\e'
+
 REAL_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 
@@ -45,21 +44,19 @@ REAL_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 mirror_agent_dir() {
     #
     # Mirror the user's agent directory into a throwaway one made of symlinks,
-    # substituting only pi-context-view.json. The recording then reads the
-    # palette without ever touching the user's own extension config.
+    # leaving out pi-context-view.json. The recording then owns that one file
+    # without ever touching the user's own extension config.
     #
     # AGENT_DIR is set before anything is built, and not returned on stdout: a
     # command substitution would keep a half-built mirror in the subshell, where
     # no exit handler can reach it.
     #
     # Parameters:
-    #   $1 - palette - palette name, or 'default' for the built-in colors.
+    #   None.
     #
     # Example:
-    #   mirror_agent_dir 'terrain' || exit 1
+    #   mirror_agent_dir || exit 1
     #
-    local palette="$1"
-
     AGENT_DIR=$(mktemp -d) || return 1
 
     find "$REAL_AGENT_DIR" -mindepth 1 -maxdepth 1 -exec ln -s {} "$AGENT_DIR/" \; || return 1
@@ -68,10 +65,7 @@ mirror_agent_dir() {
 
     # every other extension keeps its own config; only this one is substituted
     find "$REAL_AGENT_DIR/extensions" -mindepth 1 -maxdepth 1 ! -name 'pi-context-view.json' \
-        -exec ln -s {} "$AGENT_DIR/extensions/" \; || return 1
-    [[ $palette == 'default' ]] && return 0
-
-    cp "$REPO_ROOT/doc/palettes/$palette.json" "$AGENT_DIR/extensions/pi-context-view.json"
+        -exec ln -s {} "$AGENT_DIR/extensions/" \;
 }
 
 
@@ -92,30 +86,49 @@ remove_agent_mirror() {
 }
 
 
+apply_palette() {
+    #
+    # Put one palette in place for the next view open. The built-in colors are
+    # the absence of an override file, not a palette of their own.
+    #
+    # Parameters:
+    #   $1 - palette - palette name
+    #
+    # Example:
+    #   apply_palette 'terrain' || exit 1
+    #
+    local palette="$1"
+    local config_file="$AGENT_DIR/extensions/pi-context-view.json"
+    cp "$REPO_ROOT/doc/palettes/$palette.json" "$config_file"
+}
+
+
 ## Configuration
 
 
 Require 'pi'
 
-SetOutput "$PANEL_DIR/$PALETTE.gif"
+SetOutput "$REPO_ROOT/doc/images/palettes.gif"
 
-# Framing is the usage recording's, so the panels match the /context demo
-SetCols 78
+# Sized for pi.dev: 1546 x 967 px with this font, matching the 1.6 aspect ratio suitable for pi.dev.
+# Rows stay at the palette panels' 25, which holds the whole usage view.
+SetCols 89
 SetRows 25
-SetFontSize 24
+SetFontSize 31
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'
 
-# Only the last frame is kept, so the GIF is an intermediate
-SetOptimize 'off'
-SetLoop 'off'
+# Every palette gets the same time on screen, including the one the loop ends on
+SetLastFrameDuration "$HOLD_SECONDS"
+
+# The GIF is committed to the repository, so shrink it losslessly
+SetOptimize 'on'
 
 # Configure clean up chain for the case of sudden failure
 trap '_svhs_cleanup; remove_agent_mirror' EXIT
 
-# Change Pi config directory to temporary dir
-mirror_agent_dir "$PALETTE" || exit 1
-mkdir -p "$PANEL_DIR" || exit 1
+# Create temporary dir with custom config for pi-context-view
+mirror_agent_dir || exit 1
 
 Env 'PI_CODING_AGENT_DIR' "$AGENT_DIR"
 
@@ -124,15 +137,30 @@ Start
 
 ## Recording
 
-
-# Bring pi up off camera, so the panel is an idle TUI
+# Bring pi and the first palette up off camera, so the GIF opens on the panel
 Run "$PI_COMMAND"
 Wait 'Session compacted 2 times'
 
-# Open the usage view and hold it: the still is the last frame
+# Record default palette first
 Run '/context'
 Wait 'Context Usage'
 
-# Render one static frame
 Show
+Sleep "$HOLD_SECONDS"
+Hide
+Type "$ESCAPE_KEY"
+
+# Record custom palettes from doc/palettes
+for palette in "${PALETTES[@]}"; do
+    apply_palette "$palette" || return 1
+
+    Run '/context'
+    Wait 'Context Usage'
+
+    Show
+    Sleep "$HOLD_SECONDS"
+    Hide
+    Type "$ESCAPE_KEY"
+done
+
 Render
