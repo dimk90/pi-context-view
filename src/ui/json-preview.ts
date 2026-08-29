@@ -1,9 +1,8 @@
 /**
  * Preview-only expansion of the JSON runs the model marks structurally: a
  * tool's parameter schema, tool-call arguments, and serialized message
- * content. Only full-content previews expand them; capped Usage blocks keep
- * the compact provider-bound form, which also backs every token estimate.
- * Pure string logic — no pi or TUI access.
+ * content. Every preview level expands them; the compact provider-bound form
+ * still backs every token estimate. Pure string logic — no pi or TUI access.
  */
 import type { JsonSpan } from "../model.ts";
 

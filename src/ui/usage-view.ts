@@ -161,14 +161,6 @@ interface BlockBody {
 	readonly lines: readonly string[];
 }
 
-/** How one entry's raw content is shaped for the level that renders it. */
-interface EntryContentOptions {
-	/** Collapse complete attached skills into badges; User Messages only. */
-	readonly compactSkills: boolean;
-	/** Expand the marked JSON run; the full-content level only. */
-	readonly expandJson: boolean;
-}
-
 /** Open the Usage view as a fullscreen overlay. */
 export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<void> {
 	await context.ui.custom<void>(
@@ -1001,10 +993,9 @@ export class UsageView {
 		if (this.cachedContent !== undefined && this.cachedContent.wrapWidth === wrapWidth) {
 			return this.cachedContent.entries;
 		}
-		// The stream keeps the compact JSON the provider receives, so the per-block cap stays stable.
-		const options = { compactSkills: row.rootId === "user-messages", expandJson: false };
+		const compactSkills = row.rootId === "user-messages";
 		const entries = this.previewEntries(row)
-			.map((entry) => this.entryContentLines(entry, wrapWidth, options));
+			.map((entry) => this.entryContentLines(entry, wrapWidth, compactSkills));
 		this.cachedContent = { wrapWidth, entries };
 		return entries;
 	}
@@ -1019,10 +1010,7 @@ export class UsageView {
 			return this.cachedBlockBody.lines;
 		}
 		const wrapWidth = previewWrapWidth(width);
-		const content = this.entryContentLines(entry, wrapWidth, {
-			compactSkills: row.rootId === "user-messages",
-			expandJson: true,
-		});
+		const content = this.entryContentLines(entry, wrapWidth, row.rootId === "user-messages");
 		const lines = content.map((line) => line === "" ? "" : this.fit(`${BODY_INDENT}${line}`, width));
 		this.cachedBlockBody = { width, lines };
 		return lines;
@@ -1080,19 +1068,12 @@ export class UsageView {
 	}
 
 	/** Complete content lines under the entry header: labeled tool parts, or the whole raw entry. */
-	private entryContentLines(
-		entry: UsagePreviewEntry,
-		wrapWidth: number,
-		options: EntryContentOptions,
-	): string[] {
+	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
 		return previewBodyLines(
 			this.theme,
 			entry,
 			wrapWidth,
-			(text, jsonSpan) => {
-				const shaped = options.expandJson ? expandJsonSpan(text, jsonSpan) : text;
-				return this.wrappedEntryLines(shaped, wrapWidth, options.compactSkills);
-			},
+			(text, jsonSpan) => this.wrappedEntryLines(expandJsonSpan(text, jsonSpan), wrapWidth, compactSkills),
 			entry.breadcrumb.at(-1),
 		);
 	}

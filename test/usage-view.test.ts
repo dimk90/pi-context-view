@@ -779,7 +779,7 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 	assert.deepEqual(view.render(80), stream);
 });
 
-test("UsageView expands marked JSON in full content while the stream stays compact", () => {
+test("UsageView expands marked JSON in the stream and caps it on the expanded lines", () => {
 	const args = Object.fromEntries(
 		Array.from({ length: 20 }, (_, index) => [`key_${index}`, `value ${index} with enough text to wrap`]),
 	);
@@ -806,9 +806,11 @@ test("UsageView expands marked JSON in full content while the stream stays compa
 	view.render(80);
 	view.handleInput("\r");
 	const streamPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
-	// The capped stream keeps the compact form the provider receives.
-	assert.ok(streamPlain.some((line) => line.includes('read({"key_0":"value 0 with enough text to wrap"')));
-	assert.ok(streamPlain.some((line) => /… \+\d+ lines · Enter - View Content/.test(line)));
+	assert.ok(streamPlain.some((line) => line.endsWith("read({")));
+	assert.ok(streamPlain.some((line) => line.endsWith('"key_0": "value 0 with enough text to wrap",')));
+	assert.ok(!streamPlain.some((line) => line.includes('{"key_0":')));
+	const marker = streamPlain.find((line) => /… \+\d+ lines · Enter - View Content/.test(line));
+	assert.ok(marker !== undefined);
 
 	view.handleInput("\r");
 	for (const width of [60, 80, 120]) {
@@ -820,12 +822,51 @@ test("UsageView expands marked JSON in full content while the stream stays compa
 	const callLine = blockPlain.indexOf("    read({");
 	assert.ok(callLine > 0);
 	assert.equal(blockPlain[callLine + 1], '      "key_0": "value 0 with enough text to wrap",');
-	assert.ok(!blockPlain.some((line) => line.includes('{"key_0":')));
+
+	// Both levels wrap the same expanded text, so the marker counts exactly the lines Enter adds
+	// beyond the five content lines a 24-row terminal keeps per block.
+	const counter = blockPlain.find((line) => /^ {2}\(\d+\/\d+\)$/.test(line));
+	assert.ok(counter !== undefined);
+	const totalLines = Number(counter.split("/")[1]?.replace(")", ""));
+	assert.equal(Number(/\+(\d+) lines/.exec(marker)?.[1]), totalLines - 5);
 
 	// The expansion stays inside the captured text: scrolling reaches the closing call parenthesis.
 	view.handleInput("\u001b[4~"); // End
 	const tailPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
 	assert.ok(tailPlain.some((line) => line === "    })"));
+});
+
+test("UsageView expands a block that fits the cap and leaves Enter a no-op", () => {
+	const text = 'read({"path":"src/index.ts"})';
+	const callUsage: ContextUsageSnapshot = {
+		...usage(12),
+		categories: [{
+			id: "agent-tool-call-messages",
+			label: "Agent Tool Call Messages",
+			tokens: 12,
+			entries: [{
+				timestamp: Date.UTC(2026, 6, 11, 14, 2, 19),
+				breadcrumb: ["assistant", "read"],
+				tokens: 12,
+				text,
+				jsonSpan: { start: 5, end: text.length - 1 },
+			}],
+		}],
+		estimatedTokens: 12,
+	};
+	const view = createView(createTheme(), { usage: callUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const stream = view.render(80);
+	const streamPlain = stream.map((line) => stripSgr(line).trimEnd());
+	assert.ok(streamPlain.some((line) => line.endsWith("read({")));
+	assert.ok(streamPlain.some((line) => line.endsWith('"path": "src/index.ts"')));
+	assert.ok(!streamPlain.some((line) => line.includes("Enter - View Content")));
+
+	// Nothing is hidden, so the block level stays closed.
+	view.handleInput("\r");
+	assert.deepEqual(view.render(80), stream);
 });
 
 test("UsageView accepts j/k wherever it accepts the arrow keys", () => {

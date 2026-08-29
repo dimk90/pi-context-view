@@ -56,11 +56,11 @@ that opens with its own name has. This is a preview-only omission; the dropped
 line still counts toward the estimate shown in that heading.
 
 Preview text may carry a JSON document that the model marks structurally — a
-tool's parameter schema, tool-call arguments, serialized message content. Only
-full-content previews, the Injections item preview and the Usage Enter level,
-re-serialize that run across lines indented two spaces per level. Every other
-level keeps the compact single-line form the provider receives, so block caps
-and `… +N lines` counts stay stable. Marking is structural, never heuristic:
+tool's parameter schema, tool-call arguments, serialized message content. Every
+preview level re-serializes that run across lines indented two spaces per level,
+so a block small enough to escape the cap still shows its expanded form, and
+block caps and `… +N lines` counts measure the expanded lines the Enter level
+opens. Marking is structural, never heuristic:
 text that merely looks like JSON stays as captured, and a marked run that no
 longer parses renders unchanged. Like skill badges, this is a preview-only
 transformation that never changes token estimates.
@@ -355,8 +355,7 @@ Enter on a capped block opens a separate fullscreen level containing the
 category header, one blank separator row, the selected entry header, and its
 complete uncapped content. That level uses line and page scrolling with
 `↑↓/jk Scroll · PgUp/PgDn Page · Esc Back`, and Escape returns to the same block
-and viewport. It is also the only level that expands marked JSON, so a block
-that never caps keeps the compact form. A category without entries instead shows
+and viewport. A category without entries instead shows
 `No content captured for this category.` without a gutter; Enter is a no-op and
 the hint row offers `Esc Back` alone.
 Unknown usage after compaction retains an explicit preview state.
