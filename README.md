@@ -85,7 +85,7 @@ them to theme-independent hex values. Here are examples of custom
 [terrain](https://github.com/dimk90/pi-context-view/blob/master/doc/palettes/terrain.json) and
 [rainbow](https://github.com/dimk90/pi-context-view/blob/master/doc/palettes/rainbow.json) palettes:
 
-![Terrain and rainbow palettes](doc/images/color-palettes.png)
+![Terrain and rainbow palettes](doc/images/palettes.png)
 
 ## Context Footprint
 

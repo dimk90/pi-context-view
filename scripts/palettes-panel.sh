@@ -18,7 +18,7 @@ readonly _PALETTES_SCRIPT_DIR _PALETTES_REPO_ROOT
 
 readonly _PALETTES_PANEL_DIR="$_PALETTES_REPO_ROOT/doc/images/palettes"
 readonly _PALETTES_RECORDER="$_PALETTES_SCRIPT_DIR/recordings/palette.rec.sh"
-readonly _PALETTES_OUTPUT="$_PALETTES_REPO_ROOT/doc/images/color-palettes.png"
+readonly _PALETTES_OUTPUT="$_PALETTES_REPO_ROOT/doc/images/palettes.png"
 
 readonly _PALETTES_NAMES=('default' 'terrain' 'rainbow')
 readonly _PALETTES_CAPTIONS=('default' 'terrain' 'rainbow')

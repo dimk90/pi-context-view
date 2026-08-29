@@ -34,7 +34,7 @@ Require 'pi'
 SetOutput "$REPO_ROOT/doc/images/zoom.gif"
 
 SetCols 80
-SetRows 32
+SetRows 27
 SetFontSize 36
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'
