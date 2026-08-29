@@ -404,7 +404,7 @@ test("InjectionsView preview labels every known section", () => {
 		kind: "tool",
 		text: `${snippet}${guidelines}${definition}`,
 		sections: [
-			{ label: "Prompt Snippet", text: snippet, tokens: 6 },
+			{ label: "Available Tools", text: snippet, tokens: 6 },
 			{ label: "Guidelines", text: guidelines, tokens: 17 },
 			{ label: "Definition", text: definition, tokens: 7 },
 		],
@@ -433,15 +433,15 @@ test("InjectionsView preview labels every known section", () => {
 		for (const line of rendered) {
 			assert.ok(visibleWidth(line) <= width, `preview line exceeds width ${width}: ${line}`);
 		}
-		assert.match(rendered.map((line) => stripSgr(line)).join("\n"), /Prompt Snippet · 6 tokens/);
+		assert.match(rendered.map((line) => stripSgr(line)).join("\n"), /Available Tools · 6 tokens/);
 	}
 	const lines = view.render(80);
 	const plainLines = lines.map((line) => stripSgr(line));
-	const snippetIndex = plainLines.indexOf("  Prompt Snippet · 6 tokens");
+	const snippetIndex = plainLines.indexOf("  Available Tools · 6 tokens");
 	const guidelinesIndex = plainLines.indexOf("  Guidelines · 17 tokens");
 	const definitionIndex = plainLines.indexOf("  Definition · 7 tokens");
-	assert.ok(snippetIndex > 0, "missing Prompt Snippet subheader");
-	assert.ok(guidelinesIndex > snippetIndex, "Guidelines does not follow Prompt Snippet");
+	assert.ok(snippetIndex > 0, "missing Available Tools subheader");
+	assert.ok(guidelinesIndex > snippetIndex, "Guidelines does not follow Available Tools");
 	assert.ok(definitionIndex > guidelinesIndex, "Definition does not follow Guidelines");
 	// Parts use syntaxKeyword, leaving mdHeading to the headings they nest under.
 	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));

@@ -175,7 +175,7 @@ test("analyzeSystemPrompt breaks tool items into reconciling prompt and definiti
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
 	assert.deepEqual(
 		search?.sections?.map((section) => section.label),
-		["Prompt Snippet", "Guidelines", "Definition"],
+		["Available Tools", "Guidelines", "Definition"],
 	);
 	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
 	assert.equal(search?.sections?.[1]?.text, `\n- ${guidelines[0]}\n- ${guidelines[1]}`);
@@ -264,11 +264,11 @@ test("analyzeSystemPrompt gives a repeated guideline bullet to the tool pi rende
 	const fetch = items.find((entry) => entry.id === "tool:npm:web:fetch");
 	assert.deepEqual(
 		search?.sections?.map((section) => section.label),
-		["Prompt Snippet", "Guidelines", "Definition"],
+		["Available Tools", "Guidelines", "Definition"],
 	);
 	assert.equal(search?.sections?.[1]?.text, `\n- ${shared}`);
 	// Pi renders the shared bullet once, so the later tool contributes no bullet.
-	assert.deepEqual(fetch?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	assert.deepEqual(fetch?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
 	assert.equal(items.filter((entry) => entry.text.includes(shared)).length, 1);
 });
 
@@ -312,7 +312,7 @@ test("analyzeSystemPrompt leaves pi's own and built-in tool bullets in the base 
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
 	// Pi credits one bullet to the built-in tool that declared it first and adds
 	// the file-exploration bullet itself, so the extension tool carves neither.
-	assert.deepEqual(search?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	assert.deepEqual(search?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.ok(base?.text.includes(`\n- ${builtinGuideline}`));
 	assert.ok(base?.text.includes(`\n- ${piGuideline}`));
@@ -340,7 +340,7 @@ test("analyzeSystemPrompt carves tool lines only from the blocks pi renders them
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
 	// The guideline never reached the Guidelines block, so the identical context
 	// file line stays with the file instead of being counted twice.
-	assert.deepEqual(search?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	assert.deepEqual(search?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
 	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
 	assert.equal(items.find((entry) => entry.id === `context-file:${filePath}`)?.text, content);
 });

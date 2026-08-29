@@ -39,8 +39,8 @@ dialog descriptions, bright `text` for primary rows, `muted` for subordinate
 rows and values, and `dim` for deeper breakdowns. Selected labels and values use
 `accent` with no background. Subheaders are bold and use `mdHeading`.
 
-Preview content that decomposes into labeled parts — a tool's `Prompt Snippet`,
-`Guidelines`, and `Definition` — renders every part under its own bold
+Preview content that decomposes into labeled parts — a tool's `Available Tools`,
+`Guidelines`, and `Definition` parts — renders every part under its own bold
 `syntaxKeyword` subheader followed by a muted ` · N tokens` share, with one blank
 row between parts. Parts keep `syntaxKeyword` rather than the usual `mdHeading`
 subheader color because they nest under item and entry headings that already

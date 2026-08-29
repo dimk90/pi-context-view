@@ -179,7 +179,7 @@ function carveToolPromptSections(
 	const snippet = tool.snippet === undefined
 		? undefined
 		: carveBlockLine(carver, carver.toolsBlock, `\n- ${tool.name}: ${tool.snippet}`);
-	if (snippet !== undefined) sections.push({ label: "Prompt Snippet", text: snippet });
+	if (snippet !== undefined) sections.push({ label: "Available Tools", text: snippet });
 	let bullets = "";
 	for (const guideline of ownedGuidelines) {
 		bullets += carveBlockLine(carver, carver.guidelinesBlock, `\n- ${guideline}`) ?? "";

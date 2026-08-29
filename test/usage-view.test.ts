@@ -724,7 +724,7 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 					tokens: 30,
 					text: `${snippet}${guidelines}${definition}`,
 					sections: [
-						{ label: "Prompt Snippet", text: snippet, tokens: 6 },
+						{ label: "Available Tools", text: snippet, tokens: 6 },
 						{ label: "Guidelines", text: guidelines, tokens: 17 },
 						{ label: "Definition", text: definition, tokens: 7 },
 					],
@@ -743,7 +743,7 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 	const entryHeader = streamPlain.indexOf("┃ [search] 30");
 	assert.ok(entryHeader > 0);
 	// Parts sit two columns under the entry header, which still carries the whole tool estimate.
-	assert.equal(streamPlain[entryHeader + 1], "┃   Prompt Snippet · 6 tokens");
+	assert.equal(streamPlain[entryHeader + 1], "┃   Available Tools · 6 tokens");
 	assert.equal(streamPlain[entryHeader + 2], "┃   - search: Search the web");
 	assert.equal(streamPlain[entryHeader + 3], "┃");
 	assert.equal(streamPlain[entryHeader + 4], "┃   Guidelines · 17 tokens");
@@ -765,7 +765,7 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 		}
 		const plain = block.map((line) => stripSgr(line).trimEnd());
 		// The block view replaces the stream gutter with its own indent.
-		assert.ok(plain.some((line) => line === "    Prompt Snippet · 6 tokens"));
+		assert.ok(plain.some((line) => line === "    Available Tools · 6 tokens"));
 		assert.ok(plain.some((line) => line === "    Guidelines · 17 tokens"));
 	}
 	const blockPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
