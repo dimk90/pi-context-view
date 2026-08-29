@@ -8,7 +8,8 @@
 
 ### Changed
 * `[ui]` Expand JSON runs in full-content previews (tool defs, tool-calls, etc).
-* `[injections]` Label tool prompt snippets, guidelines, and definitions in Injections and `Usage` previews.
+* `[injections]` Label tool guidelines, and definitions in Injections and `Usage` previews.
+* `[ui]` Drop a preview line that only repeats the heading above it.
 
 ### Fixed
 * `[context]` Rebuild the session baseline once, not on every LLM request ([#1](https://github.com/dimk90/pi-context-view/pull/1) by  [@kaushikvira](https://github.com/kaushikvira)).

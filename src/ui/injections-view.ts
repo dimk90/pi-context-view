@@ -304,6 +304,7 @@ export class InjectionsView {
 			item,
 			wrapWidth,
 			(text, jsonSpan) => this.wrappedTextLines(expandJsonSpan(text, jsonSpan), wrapWidth),
+			item.label,
 		);
 		this.previewLines = lines;
 		this.previewWrapWidth = wrapWidth;

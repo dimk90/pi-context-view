@@ -50,6 +50,11 @@ Show the applicable subheader even when `Definition` is the only captured part;
 omit parts that have no captured text rather than rendering zero-token
 placeholders.
 
+A preview body never repeats the heading directly above it: drop a first content
+line identical to the item title, part label, or entry name, as a skill block
+that opens with its own name has. This is a preview-only omission; the dropped
+line still counts toward the estimate shown in that heading.
+
 Preview text may carry a JSON document that the model marks structurally — a
 tool's parameter schema, tool-call arguments, serialized message content. Only
 full-content previews, the Injections item preview and the Usage Enter level,

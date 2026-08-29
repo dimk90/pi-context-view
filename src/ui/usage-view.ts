@@ -1085,10 +1085,16 @@ export class UsageView {
 		wrapWidth: number,
 		options: EntryContentOptions,
 	): string[] {
-		return previewBodyLines(this.theme, entry, wrapWidth, (text, jsonSpan) => {
-			const shaped = options.expandJson ? expandJsonSpan(text, jsonSpan) : text;
-			return this.wrappedEntryLines(shaped, wrapWidth, options.compactSkills);
-		});
+		return previewBodyLines(
+			this.theme,
+			entry,
+			wrapWidth,
+			(text, jsonSpan) => {
+				const shaped = options.expandJson ? expandJsonSpan(text, jsonSpan) : text;
+				return this.wrappedEntryLines(shaped, wrapWidth, options.compactSkills);
+			},
+			entry.breadcrumb.at(-1),
+		);
 	}
 
 	/** Sanitized, wrapped lines of one text run, indented under the entry header. */

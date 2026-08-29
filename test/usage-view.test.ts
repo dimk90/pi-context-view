@@ -1424,6 +1424,35 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 	assert.ok(!narrowPlain.some((line) => line.includes(longUnsafeName)), "long badge name wraps across lines");
 });
 
+test("UsageView drops a first content line repeating the entry name", () => {
+	const rawText = [
+		"pi-extension",
+		"Create, extend, and modify extensions for the pi coding agent.",
+		"/skills/pi-extension/SKILL.md",
+	].join("\n");
+	const skillUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-13T12:00:00Z"),
+		categories: [{
+			id: "skills",
+			label: "Skills",
+			tokens: 141,
+			entries: [{ breadcrumb: ["pi-extension"], tokens: 141, text: rawText }],
+		}],
+		estimatedTokens: 141,
+	};
+	const view = createView(createTheme(), { usage: skillUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const plain = view.render(80).map((line) => stripSgr(line).replace(/^[┃\s]+/, "").trimEnd());
+	assert.ok(plain.some((line) => line.startsWith("Create, extend,")), "the description opens the body");
+	assert.ok(plain.includes("/skills/pi-extension/SKILL.md"), "the location stays visible");
+	assert.deepEqual(plain.filter((line) => line.includes("pi-extension")), [
+		"[pi-extension] 141",
+		"/skills/pi-extension/SKILL.md",
+	], "the name shows once, in the header the estimate belongs to");
+});
+
 test("UsageView leaves skill-shaped content unchanged outside User Messages", () => {
 	const rawText = [
 		'<skill name="tool-doc" location="/skills/tool-doc/SKILL.md">',

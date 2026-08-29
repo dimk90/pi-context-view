@@ -577,6 +577,57 @@ test("InjectionsView preview separates aggregate children and expands each child
 	assert.notEqual(lines[readIndex - 2], "");
 });
 
+test("InjectionsView omits a skill name its heading already shows", () => {
+	const skill = (name: string, tokens: number): InjectionItem => ({
+		...item(name, "pi", true, tokens),
+		kind: "skills",
+		label: name,
+		text: `${name}\nDo ${name} things\n/skills/${name}/SKILL.md`,
+	});
+	const codeStyle = skill("code-style", 30);
+	const commit = skill("commit", 12);
+	const skills: InjectionItem = {
+		...item("skills", "pi", true, 42),
+		kind: "skills",
+		label: "Skills (2)",
+		text: `${codeStyle.text}\n${commit.text}`,
+		sections: [
+			{ label: "code-style", text: codeStyle.text, tokens: 30 },
+			{ label: "commit", text: `\n${commit.text}`, tokens: 12 },
+		],
+		children: [codeStyle, commit],
+	};
+	const piGroup = group("pi", true, [skills]);
+	const view = new InjectionsView(createTheme(), {
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-10T12:00:00Z"),
+			groups: [piGroup],
+			totalTokens: piGroup.totalTokens,
+		},
+	}, () => {}, () => 40);
+
+	// Each part of the aggregate preview opens with the description, not the name above it.
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const aggregate = view.render(80).map((line) => stripSgr(line));
+	const styleIndex = aggregate.indexOf("  code-style · 30 tokens");
+	const commitIndex = aggregate.indexOf("  commit · 12 tokens");
+	assert.ok(styleIndex > 0 && commitIndex > styleIndex, "missing per-child subheaders");
+	assert.equal(aggregate[styleIndex + 1], "  Do code-style things");
+	assert.equal(aggregate[commitIndex + 1], "  Do commit things");
+
+	// The child preview keeps its whole estimate while dropping the same repeated line.
+	view.handleInput("\u001b");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const child = view.render(80).map((line) => stripSgr(line));
+	const headerIndex = child.findIndex((line) => line.includes("30 tokens"));
+	assert.ok(headerIndex >= 0 && child[headerIndex]?.includes("code-style"));
+	assert.equal(child[headerIndex + 2], "  Do code-style things");
+	assert.equal(child[headerIndex + 3], "  /skills/code-style/SKILL.md");
+});
+
 test("InjectionsView invalidation rebuilds theme-colored section subheaders", () => {
 	const theme = createTheme();
 	const originalFg = theme.fg.bind(theme);
