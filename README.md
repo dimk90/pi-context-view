@@ -41,21 +41,21 @@ injected by other extensions.
 
 See what fills your context, for example, what survives compaction:
 
-![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/ec65cc1cbfafcb699471c9ac4a0b63ec4189ff8c/doc/images/context-usage.gif)
+![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/3d07101663b7c03b75b02c0c1d3eb9edea19b120/doc/images/context-usage.gif)
 
 
 ### `/context injections`
 
 Inspect hidden parts of the context, such as tool definitions:
 
-![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/df9b7bae3d090492640c31b584374e3e2ddb7874/doc/images/context-injections.gif)
+![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/3d07101663b7c03b75b02c0c1d3eb9edea19b120/doc/images/context-injections.gif)
 
 ### Zoom
 
 Zoom in for a more detailed breakdown of large context windows, such as
 1M-token windows:
 
-![Zoom feature](https://media.githubusercontent.com/media/dimk90/pi-context-view/df9b7bae3d090492640c31b584374e3e2ddb7874/doc/images/zoom.gif)
+![Zoom feature](https://media.githubusercontent.com/media/dimk90/pi-context-view/3d07101663b7c03b75b02c0c1d3eb9edea19b120/doc/images/zoom.gif)
 
 ## Install
 
@@ -85,7 +85,11 @@ them to theme-independent hex values. Here are examples of custom
 [terrain](https://github.com/dimk90/pi-context-view/blob/develop/doc/palettes/terrain.json) and
 [rainbow](https://github.com/dimk90/pi-context-view/blob/develop/doc/palettes/rainbow.json) palettes:
 
-![Terrain and rainbow palettes](doc/images/palettes.png)
+![Terrain and rainbow palettes](https://media.githubusercontent.com/media/dimk90/pi-context-view/3d07101663b7c03b75b02c0c1d3eb9edea19b120/doc/images/palettes.png)
+
+See [PI-THEME-COLORS](https://github.com/dimk90/pi-context-view/blob/develop/doc/PI-THEME-COLORS.md) 
+for color names that follow the current theme.
+
 
 ## Context Footprint
 
@@ -97,4 +101,4 @@ them to theme-independent hex values. Here are examples of custom
 
 ## License
 
-MIT
+[MIT](https://github.com/dimk90/pi-context-view/blob/master/LICENSE)
