@@ -1,11 +1,12 @@
 # pi-context-view
 
-TypeScript pi extension (`src/index.ts`) with two TUI-only overlays:
+TypeScript pi extension (`src/index.ts`) with two TUI-only overlays and one utility command:
 
 - `/context` or `/context usage` — estimate current context composition.
 - `/context injections` — inspect the frozen Initial snapshot with opt-in raw previews.
+- `/context config` — explicitly create the defaults-populated global config file.
 
-The command accepts only `usage` and `injections`; keep it unavailable outside TUI mode.
+The command accepts only `usage`, `injections`, and `config`; keep both views unavailable outside TUI mode and `config` available in every run mode.
 
 ## Sources of truth
 

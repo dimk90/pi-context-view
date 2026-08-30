@@ -8,11 +8,12 @@ Canonical contract for how pi-context-view captures hidden context, estimates cu
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `src/index.ts`            | Register pi lifecycle handlers, dispatch `/context`, and assemble view inputs.            |
 | `src/command.ts`          | Parse command arguments and resolve Initial through capture, probe, or degraded fallback. |
-| `src/config.ts`           | Load, validate, cache, and resolve global override-only user configuration.               |
+| `src/config.ts`           | Load, validate, cache, resolve, and explicitly create global override-only configuration. |
 | `src/capture.ts`          | Own Initial, silent-probe, compaction, identity persistence, and injected-message state.  |
 | `src/measure.ts`          | Carve and estimate prompt and tool contributions without pi API access.                   |
 | `src/usage.ts`            | Classify provider-bound messages and build current usage totals and previews.             |
 | `src/model.ts`            | Define semantic capture and usage types, ownership, hierarchy, and grouping.              |
+| `src/text.ts`             | Sanitize dynamic text for the terminal before reporting or rendering it.                  |
 | `src/ui/`                 | Keep navigation, layout, preview shaping, and fullscreen rendering isolated from capture. |
 | `test/fixtures/marker.ts` | Exercise capture visibility and extension load order in lifecycle smoke tests.            |
 
@@ -91,7 +92,14 @@ Keep semantics in typed model fields rather than display labels:
 - detect non-custom context-only injections by diffing against the session branch;
 - treat children as a breakdown of their parent, never additional tokens in totals;
 - retain labeled preview sections as typed parts of an item, with token shares
-  that reconcile to the parent rather than adding to it.
+  that reconcile to the parent rather than adding to it; an item with children
+  exposes every child as one such part, carrying the child's label, estimate,
+  and marked JSON run;
+- mark JSON that capture and classification serialized themselves — tool
+  parameter schemas, tool-call arguments, non-string message content — with a
+  span on the item, section, or entry instead of detecting JSON in preview text;
+  the compact provider-bound form always backs the estimate, and expansion stays
+  a rendering concern owned by [UI.md](UI.md).
 
 ## Configuration
 
@@ -101,7 +109,8 @@ Every user-configurable value follows one contract, whatever it configures:
 - never auto-create the file and never write missing defaults into it; only an explicit user action may create or modify it;
 - load lazily at view-open time, never in the extension factory, which also runs in invocations that never start a session; cache per runtime and re-read on mtime change;
 - an absent file and omitted keys silently use defaults; an unreadable or unparseable file, unknown key, unrecognized color, or out-of-range value falls back to the applicable default and warns once per file revision, never failing a view;
-- writes are atomic through temp file plus rename, debounced, skipped outside `ctx.mode === "tui"`, and merged over a fresh read so concurrent edits and unknown keys survive.
+- `/context config` is the explicit create-only action: it writes every default through one atomic `O_EXCL` create, never overwrites or modifies an existing path, and stays available in every run mode because it needs no UI — only the views are gated on `ctx.mode === "tui"`;
+- later actions that update an existing file must be debounced and merge over a fresh read so concurrent edits and unknown keys survive.
 
 Configuration holds preferences only; the privacy contract below forbids storing captured prompt or message content there. [PLAN.md](PLAN.md) tracks which values are configurable, and [UI.md](UI.md) owns the rendering rules for configurable colors and map geometry.
 

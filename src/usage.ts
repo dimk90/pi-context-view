@@ -149,6 +149,7 @@ function classifyMessages(
 			breadcrumb: [item.label],
 			tokens: item.tokens,
 			text: item.text,
+			jsonSpan: item.jsonSpan,
 		});
 	}
 	for (const message of messages) {
@@ -173,6 +174,8 @@ function classifyMessages(
 						breadcrumb: ["assistant", block.name],
 						tokens: textTokens(block.name.length + args.length),
 						text: `${block.name}(${args})`,
+						// The arguments sit between the call parentheses this entry adds around them.
+						jsonSpan: { start: block.name.length + 1, end: block.name.length + 1 + args.length },
 					});
 				}
 				break;
@@ -260,6 +263,7 @@ function leafFromItem(item: InjectionItem): UsageCategory {
 			breadcrumb: [item.label],
 			tokens: item.tokens,
 			text: item.text,
+			jsonSpan: item.jsonSpan,
 			// Tool parts stay a preview breakdown of the same estimate, never separate entries.
 			sections: item.sections,
 		}],

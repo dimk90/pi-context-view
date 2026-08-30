@@ -1,44 +1,57 @@
 # Development Plan
 
-## Status
-
-- [doc/ARCHITECTURE.md](ARCHITECTURE.md) - current capture and usage architecture;
-- [doc/UI.md](UI.md) - the UI specification;
-- [doc/HISTORY.md](HISTORY.md) - legacy, superseded designs and architecture decisions;
-- [CHANGELOG.md](../CHANGELOG.md) for completed work.
-
-
 ## v0.5.0
 
-- [ ] **Add config file for customization**:
-  - Override-only: defaults live in code, the file is never auto-created on
-    first run and never backfilled with missing defaults, so later default
-    changes still reach users who did not override them.
-  - Global `getAgentDir()/extensions/pi-context-view.json` only; no project-local
-    override, so no `ctx.isProjectTrusted()` gate is needed.
-  - Load lazily on first `/context` open, never in the factory; cache per
-    runtime and re-read on mtime change so edits apply without restarting pi.
-  - Failure = defaults: a missing, unparseable, or invalid entry (unknown key,
-    unknown color name, out-of-range size) falls back to the built-in value and
-    warns once, never fails the view.
-  - Introduce a class in `src/config.ts` holding configurable state.
-  - Make colors configurable for all categories.
-  - The Pi's theme color names should be allowed in config.
-  - Add `/context config` to write the file populated with defaults; refuse and
-    print the path when it already exists. Keep parsing, completions,
-    registration text, README usage, and command tests synchronized with the
-    new grammar.
-  - Writes are atomic (tmp file + rename), debounced, and skipped outside
-    `ctx.mode === "tui"`; re-read and merge before writing so concurrent edits
-    and unknown keys survive.
-- [ ] Add "Customization" section to README with:
-    - Short tip to start with `/context config`.
-    - Link to md file with content of the default settings (json) + description.
-    - "Category Colors" sub-section:
-      - Supported theme-depended and independent colors.
-      - Link to the theme color names & default dark theme visualization (doc/PI-THEME-COLORS.md)
-      - Any idea for color demo distinguishable from the current one?
+- [x] **Add override-only config loading and configurable category colors**:
+  - Keep defaults in code; never auto-create the file or backfill omitted keys.
+  - Read global `getAgentDir()/extensions/pi-context-view.json` only, lazily on
+    the first `/context` open; cache per runtime and re-read on mtime change.
+  - Degrade invalid files and entries to defaults and warn once per revision.
+  - Keep configurable state and validation in `src/config.ts`.
+  - Accept Pi foreground theme color names for every Usage category, the
+    auto-compact buffer, and free space.
 
-- [ ] **Check if JSON prettified could be used**:
-  - For tools definition ? Other JSON objects?
-  - Is it possible to reliably detected JSON objects?
+- [x] **Add `/context config` writer**:
+  - Write the file populated with defaults; refuse and print the path when it
+    already exists. Keep parsing, completions, registration text, README usage,
+    and command tests synchronized with the new grammar.
+  - The create-only write is one atomic `O_EXCL` create, available in every run
+    mode because it opens no view. Debouncing and fresh-read merging remain
+    requirements for later actions that update an existing file.
+- [x] **Add "Customization" section to README**:
+  - Tip to start with `/context config`, plus the override-only semantics.
+  - Link to [doc/CONFIGURATION.md](CONFIGURATION.md) with the default file and
+    key descriptions.
+  - "Category Colors" sub-section: theme color names and literal hex values,
+    with a link to [doc/PI-THEME-COLORS.md](PI-THEME-COLORS.md).
+
+- [x] **Accept literal hex category colors**:
+  - Take `#rrggbb` and `#rgb` beside theme color names, so a category color can
+    stay fixed across themes.
+  - Paint literal values through pi's own theme conversion, keeping its
+    256-color down-conversion on terminals without truecolor.
+
+- [x] Update demo recordings to S-VHS v0.4:
+  - [x] New commands + SKILL.
+  - [x] Make zoom recording shorter (map only).
+
+- [x] **Add a color customization demo to README**:
+  - Media distinguishable from the current usage GIF, which already shows the
+    default palette.
+  - One still of the same session per palette — defaults, `terrain`, `rainbow` —
+    composited side by side by `scripts/palettes.sh`.
+  - Example palettes live in `doc/palettes/` and double as the recording input;
+    each panel reads one through a throwaway mirror of the agent directory.
+
+- [x] **Prettify the JSON the model already knows about**:
+  - Mark serialized runs structurally instead of detecting JSON in text: tool
+    parameter schemas, tool-call arguments, and non-string message content.
+  - Expand a marked run only in full-content previews — the Injections item
+    preview and the Usage Enter level — so block caps and `… +N lines` counts
+    keep the compact provider-bound form.
+  - Keep it preview-only and always on: estimates stay on the compact text, and
+    a marked run that no longer parses renders unchanged.
+
+- [ ] Update links in README:
+  - [ ] Abs links to master for md-files (npmjs compatibility).
+  - [ ] Update demos and links.

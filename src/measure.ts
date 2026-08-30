@@ -20,6 +20,7 @@ import {
 	type InjectionKind,
 	type InjectionSection,
 	type InjectionSource,
+	type JsonSpan,
 	PI_SOURCE_ID,
 } from "./model.ts";
 
@@ -130,10 +131,7 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 		// extension tool repeating one cannot take a line pi already renders for
 		// pi itself or for a built-in tool.
 		const ownedGuidelines = claimGuidelines(tool, claimedGuidelines);
-		const definition: SectionDraft = {
-			label: "Definition",
-			text: `${tool.name}: ${tool.description}\n${tool.parametersJson}`,
-		};
+		const definition = createDefinitionSection(tool);
 		if (tool.source === "builtin") {
 			builtinChildren.push(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, [definition]));
 			continue;
@@ -145,13 +143,7 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 	if (builtinChildren.length > 0) {
 		builtinChildren.sort((a, b) => b.tokens - a.tokens);
 		const label = `Built-in Tools (${builtinChildren.length})`;
-		const text = builtinChildren.map((child) => child.text).join("\n");
-		items.push({
-			...createItem("tool:builtin", "tool", PI_SOURCE, label, text),
-			chars: builtinChildren.reduce((sum, child) => sum + child.chars, 0),
-			tokens: builtinChildren.reduce((sum, child) => sum + child.tokens, 0),
-			children: builtinChildren,
-		});
+		items.push(createAggregateItem("tool:builtin", "tool", PI_SOURCE, label, builtinChildren));
 	}
 }
 
@@ -159,6 +151,18 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 interface SectionDraft {
 	readonly label: string;
 	readonly text: string;
+	/** Serialized JSON inside `text`; marked here rather than detected in the preview. */
+	readonly jsonSpan?: JsonSpan;
+}
+
+/** The payload one tool sends with every request: its name, description, and parameter schema. */
+function createDefinitionSection(tool: ToolSlice): SectionDraft {
+	const heading = `${tool.name}: ${tool.description}\n`;
+	return {
+		label: "Definition",
+		text: `${heading}${tool.parametersJson}`,
+		jsonSpan: { start: heading.length, end: heading.length + tool.parametersJson.length },
+	};
 }
 
 /**
@@ -175,7 +179,7 @@ function carveToolPromptSections(
 	const snippet = tool.snippet === undefined
 		? undefined
 		: carveBlockLine(carver, carver.toolsBlock, `\n- ${tool.name}: ${tool.snippet}`);
-	if (snippet !== undefined) sections.push({ label: "Prompt Snippet", text: snippet });
+	if (snippet !== undefined) sections.push({ label: "Available Tools", text: snippet });
 	let bullets = "";
 	for (const guideline of ownedGuidelines) {
 		bullets += carveBlockLine(carver, carver.guidelinesBlock, `\n- ${guideline}`) ?? "";
@@ -382,7 +386,14 @@ function allocateSectionTokens(sections: SectionDraft[]): InjectionSection[] {
 	});
 }
 
-/** Build an aggregate whose totals exactly reconcile with its child items. */
+/** Line break joining consecutive child texts inside an aggregate's raw text. */
+const CHILD_SEPARATOR = "\n";
+
+/**
+ * Build an aggregate whose totals exactly reconcile with its child items and
+ * whose preview presents every child as its own labeled part, so each child
+ * keeps its subheader, token share, and marked JSON run.
+ */
 function createAggregateItem(
 	id: string,
 	kind: InjectionKind,
@@ -391,11 +402,41 @@ function createAggregateItem(
 	children: InjectionItem[],
 ): InjectionItem {
 	return {
-		...createItem(id, kind, source, label, children.map((child) => child.text).join("\n")),
+		...createItem(id, kind, source, label, children.map((child) => child.text).join(CHILD_SEPARATOR)),
 		chars: children.reduce((sum, child) => sum + child.chars, 0),
 		tokens: children.reduce((sum, child) => sum + child.tokens, 0),
+		sections: children.map((child, index) =>
+			childSection(child, index === 0 ? "" : CHILD_SEPARATOR)
+		),
 		children,
 	};
+}
+
+/**
+ * One child as a labeled part of its aggregate, opening with the separator the
+ * aggregate text joins on; the preview drops that separator again.
+ */
+function childSection(child: InjectionItem, separator: string): InjectionSection {
+	const span = childJsonSpan(child);
+	return {
+		label: child.label,
+		text: `${separator}${child.text}`,
+		tokens: child.tokens,
+		jsonSpan: span === undefined
+			? undefined
+			: { start: span.start + separator.length, end: span.end + separator.length },
+	};
+}
+
+/**
+ * The JSON run marked inside a child's whole text: its own span, or the span of
+ * its single part. A child split into several parts marks each part separately,
+ * so no one run covers its text and the aggregate part expands nothing.
+ */
+function childJsonSpan(child: InjectionItem): JsonSpan | undefined {
+	const sections = child.sections;
+	if (sections === undefined) return child.jsonSpan;
+	return sections.length === 1 ? sections[0]?.jsonSpan : undefined;
 }
 
 /** Injection source for a non-builtin tool provenance string. */

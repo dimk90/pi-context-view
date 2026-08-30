@@ -175,11 +175,17 @@ test("analyzeSystemPrompt breaks tool items into reconciling prompt and definiti
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
 	assert.deepEqual(
 		search?.sections?.map((section) => section.label),
-		["Prompt Snippet", "Guidelines", "Definition"],
+		["Available Tools", "Guidelines", "Definition"],
 	);
 	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
 	assert.equal(search?.sections?.[1]?.text, `\n- ${guidelines[0]}\n- ${guidelines[1]}`);
 	assert.equal(search?.sections?.[2]?.text, 'search: Search\n{"q":"string"}');
+	// The schema is marked where it was serialized, so previews expand it without detecting JSON.
+	const definition = search?.sections?.[2];
+	const schemaSpan = definition?.jsonSpan;
+	assert.ok(schemaSpan !== undefined);
+	assert.equal(definition?.text.slice(schemaSpan.start, schemaSpan.end), '{"q":"string"}');
+	assert.equal(search?.sections?.[0]?.jsonSpan, undefined);
 	// Sections partition the item without changing what it contributes.
 	assert.equal(search?.sections?.map((section) => section.text).join(""), search?.text);
 	assert.equal(search?.sections?.reduce((sum, section) => sum + section.tokens, 0), search?.tokens);
@@ -189,6 +195,41 @@ test("analyzeSystemPrompt breaks tool items into reconciling prompt and definiti
 	assert.equal(builtin?.sections?.[0]?.tokens, builtin?.tokens);
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.doesNotMatch(base?.text ?? "", /Cite sources|search: Search the web/);
+});
+
+test("analyzeSystemPrompt exposes each aggregate child as a labeled part carrying its marked JSON", () => {
+	const systemPrompt = buildSystemPrompt({ cwd: CWD, selectedTools: ["read", "bash"] });
+	const tools: ToolSlice[] = [
+		{
+			name: "read",
+			description: "Read files",
+			parametersJson: '{"path":"string"}',
+			guidelines: [],
+			source: "builtin",
+		},
+		{
+			name: "bash",
+			description: "Run a bash command with a much longer description than read",
+			parametersJson: '{"command":"string"}',
+			guidelines: [],
+			source: "builtin",
+		},
+	];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, tools);
+	const builtin = items.find((entry) => entry.id === "tool:builtin");
+	assert.deepEqual(builtin?.sections?.map((section) => section.label), ["bash", "read"]);
+	// Parts partition the aggregate text and reconcile with the children they name.
+	assert.equal(builtin?.sections?.map((section) => section.text).join(""), builtin?.text);
+	assert.deepEqual(
+		builtin?.sections?.map((section) => section.tokens),
+		builtin?.children?.map((child) => child.tokens),
+	);
+	// Each part marks the schema of its own tool, including after the joining break.
+	assert.deepEqual(
+		builtin?.sections?.map((section) => section.text.slice(section.jsonSpan?.start, section.jsonSpan?.end)),
+		['{"command":"string"}', '{"path":"string"}'],
+	);
 });
 
 test("analyzeSystemPrompt gives a repeated guideline bullet to the tool pi renders it for", () => {
@@ -223,11 +264,11 @@ test("analyzeSystemPrompt gives a repeated guideline bullet to the tool pi rende
 	const fetch = items.find((entry) => entry.id === "tool:npm:web:fetch");
 	assert.deepEqual(
 		search?.sections?.map((section) => section.label),
-		["Prompt Snippet", "Guidelines", "Definition"],
+		["Available Tools", "Guidelines", "Definition"],
 	);
 	assert.equal(search?.sections?.[1]?.text, `\n- ${shared}`);
 	// Pi renders the shared bullet once, so the later tool contributes no bullet.
-	assert.deepEqual(fetch?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	assert.deepEqual(fetch?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
 	assert.equal(items.filter((entry) => entry.text.includes(shared)).length, 1);
 });
 
@@ -271,7 +312,7 @@ test("analyzeSystemPrompt leaves pi's own and built-in tool bullets in the base 
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
 	// Pi credits one bullet to the built-in tool that declared it first and adds
 	// the file-exploration bullet itself, so the extension tool carves neither.
-	assert.deepEqual(search?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	assert.deepEqual(search?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.ok(base?.text.includes(`\n- ${builtinGuideline}`));
 	assert.ok(base?.text.includes(`\n- ${piGuideline}`));
@@ -299,7 +340,7 @@ test("analyzeSystemPrompt carves tool lines only from the blocks pi renders them
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
 	// The guideline never reached the Guidelines block, so the identical context
 	// file line stays with the file instead of being counted twice.
-	assert.deepEqual(search?.sections?.map((section) => section.label), ["Prompt Snippet", "Definition"]);
+	assert.deepEqual(search?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
 	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
 	assert.equal(items.find((entry) => entry.id === `context-file:${filePath}`)?.text, content);
 });

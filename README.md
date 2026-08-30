@@ -30,6 +30,9 @@ injected by other extensions.
 - `/context usage` - open the context usage visualization.
 - `/context injections` - show the hidden parts of the context captured at
   session start or resume.
+- `/context config` - create the global configuration file populated with
+  defaults, useful for
+  [customization](https://github.com/dimk90/pi-context-view#customization).
 
 ## Demo
 
@@ -60,14 +63,37 @@ Zoom in for a more detailed breakdown of large context windows, such as
 pi install npm:pi-context-view
 ```
 
+## Customization
+
+At the moment, only the `Context Usage` map colors are customizable.
+
+A config populated with the current defaults is a good starting point for
+customization. Create it with:
+
+```text
+/context config
+```
+> This creates `~/.pi/agent/extensions/pi-context-view.json`.
+
+See [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/develop/doc/CONFIG.md)
+for each parameter's meaning and default value.
+
+### Category Colors
+
+You can configure the `Context Usage` map colors to better match your theme, or set
+them to theme-independent hex values. Here are examples of custom
+[terrain](https://github.com/dimk90/pi-context-view/blob/develop/doc/palettes/terrain.json) and
+[rainbow](https://github.com/dimk90/pi-context-view/blob/develop/doc/palettes/rainbow.json) palettes:
+
+![Terrain and rainbow palettes](doc/images/palettes.png)
+
 ## Context Footprint
 
 `pi-context-view` does not add any instructions or messages to the model context.
 
-## Related Projects
+## My Other Stuff
 
-📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create
-  the demo GIFs.
+📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create the demo GIFs.
 
 ## License
 

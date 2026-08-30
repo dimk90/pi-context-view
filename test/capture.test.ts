@@ -134,20 +134,29 @@ test("measureInjectedMessages attributes custom and context-only messages withou
 	const sessionCustom = customMessage("marker", "session", 2);
 	const contextCustom = customMessage("marker", "context only", 3);
 	const injectedUser = { role: "user", content: "injected", timestamp: 4 } satisfies ContextEvent["messages"][number];
+	const blockUser = {
+		role: "user",
+		content: [{ type: "text", text: "injected" }],
+		timestamp: 5,
+	} satisfies ContextEvent["messages"][number];
 	const items = measureInjectedMessages(
-		[ordinaryUser, sessionCustom, contextCustom, injectedUser],
+		[ordinaryUser, sessionCustom, contextCustom, injectedUser, blockUser],
 		[ordinaryUser, sessionCustom],
 	);
 
 	assert.deepEqual(
 		items.map((entry) => entry.id),
-		["message:marker:0", "message:marker:1", "message:context:user:0"],
+		["message:marker:0", "message:marker:1", "message:context:user:0", "message:context:user:1"],
 	);
 	assert.equal(items[0]?.source.id, "message-type:marker");
 	assert.equal(items[0]?.contextOnly, undefined);
 	assert.equal(items[1]?.contextOnly, true);
 	assert.equal(items[2]?.source.id, "aggregate:extensions");
 	assert.equal(items[2]?.text, "injected");
+	// String content is text; serialized block content is marked JSON for full-content previews.
+	assert.equal(items[2]?.jsonSpan, undefined);
+	assert.equal(items[3]?.text, '[{"type":"text","text":"injected"}]');
+	assert.deepEqual(items[3]?.jsonSpan, { start: 0, end: items[3]?.text.length });
 });
 
 test("mergeContextOnlyMessages carries only provider-context mutations into Usage snapshots", () => {

@@ -4,8 +4,14 @@ import { test } from "node:test";
 import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import {
+	AUTO_COMPACT_BUFFER_CATEGORY_ID,
+	type CategoryColors,
+	DEFAULT_CATEGORY_COLORS,
+	FREE_SPACE_CATEGORY_ID,
+} from "../src/config.ts";
 import type { ContextUsageSnapshot } from "../src/model.ts";
-import { formatPercent, formatTokens, UsageView } from "../src/ui/usage-view.ts";
+import { formatPercent, formatTokens, UsageView, type UsageViewInput } from "../src/ui/usage-view.ts";
 
 const FG_COLORS: ThemeColor[] = [
 	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text",
@@ -28,6 +34,8 @@ function createTheme(): Theme {
 		muted: "#070809",
 		dim: "#101112",
 		warning: "#131415",
+		success: "#373839",
+		error: "#3a3b3c",
 		mdHeading: "#161718",
 		mdLink: "#191a1b",
 		mdCodeBlock: "#1c1d1e",
@@ -111,9 +119,21 @@ function stripSgr(text: string): string {
 	return text.replace(/\u001b\[[\d;]*m/g, "");
 }
 
+/** Build a view over the built-in colors unless a test overrides them. */
+function createView(
+	theme: Theme,
+	input: Omit<UsageViewInput, "categoryColors"> & { readonly categoryColors?: CategoryColors },
+	done: (result: undefined) => void,
+	getTerminalRows?: () => number,
+	wheelScrollLines?: number,
+): UsageView {
+	const colors = input.categoryColors ?? DEFAULT_CATEGORY_COLORS;
+	return new UsageView(theme, { ...input, categoryColors: colors }, done, getTerminalRows, wheelScrollLines);
+}
+
 test("UsageView renders the 14x14 map and matching category legend with semantic colors", () => {
 	// Tall enough for the whole legend to sit beside the map without scrolling.
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 33);
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 33);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
@@ -207,9 +227,67 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
+test("UsageView applies configured colors to category, buffer, and free-space markers", () => {
+	const categoryColors = new Map(DEFAULT_CATEGORY_COLORS);
+	categoryColors.set("system-prompt", "success");
+	// A literal color must reach the same markers a theme color does.
+	categoryColors.set("tool-output", "#80ff01");
+	categoryColors.set(AUTO_COMPACT_BUFFER_CATEGORY_ID, "warning");
+	categoryColors.set(FREE_SPACE_CATEGORY_ID, "error");
+	const configuredUsage = { ...usage(), autoCompactReserveTokens: 100_000 };
+	const view = createView(createTheme(), { usage: configuredUsage, categoryColors }, () => {}, () => 34);
+	const lines = view.render(80);
+	const plain = lines.map(stripSgr);
+
+	const promptLine = plain.findIndex((line) => line.includes("System Prompt"));
+	const outputLine = plain.findIndex((line) => line.includes("Tool Output"));
+	const bufferLine = plain.findIndex((line) => line.includes("Auto-Compact Buffer"));
+	const freeLine = plain.findIndex((line) => line.includes("Free Space"));
+	assert.notEqual(promptLine, -1);
+	assert.notEqual(bufferLine, -1);
+	assert.notEqual(freeLine, -1);
+	assert.match(lines[promptLine] ?? "", /\u001b\[38;2;55;56;57m■/);
+	assert.match(lines[outputLine] ?? "", /\u001b\[38;2;128;255;1m■/);
+	assert.match(lines[bufferLine] ?? "", /\u001b\[38;2;19;20;21m⛝/);
+	assert.match(lines[freeLine] ?? "", /\u001b\[38;2;58;59;60m⛶/);
+	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;55;56;57m■/.test(line)));
+	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;128;255;1m[■◧]/.test(line)));
+	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;19;20;21m⛝/.test(line)));
+	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;58;59;60m⛶/.test(line)));
+});
+
+test("UsageView renders sanitized notices above the dashboard and caps the block", () => {
+	const view = createView(
+		createTheme(),
+		{
+			usage: usage(),
+			degradedReason: "Silent probe unavailable: no model is selected.",
+			notices: [
+				"Ignoring unknown pi-context-view.json key \u001b[31m\"evil\"\u001b[0m.",
+				"Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.",
+				"Ignoring unknown pi-context-view.json key \"mapColor\".",
+			],
+		},
+		() => {},
+		() => 34,
+	);
+	const lines = view.render(80);
+	const plain = lines.map(stripSgr);
+
+	assert.equal(lines.length, 34);
+	assert.equal(plain[4], "  Silent probe unavailable: no model is selected.");
+	assert.equal(plain[5], "  Ignoring unknown pi-context-view.json key \"evil\".");
+	assert.equal(plain[6], "  … +2 more");
+	// Notices are warning-colored and stripped of escapes carried in configuration text.
+	assert.match(lines[4] ?? "", /\u001b\[38;2;19;20;21m/);
+	assert.doesNotMatch(lines[5] ?? "", /\u001b\[31m/);
+	assert.ok(!plain.some((line) => line.includes("skillsColor")));
+	assert.ok(plain.some((line) => /^  [■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
+});
+
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
 	const zoomUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
-	const view = new UsageView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
+	const view = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
 	const windowFrame = view.render(80);
 	const windowPlain = windowFrame.map(stripSgr);
 	const windowMap = windowPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
@@ -263,18 +341,29 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 
 	view.handleInput("z");
 	assert.deepEqual(view.render(80), windowFrame);
-	const reopened = new UsageView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
+	const reopened = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
 	assert.ok(!reopened.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
 });
 
-test("UsageView collapses the map key before the legend loses a row", () => {
+test("UsageView collapses the description, then the map key, before the legend loses a row", () => {
 	// The fixture legend has 16 rows, so its counter names them as (visible/16).
 	const scrollCounter = /\(\d+\/16\)/;
 	let rows = 33;
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => rows);
-	assert.ok(view.render(80).map(stripSgr).some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => rows);
+	const full = view.render(80).map(stripSgr);
+	assert.ok(full.some((line) => line.includes("Estimated context for the next model request")));
+	assert.ok(full.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
 
+	// One row short of the complete frame, the description goes whole and the key stays intact.
 	rows = 32;
+	const descriptionless = view.render(80).map(stripSgr);
+	assert.ok(!descriptionless.some((line) => line.includes("Estimated context")));
+	assert.ok(descriptionless.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
+	const hintsIndex = descriptionless.findIndex((line) => line.includes("↑↓/jk Navigate"));
+	assert.equal(hintsIndex, descriptionless.length - 3, "the hints keep their place below one blank row");
+	assert.equal(descriptionless[hintsIndex - 1], "", "the description takes its separating blank row with it");
+
+	rows = 29;
 	const compact = view.render(80).map(stripSgr);
 	assert.ok(compact.some((line) =>
 		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)")
@@ -295,33 +384,56 @@ test("UsageView collapses the map key before the legend loses a row", () => {
 	const narrow = view.render(52).map(stripSgr);
 	assert.ok(narrow.some((line) => line.endsWith("Map: ■ One · ◧ Mixed · ⛶ 5.1k")));
 
-	rows = 29;
+	rows = 26;
 	const keyless = view.render(80).map(stripSgr);
 	assert.ok(!keyless.some((line) => line.includes("Map:")));
 	assert.ok(keyless.some((line) => line.includes("⛶ Free Space")));
 	assert.ok(!keyless.some((line) => scrollCounter.test(line)), "the key goes before the legend scrolls");
 
-	rows = 27;
+	rows = 24;
 	const scrolled = view.render(80).map(stripSgr);
 	assert.ok(!scrolled.some((line) => line.includes("Map:")));
 	assert.ok(scrolled.some((line) => line.includes("Category:")));
 	assert.ok(scrolled.some((line) => line.includes("System Prompt")));
 	assert.ok(scrolled.some((line) => scrollCounter.test(line)));
+	assert.ok(!scrolled.some((line) => line.includes("Estimated context")));
+
+	// Growing the terminal restores the collapsed description.
+	rows = 33;
+	assert.deepEqual(view.render(80).map(stripSgr), full);
+});
+
+test("UsageView never renders a partially collapsed description", () => {
+	let rows = 24;
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => rows);
+	const sentence =
+		"Estimated context for the next model request. Token counts are approximate and may differ from the provider's estimate.";
+
+	for (rows = 12; rows <= 40; rows++) {
+		for (const width of [40, 60, 80, 120]) {
+			const plain = view.render(width).map(stripSgr);
+			const start = plain.findIndex((line) => line.includes("Estimated context"));
+			if (start < 0) continue;
+			const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
+			const description = plain.slice(start, hintsIndex - 1).map((line) => line.trim()).join(" ");
+			assert.equal(description, sentence, `truncated description at ${width}x${rows}`);
+		}
+	}
 });
 
 test("UsageView hides the zoom binding when its map cannot benefit", () => {
-	const narrow = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	const narrow = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	assert.ok(!narrow.render(51).map(stripSgr).some((line) => line.includes("Z Zoom")));
 	narrow.handleInput("z");
 	assert.ok(!narrow.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
 
-	const threshold = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	const threshold = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	assert.ok(threshold.render(52).map(stripSgr).some((line) => line.includes("Z Zoom")));
 	threshold.handleInput("z");
 	assert.ok(threshold.render(52).map(stripSgr).some((line) => line.includes("Zoom 1M → 51k")));
 
 	const unknownUsage: ContextUsageSnapshot = { ...usage(), reported: undefined };
-	const unknown = new UsageView(createTheme(), { usage: unknownUsage }, () => {}, () => 30);
+	const unknown = createView(createTheme(), { usage: unknownUsage }, () => {}, () => 30);
 	const unknownFrame = unknown.render(80);
 	assert.ok(!unknownFrame.map(stripSgr).some((line) => line.includes("Z Zoom")));
 	unknown.handleInput("z");
@@ -333,7 +445,7 @@ test("UsageView hides the zoom binding when its map cannot benefit", () => {
 		categories: [{ id: "user-messages", label: "User Messages", tokens: 900_000 }],
 		estimatedTokens: 900_000,
 	};
-	const full = new UsageView(createTheme(), { usage: fullUsage }, () => {}, () => 30);
+	const full = createView(createTheme(), { usage: fullUsage }, () => {}, () => 30);
 	const fullFrame = full.render(80);
 	assert.ok(!fullFrame.map(stripSgr).some((line) => line.includes("Z Zoom")));
 	full.handleInput("z");
@@ -352,7 +464,7 @@ test("UsageView drops model metadata and splits an oversized Fit label responsiv
 		categories: [{ id: "user-messages", label: "User Messages", tokens: 100_000_000_000 }],
 		estimatedTokens: 100_000_000_000,
 	};
-	const view = new UsageView(createTheme(), { usage: hugeUsage }, () => {}, () => 30);
+	const view = createView(createTheme(), { usage: hugeUsage }, () => {}, () => 30);
 	view.render(52);
 	view.handleInput("z");
 	const lines = view.render(52).map(stripSgr);
@@ -366,7 +478,7 @@ test("UsageView drops model metadata and splits an oversized Fit label responsiv
 
 test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space", () => {
 	const bufferUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
-	const view = new UsageView(createTheme(), { usage: bufferUsage }, () => {}, () => 34);
+	const view = createView(createTheme(), { usage: bufferUsage }, () => {}, () => 34);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
@@ -398,7 +510,7 @@ test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space
 });
 
 test("UsageView hides the Auto-Compact Buffer when no reserve is provided", () => {
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 34);
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 34);
 	const plain = view.render(80).map(stripSgr);
 
 	assert.ok(!plain.some((line) => line.includes("Auto-Compact Buffer")));
@@ -407,7 +519,8 @@ test("UsageView hides the Auto-Compact Buffer when no reserve is provided", () =
 });
 
 test("UsageView wraps narrow descriptions instead of truncating them", () => {
-	const view = new UsageView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	// Tall enough for the narrow legend to keep every row beside the wrapped description.
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 32);
 	const lines = view.render(40).map(stripSgr);
 	const descriptionStart = lines.findIndex((line) => line.includes("Estimated context"));
 	const hintsIndex = lines.findIndex((line) => line.includes("↑↓/jk Navigate"));
@@ -426,7 +539,7 @@ test("UsageView wraps narrow descriptions instead of truncating them", () => {
 
 test("UsageView falls back to estimated post-compaction usage and closes on Escape", () => {
 	let closed = false;
-	const view = new UsageView(
+	const view = createView(
 		createTheme(),
 		{
 			usage: {
@@ -471,7 +584,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 		],
 		estimatedTokens: 1_600,
 	};
-	const view = new UsageView(createTheme(), { usage: nestedUsage }, () => {}, () => 24);
+	const view = createView(createTheme(), { usage: nestedUsage }, () => {}, () => 24);
 	const initial = view.render(80).map(stripSgr);
 	assert.ok(initial.some((line) => /• tool_1 \.{2,}\s+100\s+0%/.test(line)));
 	assert.ok(!initial.some((line) => line.includes("tool_15")));
@@ -481,7 +594,7 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 	const counterIndex = initial.findIndex((line) => /\(\d+\/18\)$/.test(line));
 	const lastRowIndex = initial.findLastIndex((line) => /• tool_\d+ \.{2,}/.test(line));
 	assert.ok(counterIndex >= 0 && counterIndex === lastRowIndex + 1, "counter follows the last legend row");
-	assert.match(initial[counterIndex] ?? "", /\s{2,}\(11\/18\)$/);
+	assert.match(initial[counterIndex] ?? "", /\s{2,}\(14\/18\)$/);
 	assert.ok(!initial.some((line) => /Category:.*\(\d+\/\d+\)/.test(line)), "no counter beside the heading");
 
 	view.handleInput("\u001b[4~"); // End
@@ -504,7 +617,7 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 		categories: [{ id: "tool-output", label: "Tool Output", tokens: 1_500, children: tools }],
 		estimatedTokens: 1_500,
 	};
-	const view = new UsageView(createTheme(), { usage: overflowUsage }, () => {}, () => rows);
+	const view = createView(createTheme(), { usage: overflowUsage }, () => {}, () => rows);
 
 	view.render(80);
 	for (let step = 0; step < 9; step++) view.handleInput("\u001b[B");
@@ -525,7 +638,7 @@ test("UsageView keeps the selection inside the viewport across height reflows", 
 test("UsageView opens a category block stream and skips full previews for complete blocks", () => {
 	let closed = false;
 	const theme = createTheme();
-	const view = new UsageView(theme, { usage: usage() }, () => {
+	const view = createView(theme, { usage: usage() }, () => {
 		closed = true;
 	}, () => 24);
 
@@ -611,7 +724,7 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 					tokens: 30,
 					text: `${snippet}${guidelines}${definition}`,
 					sections: [
-						{ label: "Prompt Snippet", text: snippet, tokens: 6 },
+						{ label: "Available Tools", text: snippet, tokens: 6 },
 						{ label: "Guidelines", text: guidelines, tokens: 17 },
 						{ label: "Definition", text: definition, tokens: 7 },
 					],
@@ -621,7 +734,7 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 		estimatedTokens: 30,
 	};
 	const theme = createTheme();
-	const view = new UsageView(theme, { usage: toolUsage }, () => {}, () => 24);
+	const view = createView(theme, { usage: toolUsage }, () => {}, () => 24);
 
 	view.render(80);
 	view.handleInput("\r");
@@ -630,14 +743,14 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 	const entryHeader = streamPlain.indexOf("┃ [search] 30");
 	assert.ok(entryHeader > 0);
 	// Parts sit two columns under the entry header, which still carries the whole tool estimate.
-	assert.equal(streamPlain[entryHeader + 1], "┃   Prompt Snippet · 6 tokens");
+	assert.equal(streamPlain[entryHeader + 1], "┃   Available Tools · 6 tokens");
 	assert.equal(streamPlain[entryHeader + 2], "┃   - search: Search the web");
 	assert.equal(streamPlain[entryHeader + 3], "┃");
 	assert.equal(streamPlain[entryHeader + 4], "┃   Guidelines · 17 tokens");
 	assert.equal(streamPlain[entryHeader + 5], "┃   - Use search when the user asks for current information");
-	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("syntaxFunction", theme.bold("Guidelines"))));
+	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));
 	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("muted", " · 17 tokens")));
-	// Parts use syntaxFunction so they stay distinct from the mdHeading entry header above them.
+	// Parts use syntaxKeyword so they stay distinct from the mdHeading entry header above them.
 	assert.ok((stream[entryHeader] ?? "").includes(theme.fg("mdHeading", theme.bold("search"))));
 	assert.doesNotMatch(stream[entryHeader + 4] ?? "", /\u001b\[38;2;22;23;24m/);
 	// The remaining parts stay behind the block cap until Enter opens the whole entry.
@@ -652,7 +765,7 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 		}
 		const plain = block.map((line) => stripSgr(line).trimEnd());
 		// The block view replaces the stream gutter with its own indent.
-		assert.ok(plain.some((line) => line === "    Prompt Snippet · 6 tokens"));
+		assert.ok(plain.some((line) => line === "    Available Tools · 6 tokens"));
 		assert.ok(plain.some((line) => line === "    Guidelines · 17 tokens"));
 	}
 	const blockPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
@@ -663,6 +776,96 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 
 	// Escape returns to the stream with the same labeled block.
 	view.handleInput("\u001b");
+	assert.deepEqual(view.render(80), stream);
+});
+
+test("UsageView expands marked JSON in the stream and caps it on the expanded lines", () => {
+	const args = Object.fromEntries(
+		Array.from({ length: 20 }, (_, index) => [`key_${index}`, `value ${index} with enough text to wrap`]),
+	);
+	const argumentsJson = JSON.stringify(args);
+	const text = `read(${argumentsJson})`;
+	const callUsage: ContextUsageSnapshot = {
+		...usage(40),
+		categories: [{
+			id: "agent-tool-call-messages",
+			label: "Agent Tool Call Messages",
+			tokens: 40,
+			entries: [{
+				timestamp: Date.UTC(2026, 6, 11, 14, 2, 19),
+				breadcrumb: ["assistant", "read"],
+				tokens: 40,
+				text,
+				jsonSpan: { start: 5, end: text.length - 1 },
+			}],
+		}],
+		estimatedTokens: 40,
+	};
+	const view = createView(createTheme(), { usage: callUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const streamPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
+	assert.ok(streamPlain.some((line) => line.endsWith("read({")));
+	assert.ok(streamPlain.some((line) => line.endsWith('"key_0": "value 0 with enough text to wrap",')));
+	assert.ok(!streamPlain.some((line) => line.includes('{"key_0":')));
+	const marker = streamPlain.find((line) => /… \+\d+ lines · Enter - View Content/.test(line));
+	assert.ok(marker !== undefined);
+
+	view.handleInput("\r");
+	for (const width of [60, 80, 120]) {
+		for (const line of view.render(width)) {
+			assert.ok(visibleWidth(line) <= width, `block line exceeds width ${width}: ${line}`);
+		}
+	}
+	const blockPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
+	const callLine = blockPlain.indexOf("    read({");
+	assert.ok(callLine > 0);
+	assert.equal(blockPlain[callLine + 1], '      "key_0": "value 0 with enough text to wrap",');
+
+	// Both levels wrap the same expanded text, so the marker counts exactly the lines Enter adds
+	// beyond the five content lines a 24-row terminal keeps per block.
+	const counter = blockPlain.find((line) => /^ {2}\(\d+\/\d+\)$/.test(line));
+	assert.ok(counter !== undefined);
+	const totalLines = Number(counter.split("/")[1]?.replace(")", ""));
+	assert.equal(Number(/\+(\d+) lines/.exec(marker)?.[1]), totalLines - 5);
+
+	// The expansion stays inside the captured text: scrolling reaches the closing call parenthesis.
+	view.handleInput("\u001b[4~"); // End
+	const tailPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
+	assert.ok(tailPlain.some((line) => line === "    })"));
+});
+
+test("UsageView expands a block that fits the cap and leaves Enter a no-op", () => {
+	const text = 'read({"path":"src/index.ts"})';
+	const callUsage: ContextUsageSnapshot = {
+		...usage(12),
+		categories: [{
+			id: "agent-tool-call-messages",
+			label: "Agent Tool Call Messages",
+			tokens: 12,
+			entries: [{
+				timestamp: Date.UTC(2026, 6, 11, 14, 2, 19),
+				breadcrumb: ["assistant", "read"],
+				tokens: 12,
+				text,
+				jsonSpan: { start: 5, end: text.length - 1 },
+			}],
+		}],
+		estimatedTokens: 12,
+	};
+	const view = createView(createTheme(), { usage: callUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const stream = view.render(80);
+	const streamPlain = stream.map((line) => stripSgr(line).trimEnd());
+	assert.ok(streamPlain.some((line) => line.endsWith("read({")));
+	assert.ok(streamPlain.some((line) => line.endsWith('"path": "src/index.ts"')));
+	assert.ok(!streamPlain.some((line) => line.includes("Enter - View Content")));
+
+	// Nothing is hidden, so the block level stays closed.
+	view.handleInput("\r");
 	assert.deepEqual(view.render(80), stream);
 });
 
@@ -686,7 +889,7 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 		estimatedTokens: 3_000,
 	};
 	const createScrollView = () =>
-		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
+		createView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
 	const arrows = createScrollView();
 	const vim = createScrollView();
 	const frame = (view: UsageView) => view.render(80).join("\n");
@@ -748,7 +951,7 @@ test("UsageView accepts Ctrl+u/d wherever it accepts the page keys", () => {
 		estimatedTokens: 2_000,
 	};
 	const createScrollView = () =>
-		new UsageView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
+		createView(createTheme(), { usage: scrollUsage }, () => {}, () => 20);
 	const pageKeys = createScrollView();
 	const aliases = createScrollView();
 	const frame = (view: UsageView) => view.render(80).join("\n");
@@ -821,7 +1024,7 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 	};
 	// A terminal short enough to cap both blocks, so the full-content level scrolls.
 	const createWheelView = (wheelScrollLines?: number) =>
-		new UsageView(createTheme(), { usage: wheelUsage }, () => {}, () => 24, wheelScrollLines);
+		createView(createTheme(), { usage: wheelUsage }, () => {}, () => 24, wheelScrollLines);
 	const arrows = createWheelView();
 	const wheel = createWheelView(4);
 	const frame = (view: UsageView) => view.render(80).join("\n");
@@ -903,7 +1106,7 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 		}],
 		estimatedTokens: 1_352,
 	};
-	const view = new UsageView(createTheme(), { usage: thinkingUsage }, () => {}, () => 40);
+	const view = createView(createTheme(), { usage: thinkingUsage }, () => {}, () => 40);
 
 	view.render(80);
 	view.handleInput("\r");
@@ -964,7 +1167,7 @@ test("UsageView previews empty categories, free space, and long content safely",
 		],
 		estimatedTokens: 4_000,
 	};
-	const view = new UsageView(createTheme(), { usage: mixedUsage }, () => {}, () => 20);
+	const view = createView(createTheme(), { usage: mixedUsage }, () => {}, () => 20);
 
 	// Category without entries: explicit empty message instead of raw content.
 	view.render(80);
@@ -1059,7 +1262,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 		estimatedTokens: 2_000,
 	};
 	const theme = createTheme();
-	const view = new UsageView(theme, { usage: cappedUsage }, () => {}, () => 40);
+	const view = createView(theme, { usage: cappedUsage }, () => {}, () => 40);
 
 	// Tool Output at 40 rows: 10 content lines then a dim overflow marker; escapes stripped.
 	view.render(100);
@@ -1139,7 +1342,7 @@ test("UsageView shrinks the block cap with terminal height and re-caps on resize
 		estimatedTokens: 1_000,
 	};
 	let rows = 40;
-	const view = new UsageView(createTheme(), { usage: pairUsage }, () => {}, () => rows);
+	const view = createView(createTheme(), { usage: pairUsage }, () => {}, () => rows);
 	const plain = () => view.render(80).map((line) => stripSgr(line).trimEnd());
 	const headerCount = (lines: string[]) => lines.filter((line) => line.includes("[assistant] [bash]")).length;
 
@@ -1187,7 +1390,7 @@ test("UsageView refits open block content when narrow widths share a wrap width"
 		}],
 		estimatedTokens: 1_000,
 	};
-	const view = new UsageView(createTheme(), { usage: wideUsage }, () => {}, () => 40);
+	const view = createView(createTheme(), { usage: wideUsage }, () => {}, () => 40);
 
 	view.render(15);
 	view.handleInput("\r"); // category block stream
@@ -1232,7 +1435,7 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 		}],
 		estimatedTokens: userEntry.tokens,
 	};
-	const view = new UsageView(createTheme(), { usage: userUsage }, () => {}, () => 40);
+	const view = createView(createTheme(), { usage: userUsage }, () => {}, () => 40);
 
 	view.render(100);
 	view.handleInput("\r");
@@ -1262,6 +1465,35 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 	assert.ok(!narrowPlain.some((line) => line.includes(longUnsafeName)), "long badge name wraps across lines");
 });
 
+test("UsageView drops a first content line repeating the entry name", () => {
+	const rawText = [
+		"pi-extension",
+		"Create, extend, and modify extensions for the pi coding agent.",
+		"/skills/pi-extension/SKILL.md",
+	].join("\n");
+	const skillUsage: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-13T12:00:00Z"),
+		categories: [{
+			id: "skills",
+			label: "Skills",
+			tokens: 141,
+			entries: [{ breadcrumb: ["pi-extension"], tokens: 141, text: rawText }],
+		}],
+		estimatedTokens: 141,
+	};
+	const view = createView(createTheme(), { usage: skillUsage }, () => {}, () => 24);
+
+	view.render(80);
+	view.handleInput("\r");
+	const plain = view.render(80).map((line) => stripSgr(line).replace(/^[┃\s]+/, "").trimEnd());
+	assert.ok(plain.some((line) => line.startsWith("Create, extend,")), "the description opens the body");
+	assert.ok(plain.includes("/skills/pi-extension/SKILL.md"), "the location stays visible");
+	assert.deepEqual(plain.filter((line) => line.includes("pi-extension")), [
+		"[pi-extension] 141",
+		"/skills/pi-extension/SKILL.md",
+	], "the name shows once, in the header the estimate belongs to");
+});
+
 test("UsageView leaves skill-shaped content unchanged outside User Messages", () => {
 	const rawText = [
 		'<skill name="tool-doc" location="/skills/tool-doc/SKILL.md">',
@@ -1278,7 +1510,7 @@ test("UsageView leaves skill-shaped content unchanged outside User Messages", ()
 		}],
 		estimatedTokens: 10,
 	};
-	const view = new UsageView(createTheme(), { usage: toolUsage }, () => {}, () => 24);
+	const view = createView(createTheme(), { usage: toolUsage }, () => {}, () => 24);
 
 	view.render(80);
 	view.handleInput("\r");
@@ -1303,7 +1535,7 @@ test("UsageView invalidation rebuilds theme-colored preview lines", () => {
 		}],
 		estimatedTokens: 1,
 	};
-	const view = new UsageView(theme, { usage: previewUsage }, () => {}, () => 20);
+	const view = createView(theme, { usage: previewUsage }, () => {}, () => 20);
 	view.render(80);
 	view.handleInput("\r");
 	const firstHeader = view.render(80).find((line) => stripSgr(line).includes("[user]"));
@@ -1318,7 +1550,7 @@ test("UsageView invalidation rebuilds theme-colored preview lines", () => {
 
 test("UsageView hides model metadata instead of abbreviating it", () => {
 	const modelLabel = `provider/${"very-long-model-name-".repeat(4)}`;
-	const view = new UsageView(
+	const view = createView(
 		createTheme(),
 		{ usage: { ...usage(), modelLabel } },
 		() => {},
@@ -1334,7 +1566,7 @@ test("UsageView respects width and height changes", () => {
 	// Tall enough for the detailed map key to survive beside the complete legend at width 60.
 	let rows = 36;
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
-	const view = new UsageView(createTheme(), { usage: usage(), degradedReason: reason }, () => {}, () => rows);
+	const view = createView(createTheme(), { usage: usage(), degradedReason: reason }, () => {}, () => rows);
 
 	for (const width of [24, 40, 60, 80, 120]) {
 		for (const line of view.render(width)) {

@@ -19,6 +19,7 @@ import {
 	type InitialSnapshot,
 	type InjectionItem,
 	type InjectionSource,
+	type JsonSpan,
 } from "./model.ts";
 
 /** Session custom-entry type persisting probe message identities across extension runtimes. */
@@ -403,7 +404,7 @@ export function measureInjectedMessages(
 		const identity = message.role === "custom" ? message.customType : message.role;
 		const occurrence = occurrences.get(identity) ?? 0;
 		occurrences.set(identity, occurrence + 1);
-		const text = messageText(message);
+		const { text, jsonSpan } = messagePreview(message);
 		items.push({
 			id: message.role === "custom"
 				? `message:${message.customType}:${occurrence}`
@@ -415,6 +416,7 @@ export function measureInjectedMessages(
 			chars: text.length,
 			tokens: estimateTokens(message),
 			text,
+			jsonSpan,
 			contextOnly: contextOnly || undefined,
 		});
 	}
@@ -444,10 +446,22 @@ function consumeMessageSignature(
 	return true;
 }
 
+/** Provider-bound message content for raw preview, with any serialization marked as JSON. */
+interface MessagePreview {
+	readonly text: string;
+	readonly jsonSpan?: JsonSpan;
+}
+
 /** Extract provider-bound message content for raw preview. */
-function messageText(message: ContextEvent["messages"][number]): string {
-	if (!("content" in message)) return JSON.stringify(message);
-	return typeof message.content === "string" ? message.content : JSON.stringify(message.content);
+function messagePreview(message: ContextEvent["messages"][number]): MessagePreview {
+	if (!("content" in message)) return serializedPreview(JSON.stringify(message));
+	if (typeof message.content === "string") return { text: message.content };
+	return serializedPreview(JSON.stringify(message.content));
+}
+
+/** Preview whose whole text is one serialized JSON document. */
+function serializedPreview(text: string): MessagePreview {
+	return { text, jsonSpan: { start: 0, end: text.length } };
 }
 
 /** Map key uniquely identifying one probe message by role and timestamp. */

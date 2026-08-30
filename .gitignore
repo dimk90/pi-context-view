@@ -1,3 +1,6 @@
 node_modules/
 *:Zone.Identifier
 *.log
+
+# Recording intermediates
+doc/images/palettes/

@@ -202,6 +202,51 @@ test("InjectionsView wraps narrow descriptions instead of truncating them", () =
 	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
 });
 
+test("InjectionsView keeps the description while the list window stays readable", () => {
+	const scrollCounter = /\(\d+\/\d+\)/;
+	const visibleRowCount = (lines: string[]) => lines.filter((line) => /\s[\d,]+$/.test(line)).length;
+	// Sixteen items per group build a 36-row list, so it outgrows the 26-row description floor.
+	let rows = 46;
+	const view = createView(16, undefined, () => rows);
+	const full = view.render(80).map(stripSgr);
+	assert.ok(full.some((line) => line.includes("Injections into the model context")));
+	assert.ok(!full.some((line) => scrollCounter.test(line)), "every row fits beside the description");
+
+	// A scrolling list keeps its description: the counter alone never collapses it.
+	rows = 37;
+	const scrolled = view.render(80).map(stripSgr);
+	assert.ok(scrolled.some((line) => line.includes("Injections into the model context")));
+	assert.ok(scrolled.some((line) => scrollCounter.test(line)));
+
+	// One row further, the window would drop below the floor, so the description goes whole.
+	rows = 36;
+	const descriptionless = view.render(80).map(stripSgr);
+	assert.ok(!descriptionless.some((line) => line.includes("Injections into")));
+	const hintsIndex = descriptionless.findIndex((line) => line.includes("↑↓/jk Navigate"));
+	assert.equal(hintsIndex, descriptionless.length - 3, "the hints keep their place below one blank row");
+	assert.equal(descriptionless[hintsIndex - 1], "", "the description takes its separating blank row with it");
+	assert.ok(
+		visibleRowCount(descriptionless) > visibleRowCount(scrolled),
+		"the freed rows go to the list",
+	);
+
+	// Growing the terminal restores the collapsed description.
+	rows = 46;
+	assert.deepEqual(view.render(80).map(stripSgr), full);
+});
+
+test("InjectionsView keeps the description for lists shorter than the floor", () => {
+	// Two items per group build an 8-row list, so the floor is the list itself.
+	let rows = 18;
+	const view = createView(2, undefined, () => rows);
+	assert.ok(view.render(80).map(stripSgr).some((line) => line.includes("Injections into the model context")));
+
+	rows = 17;
+	const collapsed = view.render(80).map(stripSgr);
+	assert.ok(!collapsed.some((line) => line.includes("Injections into")));
+	assert.ok(collapsed.some((line) => line.includes("↑↓/jk Navigate")), "the hints never collapse");
+});
+
 test("InjectionsView adds degraded INITIAL capture to the dialog description", () => {
 	const plain = createView(4);
 	const plainLines = plain.render(80);
@@ -211,7 +256,8 @@ test("InjectionsView adds degraded INITIAL capture to the dialog description", (
 	assert.ok(!plainLines.some((line) => stripSgr(line).includes("Degraded:")));
 
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
-	const degraded = createView(4, reason);
+	// Tall enough for the wrapped reason, the whole list, and the description block at both widths.
+	const degraded = createView(4, reason, () => 40);
 	const degradedLines = degraded.render(80);
 	const degradedInitialIndex = degradedLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
 	assert.ok(degradedInitialIndex >= 0);
@@ -358,7 +404,7 @@ test("InjectionsView preview labels every known section", () => {
 		kind: "tool",
 		text: `${snippet}${guidelines}${definition}`,
 		sections: [
-			{ label: "Prompt Snippet", text: snippet, tokens: 6 },
+			{ label: "Available Tools", text: snippet, tokens: 6 },
 			{ label: "Guidelines", text: guidelines, tokens: 17 },
 			{ label: "Definition", text: definition, tokens: 7 },
 		],
@@ -387,18 +433,18 @@ test("InjectionsView preview labels every known section", () => {
 		for (const line of rendered) {
 			assert.ok(visibleWidth(line) <= width, `preview line exceeds width ${width}: ${line}`);
 		}
-		assert.match(rendered.map((line) => stripSgr(line)).join("\n"), /Prompt Snippet · 6 tokens/);
+		assert.match(rendered.map((line) => stripSgr(line)).join("\n"), /Available Tools · 6 tokens/);
 	}
 	const lines = view.render(80);
 	const plainLines = lines.map((line) => stripSgr(line));
-	const snippetIndex = plainLines.indexOf("  Prompt Snippet · 6 tokens");
+	const snippetIndex = plainLines.indexOf("  Available Tools · 6 tokens");
 	const guidelinesIndex = plainLines.indexOf("  Guidelines · 17 tokens");
 	const definitionIndex = plainLines.indexOf("  Definition · 7 tokens");
-	assert.ok(snippetIndex > 0, "missing Prompt Snippet subheader");
-	assert.ok(guidelinesIndex > snippetIndex, "Guidelines does not follow Prompt Snippet");
+	assert.ok(snippetIndex > 0, "missing Available Tools subheader");
+	assert.ok(guidelinesIndex > snippetIndex, "Guidelines does not follow Available Tools");
 	assert.ok(definitionIndex > guidelinesIndex, "Definition does not follow Guidelines");
-	// Parts use syntaxFunction, leaving mdHeading to the headings they nest under.
-	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("syntaxFunction", theme.bold("Guidelines"))));
+	// Parts use syntaxKeyword, leaving mdHeading to the headings they nest under.
+	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));
 	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("muted", " · 17 tokens")));
 	// Section bodies start directly below their subheader, separated only between sections.
 	assert.equal(plainLines[snippetIndex + 1], "  - search: Search the web");
@@ -415,6 +461,171 @@ test("InjectionsView preview labels every known section", () => {
 	const singleDefinitionIndex = singleSection.indexOf("  Definition · 7 tokens");
 	assert.ok(singleDefinitionIndex > 0, "missing Definition subheader");
 	assert.equal(singleSection[singleDefinitionIndex + 1], "  search: Search");
+});
+
+test("InjectionsView preview expands the JSON runs the model marks", () => {
+	const heading = "search: Search\n";
+	const definition = `${heading}{"type":"object","properties":{"q":{"type":"string"}}}`;
+	const schemaTool: InjectionItem = {
+		...item("search", "npm:web", false, 30),
+		kind: "tool",
+		text: definition,
+		sections: [{
+			label: "Definition",
+			text: definition,
+			tokens: 30,
+			jsonSpan: { start: heading.length, end: definition.length },
+		}],
+	};
+	const content = '[{"type":"text","text":"injected"}]';
+	const serializedMessage: InjectionItem = {
+		...item("context message", "npm:web", false, 9),
+		text: content,
+		jsonSpan: { start: 0, end: content.length },
+	};
+	const toolGroup = group("npm:web", false, [schemaTool, serializedMessage]);
+	const view = new InjectionsView(createTheme(), {
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-10T12:00:00Z"),
+			groups: [toolGroup],
+			totalTokens: toolGroup.totalTokens,
+		},
+	}, () => {});
+
+	// The item preview is full content, so a labeled part expands its marked schema.
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const sectionLines = view.render(80).map((line) => stripSgr(line));
+	const definitionIndex = sectionLines.indexOf("  Definition · 30 tokens");
+	assert.ok(definitionIndex > 0, "missing Definition subheader");
+	assert.equal(sectionLines[definitionIndex + 1], "  search: Search");
+	assert.equal(sectionLines[definitionIndex + 2], "  {");
+	assert.equal(sectionLines[definitionIndex + 3], '    "type": "object",');
+
+	// An item without parts expands the whole marked text.
+	view.handleInput("\u001b");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const messageLines = view.render(80).map((line) => stripSgr(line));
+	assert.ok(messageLines.includes("  ["));
+	assert.ok(messageLines.includes('      "text": "injected"'));
+	assert.ok(!messageLines.some((line) => line.includes('[{"type"')));
+});
+
+test("InjectionsView preview separates aggregate children and expands each child's JSON", () => {
+	const schema = '{"type":"object","properties":{"path":{"type":"string"}}}';
+	const child = (name: string, tokens: number): InjectionItem => {
+		const heading = `${name}: Do ${name} things\n`;
+		const text = `${heading}${schema}`;
+		return {
+			...item(name, "pi", true, tokens),
+			kind: "tool",
+			label: name,
+			text,
+			sections: [{
+				label: "Definition",
+				text,
+				tokens,
+				jsonSpan: { start: heading.length, end: text.length },
+			}],
+		};
+	};
+	const bash = child("bash", 20);
+	const read = child("read", 14);
+	const builtin: InjectionItem = {
+		...item("tool:builtin", "pi", true, 34),
+		kind: "tool",
+		label: "Built-in Tools (2)",
+		text: `${bash.text}\n${read.text}`,
+		sections: [
+			{ label: "bash", text: bash.text, tokens: 20, jsonSpan: bash.sections?.[0]?.jsonSpan },
+			{
+				label: "read",
+				text: `\n${read.text}`,
+				tokens: 14,
+				jsonSpan: { start: 1 + (read.sections?.[0]?.jsonSpan?.start ?? 0), end: 1 + read.text.length },
+			},
+		],
+		children: [bash, read],
+	};
+	const piGroup = group("pi", true, [builtin]);
+	const view = new InjectionsView(createTheme(), {
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-10T12:00:00Z"),
+			groups: [piGroup],
+			totalTokens: piGroup.totalTokens,
+		},
+	}, () => {}, () => 40);
+
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const lines = view.render(80).map((line) => stripSgr(line));
+
+	// Every child keeps its own subheader, token share, and expanded schema.
+	const bashIndex = lines.indexOf("  bash · 20 tokens");
+	const readIndex = lines.indexOf("  read · 14 tokens");
+	assert.ok(bashIndex > 0 && readIndex > bashIndex, "missing per-child subheaders");
+	assert.equal(lines[bashIndex + 1], "  bash: Do bash things");
+	assert.equal(lines[bashIndex + 2], "  {");
+	assert.equal(lines[readIndex + 1], "  read: Do read things");
+	assert.equal(lines[readIndex + 2], "  {");
+	assert.ok(!lines.some((line) => line.includes('{"type":"object"')), "schema left compact");
+	// One blank row separates the children instead of running them together.
+	assert.equal(lines[readIndex - 1], "");
+	assert.notEqual(lines[readIndex - 2], "");
+});
+
+test("InjectionsView omits a skill name its heading already shows", () => {
+	const skill = (name: string, tokens: number): InjectionItem => ({
+		...item(name, "pi", true, tokens),
+		kind: "skills",
+		label: name,
+		text: `${name}\nDo ${name} things\n/skills/${name}/SKILL.md`,
+	});
+	const codeStyle = skill("code-style", 30);
+	const commit = skill("commit", 12);
+	const skills: InjectionItem = {
+		...item("skills", "pi", true, 42),
+		kind: "skills",
+		label: "Skills (2)",
+		text: `${codeStyle.text}\n${commit.text}`,
+		sections: [
+			{ label: "code-style", text: codeStyle.text, tokens: 30 },
+			{ label: "commit", text: `\n${commit.text}`, tokens: 12 },
+		],
+		children: [codeStyle, commit],
+	};
+	const piGroup = group("pi", true, [skills]);
+	const view = new InjectionsView(createTheme(), {
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-10T12:00:00Z"),
+			groups: [piGroup],
+			totalTokens: piGroup.totalTokens,
+		},
+	}, () => {}, () => 40);
+
+	// Each part of the aggregate preview opens with the description, not the name above it.
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const aggregate = view.render(80).map((line) => stripSgr(line));
+	const styleIndex = aggregate.indexOf("  code-style · 30 tokens");
+	const commitIndex = aggregate.indexOf("  commit · 12 tokens");
+	assert.ok(styleIndex > 0 && commitIndex > styleIndex, "missing per-child subheaders");
+	assert.equal(aggregate[styleIndex + 1], "  Do code-style things");
+	assert.equal(aggregate[commitIndex + 1], "  Do commit things");
+
+	// The child preview keeps its whole estimate while dropping the same repeated line.
+	view.handleInput("\u001b");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const child = view.render(80).map((line) => stripSgr(line));
+	const headerIndex = child.findIndex((line) => line.includes("30 tokens"));
+	assert.ok(headerIndex >= 0 && child[headerIndex]?.includes("code-style"));
+	assert.equal(child[headerIndex + 2], "  Do code-style things");
+	assert.equal(child[headerIndex + 3], "  /skills/code-style/SKILL.md");
 });
 
 test("InjectionsView invalidation rebuilds theme-colored section subheaders", () => {
