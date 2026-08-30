@@ -27,7 +27,7 @@ readonly _PALETTES_CAPTIONS=('default' 'terrain' 'rainbow')
 readonly _PALETTES_BACKGROUND='#121314'
 readonly _PALETTES_FOREGROUND='#cccccc'
 readonly _PALETTES_CAPTION_FONT='Iosevka-Term-Medium-Extended'
-readonly _PALETTES_CAPTION_SIZE=38
+readonly _PALETTES_CAPTION_SIZE=44
 readonly _PALETTES_GAP=24
 
 

@@ -20,7 +20,7 @@ source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 
 
 
 # The demo replays one recorded session, so its id and model are pinned
-PI_COMMAND='pi -e . --session 01a03fb7-bf9e-727f-8832-83508056b76f'
+PI_COMMAND='pi -e . --session 01a0529a-687b-74a7-9076-11919f491954'
 PI_COMMAND+=' --model anthropic/claude-opus-5 --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'

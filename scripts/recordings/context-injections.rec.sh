@@ -20,9 +20,9 @@ source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 
 
 
 # The demo replays one recorded session, so its id and model are pinned
-PI_COMMAND='pi -e . --session 01a03fb7-bf9e-727f-8832-83508056b76f'
+PI_COMMAND='pi -e . --session 01a0529a-687b-74a7-9076-11919f491954'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
-PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/pi-web-providers'
+PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/@eko24ive/pi-ask'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
 
@@ -77,7 +77,7 @@ Sleep 1
 
 # Preview the selected item, then close
 Enter
-Wait 'web_contents'
+Wait 'ask_user'
 Sleep 3
 
 Escape
