@@ -240,7 +240,7 @@ _release_check_required_files() {
     #
     local required_file
 
-    for required_file in CHANGELOG.md doc/PLAN.md doc/RELEASE.md README.md package.json pnpm-lock.yaml; do
+    for required_file in CHANGELOG.md doc/RELEASE.md README.md package.json pnpm-lock.yaml; do
         if [[ -f $required_file ]]; then
             _release_pass "found ${required_file}"
         else
@@ -507,7 +507,8 @@ _release_check_changelog() {
 
 _release_check_plan() {
     #
-    # Block while doc/PLAN.md still plans the version being released.
+    # Block while doc/PLAN.md still plans the version being released. An
+    # absent plan means no roadmap work is left, which never blocks a release.
     #
     # Parameters:
     #   None.
@@ -516,6 +517,11 @@ _release_check_plan() {
     #   _release_check_plan
     #
     local plan_pattern
+
+    if [[ ! -f doc/PLAN.md ]]; then
+        _release_pass 'doc/PLAN.md is absent; no planned version to clear'
+        return 0
+    fi
 
     plan_pattern="^## v${_RELEASE_TARGET_VERSION//./\\.}[[:space:]]*$"
     if grep -qE "$plan_pattern" doc/PLAN.md; then
