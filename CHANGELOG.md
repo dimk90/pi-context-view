@@ -1,9 +1,9 @@
 # Changelog
 
-## `[v0.5.0]` - Unreleased
+## `[v0.5.0]` - 30.08.2026
 
 ### New
-* `[config]` Add an global config for `Usage` category colors.
+* `[config]` Add an global config for `Usage` category colors, see [customization](https://github.com/dimk90/pi-context-view#customization).
 * `[config]` Add `/context config` to create a defaults-populated config file.
 
 ### Changed
