@@ -1,5 +1,23 @@
 # Changelog
 
+## `[v0.5.0]` - 30.08.2026
+
+### New
+* `[config]` Add an global config for `Usage` category colors, see [customization](https://github.com/dimk90/pi-context-view#customization).
+* `[config]` Add `/context config` to create a defaults-populated config file.
+
+### Changed
+* `[ui]` Expand JSON runs in every preview level (tool defs, tool-calls, etc).
+* `[ui]` Label tool guidelines, and definitions in `Injections` and `Usage` previews.
+* `[ui]` Drop a preview line that only repeats the heading above it.
+
+### Fixed
+* `[context]` Rebuild the session baseline once, not on every LLM request ([#1](https://github.com/dimk90/pi-context-view/pull/1) by [@kaushikvira](https://github.com/kaushikvira)).
+* `[injections]` Count a guideline bullet shared by several tools once, like Pi renders it.
+* `[probe]` Unblock the silent probe after a failed compaction (Pi `0.84.3` `session_compact_failed`).
+* `[ui]` Collapse view descriptions on short terminals before map, legend, or list rows.
+
+
 ## `[v0.4.3]` - 19.08.2026
 
 ### Changed

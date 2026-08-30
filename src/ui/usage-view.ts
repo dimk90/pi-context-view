@@ -7,18 +7,24 @@
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
-import { collectPreviewEntries } from "../usage.ts";
 import {
-	ListNavigator,
-	normalizeInlineText,
-	normalizePreviewText,
-	PreviewScroller,
-} from "./injections-model.ts";
+	AUTO_COMPACT_BUFFER_CATEGORY_ID,
+	type CategoryColor,
+	type CategoryColors,
+	FREE_SPACE_CATEGORY_ID,
+	resolveCategoryColor,
+} from "../config.ts";
+import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
+import { normalizeInlineText, normalizePreviewText } from "../text.ts";
+import { collectPreviewEntries } from "../usage.ts";
+import { colorize } from "./color.ts";
+import { ListNavigator, PreviewScroller } from "./injections-model.ts";
+import { expandJsonSpan } from "./json-preview.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
 	DEFAULT_TERMINAL_ROWS,
+	descriptionBlockRows,
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
@@ -31,6 +37,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
+import { previewBodyLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import {
 	buildUsageMap,
@@ -50,7 +57,8 @@ const INVISIBLE_REASONING_DESCRIPTION =
 	"≈ is a provider-reported count; ~ is a rough approximation when no breakdown " +
 	"is reported and excluded from category totals. " +
 	"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.";
-const USAGE_TAIL_FIXED_LINE_COUNT = 5;
+/** Dashboard rows below the content, excluding the collapsible description: blank, hints, blank, border. */
+const USAGE_TAIL_FIXED_LINE_COUNT = 4;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 /** The block view adds the block identity header and its preceding separator to the preview frame. */
@@ -61,6 +69,8 @@ const PREVIEW_BLOCK_MIN_LINES = 4;
 const TWO_BLOCK_FRAME_ROWS = 5;
 const BLOCK_GUTTER = "┃";
 const CURSOR_COLUMN_WIDTH = 2;
+/** Rows the notice block may occupy before it starts crowding out the map. */
+const MAX_NOTICE_LINES = 3;
 const MAX_LEGEND_VALUE_COLUMN = 32;
 const LEGEND_VALUE_GAP = 2;
 const LEGEND_LEADER_GAP = 4;
@@ -86,6 +96,10 @@ const MAP_KEY_COMPACT_SPARE_ROWS = 2;
 export interface UsageViewInput {
 	readonly usage: ContextUsageSnapshot;
 	readonly degradedReason?: string;
+	/** Non-fatal problems shown under the header, such as ignored configuration entries. */
+	readonly notices?: readonly string[];
+	/** Category colors resolved from user overrides, or `DEFAULT_CATEGORY_COLORS`. */
+	readonly categoryColors: CategoryColors;
 }
 
 /** View-local denominator selected for the context map. */
@@ -176,6 +190,7 @@ export class UsageView {
 	private readonly getTerminalRows: () => number;
 	private readonly wheelScrollLines: number;
 	private readonly usage: ContextUsageSnapshot;
+	private readonly categoryColors: CategoryColors;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
 	private readonly previewScroller = new PreviewScroller();
@@ -207,6 +222,7 @@ export class UsageView {
 		this.getTerminalRows = getTerminalRows;
 		this.wheelScrollLines = wheelScrollLines;
 		this.usage = input.usage;
+		this.categoryColors = input.categoryColors;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
 		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable.
@@ -291,17 +307,15 @@ export class UsageView {
 	private renderDashboard(width: number, terminalRows: number): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const prefix = [border, "", ...this.headerLines(width), "", ...this.degradedWarningLines(width)];
-		const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, "dim", width);
-		const availableDashboardRows = Math.max(
-			1,
-			terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT - descriptionLines.length,
-		);
-		const dashboard = this.dashboardLines(width, availableDashboardRows).slice(0, availableDashboardRows);
-		while (dashboard.length < availableDashboardRows) dashboard.push("");
+		const prefix = [border, "", ...this.headerLines(width), "", ...this.noticeLines(width)];
+		const map = this.dashboardMap();
+		const availableRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT);
+		const descriptionLines = this.dashboardDescriptionLines(width, availableRows, map);
+		const dashboardRows = Math.max(1, availableRows - descriptionBlockRows(descriptionLines));
+		const dashboard = this.dashboardLines(width, dashboardRows, map).slice(0, dashboardRows);
+		while (dashboard.length < dashboardRows) dashboard.push("");
 		const tail = [
-			"",
-			...descriptionLines,
+			...(descriptionLines.length === 0 ? [] : ["", ...descriptionLines]),
 			"",
 			this.fit(
 				hintRow(theme, this.dashboardHints(width)),
@@ -400,15 +414,36 @@ export class UsageView {
 		return hints;
 	}
 
-	/** Render the map and legend side by side, or only details when width/window data is insufficient. */
-	private dashboardLines(width: number, rows: number): string[] {
+	/**
+	 * Dashboard description, collapsed whole as soon as the map, the complete
+	 * legend, or the full map key would lose a row to it. It is the least
+	 * important block on the frame, so it goes before any of them degrades.
+	 */
+	private dashboardDescriptionLines(width: number, availableRows: number, map: UsageMap | undefined): string[] {
+		const lines = wrapDescriptionLines(this.theme, USAGE_DESCRIPTION, "dim", width);
+		const required = this.fullDashboardRows(width, map) + descriptionBlockRows(lines);
+		return required <= availableRows ? lines : [];
+	}
+
+	/**
+	 * Rows the dashboard needs at full detail: the whole map beside the complete
+	 * legend and its full map key. The description yields to this height, so a
+	 * shrinking terminal drops it before the key degrades or the legend scrolls.
+	 */
+	private fullDashboardRows(width: number, map: UsageMap | undefined): number {
+		const detailRows = DETAIL_CATEGORY_HEADER_LINE_COUNT + this.legendRows.length;
+		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) return detailRows;
+		return Math.max(map.rows, detailRows + MAP_KEY_DETAILED_SPARE_ROWS);
+	}
+
+	/** Map for the active scale, or undefined without a usable context window. */
+	private dashboardMap(): UsageMap | undefined {
 		const scaleTokens = this.mapScale === "fit" ? this.fitMapScale : undefined;
-		const map = buildUsageMap(
-			this.usage,
-			DEFAULT_MAP_COLUMNS,
-			DEFAULT_MAP_ROWS,
-			scaleTokens,
-		);
+		return buildUsageMap(this.usage, DEFAULT_MAP_COLUMNS, DEFAULT_MAP_ROWS, scaleTokens);
+	}
+
+	/** Render the map and legend side by side, or only details when width/window data is insufficient. */
+	private dashboardLines(width: number, rows: number, map: UsageMap | undefined): string[] {
 		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) {
 			return this.detailLines(width, rows, undefined).map((line) => this.fit(line, width));
 		}
@@ -485,13 +520,20 @@ export class UsageView {
 			this.fit(theme.fg("mdHeading", theme.bold("Map:")), width),
 			this.fit(this.mapKeyEntry("text", FULL_CELL, theme.fg("muted", MAP_KEY_FULL_DESCRIPTION)), width),
 			this.fit(this.mapKeyEntry("text", PARTIAL_CELL, theme.fg("muted", MAP_KEY_PART_DESCRIPTION)), width),
-			this.fit(this.mapKeyEntry("dim", FREE_CELL, `${sizeLabel}${this.blockSizeText(map, true)}`), width),
+			this.fit(
+				this.mapKeyEntry(
+					this.categoryColor(FREE_SPACE_CATEGORY_ID),
+					FREE_CELL,
+					`${sizeLabel}${this.blockSizeText(map, true)}`,
+				),
+				width,
+			),
 		];
 	}
 
 	/** One indented `glyph - text` key row. */
-	private mapKeyEntry(glyphColor: ThemeColor, glyph: string, text: string): string {
-		return `${BODY_INDENT}${this.theme.fg(glyphColor, glyph)}${this.theme.fg("dim", " - ")}${text}`;
+	private mapKeyEntry(glyphColor: CategoryColor, glyph: string, text: string): string {
+		return `${BODY_INDENT}${this.paint(glyphColor, glyph)}${this.theme.fg("dim", " - ")}${text}`;
 	}
 
 	/** Single-line key that drops detail in stages before it would truncate. */
@@ -502,7 +544,7 @@ export class UsageView {
 		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One category")}`;
 		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Mixed")}`;
 		const size = (withPercent: boolean) =>
-			`${theme.fg("dim", FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
+			`${this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
 		const prefix = `${heading} ${full}${separator}${partial}${separator}`;
 		const detailed = `${prefix}${size(true)}`;
 		if (visibleWidth(detailed) <= width) return detailed;
@@ -620,14 +662,16 @@ export class UsageView {
 	/** Themed hierarchy label; the marker keeps its map color even when selected. */
 	private styledLegendLabel(row: LegendRow, selected: boolean): string {
 		if (row.type === "buffer") {
-			return `${this.theme.fg("dim", BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
+			const color = this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID);
+			return `${this.paint(color, BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
 		}
 		if (row.type === "free") {
-			return `${this.theme.fg("dim", FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
+			const color = this.categoryColor(FREE_SPACE_CATEGORY_ID);
+			return `${this.paint(color, FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
 		}
 		const indent = "  ".repeat(row.depth);
-		const color = categoryColor(row.rootId);
-		const marker = this.theme.fg(color, categoryMarker(row.category.id, row.depth));
+		const color = this.categoryColor(row.rootId);
+		const marker = this.paint(color, categoryMarker(row.category.id, row.depth));
 		const labelColor = selected ? "accent" : row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
 		return `${indent}${marker} ${this.theme.fg(labelColor, normalizeInlineText(row.category.label))}`;
 	}
@@ -641,19 +685,45 @@ export class UsageView {
 
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */
 	private mapCell(cell: UsageMapCell): string {
-		if (cell.fill === "buffer") return this.theme.fg("dim", BUFFER_CELL);
-		if (cell.fill === "free") return this.theme.fg("dim", FREE_CELL);
+		if (cell.fill === "buffer") {
+			return this.paint(this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID), BUFFER_CELL);
+		}
+		if (cell.fill === "free") return this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
 		const glyph = cell.categoryId === "compacted-data"
 			? COMPACTED_CELL
 			: cell.fill === "full" ? FULL_CELL : PARTIAL_CELL;
-		return this.theme.fg(categoryColor(cell.categoryId), glyph);
+		return this.paint(this.categoryColor(cell.categoryId), glyph);
 	}
 
-	/** Wrapped degraded-capture warning placed above the dashboard. */
-	private degradedWarningLines(width: number): string[] {
-		if (this.input.degradedReason === undefined) return [];
-		const reason = normalizeInlineText(this.input.degradedReason);
-		return wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${reason}`), width);
+	/** Resolve one category through user overrides, with a safe fallback for unknown ids. */
+	private categoryColor(categoryId: string | undefined): CategoryColor {
+		return resolveCategoryColor(this.categoryColors, categoryId);
+	}
+
+	/** Paint text with a configured color, which may name a theme color or a literal value. */
+	private paint(color: CategoryColor, text: string): string {
+		return colorize(this.theme, color, text);
+	}
+
+	/**
+	 * Wrapped notices placed above the dashboard: the degraded-capture reason
+	 * first, then configuration problems. Capped so a broken configuration file
+	 * cannot push the map and legend off the frame.
+	 */
+	private noticeLines(width: number): string[] {
+		const degraded = this.input.degradedReason === undefined ? [] : [this.input.degradedReason];
+		const blocks = [...degraded, ...this.input.notices ?? []]
+			.map((notice) => this.wrapNotice(notice, width));
+		const lines = blocks.flat();
+		if (lines.length <= MAX_NOTICE_LINES) return lines;
+		const kept = lines.slice(0, MAX_NOTICE_LINES - 1);
+		const hidden = blocks.length - countWholeBlocks(blocks, kept.length);
+		return [...kept, ...this.wrapNotice(`… +${hidden} more`, width)];
+	}
+
+	/** One sanitized notice wrapped to the available width, indented on every line. */
+	private wrapNotice(notice: string, width: number): string[] {
+		return wrapDescriptionLines(this.theme, normalizeInlineText(notice), "warning", width);
 	}
 
 	// === Preview mode ===
@@ -887,7 +957,7 @@ export class UsageView {
 		const marker = `${BODY_INDENT}${this.theme.fg("dim", `… +${hiddenLineCount} lines`)}`;
 		if (!selected) return marker;
 		const separator = this.theme.fg("dim", " · ");
-		const action = this.theme.fg("accent", "Enter - View Block");
+		const action = this.theme.fg("accent", "Enter - View Content");
 		return `${marker}${separator}${action}`;
 	}
 
@@ -966,9 +1036,12 @@ export class UsageView {
 			cells.push(theme.fg("dim", `[${formatEntryTimestamp(entry.timestamp)}]`));
 		}
 		entry.breadcrumb.forEach((cell, index) => {
-			const color: ThemeColor = index === 0 ? "mdHeading" : "muted";
+			// The leading cell names the producer and heads the whole block, so it is bold.
+			const lead = index === 0;
+			const color: ThemeColor = lead ? "mdHeading" : "muted";
+			const name = normalizeInlineText(cell);
 			cells.push(
-				`${theme.fg("dim", "[")}${theme.fg(color, normalizeInlineText(cell))}${theme.fg("dim", "]")}`,
+				`${theme.fg("dim", "[")}${theme.fg(color, lead ? theme.bold(name) : name)}${theme.fg("dim", "]")}`,
 			);
 		});
 		cells.push(theme.fg("dim", formatTokens(entry.visibleTokens ?? entry.tokens)));
@@ -994,10 +1067,21 @@ export class UsageView {
 			: [];
 	}
 
-	/** Complete sanitized, wrapped content lines indented under the entry header. */
+	/** Complete content lines under the entry header: labeled tool parts, or the whole raw entry. */
 	private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
+		return previewBodyLines(
+			this.theme,
+			entry,
+			wrapWidth,
+			(text, jsonSpan) => this.wrappedEntryLines(expandJsonSpan(text, jsonSpan), wrapWidth, compactSkills),
+			entry.breadcrumb.at(-1),
+		);
+	}
+
+	/** Sanitized, wrapped lines of one text run, indented under the entry header. */
+	private wrappedEntryLines(text: string, wrapWidth: number, compactSkills: boolean): string[] {
 		const lines: string[] = [];
-		for (const paragraph of this.entryPreviewText(entry.text, compactSkills).split("\n")) {
+		for (const paragraph of this.entryPreviewText(text, compactSkills).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			const paragraphLines = wrapped.length === 0 ? [""] : wrapped;
 			for (const line of paragraphLines) lines.push(line === "" ? "" : `${BODY_INDENT}${line}`);
@@ -1075,6 +1159,18 @@ function previewHints(blockCount: number): Array<readonly [string, string]> {
 	return [[STEP_KEY_HINT, "Navigate"], ["PgUp/PgDn", "Page"], ["Esc", "Back"]];
 }
 
+/** Notices whose wrapped lines fit entirely into the first `keptLines` rows. */
+function countWholeBlocks(blocks: readonly (readonly string[])[], keptLines: number): number {
+	let used = 0;
+	let whole = 0;
+	for (const block of blocks) {
+		if (used + block.length > keptLines) break;
+		used += block.length;
+		whole += 1;
+	}
+	return whole;
+}
+
 /** Stream lines one block occupies, including its truncation marker row. */
 function blockHeight(block: PreviewBlock): number {
 	return block.lines.length + (block.hiddenLineCount > 0 ? 1 : 0);
@@ -1097,39 +1193,6 @@ function categoryMarker(categoryId: string, depth: number): string {
 /** Token estimate carried by category, buffer, or free-space legend rows. */
 function legendTokens(row: LegendRow): number {
 	return row.type === "category" ? row.category.tokens : row.tokens;
-}
-
-/** Stable semantic theme color for one category across map cells and legend markers. */
-function categoryColor(categoryId: string | undefined): ThemeColor {
-	switch (categoryId) {
-		case "system-prompt":
-		case "system-tools":
-			return "mdHeading";
-		case "custom-tools":
-			return "accent";
-		case "mcp-tools":
-			return "mdLink";
-		case "context-files":
-			return "mdCodeBlock";
-		case "skills":
-			return "customMessageLabel";
-		case "user-messages":
-			return "syntaxString";
-		case "agent-text-messages":
-			return "syntaxFunction";
-		case "agent-thinking-messages":
-			return "thinkingXhigh";
-		case "agent-tool-call-messages":
-			return "syntaxKeyword";
-		case "tool-output":
-			return "toolOutput";
-		case "extension-messages":
-			return "syntaxType";
-		case "compacted-data":
-			return "thinkingHigh";
-		default:
-			return "muted";
-	}
 }
 
 /** Compact token count: 951, 3.7k, 43.8k, 1M. */

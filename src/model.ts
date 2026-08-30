@@ -33,6 +33,28 @@ export interface InjectionSource {
 	readonly native: boolean;
 }
 
+/**
+ * Character range of a JSON document embedded in preview text, known from how
+ * the text was built rather than from inspecting it. Full-content previews
+ * expand the run; the compact provider-bound form still backs every estimate.
+ */
+export interface JsonSpan {
+	readonly start: number;
+	readonly end: number;
+}
+
+/** One labeled part of an item's raw text, used only to shape its preview. */
+export interface InjectionSection {
+	/** Section name rendered as a preview subheader. */
+	readonly label: string;
+	/** Slice of the parent item's text; sections concatenate back to it. */
+	readonly text: string;
+	/** Share of the parent estimate; sections sum exactly to the item total. */
+	readonly tokens: number;
+	/** Serialized JSON inside `text`, e.g. a tool's parameter schema. */
+	readonly jsonSpan?: JsonSpan;
+}
+
 /** One measured context injection. */
 export interface InjectionItem {
 	/** Stable id, unique within a snapshot. */
@@ -47,6 +69,10 @@ export interface InjectionItem {
 	readonly tokens: number;
 	/** Raw injected text for preview. Process-local; never log or persist. */
 	readonly text: string;
+	/** Serialized JSON inside `text`, e.g. non-string message content. */
+	readonly jsonSpan?: JsonSpan;
+	/** Labeled parts of `text`, e.g. a tool's prompt lines and definition; never extra tokens. */
+	readonly sections?: readonly InjectionSection[];
 	/** True when a message exists only in the transformed provider context, not the session branch. */
 	readonly contextOnly?: boolean;
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
@@ -105,6 +131,10 @@ export interface UsagePreviewEntry {
 	readonly invisibleReasoning?: InvisibleReasoningEstimate;
 	/** Raw content for preview. Process-local; never log or persist. */
 	readonly text: string;
+	/** Serialized JSON inside `text`, e.g. tool-call arguments. */
+	readonly jsonSpan?: JsonSpan;
+	/** Labeled parts of `text`, carried from the measured item; never extra tokens. */
+	readonly sections?: readonly InjectionSection[];
 }
 
 /** Pi-reported usage; tokens/percent are omitted when unknown (e.g. right after compaction). */
@@ -173,13 +203,20 @@ interface MutableGroup {
 	totalTokens: number;
 }
 
-/** Owned copy of an item, including its nested source and children. */
+/** Owned copy of an item, including its nested source, spans, and children. */
 function copyItem(item: InjectionItem): InjectionItem {
 	return {
 		...item,
 		source: { ...item.source },
+		jsonSpan: copyJsonSpan(item.jsonSpan),
+		sections: item.sections?.map((section) => ({ ...section, jsonSpan: copyJsonSpan(section.jsonSpan) })),
 		children: item.children?.map((child) => copyItem(child)),
 	};
+}
+
+/** Owned copy of an optional span. */
+function copyJsonSpan(span: JsonSpan | undefined): JsonSpan | undefined {
+	return span === undefined ? undefined : { ...span };
 }
 
 /**

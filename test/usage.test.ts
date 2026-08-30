@@ -3,6 +3,11 @@ import { test } from "node:test";
 
 import type { ContextEvent } from "@earendil-works/pi-coding-agent";
 
+import {
+	AUTO_COMPACT_BUFFER_CATEGORY_ID,
+	DEFAULT_CATEGORY_COLORS,
+	FREE_SPACE_CATEGORY_ID,
+} from "../src/config.ts";
 import type { InitialSnapshot, InjectionItem, UsageCategory } from "../src/model.ts";
 import { collectPreviewEntries, computeUsage, toReportedUsage } from "../src/usage.ts";
 
@@ -91,6 +96,29 @@ function assistantMessage(): ContextEvent["messages"][number] {
 	};
 }
 
+/** Session fixture exercising every message-backed usage category. */
+function sessionMessages(): ContextEvent["messages"] {
+	return [
+		{ role: "user", content: "12345678", timestamp: 1 },
+		assistantMessage(),
+		{
+			role: "toolResult",
+			toolCallId: "call",
+			toolName: "read",
+			content: [{ type: "text", text: "12345678" }],
+			isError: false,
+			timestamp: 3,
+		},
+		{ role: "custom", customType: "marker", content: "abcd", display: false, timestamp: 4 },
+		{ role: "bashExecution", command: "ls", output: "123456", exitCode: 0, cancelled: false, truncated: false,
+			timestamp: 5 },
+		{ role: "bashExecution", command: "xx", output: "yyyyyy", exitCode: 0, cancelled: false, truncated: false,
+			excludeFromContext: true, timestamp: 6 },
+		{ role: "compactionSummary", summary: "abcdefgh", tokensBefore: 1_000, timestamp: 7 },
+		{ role: "branchSummary", summary: "abcd", fromId: "old", timestamp: 8 },
+	];
+}
+
 /** Find one category recursively by stable id. */
 function category(categories: readonly UsageCategory[], id: string): UsageCategory {
 	for (const entry of categories) {
@@ -112,29 +140,9 @@ function findCategory(categories: readonly UsageCategory[], id: string): UsageCa
 }
 
 test("computeUsage classifies Initial components and live session messages without double-counting", () => {
-	const messages: ContextEvent["messages"] = [
-		{ role: "user", content: "12345678", timestamp: 1 },
-		assistantMessage(),
-		{
-			role: "toolResult",
-			toolCallId: "call",
-			toolName: "read",
-			content: [{ type: "text", text: "12345678" }],
-			isError: false,
-			timestamp: 3,
-		},
-		{ role: "custom", customType: "marker", content: "abcd", display: false, timestamp: 4 },
-		{ role: "bashExecution", command: "ls", output: "123456", exitCode: 0, cancelled: false, truncated: false,
-			timestamp: 5 },
-		{ role: "bashExecution", command: "xx", output: "yyyyyy", exitCode: 0, cancelled: false, truncated: false,
-			excludeFromContext: true, timestamp: 6 },
-		{ role: "compactionSummary", summary: "abcdefgh", tokensBefore: 1_000, timestamp: 7 },
-		{ role: "branchSummary", summary: "abcd", fromId: "old", timestamp: 8 },
-	];
-
 	const usage = computeUsage({
 		snapshot: snapshot(),
-		messages,
+		messages: sessionMessages(),
 		reported: { tokens: 100, contextWindow: 1_000, percent: 10 },
 		modelLabel: "test-model",
 		computedAt: new Date("2026-07-11T13:00:00Z"),
@@ -168,6 +176,16 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.ok(!usage.categories.some((entry) => entry.tokens === 99));
 });
 
+test("computeUsage produces exactly the top-level categories that carry a configurable color", () => {
+	const usage = computeUsage({ snapshot: snapshot(), messages: sessionMessages() });
+
+	// Buffer and free space are view-local rows, so they are configurable without a computed category.
+	const configuredIds = [...DEFAULT_CATEGORY_COLORS.keys()]
+		.filter((id) => id !== AUTO_COMPACT_BUFFER_CATEGORY_ID && id !== FREE_SPACE_CATEGORY_ID)
+		.sort();
+	assert.deepEqual(usage.categories.map((entry) => entry.id).sort(), configuredIds);
+});
+
 test("computeUsage includes frozen context-only messages without recounting session-backed injections", () => {
 	const initial = snapshot();
 	const contextOnly = {
@@ -195,6 +213,52 @@ test("computeUsage includes frozen context-only messages without recounting sess
 	assert.equal(extensions.tokens, 8);
 	assert.deepEqual(extensions.children?.map((entry) => entry.label), ["extensions (aggregate)"]);
 	assert.equal(collectPreviewEntries(extensions)[0]?.text, "context-only content");
+});
+
+test("computeUsage carries measured tool parts into tool preview entries", () => {
+	const snippet = "\n- web_search: Search the web";
+	const definition = "web_search: Search\n{}";
+	const customTool: InjectionItem = {
+		...item("web_search", "tool", 12, false),
+		text: `${snippet}${definition}`,
+		sections: [
+			{ label: "Available Tools", text: snippet, tokens: 7 },
+			{ label: "Definition", text: definition, tokens: 5 },
+		],
+	};
+	const builtinChild: InjectionItem = {
+		...item("read", "tool", 3),
+		text: definition,
+		sections: [{ label: "Definition", text: definition, tokens: 3 }],
+	};
+	const piItems = [item("base", "base-prompt", 10), item("builtins", "tool", 3, true, [builtinChild])];
+	const usage = computeUsage({
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-11T12:00:00Z"),
+			groups: [
+				{ source: { id: "pi", label: "pi", native: true }, items: piItems, totalTokens: 13 },
+				{
+					source: { id: "npm:test", label: "npm:test", native: false },
+					items: [customTool],
+					totalTokens: customTool.tokens,
+				},
+			],
+			totalTokens: 25,
+		},
+		messages: [],
+	});
+
+	const customEntry = collectPreviewEntries(category(usage.categories, "custom-tools"))[0];
+	assert.deepEqual(customEntry?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
+	// Parts break the entry down; they never add tokens to it.
+	assert.equal(customEntry?.sections?.reduce((sum, section) => sum + section.tokens, 0), customEntry?.tokens);
+	assert.equal(customEntry?.sections?.map((section) => section.text).join(""), customEntry?.text);
+
+	const builtinEntry = collectPreviewEntries(category(usage.categories, "item:read"))[0];
+	assert.deepEqual(builtinEntry?.sections?.map((section) => section.label), ["Definition"]);
+	const promptEntry = collectPreviewEntries(category(usage.categories, "system-prompt"))[0];
+	assert.equal(promptEntry?.sections, undefined);
 });
 
 test("computeUsage drops empty categories and aggregates duplicate tool/custom message sources", () => {
@@ -306,6 +370,10 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 		[20, ["assistant", "bash"]],
 	]);
 	assert.equal(callEntries[2]?.text, 'bash({"command":"ls"})');
+	// Arguments are marked where they were serialized, between the call parentheses.
+	const argumentsSpan = callEntries[2]?.jsonSpan;
+	assert.ok(argumentsSpan !== undefined);
+	assert.equal(callEntries[2]?.text.slice(argumentsSpan.start, argumentsSpan.end), '{"command":"ls"}');
 	const callCategory = category(usage.categories, "agent-tool-call-messages");
 	assert.equal(callCategory.tokens, callEntries.reduce((sum, entry) => sum + entry.tokens, 0));
 

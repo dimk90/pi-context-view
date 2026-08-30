@@ -98,6 +98,18 @@ test("captureActiveTools uses the final active set", () => {
 	assert.equal(tools[0]?.snippet, "Search the web");
 });
 
+test("captureActiveTools keeps pi's active-tool order and drops repeated names", () => {
+	const tools = captureActiveTools(
+		[tool("read", "builtin"), tool("search", "npm:web")],
+		["search", "read", "search"],
+		{},
+	);
+
+	// Guideline ownership follows this order, so it must match the order pi
+	// builds its Guidelines section from.
+	assert.deepEqual(tools.map((entry) => entry.name), ["search", "read"]);
+});
+
 test("copyPromptOptions owns decomposition metadata and keeps only visible skills", () => {
 	const contextFile = { path: "./AGENTS.md", content: "rules" };
 	const visibleSkill = skill("visible", false);
@@ -122,20 +134,29 @@ test("measureInjectedMessages attributes custom and context-only messages withou
 	const sessionCustom = customMessage("marker", "session", 2);
 	const contextCustom = customMessage("marker", "context only", 3);
 	const injectedUser = { role: "user", content: "injected", timestamp: 4 } satisfies ContextEvent["messages"][number];
+	const blockUser = {
+		role: "user",
+		content: [{ type: "text", text: "injected" }],
+		timestamp: 5,
+	} satisfies ContextEvent["messages"][number];
 	const items = measureInjectedMessages(
-		[ordinaryUser, sessionCustom, contextCustom, injectedUser],
+		[ordinaryUser, sessionCustom, contextCustom, injectedUser, blockUser],
 		[ordinaryUser, sessionCustom],
 	);
 
 	assert.deepEqual(
 		items.map((entry) => entry.id),
-		["message:marker:0", "message:marker:1", "message:context:user:0"],
+		["message:marker:0", "message:marker:1", "message:context:user:0", "message:context:user:1"],
 	);
 	assert.equal(items[0]?.source.id, "message-type:marker");
 	assert.equal(items[0]?.contextOnly, undefined);
 	assert.equal(items[1]?.contextOnly, true);
 	assert.equal(items[2]?.source.id, "aggregate:extensions");
 	assert.equal(items[2]?.text, "injected");
+	// String content is text; serialized block content is marked JSON for full-content previews.
+	assert.equal(items[2]?.jsonSpan, undefined);
+	assert.equal(items[3]?.text, '[{"type":"text","text":"injected"}]');
+	assert.deepEqual(items[3]?.jsonSpan, { start: 0, end: items[3]?.text.length });
 });
 
 test("mergeContextOnlyMessages carries only provider-context mutations into Usage snapshots", () => {
@@ -169,14 +190,14 @@ test("InitialCaptureState owns prepared options before later handlers can mutate
 	state.prepare(options);
 	if (options.toolSnippets !== undefined) options.toolSnippets.search = "Changed snippet";
 
-	const snapshot = state.finalize({
-		systemPrompt: "Base\n- search: Original snippet",
+	const snapshot = state.finalize(() => ({
+		systemPrompt: "Base\n\nAvailable tools:\n- search: Original snippet\n",
 		messages: [],
 		baselineMessages: [],
 		allTools: [tool("search", "npm:web")],
 		activeToolNames: ["search"],
 		origin: "real-turn",
-	});
+	}));
 
 	assert.ok(snapshot !== undefined);
 	const search = snapshot.groups.flatMap((group) => group.items).find((entry) => entry.label === "search");
@@ -192,7 +213,7 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 
 	state.prepare(firstOptions);
 	state.prepare(finalOptions);
-	const first = state.finalize({
+	const first = state.finalize(() => ({
 		systemPrompt: "CUSTOM",
 		messages: [message],
 		baselineMessages: [message],
@@ -200,7 +221,7 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 		activeToolNames: [],
 		origin: "real-turn",
 		capturedAt,
-	});
+	}));
 	assert.ok(first !== undefined);
 	assert.equal(first.groups[0]?.items[0]?.label, "Custom Prompt (--system-prompt)");
 	assert.equal(first.groups[1]?.items[0]?.text, "captured");
@@ -208,14 +229,14 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 	if (message.role === "custom") message.content = "changed";
 	capturedAt.setFullYear(2000);
 	state.prepare({ cwd: "/different" });
-	const second = state.finalize({
+	const second = state.finalize(() => ({
 		systemPrompt: "DIFFERENT",
 		messages: [],
 		baselineMessages: [],
 		allTools: [],
 		activeToolNames: [],
 		origin: "synthetic-probe",
-	});
+	}));
 
 	assert.strictEqual(second, first);
 	assert.equal(second.groups[1]?.items[0]?.text, "captured");
@@ -225,14 +246,14 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 test("InitialCaptureState does not finalize before prepare", () => {
 	const state = new InitialCaptureState();
 	assert.equal(
-		state.finalize({
+		state.finalize(() => ({
 			systemPrompt: "prompt",
 			messages: [],
 			baselineMessages: [],
 			allTools: [],
 			activeToolNames: [],
 			origin: "real-turn",
-		}),
+		})),
 		undefined,
 	);
 });

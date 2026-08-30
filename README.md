@@ -1,7 +1,7 @@
 # pi-context-view
 
 <p align="center">
-  <img width="458" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/1485fe4da1ddefc832230b14bcc949f2a53d87a2/doc/images/pi-context-view.png">
+  <img width="456" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/1485fe4da1ddefc832230b14bcc949f2a53d87a2/doc/images/pi-context-view.png">
   <br>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
   <a href="https://www.npmjs.com/package/pi-context-view"><img src="https://img.shields.io/npm/v/pi-context-view?style=flat-square&amp;logoColor=white" alt="npm version"></a>
@@ -30,6 +30,9 @@ injected by other extensions.
 - `/context usage` - open the context usage visualization.
 - `/context injections` - show the hidden parts of the context captured at
   session start or resume.
+- `/context config` - create the global configuration file populated with
+  defaults, useful for
+  [customization](https://github.com/dimk90/pi-context-view#customization).
 
 ## Demo
 
@@ -38,21 +41,21 @@ injected by other extensions.
 
 See what fills your context, for example, what survives compaction:
 
-![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/ec65cc1cbfafcb699471c9ac4a0b63ec4189ff8c/doc/images/context-usage.gif)
+![Context usage view showing estimated context composition](https://media.githubusercontent.com/media/dimk90/pi-context-view/3d07101663b7c03b75b02c0c1d3eb9edea19b120/doc/images/context-usage.gif)
 
 
 ### `/context injections`
 
 Inspect hidden parts of the context, such as tool definitions:
 
-![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/df9b7bae3d090492640c31b584374e3e2ddb7874/doc/images/context-injections.gif)
+![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/3d07101663b7c03b75b02c0c1d3eb9edea19b120/doc/images/context-injections.gif)
 
 ### Zoom
 
 Zoom in for a more detailed breakdown of large context windows, such as
 1M-token windows:
 
-![Zoom feature](https://media.githubusercontent.com/media/dimk90/pi-context-view/df9b7bae3d090492640c31b584374e3e2ddb7874/doc/images/zoom.gif)
+![Zoom feature](https://media.githubusercontent.com/media/dimk90/pi-context-view/3d07101663b7c03b75b02c0c1d3eb9edea19b120/doc/images/zoom.gif)
 
 ## Install
 
@@ -60,15 +63,42 @@ Zoom in for a more detailed breakdown of large context windows, such as
 pi install npm:pi-context-view
 ```
 
+## Customization
+
+At the moment, only the `Context Usage` map colors are customizable.
+
+A config populated with the current defaults is a good starting point for
+customization. Create it with:
+
+```text
+/context config
+```
+> This creates `~/.pi/agent/extensions/pi-context-view.json`.
+
+See [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/develop/doc/CONFIG.md)
+for each parameter's meaning and default value.
+
+### Category Colors
+
+You can configure the `Context Usage` map colors to better match your theme, or set
+them to theme-independent hex values. Here are examples of custom
+[terrain](https://github.com/dimk90/pi-context-view/blob/develop/doc/palettes/terrain.json) and
+[rainbow](https://github.com/dimk90/pi-context-view/blob/develop/doc/palettes/rainbow.json) palettes:
+
+![Terrain and rainbow palettes](https://media.githubusercontent.com/media/dimk90/pi-context-view/3d07101663b7c03b75b02c0c1d3eb9edea19b120/doc/images/palettes.png)
+
+See [PI-THEME-COLORS](https://github.com/dimk90/pi-context-view/blob/develop/doc/PI-THEME-COLORS.md) 
+for color names that follow the current theme.
+
+
 ## Context Footprint
 
 `pi-context-view` does not add any instructions or messages to the model context.
 
-## Related Projects
+## My Other Stuff
 
-📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create
-  the demo GIFs.
+📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create the demo GIFs.
 
 ## License
 
-MIT
+[MIT](https://github.com/dimk90/pi-context-view/blob/master/LICENSE)

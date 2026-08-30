@@ -33,7 +33,7 @@ section as the GitHub release notes.
    - replace `Unreleased` for the version in `CHANGELOG.md` with the release
      date in `DD.MM.YYYY` format;
    - make the changelog entries match the user-visible release notes;
-   - remove the completed version section from `PLAN.md`, leaving future work
+   - remove the completed version section from `doc/PLAN.md`, leaving future work
      in the roadmap;
    - verify that README commands, screenshots, and package metadata are current.
 
@@ -52,10 +52,11 @@ section as the GitHub release notes.
    ```
 
 1. Commit only the reviewed release files, following the repository's release
-   commit convention. Add doc/images files only if their reviewed captures changed.
+   commit convention. The release commit covers exactly these paths; commit
+   anything else, including reviewed `doc/images` captures, before the release.
 
    ```bash
-   git add CHANGELOG.md PLAN.md package.json pnpm-lock.yaml README.md
+   git add CHANGELOG.md doc/PLAN.md package.json pnpm-lock.yaml README.md
    ```
    ```bash
    git commit -m "[doc] Release v0.?.?"

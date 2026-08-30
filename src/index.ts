@@ -1,5 +1,5 @@
 /**
- * pi-context-view — inspect what occupies the model context.
+ * pi-context-view - inspect what occupies the model context.
  *
  * Passively captures the first real turn, or runs one on-demand silent probe
  * when a context view is opened before any real turn.
@@ -11,10 +11,14 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
+import { ConfigStore, createDefaultConfigFile } from "./config.ts";
 import {
+	CONTEXT_COMMAND_DESCRIPTION,
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
+	reportConfigCreation,
+	reportTuiOnly,
 	resolveInitialCapture,
 } from "./command.ts";
 import {
@@ -34,6 +38,7 @@ export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
 	const probe = new SilentProbeState();
 	const compaction = new CompactionState();
+	const configStore = new ConfigStore();
 	let persistedIdentityCount = 0;
 
 	/** Persist identities (role and timestamp only, never content) not yet written this runtime. */
@@ -61,7 +66,12 @@ export default function (pi: ExtensionAPI) {
 		compaction.begin(event.signal);
 	});
 
+	// Pi ends every observed compaction with exactly one of these two events.
 	pi.on("session_compact", () => {
+		compaction.finish();
+	});
+
+	pi.on("session_compact_failed", () => {
 		compaction.finish();
 	});
 
@@ -70,8 +80,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", (event) => {
-		// Any new run proves a failed or cancelled manual compaction has ended.
-		compaction.finish();
 		probe.beginRun(event.prompt);
 		capture.prepare(event.systemPromptOptions);
 	});
@@ -91,23 +99,22 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("context", (event, ctx) => {
 		const messages = probe.filterMessages(event.messages);
-		const baselineMessages = probe.filterMessages(
-			buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
-		);
-		capture.finalize({
+		// Lazy: this event fires once per LLM request, but only the freezing call
+		// reads these inputs, and the baseline rebuild alone is O(session).
+		capture.finalize(() => ({
 			systemPrompt: ctx.getSystemPrompt(),
 			messages,
-			baselineMessages,
+			baselineMessages: probe.filterMessages(
+				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
+			),
 			allTools: pi.getAllTools(),
 			activeToolNames: pi.getActiveTools(),
 			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
-		});
+		}));
 		return messages === event.messages ? undefined : { messages };
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
-		// Auto-compaction failures have no session_compact event.
-		compaction.finish();
 		if (!probe.isCurrentRun) return;
 		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
 		probe.settle(capture.snapshot !== undefined);
@@ -123,8 +130,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("context", {
-		// RegisteredCommand has no argumentHint; mimic pi's `<hint> — <description>` style.
-		description: "[usage|injections] — Inspect context usage or injections",
+		description: CONTEXT_COMMAND_DESCRIPTION,
 		getArgumentCompletions: getContextArgumentCompletions,
 		handler: async (args, ctx) => {
 			const command = parseContextCommand(args);
@@ -132,8 +138,13 @@ export default function (pi: ExtensionAPI) {
 				reportCommandMessage(ctx, command.message, "error");
 				return;
 			}
+			// Creating the file needs no UI, so it stays available in every run mode.
+			if (command.type === "config") {
+				reportConfigCreation(ctx, createDefaultConfigFile());
+				return;
+			}
 			if (ctx.mode !== "tui") {
-				reportCommandMessage(ctx, "/context requires TUI mode.", "warning");
+				reportTuiOnly(ctx, command.view);
 				return;
 			}
 			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
@@ -144,6 +155,8 @@ export default function (pi: ExtensionAPI) {
 				});
 				return;
 			}
+			// Loaded only for the Usage view, the sole consumer of configured colors.
+			const loadedConfig = configStore.load();
 			const current = buildNativeSnapshot({
 				systemPrompt: ctx.getSystemPrompt(),
 				options: ctx.getSystemPromptOptions(),
@@ -162,6 +175,9 @@ export default function (pi: ExtensionAPI) {
 					autoCompactReserveTokens: readAutoCompactReserveTokens(ctx),
 				}),
 				degradedReason: initial.degradedReason,
+				// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
+				notices: loadedConfig.warnings,
+				categoryColors: loadedConfig.config.categoryColors,
 			});
 		},
 	});

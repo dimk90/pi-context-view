@@ -19,6 +19,7 @@ import {
 	type InitialSnapshot,
 	type InjectionItem,
 	type InjectionSource,
+	type JsonSpan,
 } from "./model.ts";
 
 /** Session custom-entry type persisting probe message identities across extension runtimes. */
@@ -111,11 +112,14 @@ export class InitialCaptureState {
 	/**
 	 * Freeze the Initial snapshot from the first context event. Returns the
 	 * existing snapshot on repeat calls, or undefined when `prepare()` never ran.
+	 * `buildInput` runs only on the call that freezes, so callers may collect
+	 * expensive inputs there without paying for them once per later event.
 	 */
-	public finalize(input: CaptureFinalization): InitialSnapshot | undefined {
+	public finalize(buildInput: () => CaptureFinalization): InitialSnapshot | undefined {
 		if (this.initialSnapshot !== undefined) return this.initialSnapshot;
 		if (this.pendingPreparation === undefined) return undefined;
 
+		const input = buildInput();
 		const preparation = this.pendingPreparation;
 		const tools = captureActiveTools(input.allTools, input.activeToolNames, {
 			toolSnippets: preparation.toolSnippets,
@@ -357,15 +361,20 @@ export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOpti
 	};
 }
 
-/** Snapshot the final active tool set with provenance and payload definitions. */
+/**
+ * Snapshot the final active tool set with provenance and payload definitions.
+ * Keep pi's active-tool order: it decides which tool owns a guideline bullet
+ * that several tools declare.
+ */
 export function captureActiveTools(
 	allTools: readonly ToolInfo[],
 	activeToolNames: readonly string[],
 	options: { readonly toolSnippets?: Readonly<Record<string, string>> },
 ): ToolSlice[] {
-	const active = new Set(activeToolNames);
-	return allTools
-		.filter((tool) => active.has(tool.name))
+	const byName = new Map(allTools.map((tool) => [tool.name, tool]));
+	return [...new Set(activeToolNames)]
+		.map((name) => byName.get(name))
+		.filter((tool) => tool !== undefined)
 		.map((tool) => ({
 			name: tool.name,
 			description: tool.description,
@@ -395,7 +404,7 @@ export function measureInjectedMessages(
 		const identity = message.role === "custom" ? message.customType : message.role;
 		const occurrence = occurrences.get(identity) ?? 0;
 		occurrences.set(identity, occurrence + 1);
-		const text = messageText(message);
+		const { text, jsonSpan } = messagePreview(message);
 		items.push({
 			id: message.role === "custom"
 				? `message:${message.customType}:${occurrence}`
@@ -407,6 +416,7 @@ export function measureInjectedMessages(
 			chars: text.length,
 			tokens: estimateTokens(message),
 			text,
+			jsonSpan,
 			contextOnly: contextOnly || undefined,
 		});
 	}
@@ -436,10 +446,22 @@ function consumeMessageSignature(
 	return true;
 }
 
+/** Provider-bound message content for raw preview, with any serialization marked as JSON. */
+interface MessagePreview {
+	readonly text: string;
+	readonly jsonSpan?: JsonSpan;
+}
+
 /** Extract provider-bound message content for raw preview. */
-function messageText(message: ContextEvent["messages"][number]): string {
-	if (!("content" in message)) return JSON.stringify(message);
-	return typeof message.content === "string" ? message.content : JSON.stringify(message.content);
+function messagePreview(message: ContextEvent["messages"][number]): MessagePreview {
+	if (!("content" in message)) return serializedPreview(JSON.stringify(message));
+	if (typeof message.content === "string") return { text: message.content };
+	return serializedPreview(JSON.stringify(message.content));
+}
+
+/** Preview whose whole text is one serialized JSON document. */
+function serializedPreview(text: string): MessagePreview {
+	return { text, jsonSpan: { start: 0, end: text.length } };
 }
 
 /** Map key uniquely identifying one probe message by role and timestamp. */

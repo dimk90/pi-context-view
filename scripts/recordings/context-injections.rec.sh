@@ -13,22 +13,24 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.3.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 1
 
 
 ## Constants
 
 
 # The demo replays one recorded session, so its id and model are pinned
-PI_COMMAND='pi -e . --session 019f7c38-d958-7d36-8d86-e22832c0d227'
+PI_COMMAND='pi -e . --session 01a0529a-687b-74a7-9076-11919f491954'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
-PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/pi-web-providers'
+PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/@eko24ive/pi-ask'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
 
 
 ## Configuration
 
+
+Require 'pi'
 
 SetOutput "$REPO_ROOT/doc/images/context-injections.gif"
 
@@ -38,6 +40,9 @@ SetFontSize 36
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'
 SetTypingSpeed 0.1
+
+# The GIF is committed to the repository, so shrink it losslessly
+SetOptimize 'on'
 
 Start
 
@@ -67,12 +72,12 @@ Wait 'Context Injections'
 Sleep 2
 
 # Walk the items
-Down 20 0.07
+Down 21 0.07
 Sleep 1
 
 # Preview the selected item, then close
 Enter
-Wait 'web_contents'
+Wait 'ask_user'
 Sleep 3
 
 Escape

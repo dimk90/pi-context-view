@@ -72,6 +72,15 @@ export function fitLine(line: string, width: number): string {
 	return truncateToWidth(line, width, "…");
 }
 
+/**
+ * Rows a description block occupies, including the blank row above it; zero
+ * when collapsed. A description is the least important block on a frame, so
+ * each view drops the whole block once its own content threshold is reached.
+ */
+export function descriptionBlockRows(lines: readonly string[]): number {
+	return lines.length === 0 ? 0 : lines.length + 1;
+}
+
 /** Wrap plain dialog-description text with semantic color and an indented continuation column. */
 export function wrapDescriptionLines(
 	theme: Theme,

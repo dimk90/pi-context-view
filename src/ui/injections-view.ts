@@ -6,19 +6,20 @@ import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-a
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { InitialSnapshot, InjectionItem } from "../model.ts";
+import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import {
 	buildInjectionRows,
 	collectItemsById,
 	type InjectionRow,
 	ListNavigator,
-	normalizeInlineText,
-	normalizePreviewText,
 	PreviewScroller,
 } from "./injections-model.ts";
+import { expandJsonSpan } from "./json-preview.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
 	DEFAULT_TERMINAL_ROWS,
+	descriptionBlockRows,
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
@@ -31,11 +32,18 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
+import { previewBodyLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
-const LIST_FIXED_LINE_COUNT = 10;
+/**
+ * List frame rows excluding the collapsible description: both borders and their
+ * blank rows, one header row, and the hint row above its own blank row.
+ */
+const LIST_FIXED_LINE_COUNT = 8;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const LIST_DESCRIPTION = "Injections into the model context for the first turn, with token estimates.";
+/** List rows that must stay visible for the description to keep its own rows. */
+const LIST_DESCRIPTION_MIN_ROWS = 26;
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_TOKEN_VALUE_COLUMN = 54;
 const TOKEN_LEADER_GAP = 4;
@@ -162,8 +170,12 @@ export class InjectionsView {
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const headerLines = this.headerLines(width);
 		const warningLines = this.degradedWarningLines(width);
-		const descriptionLines = this.descriptionLines(width);
-		const extraLineCount = headerLines.length - 1 + warningLines.length + descriptionLines.length - 1;
+		const availableRows = Math.max(
+			1,
+			terminalRows - LIST_FIXED_LINE_COUNT - (headerLines.length - 1) - warningLines.length,
+		);
+		const descriptionLines = this.fittedDescriptionLines(width, availableRows);
+		const extraLineCount = headerLines.length - 1 + warningLines.length + descriptionBlockRows(descriptionLines);
 		const viewport = calculateViewport(this.rows.length, terminalRows, LIST_FIXED_LINE_COUNT, extraLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 		const lines: string[] = [border, "", ...headerLines, "", ...warningLines];
@@ -172,8 +184,7 @@ export class InjectionsView {
 		if (viewport.showScroll) lines.push(this.scrollLine(width));
 		const paddingCount = viewport.visibleCount - listLines.length;
 		for (let pad = 0; pad < paddingCount; pad++) lines.push("");
-		lines.push("");
-		lines.push(...descriptionLines);
+		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(
 			this.fit(
@@ -195,6 +206,7 @@ export class InjectionsView {
 	}
 
 	public invalidate(): void {
+		this.clearPreviewContent();
 		this.clearCache();
 	}
 
@@ -231,17 +243,21 @@ export class InjectionsView {
 		const item = this.itemsById.get(row.itemId);
 		if (item === undefined) return;
 		this.previewItem = item;
-		this.previewLines = undefined;
-		this.previewWrapWidth = undefined;
+		this.clearPreviewContent();
 		this.previewScroller.reset();
 		this.clearCache();
 	}
 
 	private closePreview(): void {
 		this.previewItem = undefined;
+		this.clearPreviewContent();
+		this.clearCache();
+	}
+
+	/** Drop width- and theme-dependent preview rendering. */
+	private clearPreviewContent(): void {
 		this.previewLines = undefined;
 		this.previewWrapWidth = undefined;
-		this.clearCache();
 	}
 
 	private renderPreview(width: number, terminalRows: number, item: InjectionItem): string[] {
@@ -282,9 +298,23 @@ export class InjectionsView {
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length - 1);
 		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-		const text = normalizePreviewText(item.text);
+		// The item preview is the full-content level, so marked JSON expands here.
+		const lines = previewBodyLines(
+			this.theme,
+			item,
+			wrapWidth,
+			(text, jsonSpan) => this.wrappedTextLines(expandJsonSpan(text, jsonSpan), wrapWidth),
+			item.label,
+		);
+		this.previewLines = lines;
+		this.previewWrapWidth = wrapWidth;
+		return lines;
+	}
+
+	/** Wrap sanitized text into indented preview lines, keeping blank lines. */
+	private wrappedTextLines(text: string, wrapWidth: number): string[] {
 		const lines: string[] = [];
-		for (const paragraph of text.split("\n")) {
+		for (const paragraph of normalizePreviewText(text).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			if (wrapped.length === 0) {
 				lines.push("");
@@ -292,8 +322,6 @@ export class InjectionsView {
 			}
 			for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
 		}
-		this.previewLines = lines;
-		this.previewWrapWidth = wrapWidth;
 		return lines;
 	}
 
@@ -422,6 +450,19 @@ export class InjectionsView {
 			`${BODY_INDENT}${normalizeInlineText(this.input.degradedReason)}`,
 		);
 		return wrapTextWithAnsi(reason, width);
+	}
+
+	/**
+	 * Description block, collapsed whole once the list window falls below its
+	 * readable floor. The Initial list is unbounded and scrolls on most
+	 * terminals, so the description outlives the scroll counter instead of
+	 * yielding to it; a list shorter than the floor keeps every row instead.
+	 */
+	private fittedDescriptionLines(width: number, availableRows: number): string[] {
+		const lines = this.descriptionLines(width);
+		const floor = Math.min(LIST_DESCRIPTION_MIN_ROWS, this.rows.length);
+		const viewport = calculateViewport(this.rows.length, availableRows - descriptionBlockRows(lines), 0);
+		return viewport.visibleCount >= floor ? lines : [];
 	}
 
 	/** Wrapped dialog description, including the degraded-capture indicator when needed. */
