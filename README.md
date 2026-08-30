@@ -75,15 +75,15 @@ customization. Create it with:
 ```
 > This creates `~/.pi/agent/extensions/pi-context-view.json`.
 
-See [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md)
+See [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/develop/doc/CONFIG.md)
 for each parameter's meaning and default value.
 
 ### Category Colors
 
 You can configure the `Context Usage` map colors to better match your theme, or set
 them to theme-independent hex values. Here are examples of custom
-[terrain](https://github.com/dimk90/pi-context-view/blob/master/doc/palettes/terrain.json) and
-[rainbow](https://github.com/dimk90/pi-context-view/blob/master/doc/palettes/rainbow.json) palettes:
+[terrain](https://github.com/dimk90/pi-context-view/blob/develop/doc/palettes/terrain.json) and
+[rainbow](https://github.com/dimk90/pi-context-view/blob/develop/doc/palettes/rainbow.json) palettes:
 
 ![Terrain and rainbow palettes](doc/images/palettes.png)
 

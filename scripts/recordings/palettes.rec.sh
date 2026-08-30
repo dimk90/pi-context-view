@@ -114,7 +114,7 @@ SetOutput "$REPO_ROOT/doc/images/palettes.gif"
 # Rows stay at the palette panels' 25, which holds the whole usage view.
 SetCols 89
 SetRows 25
-SetFontSize 31
+SetFontSize 36
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'
 
