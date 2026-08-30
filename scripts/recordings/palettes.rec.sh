@@ -30,11 +30,6 @@ PALETTES=('terrain' 'rainbow')
 # Demonstration time for each palette
 HOLD_SECONDS=2
 
-# Closing the view needs the raw byte a plain terminal sends: once a recorder
-# client has attached, tmux encodes the named Escape key for pi's extended-keys
-# mode, and the view never sees the press
-ESCAPE_KEY=$'\e'
-
 REAL_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 
@@ -148,7 +143,7 @@ Wait 'Context Usage'
 Show
 Sleep "$HOLD_SECONDS"
 Hide
-Type "$ESCAPE_KEY"
+Escape
 
 # Record custom palettes from doc/palettes
 for palette in "${PALETTES[@]}"; do
@@ -160,7 +155,7 @@ for palette in "${PALETTES[@]}"; do
     Show
     Sleep "$HOLD_SECONDS"
     Hide
-    Type "$ESCAPE_KEY"
+    Escape
 done
 
 Render
