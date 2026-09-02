@@ -1001,10 +1001,20 @@ _release_create_release_commit() {
     # Example:
     #   _release_create_release_commit
     #
-    local expected_paths staged_paths pending_paths commit_message
+    local expected_paths staged_paths pending_paths commit_message path
+    local candidate_paths_to_stage=()
 
     _release_begin_step 'Commit the release on develop'
-    if ! git add -- "${_RELEASE_CANDIDATE_PATHS[@]}"; then
+    # Skip fully staged paths because a staged deletion gives git add no path to match
+    for path in "${_RELEASE_CANDIDATE_PATHS[@]}"; do
+        if ! git diff --quiet -- "$path" ||
+           git ls-files --others --exclude-standard --error-unmatch -- "$path" \
+               >/dev/null 2>&1; then
+            candidate_paths_to_stage+=("$path")
+        fi
+    done
+    if ((${#candidate_paths_to_stage[@]} > 0)) &&
+       ! git add -- "${candidate_paths_to_stage[@]}"; then
         _release_stop 'unable to stage the reviewed release paths'
     fi
     pending_paths="$(_release_uncommitted_release_paths)"
