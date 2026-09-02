@@ -16,6 +16,7 @@
  */
 import {
 	AGGREGATE_SOURCE_ID,
+	INSTRUCTIONS_LABEL,
 	type InjectionItem,
 	type InjectionKind,
 	type InjectionSection,
@@ -269,7 +270,10 @@ function claimGuidelines(tool: ToolSlice, claimed: Set<string>): string[] {
 	return owned;
 }
 
-/** Measure context-file contents without counting pi's XML transport scaffolding. */
+/**
+ * Carve pi's project-context section and expose each context file as a child of
+ * one Instructions aggregate, without counting the XML transport scaffolding.
+ */
 function measureContextFiles(
 	base: string,
 	options: PromptOptionsSlice,
@@ -278,20 +282,24 @@ function measureContextFiles(
 ): void {
 	const sectionSpan = findContextSectionSpan(base);
 	if (sectionSpan === undefined) return;
+	const children: InjectionItem[] = [];
 	for (const filePath of options.contextFilePaths ?? []) {
 		const content = findContextFileContent(base, filePath);
 		if (content === undefined) continue;
-		items.push(
-			createItem(
-				`context-file:${filePath}`,
-				"context-file",
-				PI_SOURCE,
-				abbreviateHome(filePath, options.homeDir),
-				content,
-			),
-		);
+		children.push(createItem(
+			`context-file:${filePath}`,
+			"context-file",
+			PI_SOURCE,
+			abbreviateHome(filePath, options.homeDir),
+			content,
+		));
 	}
+	children.sort((a, b) => b.tokens - a.tokens);
 	carvedSpans.push(expandLineBreaks(base, sectionSpan));
+	if (children.length === 0) return;
+
+	const label = `${INSTRUCTIONS_LABEL} (${children.length})`;
+	items.push(createAggregateItem("context-files", "context-file", PI_SOURCE, label, children));
 }
 
 /** Carve the skills section and expose each semantic skill record as a child item. */

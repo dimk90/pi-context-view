@@ -3,7 +3,7 @@
 
 - [x] Rename `Memory (AGENTS.md)` to `Instructions / AGENTS.md`, to match pi naming.
 
-- [ ] Add `Instructions` item to injections view and group all there (sub-items): AGENTS.md, etc.
+- [x] Add `Instructions` item to injections view and group all there (sub-items): AGENTS.md, etc.
 
 - [ ] **Match `/export` ordering and naming:**
    - Items become `System Prompt`, `Instructions / AGENTS.md`, `Skills`, `System Tools`, `Custom Tools`, in that order.

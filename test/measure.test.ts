@@ -4,8 +4,19 @@ import { test } from "node:test";
 // Deep import bypasses the package barrel, which does not re-export buildSystemPrompt.
 import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import { analyzeSystemPrompt, type PromptOptionsSlice, type ToolSlice } from "../src/measure.ts";
+import type { InjectionItem } from "../src/model.ts";
 
 const CWD = "/tmp/context-project";
+
+/** Find a measured item by id, including aggregate sub-items. */
+function findItem(items: readonly InjectionItem[], id: string): InjectionItem | undefined {
+	for (const item of items) {
+		if (item.id === id) return item;
+		const child = findItem(item.children ?? [], id);
+		if (child !== undefined) return child;
+	}
+	return undefined;
+}
 
 /** Today's date formatted like pi's base-prompt "Current date:" line. */
 function currentDate(): string {
@@ -103,7 +114,7 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 			"base-prompt",
 			"tool:npm:web:search",
 			"tool:builtin",
-			"context-file:./AGENTS.md",
+			"context-files",
 			"skills",
 			"append-prompt",
 			"prompt-addition:aggregate",
@@ -114,7 +125,9 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	assert.doesNotMatch(base?.text ?? "", /project_context|project_instructions|Project-specific instructions/);
 	assert.doesNotMatch(base?.text ?? "", /available_skills|The following skills/);
 	assert.doesNotMatch(base?.text ?? "", /Current date|Current working directory/);
-	const contextFile = items.find((entry) => entry.id === "context-file:./AGENTS.md");
+	const instructions = items.find((entry) => entry.id === "context-files");
+	assert.equal(instructions?.label, "Instructions / AGENTS.md (1)");
+	const contextFile = findItem(items, "context-file:./AGENTS.md");
 	assert.equal(contextFile?.kind, "context-file");
 	assert.equal(contextFile?.text, "Project rules");
 	assert.equal(contextFile?.chars, "Project rules".length);
@@ -342,7 +355,7 @@ test("analyzeSystemPrompt carves tool lines only from the blocks pi renders them
 	// file line stays with the file instead of being counted twice.
 	assert.deepEqual(search?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
 	assert.equal(search?.sections?.[0]?.text, "\n- search: Search the web");
-	assert.equal(items.find((entry) => entry.id === `context-file:${filePath}`)?.text, content);
+	assert.equal(findItem(items, `context-file:${filePath}`)?.text, content);
 });
 
 test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt tool guidance", () => {
@@ -429,7 +442,7 @@ test("analyzeSystemPrompt finds the footer in real buildSystemPrompt output", ()
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.ok(base !== undefined);
 	assert.doesNotMatch(base.text, /Current working directory/);
-	assert.equal(items.find((entry) => entry.id === "context-file:./AGENTS.md")?.text, "Project rules");
+	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
 	assert.equal(items.find((entry) => entry.id === "append-prompt")?.text, append);
 	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
 });
@@ -457,6 +470,41 @@ test("analyzeSystemPrompt abbreviates home-directory context-file labels with ~"
 	};
 
 	const items = analyzeSystemPrompt(systemPrompt, options);
-	const contextFile = items.find((entry) => entry.id === `context-file:${filePath}`);
+	const contextFile = findItem(items, `context-file:${filePath}`);
 	assert.equal(contextFile?.label, "~/.pi/agent/AGENTS.md");
+});
+
+test("analyzeSystemPrompt groups every context file under one Instructions aggregate", () => {
+	const globalPath = "/home/tester/.pi/agent/AGENTS.md";
+	const projectPath = "./AGENTS.md";
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		contextFiles: [
+			{ path: globalPath, content: "Global rules" },
+			{ path: projectPath, content: "Much longer project rules for this repository" },
+		],
+	});
+	const options: PromptOptionsSlice = {
+		cwd: CWD,
+		homeDir: "/home/tester",
+		contextFilePaths: [globalPath, projectPath],
+	};
+
+	const items = analyzeSystemPrompt(systemPrompt, options);
+	const instructions = items.find((entry) => entry.id === "context-files");
+	assert.equal(instructions?.label, "Instructions / AGENTS.md (2)");
+	assert.deepEqual(
+		instructions?.children?.map((child) => [child.id, child.label]),
+		[
+			[`context-file:${projectPath}`, projectPath],
+			[`context-file:${globalPath}`, "~/.pi/agent/AGENTS.md"],
+		],
+	);
+	assert.deepEqual(instructions?.sections?.map((section) => section.label), [
+		projectPath,
+		"~/.pi/agent/AGENTS.md",
+	]);
+	assert.equal(instructions?.chars, instructions?.children?.reduce((sum, child) => sum + child.chars, 0));
+	assert.equal(instructions?.tokens, instructions?.children?.reduce((sum, child) => sum + child.tokens, 0));
+	assert.equal(items.filter((entry) => entry.kind === "context-file").length, 1);
 });

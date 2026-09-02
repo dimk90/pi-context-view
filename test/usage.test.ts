@@ -36,10 +36,11 @@ function item(
 function snapshot(): InitialSnapshot {
 	const builtins = [item("read", "tool", 3), item("bash", "tool", 5)];
 	const skills = [item("code-style", "skills", 2), item("typescript-code", "skills", 4)];
+	const contextFiles = [item("agents", "context-file", 2), item("global-agents", "context-file", 4)];
 	const piItems = [
 		item("base", "base-prompt", 10),
 		item("builtins", "tool", 8, true, builtins),
-		item("agents", "context-file", 6),
+		item("context-files", "context-file", 6, true, contextFiles),
 		item("skills", "skills", 6, true, skills),
 	];
 	const mcpTool: InjectionItem = {
@@ -156,6 +157,10 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.equal(category(usage.categories, "system-tools").tokens, 8);
 	assert.equal(category(usage.categories, "custom-tools").tokens, 7);
 	assert.equal(category(usage.categories, "mcp-tools").tokens, 5);
+	assert.deepEqual(category(usage.categories, "context-files").children?.map((entry) => entry.id), [
+		"item:global-agents",
+		"item:agents",
+	]);
 	assert.equal(category(usage.categories, "context-files").tokens, 6);
 	assert.equal(category(usage.categories, "skills").tokens, 6);
 	assert.equal(findCategory(usage.categories, "messages"), undefined);

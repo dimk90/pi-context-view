@@ -5,14 +5,15 @@
  */
 import { type ContextEvent, type ContextUsage, convertToLlm, estimateTokens } from "@earendil-works/pi-coding-agent";
 
-import type {
-	ContextUsageSnapshot,
-	InvisibleReasoningEstimate,
-	InitialSnapshot,
-	InjectionItem,
-	ReportedContextUsage,
-	UsageCategory,
-	UsagePreviewEntry,
+import {
+	type ContextUsageSnapshot,
+	INSTRUCTIONS_LABEL,
+	type InvisibleReasoningEstimate,
+	type InitialSnapshot,
+	type InjectionItem,
+	type ReportedContextUsage,
+	type UsageCategory,
+	type UsagePreviewEntry,
 } from "./model.ts";
 
 /** Everything computeUsage needs; messages must already be synthetic-filtered. */
@@ -97,7 +98,7 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 					else customTools.push(leafFromItem(item));
 					break;
 				case "context-file":
-					contextFiles.push(leafFromItem(item));
+					contextFiles.push(...breakdownFromItem(item));
 					break;
 				case "skills":
 					skills.push(...breakdownFromItem(item));
@@ -113,7 +114,7 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 		aggregate("system-tools", "System Tools", systemTools),
 		aggregate("custom-tools", "Custom Tools", customTools),
 		aggregate("mcp-tools", "MCP Tools", mcpTools),
-		aggregate("context-files", "Instructions / AGENTS.md", contextFiles),
+		aggregate("context-files", INSTRUCTIONS_LABEL, contextFiles),
 		aggregate("skills", "Skills", skills),
 	]);
 }

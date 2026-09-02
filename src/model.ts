@@ -7,6 +7,9 @@
 export const PI_SOURCE_ID = "pi";
 export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
 
+/** Shared name of pi's context files; Usage and Injections must present it identically. */
+export const INSTRUCTIONS_LABEL = "Instructions / AGENTS.md";
+
 /** What produced the captured snapshot. */
 export type CaptureOrigin = "real-turn" | "synthetic-probe";
 
