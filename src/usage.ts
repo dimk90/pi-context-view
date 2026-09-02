@@ -75,7 +75,7 @@ export function toReportedUsage(usage: ContextUsage | undefined): ReportedContex
 	};
 }
 
-/** Map frozen snapshot items to prompt/tool/memory/skill categories. */
+/** Map frozen snapshot items to prompt/tool/instruction/skill categories. */
 function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 	const systemPrompt: UsageCategory[] = [];
 	const systemTools: UsageCategory[] = [];
@@ -113,7 +113,7 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 		aggregate("system-tools", "System Tools", systemTools),
 		aggregate("custom-tools", "Custom Tools", customTools),
 		aggregate("mcp-tools", "MCP Tools", mcpTools),
-		aggregate("context-files", "Memory (AGENTS.md)", contextFiles),
+		aggregate("context-files", "Instructions / AGENTS.md", contextFiles),
 		aggregate("skills", "Skills", skills),
 	]);
 }

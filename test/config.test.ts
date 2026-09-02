@@ -40,7 +40,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 		systemToolsColor: "mdHeading",
 		customToolsColor: "accent",
 		mcpToolsColor: "mdLink",
-		memoryColor: "mdCodeBlock",
+		instructionsColor: "mdCodeBlock",
 		skillsColor: "customMessageLabel",
 		userMessagesColor: "syntaxString",
 		agentTextMessagesColor: "syntaxFunction",
@@ -117,7 +117,7 @@ test("loadConfigFile applies every valid flat category color override", (context
 		systemToolsColor: "error",
 		customToolsColor: "warning",
 		mcpToolsColor: "muted",
-		memoryColor: "dim",
+		instructionsColor: "dim",
 		skillsColor: "text",
 		userMessagesColor: "thinkingText",
 		agentTextMessagesColor: "searchMatchText",
@@ -171,7 +171,7 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 	writeFileSync(filePath, JSON.stringify({
 		systemPromptColor: "success",
 		skillsColor: "#ff00f",
-		memoryColor: "crimson",
+		instructionsColor: "crimson",
 		userMessagesColor: 42,
 		unknownColor: "accent",
 	}));
@@ -184,9 +184,24 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "user-messages"), "syntaxString");
 	assert.equal(result.warnings.length, 4);
 	assert.ok(result.warnings.some((warning) => warning.includes("skillsColor")));
-	assert.ok(result.warnings.some((warning) => warning.includes("memoryColor")));
+	assert.ok(result.warnings.some((warning) => warning.includes("instructionsColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("userMessagesColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("unknownColor")));
+});
+
+test("loadConfigFile honors the renamed memoryColor key without warning", (context) => {
+	const filePath = createConfigPath(context);
+	writeFileSync(filePath, JSON.stringify({ memoryColor: "warning" }));
+
+	const renamed = loadConfigFile(filePath);
+	assert.deepEqual(renamed.warnings, []);
+	assert.equal(resolveCategoryColor(renamed.config.categoryColors, "context-files"), "warning");
+
+	// Both names present: the current one wins whichever order the file lists them in.
+	writeFileSync(filePath, '{"instructionsColor":"success","memoryColor":"warning"}');
+	assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, "context-files"), "success");
+	writeFileSync(filePath, '{"memoryColor":"warning","instructionsColor":"success"}');
+	assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, "context-files"), "success");
 });
 
 test("loadConfigFile degrades invalid JSON and non-object roots to defaults", (context) => {

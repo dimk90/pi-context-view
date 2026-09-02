@@ -267,7 +267,7 @@ columns. Both always denominate against the true context window regardless of
 map scale. Categories include:
 
 - System Prompt, System Tools, Custom Tools, and MCP Tools;
-- Memory (`AGENTS.md`) and Skills;
+- Instructions / `AGENTS.md` and Skills;
 - User Messages, Agent Text Messages, Agent Thinking Messages, and Agent Tool
   Call Messages;
 - Tool Output and Extensions;

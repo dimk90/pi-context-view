@@ -61,7 +61,7 @@ const CATEGORY_COLOR_SPECS = {
 	"system-tools": { key: "systemToolsColor", color: "mdHeading" },
 	"custom-tools": { key: "customToolsColor", color: "accent" },
 	"mcp-tools": { key: "mcpToolsColor", color: "mdLink" },
-	"context-files": { key: "memoryColor", color: "mdCodeBlock" },
+	"context-files": { key: "instructionsColor", color: "mdCodeBlock" },
 	"skills": { key: "skillsColor", color: "customMessageLabel" },
 	"user-messages": { key: "userMessagesColor", color: "syntaxString" },
 	"agent-text-messages": { key: "agentTextMessagesColor", color: "syntaxFunction" },
@@ -78,6 +78,12 @@ const CATEGORY_COLOR_SPECS = {
 const CONFIG_KEY_CATEGORIES: ReadonlyMap<string, string> = new Map(
 	Object.entries(CATEGORY_COLOR_SPECS).map(([categoryId, spec]) => [spec.key, categoryId]),
 );
+
+/**
+ * Renamed keys still honored, mapped to their current name, so a rename never
+ * silently drops an override an existing file already carries.
+ */
+const RENAMED_CONFIG_KEYS: ReadonlyMap<string, string> = new Map([["memoryColor", "instructionsColor"]]);
 
 /** Fast runtime membership check for configured Pi foreground color names. */
 const THEME_COLORS: ReadonlySet<string> = new Set(THEME_COLOR_NAMES);
@@ -227,7 +233,10 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 	const colors = new Map(DEFAULT_CATEGORY_COLORS);
 	const warnings: string[] = [];
 	for (const [key, value] of Object.entries(raw)) {
-		const categoryId = CONFIG_KEY_CATEGORIES.get(key);
+		const currentKey = RENAMED_CONFIG_KEYS.get(key);
+		// The current name always wins, so a file carrying both names loads order-independently.
+		if (currentKey !== undefined && currentKey in raw) continue;
+		const categoryId = CONFIG_KEY_CATEGORIES.get(currentKey ?? key);
 		if (categoryId === undefined) {
 			warnings.push(`Ignoring unknown ${CONFIG_FILE_NAME} key "${key}".`);
 			continue;

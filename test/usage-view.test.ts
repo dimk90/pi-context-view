@@ -68,7 +68,7 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 			{ id: "system-tools", label: "System Tools", tokens: 11_800 },
 			{ id: "custom-tools", label: "Custom Tools", tokens: 1_000 },
 			{ id: "mcp-tools", label: "MCP Tools", tokens: 1_200 },
-			{ id: "context-files", label: "Memory (AGENTS.md)", tokens: 1_500 },
+			{ id: "context-files", label: "Instructions / AGENTS.md", tokens: 1_500 },
 			{ id: "skills", label: "Skills", tokens: 1_000 },
 			{ id: "user-messages", label: "User Messages", tokens: 3_000 },
 			{ id: "agent-text-messages", label: "Agent Text Messages", tokens: 4_000 },
@@ -181,7 +181,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const valueColumns = [
 		["System Prompt", "3.7k"],
 		["System Tools", "11.8k"],
-		["Memory (AGENTS.md)", "1.5k"],
+		["Instructions / AGENTS.md", "1.5k"],
 		["Tool Output", "5k"],
 		["Free Space", "956.2k"],
 	].map(([label, value]) => {
@@ -194,7 +194,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const percentColumns = [
 		["System Prompt", "0.4%"],
 		["System Tools", "1.2%"],
-		["Memory (AGENTS.md)", "0.1%"],
+		["Instructions / AGENTS.md", "0.1%"],
 		["Tool Output", "0.5%"],
 		["Free Space", "96%"],
 	].map(([label, percent]) => {
@@ -203,8 +203,8 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 		return line.indexOf(percent);
 	});
 	assert.equal(new Set(percentColumns).size, 1);
-	const memoryLine = plain.find((line) => line.includes("Memory (AGENTS.md)"));
-	assert.match(memoryLine ?? "", /Memory \(AGENTS\.md\) \.{2,}\s+1\.5k/);
+	const instructionsLine = plain.find((line) => line.includes("Instructions / AGENTS.md"));
+	assert.match(instructionsLine ?? "", /Instructions \/ AGENTS\.md \.{2,}\s+1\.5k/);
 	const descriptionIndex = plain.findIndex((line) => line.includes("Estimated context for the next model request"));
 	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
 	assert.ok(descriptionIndex > 0 && hintsIndex > descriptionIndex);

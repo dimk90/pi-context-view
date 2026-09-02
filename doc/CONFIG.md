@@ -14,7 +14,7 @@ The config file created with `/context config` will contain:
   "systemToolsColor": "mdHeading",
   "customToolsColor": "accent",
   "mcpToolsColor": "mdLink",
-  "memoryColor": "mdCodeBlock",
+  "instructionsColor": "mdCodeBlock",
   "skillsColor": "customMessageLabel",
   "userMessagesColor": "syntaxString",
   "agentTextMessagesColor": "syntaxFunction",
@@ -34,6 +34,10 @@ The config file created with `/context config` will contain:
 
 > [!TIP]
 > Reopen `/context` to apply config changes. No need for pi `/reload`.
+
+> [!NOTE]
+> `instructionsColor` was named `memoryColor` before `v0.5.1`. The old name is
+> still accepted; `instructionsColor` wins when a file carries both.
 
 
 ## Category Colors

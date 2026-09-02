@@ -109,6 +109,7 @@ Every user-configurable value follows one contract, whatever it configures:
 - never auto-create the file and never write missing defaults into it; only an explicit user action may create or modify it;
 - load lazily at view-open time, never in the extension factory, which also runs in invocations that never start a session; cache per runtime and re-read on mtime change;
 - an absent file and omitted keys silently use defaults; an unreadable or unparseable file, unknown key, unrecognized color, or out-of-range value falls back to the applicable default and warns once per file revision, never failing a view;
+- renaming a key keeps its previous name as a silently accepted alias, so a rename never drops an override an existing file already carries; the current name wins when a file carries both;
 - `/context config` is the explicit create-only action: it writes every default through one atomic `O_EXCL` create, never overwrites or modifies an existing path, and stays available in every run mode because it needs no UI — only the views are gated on `ctx.mode === "tui"`;
 - later actions that update an existing file must be debounced and merge over a fresh read so concurrent edits and unknown keys survive.
 
