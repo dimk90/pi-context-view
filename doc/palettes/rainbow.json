@@ -1,6 +1,6 @@
 {
   "systemPromptColor": "#8000ff",
-  "instructionsColor": "#5542fd",
+  "instructionFilesColor": "#5542fd",
   "skillsColor": "#2b7ff6",
   "builtInToolsColor": "#00b4ec",
   "customToolsColor": "#2adddd",

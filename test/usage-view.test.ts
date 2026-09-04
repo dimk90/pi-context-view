@@ -65,7 +65,7 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 		reported: { tokens, contextWindow: 1_000_000, percent: tokens / 10_000 },
 		categories: [
 			{ id: "system-prompt", label: "System Prompt", tokens: 3_700 },
-			{ id: "context-files", label: "Instructions / AGENTS.md", tokens: 1_500 },
+			{ id: "context-files", label: "Instruction Files", tokens: 1_500 },
 			{ id: "skills", label: "Skills", tokens: 1_000 },
 			{ id: "built-in-tools", label: "Built-in Tools", tokens: 11_800 },
 			{ id: "custom-tools", label: "Custom Tools", tokens: 1_000 },
@@ -181,7 +181,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const valueColumns = [
 		["System Prompt", "3.7k"],
 		["Built-in Tools", "11.8k"],
-		["Instructions / AGENTS.md", "1.5k"],
+		["Instruction Files", "1.5k"],
 		["Tool Output", "5k"],
 		["Free Space", "956.2k"],
 	].map(([label, value]) => {
@@ -194,7 +194,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	const percentColumns = [
 		["System Prompt", "0.4%"],
 		["Built-in Tools", "1.2%"],
-		["Instructions / AGENTS.md", "0.1%"],
+		["Instruction Files", "0.1%"],
 		["Tool Output", "0.5%"],
 		["Free Space", "96%"],
 	].map(([label, percent]) => {
@@ -203,8 +203,8 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 		return line.indexOf(percent);
 	});
 	assert.equal(new Set(percentColumns).size, 1);
-	const instructionsLine = plain.find((line) => line.includes("Instructions / AGENTS.md"));
-	assert.match(instructionsLine ?? "", /Instructions \/ AGENTS\.md \.{2,}\s+1\.5k/);
+	const instructionsLine = plain.find((line) => line.includes("Instruction Files"));
+	assert.match(instructionsLine ?? "", /Instruction Files \.{2,}\s+1\.5k/);
 	const descriptionIndex = plain.findIndex((line) => line.includes("Estimated context for the next model request"));
 	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
 	assert.ok(descriptionIndex > 0 && hintsIndex > descriptionIndex);

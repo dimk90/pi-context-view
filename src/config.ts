@@ -59,7 +59,7 @@ type _EveryThemeColorIsListed = AssertNever<Exclude<ThemeColor, (typeof THEME_CO
  */
 const CATEGORY_COLOR_SPECS = {
 	"system-prompt": { key: "systemPromptColor", color: "mdHeading" },
-	"context-files": { key: "instructionsColor", color: "mdCodeBlock" },
+	"context-files": { key: "instructionFilesColor", color: "mdCodeBlock" },
 	"skills": { key: "skillsColor", color: "customMessageLabel" },
 	"built-in-tools": { key: "builtInToolsColor", color: "mdHeading" },
 	"custom-tools": { key: "customToolsColor", color: "accent" },
@@ -89,7 +89,7 @@ const CONFIG_KEY_CATEGORIES: ReadonlyMap<string, string> = new Map(
  * fails the build when a rename points at a key no category declares.
  */
 const RENAMED_CONFIG_KEYS: ReadonlyMap<string, ConfigKey> = new Map([
-	["memoryColor", "instructionsColor"],
+	["memoryColor", "instructionFilesColor"],
 	["systemToolsColor", "builtInToolsColor"],
 ]);
 

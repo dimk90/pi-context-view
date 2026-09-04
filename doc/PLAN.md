@@ -1,12 +1,12 @@
 
 ## `[v0.5.1]` - Unreleased
 
-- [x] Rename `Memory (AGENTS.md)` to `Instructions / AGENTS.md`, to match pi naming.
+- [x] Rename `Memory (AGENTS.md)` to `Instruction Files`, to match pi naming.
 
-- [x] Add `Instructions` item to injections view and group all there (sub-items): AGENTS.md, etc.
+- [x] Add `Instruction Files` item to injections view and group all there (sub-items): AGENTS.md, etc.
 
 - [x] **Match `/export` ordering and naming:**
-   - Items become `System Prompt`, `Instructions / AGENTS.md`, `Skills`, `Built-in Tools`, `Custom Tools`, in that order.
+   - Items become `System Prompt`, `Instruction Files`, `Skills`, `Built-in Tools`, `Custom Tools`, in that order.
    - The names stay consistent between `/context usage` and `/context injections`.
 
 - [ ] **Break `System Prompt` into sub-items in `/context injections`.**

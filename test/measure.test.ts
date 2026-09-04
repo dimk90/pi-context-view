@@ -127,7 +127,7 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	assert.doesNotMatch(base?.text ?? "", /available_skills|The following skills/);
 	assert.doesNotMatch(base?.text ?? "", /Current date|Current working directory/);
 	const instructions = items.find((entry) => entry.id === "context-files");
-	assert.equal(instructions?.label, "Instructions / AGENTS.md (1)");
+	assert.equal(instructions?.label, "Instruction Files (1)");
 	const contextFile = findItem(items, "context-file:./AGENTS.md");
 	assert.equal(contextFile?.kind, "context-file");
 	assert.equal(contextFile?.text, "Project rules");
@@ -536,7 +536,7 @@ test("analyzeSystemPrompt abbreviates home-directory context-file labels with ~"
 	assert.equal(contextFile?.label, "~/.pi/agent/AGENTS.md");
 });
 
-test("analyzeSystemPrompt groups every context file under one Instructions aggregate", () => {
+test("analyzeSystemPrompt groups every context file under one Instruction Files aggregate", () => {
 	const globalPath = "/home/tester/.pi/agent/AGENTS.md";
 	const projectPath = "./AGENTS.md";
 	const systemPrompt = buildSystemPrompt({
@@ -554,7 +554,7 @@ test("analyzeSystemPrompt groups every context file under one Instructions aggre
 
 	const items = analyzeSystemPrompt(systemPrompt, options);
 	const instructions = items.find((entry) => entry.id === "context-files");
-	assert.equal(instructions?.label, "Instructions / AGENTS.md (2)");
+	assert.equal(instructions?.label, "Instruction Files (2)");
 	assert.deepEqual(
 		instructions?.children?.map((child) => [child.id, child.label]),
 		[

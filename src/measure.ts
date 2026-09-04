@@ -17,7 +17,7 @@
 import {
 	AGGREGATE_SOURCE_ID,
 	BUILT_IN_TOOLS_LABEL,
-	INSTRUCTIONS_LABEL,
+	INSTRUCTION_FILES_LABEL,
 	type InjectionItem,
 	type InjectionKind,
 	type InjectionSection,
@@ -274,7 +274,7 @@ function claimGuidelines(tool: ToolSlice, claimed: Set<string>): string[] {
 
 /**
  * Carve pi's project-context section and expose each context file as a child of
- * one Instructions aggregate, without counting the XML transport scaffolding.
+ * one Instruction Files aggregate, without counting the XML transport scaffolding.
  */
 function measureContextFiles(
 	base: string,
@@ -300,7 +300,7 @@ function measureContextFiles(
 	carvedSpans.push(expandLineBreaks(base, sectionSpan));
 	if (children.length === 0) return;
 
-	const label = `${INSTRUCTIONS_LABEL} (${children.length})`;
+	const label = `${INSTRUCTION_FILES_LABEL} (${children.length})`;
 	items.push(createAggregateItem("context-files", "context-file", PI_SOURCE, label, children));
 }
 

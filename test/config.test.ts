@@ -38,7 +38,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	// Entries, not the parsed object: the file must also list keys in legend order.
 	assert.deepEqual(Object.entries(JSON.parse(text)), [
 		["systemPromptColor", "mdHeading"],
-		["instructionsColor", "mdCodeBlock"],
+		["instructionFilesColor", "mdCodeBlock"],
 		["skillsColor", "customMessageLabel"],
 		["builtInToolsColor", "mdHeading"],
 		["customToolsColor", "accent"],
@@ -118,7 +118,7 @@ test("loadConfigFile applies every valid flat category color override", (context
 		builtInToolsColor: "error",
 		customToolsColor: "warning",
 		mcpToolsColor: "muted",
-		instructionsColor: "dim",
+		instructionFilesColor: "dim",
 		skillsColor: "text",
 		userMessagesColor: "thinkingText",
 		agentTextMessagesColor: "searchMatchText",
@@ -172,7 +172,7 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 	writeFileSync(filePath, JSON.stringify({
 		systemPromptColor: "success",
 		skillsColor: "#ff00f",
-		instructionsColor: "crimson",
+		instructionFilesColor: "crimson",
 		userMessagesColor: 42,
 		unknownColor: "accent",
 	}));
@@ -185,14 +185,14 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "user-messages"), "syntaxString");
 	assert.equal(result.warnings.length, 4);
 	assert.ok(result.warnings.some((warning) => warning.includes("skillsColor")));
-	assert.ok(result.warnings.some((warning) => warning.includes("instructionsColor")));
+	assert.ok(result.warnings.some((warning) => warning.includes("instructionFilesColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("userMessagesColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("unknownColor")));
 });
 
 /** Every renamed config key with the current name and the category both color. */
 const RENAMED_KEY_CASES = [
-	{ old: "memoryColor", current: "instructionsColor", categoryId: "context-files" },
+	{ old: "memoryColor", current: "instructionFilesColor", categoryId: "context-files" },
 	{ old: "systemToolsColor", current: "builtInToolsColor", categoryId: "built-in-tools" },
 ] as const;
 

@@ -267,7 +267,7 @@ columns. Both always denominate against the true context window regardless of
 map scale. Categories follow the order pi assembles them into a request, and
 both views name them identically:
 
-- System Prompt, Instructions / `AGENTS.md`, and Skills;
+- System Prompt, Instruction Files, and Skills;
 - Built-in Tools, Custom Tools, and MCP Tools;
 - User Messages, Agent Text Messages, Agent Thinking Messages, and Agent Tool
   Call Messages;
@@ -379,7 +379,7 @@ Present Initial contributions in this order:
 - `pi`
   - System Prompt, including when `--system-prompt` replaced pi's default
   - appended prompt content
-  - `Instructions / AGENTS.md (M)`, with one child per context file,
+  - `Instruction Files (M)`, with one child per context file,
     abbreviating home paths with `~`
   - Skills (K), with one content-only child per skill
   - Built-in Tools (N), with one child per active built-in tool
@@ -422,8 +422,8 @@ support arrow and page scrolling. Escape returns to the same selected row. Raw
 text must never appear in row descriptions.
 
 A tool item renders its labeled parts under the shared subheader rules, in
-place of one undivided block of raw text. An item with children — Instructions,
-Skills, Built-in Tools — renders one part per child under the same rules,
+place of one undivided block of raw text. An item with children — Instruction
+Files, Skills, Built-in Tools — renders one part per child under the same rules,
 so children stay separated by a blank line instead of running together. The
 whole preview is full content, so marked JSON expands here, in an aggregate
 part as much as in a tool's own definition.

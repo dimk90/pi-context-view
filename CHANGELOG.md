@@ -4,7 +4,7 @@
 
 ### Changed
 * `[context]` Align prompt and tool category ordering and naming with Pi terminology.
-* `[config]` Rename `memoryColor` to `instructionsColor`, keep the old name as alias.
+* `[config]` Rename `memoryColor` to `instructionFilesColor`, keep the old name as alias.
 * `[config]` Rename `systemToolsColor` to `builtInToolsColor`, keep the old name as alias.
 
 

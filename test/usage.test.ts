@@ -188,7 +188,7 @@ test("computeUsage orders prompt categories the way pi assembles a request", () 
 		usage.categories.map((entry) => [entry.id, entry.label]),
 		[
 			["system-prompt", "System Prompt"],
-			["context-files", "Instructions / AGENTS.md"],
+			["context-files", "Instruction Files"],
 			["skills", "Skills"],
 			["built-in-tools", "Built-in Tools"],
 			["custom-tools", "Custom Tools"],

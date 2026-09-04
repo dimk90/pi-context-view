@@ -8,7 +8,7 @@ import { type ContextEvent, type ContextUsage, convertToLlm, estimateTokens } fr
 import {
 	BUILT_IN_TOOLS_LABEL,
 	type ContextUsageSnapshot,
-	INSTRUCTIONS_LABEL,
+	INSTRUCTION_FILES_LABEL,
 	type InvisibleReasoningEstimate,
 	type InitialSnapshot,
 	type InjectionItem,
@@ -116,7 +116,7 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 	// context files, and skills first, then the tool definitions sent alongside.
 	return withoutEmpty([
 		aggregate("system-prompt", SYSTEM_PROMPT_LABEL, systemPrompt),
-		aggregate("context-files", INSTRUCTIONS_LABEL, contextFiles),
+		aggregate("context-files", INSTRUCTION_FILES_LABEL, contextFiles),
 		aggregate("skills", SKILLS_LABEL, skills),
 		aggregate("built-in-tools", BUILT_IN_TOOLS_LABEL, builtInTools),
 		aggregate("custom-tools", "Custom Tools", customTools),

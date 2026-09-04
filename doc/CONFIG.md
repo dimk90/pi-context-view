@@ -11,7 +11,7 @@ The config file created with `/context config` will contain:
 ```json
 {
   "systemPromptColor": "mdHeading",
-  "instructionsColor": "mdCodeBlock",
+  "instructionFilesColor": "mdCodeBlock",
   "skillsColor": "customMessageLabel",
   "builtInToolsColor": "mdHeading",
   "customToolsColor": "accent",
@@ -36,8 +36,8 @@ The config file created with `/context config` will contain:
 > Reopen `/context` to apply config changes. No need for pi `/reload`.
 
 > [!NOTE]
-> `builtInToolsColor` was named `systemToolsColor`, and `instructionsColor` was
-> named `memoryColor`, before `v0.5.1`. The old names remain accepted; the
+> `builtInToolsColor` was named `systemToolsColor`, and `instructionFilesColor`
+> was named `memoryColor`, before `v0.5.1`. The old names remain accepted; the
 > current name wins when a file carries both.
 
 
