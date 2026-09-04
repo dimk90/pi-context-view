@@ -396,6 +396,67 @@ test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt
 	assert.equal(base?.text.trim(), "CUSTOM PROMPT");
 });
 
+test("analyzeSystemPrompt measures a replaced prompt as the content pi actually sends", () => {
+	const customPrompt = "You are a terse reviewer.\nAnswer in one sentence.";
+	const skill = { name: "commit", description: "Commit changes", filePath: "/skills/commit/SKILL.md" };
+	// Pi's loader shape; only the slice above reaches measurement.
+	const loadedSkill = {
+		...skill,
+		baseDir: "/skills/commit",
+		sourceInfo: { path: skill.filePath, source: "user", scope: "user", origin: "top-level" },
+		disableModelInvocation: false,
+	} as const;
+	const guidelines = ["Cite sources"];
+	// Pi builds the custom branch, which ignores toolSnippets and promptGuidelines entirely.
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		customPrompt,
+		appendSystemPrompt: "APPENDED RULE",
+		contextFiles: [{ path: "./AGENTS.md", content: "Project rules" }],
+		skills: [loadedSkill],
+		selectedTools: ["read", "search"],
+		toolSnippets: { read: "Read files", search: "Search the web" },
+		promptGuidelines: guidelines,
+	});
+	const tools: ToolSlice[] = [
+		{
+			name: "read",
+			description: "Read files",
+			parametersJson: "{}",
+			snippet: "Read files",
+			guidelines: [],
+			source: "builtin",
+		},
+		{
+			name: "search",
+			description: "Search",
+			parametersJson: "{}",
+			snippet: "Search the web",
+			guidelines,
+			source: "npm:web",
+		},
+	];
+
+	const items = analyzeSystemPrompt(systemPrompt, {
+		cwd: CWD,
+		customPrompt,
+		appendSystemPrompt: "APPENDED RULE",
+		contextFilePaths: ["./AGENTS.md"],
+		skills: [skill],
+	}, tools);
+
+	// System Prompt carries the replacement text itself, not pi's replaced base prompt.
+	assert.equal(findItem(items, "base-prompt")?.text.trim(), customPrompt);
+	assert.equal(findItem(items, "append-prompt")?.text, "APPENDED RULE");
+	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
+	assert.equal(findItem(items, "skills")?.children?.length, 1);
+	// Snippet and guideline lines pi never rendered stay unmeasured for every tool.
+	assert.deepEqual(findItem(items, "tool:npm:web:search")?.sections?.map((part) => part.label), ["Definition"]);
+	assert.deepEqual(findItem(items, "tool:builtin:read")?.sections?.map((part) => part.label), ["Definition"]);
+	// The custom branch ends its cwd footer with a newline, which is not an extension addition.
+	assert.equal(findItem(items, "prompt-addition:aggregate"), undefined);
+});
+
 test("analyzeSystemPrompt recognizes the pi 0.81 CWD-only footer", () => {
 	const extensionAddition = "\nEXTENSION INSTRUCTION";
 	const systemPrompt = [
