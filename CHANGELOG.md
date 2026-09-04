@@ -1,5 +1,13 @@
 # Changelog
 
+## `[v0.5.1]` - Unreleased
+
+### Changed
+* `[context]` Align prompt and tool category ordering and naming with Pi terminology.
+* `[config]` Rename `memoryColor` to `instructionsColor`, keep the old name as alias.
+* `[config]` Rename `systemToolsColor` to `builtInToolsColor`, keep the old name as alias.
+
+
 ## `[v0.5.0]` - 30.08.2026
 
 ### New

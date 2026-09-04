@@ -5,8 +5,8 @@
 
 - [x] Add `Instructions` item to injections view and group all there (sub-items): AGENTS.md, etc.
 
-- [ ] **Match `/export` ordering and naming:**
-   - Items become `System Prompt`, `Instructions / AGENTS.md`, `Skills`, `System Tools`, `Custom Tools`, in that order.
+- [x] **Match `/export` ordering and naming:**
+   - Items become `System Prompt`, `Instructions / AGENTS.md`, `Skills`, `Built-in Tools`, `Custom Tools`, in that order.
    - The names stay consistent between `/context usage` and `/context injections`.
 
 - [ ] **Rename the top-level item to `System Prompt & Guidelines`.**
@@ -18,3 +18,5 @@
 - [ ] **Keep extension-related guidelines excluded from the base count.**
    - Today the extension shows extension-provided guidelines in each extension's preview rather than in the `Guidelines` section where they actually sit.
    - Show those guidelines inside `System Prompt & Guidelines` (so the structure doesn't diverge from `/export`), in a distinct color, with an explicit note that they're attributed to their extension instead.
+
+- [ ] Update logo for package and README.

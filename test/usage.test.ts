@@ -150,11 +150,11 @@ test("computeUsage classifies Initial components and live session messages witho
 	});
 
 	assert.equal(category(usage.categories, "system-prompt").tokens, 19);
-	assert.deepEqual(category(usage.categories, "system-tools").children?.map((entry) => entry.id), [
+	assert.deepEqual(category(usage.categories, "built-in-tools").children?.map((entry) => entry.id), [
 		"item:bash",
 		"item:read",
 	]);
-	assert.equal(category(usage.categories, "system-tools").tokens, 8);
+	assert.equal(category(usage.categories, "built-in-tools").tokens, 8);
 	assert.equal(category(usage.categories, "custom-tools").tokens, 7);
 	assert.equal(category(usage.categories, "mcp-tools").tokens, 5);
 	assert.deepEqual(category(usage.categories, "context-files").children?.map((entry) => entry.id), [
@@ -179,6 +179,22 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.equal(usage.modelLabel, "test-model");
 	assert.equal(usage.computedAt.toISOString(), "2026-07-11T13:00:00.000Z");
 	assert.ok(!usage.categories.some((entry) => entry.tokens === 99));
+});
+
+test("computeUsage orders prompt categories the way pi assembles a request", () => {
+	const usage = computeUsage({ snapshot: snapshot(), messages: [] });
+
+	assert.deepEqual(
+		usage.categories.map((entry) => [entry.id, entry.label]),
+		[
+			["system-prompt", "System Prompt"],
+			["context-files", "Instructions / AGENTS.md"],
+			["skills", "Skills"],
+			["built-in-tools", "Built-in Tools"],
+			["custom-tools", "Custom Tools"],
+			["mcp-tools", "MCP Tools"],
+		],
+	);
 });
 
 test("computeUsage produces exactly the top-level categories that carry a configurable color", () => {
@@ -566,8 +582,8 @@ test("collectPreviewEntries flattens aggregates chronologically", () => {
 	assert.deepEqual(flattened.map((entry) => entry.text), ["earlier bash", "later read"]);
 
 	// Timeless snapshot entries keep category order instead of sorting.
-	const systemTools = collectPreviewEntries(category(usage.categories, "system-tools"));
-	assert.deepEqual(systemTools.map((entry) => [...entry.breadcrumb]), [["bash"], ["read"]]);
+	const builtInTools = collectPreviewEntries(category(usage.categories, "built-in-tools"));
+	assert.deepEqual(builtInTools.map((entry) => [...entry.breadcrumb]), [["bash"], ["read"]]);
 });
 
 test("toReportedUsage preserves known values and maps unknown nullable values to undefined", () => {

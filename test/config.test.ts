@@ -35,23 +35,24 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(createDefaultConfigFile(filePath), { type: "created", filePath });
 	const text = readFileSync(filePath, "utf8");
 	assert.ok(text.endsWith("\n"));
-	assert.deepEqual(JSON.parse(text), {
-		systemPromptColor: "mdHeading",
-		systemToolsColor: "mdHeading",
-		customToolsColor: "accent",
-		mcpToolsColor: "mdLink",
-		instructionsColor: "mdCodeBlock",
-		skillsColor: "customMessageLabel",
-		userMessagesColor: "syntaxString",
-		agentTextMessagesColor: "syntaxFunction",
-		agentThinkingMessagesColor: "thinkingXhigh",
-		agentToolCallMessagesColor: "syntaxKeyword",
-		toolOutputColor: "toolOutput",
-		extensionsColor: "syntaxType",
-		compactedDataColor: "thinkingHigh",
-		autoCompactBufferColor: "dim",
-		freeSpaceColor: "dim",
-	});
+	// Entries, not the parsed object: the file must also list keys in legend order.
+	assert.deepEqual(Object.entries(JSON.parse(text)), [
+		["systemPromptColor", "mdHeading"],
+		["instructionsColor", "mdCodeBlock"],
+		["skillsColor", "customMessageLabel"],
+		["builtInToolsColor", "mdHeading"],
+		["customToolsColor", "accent"],
+		["mcpToolsColor", "mdLink"],
+		["userMessagesColor", "syntaxString"],
+		["agentTextMessagesColor", "syntaxFunction"],
+		["agentThinkingMessagesColor", "thinkingXhigh"],
+		["agentToolCallMessagesColor", "syntaxKeyword"],
+		["toolOutputColor", "toolOutput"],
+		["extensionsColor", "syntaxType"],
+		["compactedDataColor", "thinkingHigh"],
+		["autoCompactBufferColor", "dim"],
+		["freeSpaceColor", "dim"],
+	]);
 	assert.deepEqual(readdirSync(dirname(filePath)), ["pi-context-view.json"]);
 
 	const loaded = loadConfigFile(filePath);
@@ -104,7 +105,7 @@ test("loadConfigFile treats an absent override file as built-in defaults", (cont
 	assert.equal(result.config, DEFAULT_CONFIG);
 	assert.deepEqual(result.warnings, []);
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "mdHeading");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-tools"), "mdHeading");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "built-in-tools"), "mdHeading");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, AUTO_COMPACT_BUFFER_CATEGORY_ID), "dim");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "dim");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "unknown-category"), "muted");
@@ -114,7 +115,7 @@ test("loadConfigFile applies every valid flat category color override", (context
 	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({
 		systemPromptColor: "success",
-		systemToolsColor: "error",
+		builtInToolsColor: "error",
 		customToolsColor: "warning",
 		mcpToolsColor: "muted",
 		instructionsColor: "dim",
@@ -134,7 +135,7 @@ test("loadConfigFile applies every valid flat category color override", (context
 
 	assert.deepEqual(result.warnings, []);
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "success");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-tools"), "error");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "built-in-tools"), "error");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "custom-tools"), "warning");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "mcp-tools"), "muted");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "context-files"), "dim");
@@ -189,20 +190,28 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 	assert.ok(result.warnings.some((warning) => warning.includes("unknownColor")));
 });
 
-test("loadConfigFile honors the renamed memoryColor key without warning", (context) => {
-	const filePath = createConfigPath(context);
-	writeFileSync(filePath, JSON.stringify({ memoryColor: "warning" }));
+/** Every renamed config key with the current name and the category both color. */
+const RENAMED_KEY_CASES = [
+	{ old: "memoryColor", current: "instructionsColor", categoryId: "context-files" },
+	{ old: "systemToolsColor", current: "builtInToolsColor", categoryId: "built-in-tools" },
+] as const;
 
-	const renamed = loadConfigFile(filePath);
-	assert.deepEqual(renamed.warnings, []);
-	assert.equal(resolveCategoryColor(renamed.config.categoryColors, "context-files"), "warning");
+for (const { old, current, categoryId } of RENAMED_KEY_CASES) {
+	test(`loadConfigFile honors the renamed ${old} key without warning`, (context) => {
+		const filePath = createConfigPath(context);
+		writeFileSync(filePath, JSON.stringify({ [old]: "warning" }));
 
-	// Both names present: the current one wins whichever order the file lists them in.
-	writeFileSync(filePath, '{"instructionsColor":"success","memoryColor":"warning"}');
-	assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, "context-files"), "success");
-	writeFileSync(filePath, '{"memoryColor":"warning","instructionsColor":"success"}');
-	assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, "context-files"), "success");
-});
+		const renamed = loadConfigFile(filePath);
+		assert.deepEqual(renamed.warnings, []);
+		assert.equal(resolveCategoryColor(renamed.config.categoryColors, categoryId), "warning");
+
+		// Both names present: the current one wins whichever order the file lists them in.
+		writeFileSync(filePath, `{"${current}":"success","${old}":"warning"}`);
+		assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, categoryId), "success");
+		writeFileSync(filePath, `{"${old}":"warning","${current}":"success"}`);
+		assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, categoryId), "success");
+	});
+}
 
 test("loadConfigFile degrades invalid JSON and non-object roots to defaults", (context) => {
 	const filePath = createConfigPath(context);

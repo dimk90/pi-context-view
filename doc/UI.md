@@ -257,17 +257,18 @@ The view opens at Window and holds the chosen scale only until it closes.
 
 The legend uses a configurable semantic theme color for each top-level
 category; the built-in defaults are distinct except for the intentionally
-shared System Prompt/System Tools color. A category override colors its map
+shared System Prompt/Built-in Tools color. A category override colors its map
 cells and legend marker, while labels and values retain the shared selector
 styles. Buffer and free-space overrides also color their map cells, legend
 markers, and Block Size key glyph. Category names have no trailing colons. Fill
 the gap before values with `dim` dot leaders; shorten or remove leaders before
 truncating labels or values. Token and percentage values align in separate
 columns. Both always denominate against the true context window regardless of
-map scale. Categories include:
+map scale. Categories follow the order pi assembles them into a request, and
+both views name them identically:
 
-- System Prompt, System Tools, Custom Tools, and MCP Tools;
-- Instructions / `AGENTS.md` and Skills;
+- System Prompt, Instructions / `AGENTS.md`, and Skills;
+- Built-in Tools, Custom Tools, and MCP Tools;
 - User Messages, Agent Text Messages, Agent Thinking Messages, and Agent Tool
   Call Messages;
 - Tool Output and Extensions;
@@ -376,12 +377,12 @@ label on separate lines with one empty row before and after the label.
 Present Initial contributions in this order:
 
 - `pi`
-  - Base or Custom Prompt
-  - Built-in Tools (N), with one child per active built-in tool
-  - Skills (K), with one content-only child per skill
+  - System Prompt, including when `--system-prompt` replaced pi's default
+  - appended prompt content
   - `Instructions / AGENTS.md (M)`, with one child per context file,
     abbreviating home paths with `~`
-  - appended prompt content
+  - Skills (K), with one content-only child per skill
+  - Built-in Tools (N), with one child per active built-in tool
 - each extension/tool source
   - one child per active tool
   - injected messages identified by `customType` where available
@@ -421,8 +422,8 @@ support arrow and page scrolling. Escape returns to the same selected row. Raw
 text must never appear in row descriptions.
 
 A tool item renders its labeled parts under the shared subheader rules, in
-place of one undivided block of raw text. An item with children — Built-in
-Tools, Skills, Instructions — renders one part per child under the same rules,
+place of one undivided block of raw text. An item with children — Instructions,
+Skills, Built-in Tools — renders one part per child under the same rules,
 so children stay separated by a blank line instead of running together. The
 whole preview is full content, so marked JSON expands here, in an aggregate
 part as much as in a tool's own definition.

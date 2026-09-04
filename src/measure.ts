@@ -16,6 +16,7 @@
  */
 import {
 	AGGREGATE_SOURCE_ID,
+	BUILT_IN_TOOLS_LABEL,
 	INSTRUCTIONS_LABEL,
 	type InjectionItem,
 	type InjectionKind,
@@ -23,6 +24,8 @@ import {
 	type InjectionSource,
 	type JsonSpan,
 	PI_SOURCE_ID,
+	SKILLS_LABEL,
+	SYSTEM_PROMPT_LABEL,
 } from "./model.ts";
 
 const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", native: true };
@@ -87,8 +90,7 @@ export function analyzeSystemPrompt(
 	measureSkills(base, options, items, carvedSpans);
 	measureAppendedPrompt(base, options, items, carvedSpans);
 
-	const baseLabel = usesCustomPrompt ? "Custom Prompt (--system-prompt)" : "Base Prompt";
-	items.unshift(createItem("base-prompt", "base-prompt", PI_SOURCE, baseLabel, carve(base, carvedSpans)));
+	items.unshift(createItem("base-prompt", "base-prompt", PI_SOURCE, SYSTEM_PROMPT_LABEL, carve(base, carvedSpans)));
 
 	if (footer !== undefined && footer.end < systemPrompt.length) {
 		const added = systemPrompt.slice(footer.end);
@@ -143,7 +145,7 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
 	}
 	if (builtinChildren.length > 0) {
 		builtinChildren.sort((a, b) => b.tokens - a.tokens);
-		const label = `Built-in Tools (${builtinChildren.length})`;
+		const label = `${BUILT_IN_TOOLS_LABEL} (${builtinChildren.length})`;
 		items.push(createAggregateItem("tool:builtin", "tool", PI_SOURCE, label, builtinChildren));
 	}
 }
@@ -323,7 +325,7 @@ function measureSkills(
 	carvedSpans.push(expandLineBreaks(base, sectionSpan));
 	if (children.length === 0) return;
 
-	items.push(createAggregateItem("skills", "skills", PI_SOURCE, `Skills (${children.length})`, children));
+	items.push(createAggregateItem("skills", "skills", PI_SOURCE, `${SKILLS_LABEL} (${children.length})`, children));
 }
 
 /** Carve the --append-system-prompt text out of the base prompt when present. */
@@ -479,7 +481,7 @@ interface Span {
 }
 
 /**
- * Locate pi's dynamic CWD footer so it can be excluded from Base Prompt and
+ * Locate pi's dynamic CWD footer so it can be excluded from System Prompt and
  * extension additions. Pi 0.81 emits only the "Current working directory"
  * line; pi 0.80 preceded it with a "Current date" line, still recognized for
  * compatibility. The CWD line must match the exact resolved cwd on a complete

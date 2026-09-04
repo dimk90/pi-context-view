@@ -122,6 +122,7 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	);
 	assert.equal(items.find((entry) => entry.id === "tool:npm:web:search")?.source.id, "tool-source:npm:web");
 	const base = items.find((entry) => entry.id === "base-prompt");
+	assert.equal(base?.label, "System Prompt");
 	assert.doesNotMatch(base?.text ?? "", /project_context|project_instructions|Project-specific instructions/);
 	assert.doesNotMatch(base?.text ?? "", /available_skills|The following skills/);
 	assert.doesNotMatch(base?.text ?? "", /Current date|Current working directory/);

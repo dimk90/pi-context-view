@@ -7,8 +7,17 @@
 export const PI_SOURCE_ID = "pi";
 export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
 
+/** Shared name of pi's own prompt; Usage and Injections must present it identically. */
+export const SYSTEM_PROMPT_LABEL = "System Prompt";
+
 /** Shared name of pi's context files; Usage and Injections must present it identically. */
 export const INSTRUCTIONS_LABEL = "Instructions / AGENTS.md";
+
+/** Shared name of pi's skill records; Usage and Injections must present it identically. */
+export const SKILLS_LABEL = "Skills";
+
+/** Shared name of pi's built-in tools; Usage and Injections must present it identically. */
+export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
 
 /** What produced the captured snapshot. */
 export type CaptureOrigin = "real-turn" | "synthetic-probe";
@@ -162,8 +171,9 @@ export interface ContextUsageSnapshot {
 /**
  * Group measured items by source. Pi-native components come first, extension
  * sources follow by total size, and the unattributable aggregate comes last.
- * Items inside each group follow a fixed semantic order (base prompt, tools,
- * skills, then everything else by size). Returned objects own all nested data;
+ * Items inside each group follow the order pi assembles them into a request
+ * (base prompt, appended prompt, context files, skills, built-in tools, other
+ * tools, then everything else by size). Returned objects own all nested data;
  * later mutation of the input cannot change the groups.
  */
 export function groupInjections(items: readonly InjectionItem[]): InjectionGroup[] {
@@ -223,8 +233,9 @@ function copyJsonSpan(span: JsonSpan | undefined): JsonSpan | undefined {
 }
 
 /**
- * Order items within a group: base/appended prompt first, then built-in tools,
- * other tools, skills, and finally everything else by size descending.
+ * Order items within a group by the order pi assembles them into a request:
+ * base prompt, appended prompt, context files, skills, built-in tools, other
+ * tools, and finally everything else by size descending.
  */
 function compareItems(a: InjectionItem, b: InjectionItem): number {
 	const rankDelta = itemRank(a) - itemRank(b);
@@ -236,14 +247,17 @@ function compareItems(a: InjectionItem, b: InjectionItem): number {
 function itemRank(item: InjectionItem): number {
 	switch (item.kind) {
 		case "base-prompt":
-		case "append-prompt":
 			return 0;
-		case "tool":
-			return item.id === "tool:builtin" ? 1 : 2;
+		case "append-prompt":
+			return 1;
+		case "context-file":
+			return 2;
 		case "skills":
 			return 3;
+		case "tool":
+			return item.id === "tool:builtin" ? 4 : 5;
 		default:
-			return 4;
+			return 6;
 	}
 }
 

@@ -223,7 +223,7 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 		capturedAt,
 	}));
 	assert.ok(first !== undefined);
-	assert.equal(first.groups[0]?.items[0]?.label, "Custom Prompt (--system-prompt)");
+	assert.equal(first.groups[0]?.items[0]?.label, "System Prompt");
 	assert.equal(first.groups[1]?.items[0]?.text, "captured");
 
 	if (message.role === "custom") message.content = "changed";

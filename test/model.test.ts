@@ -44,18 +44,26 @@ test("groupInjections creates hierarchy and totals in display order", () => {
 	assert.equal(groups[1]?.totalTokens, 13);
 });
 
-test("groupInjections orders pi items base, built-in tools, tools, skills, then by size", () => {
+test("groupInjections orders pi items by provider payload section", () => {
 	const [pi] = groupInjections([
 		item("context-file:./AGENTS.md", "pi", "pi", true, 30, "context-file"),
 		item("skills", "pi", "pi", true, 5, "skills"),
 		item("tool:builtin", "pi", "pi", true, 3, "tool"),
 		item("base-prompt", "pi", "pi", true, 1, "base-prompt"),
+		item("append-prompt", "pi", "pi", true, 50, "append-prompt"),
 		item("tool:pi:web_search", "pi", "pi", true, 40, "tool"),
 	]);
 
 	assert.deepEqual(
 		pi?.items.map((entry) => entry.id),
-		["base-prompt", "tool:builtin", "tool:pi:web_search", "skills", "context-file:./AGENTS.md"],
+		[
+			"base-prompt",
+			"append-prompt",
+			"context-file:./AGENTS.md",
+			"skills",
+			"tool:builtin",
+			"tool:pi:web_search",
+		],
 	);
 });
 

@@ -11,11 +11,11 @@ The config file created with `/context config` will contain:
 ```json
 {
   "systemPromptColor": "mdHeading",
-  "systemToolsColor": "mdHeading",
-  "customToolsColor": "accent",
-  "mcpToolsColor": "mdLink",
   "instructionsColor": "mdCodeBlock",
   "skillsColor": "customMessageLabel",
+  "builtInToolsColor": "mdHeading",
+  "customToolsColor": "accent",
+  "mcpToolsColor": "mdLink",
   "userMessagesColor": "syntaxString",
   "agentTextMessagesColor": "syntaxFunction",
   "agentThinkingMessagesColor": "thinkingXhigh",
@@ -36,8 +36,9 @@ The config file created with `/context config` will contain:
 > Reopen `/context` to apply config changes. No need for pi `/reload`.
 
 > [!NOTE]
-> `instructionsColor` was named `memoryColor` before `v0.5.1`. The old name is
-> still accepted; `instructionsColor` wins when a file carries both.
+> `builtInToolsColor` was named `systemToolsColor`, and `instructionsColor` was
+> named `memoryColor`, before `v0.5.1`. The old names remain accepted; the
+> current name wins when a file carries both.
 
 
 ## Category Colors

@@ -6,12 +6,15 @@
 import { type ContextEvent, type ContextUsage, convertToLlm, estimateTokens } from "@earendil-works/pi-coding-agent";
 
 import {
+	BUILT_IN_TOOLS_LABEL,
 	type ContextUsageSnapshot,
 	INSTRUCTIONS_LABEL,
 	type InvisibleReasoningEstimate,
 	type InitialSnapshot,
 	type InjectionItem,
 	type ReportedContextUsage,
+	SKILLS_LABEL,
+	SYSTEM_PROMPT_LABEL,
 	type UsageCategory,
 	type UsagePreviewEntry,
 } from "./model.ts";
@@ -79,7 +82,7 @@ export function toReportedUsage(usage: ContextUsage | undefined): ReportedContex
 /** Map frozen snapshot items to prompt/tool/instruction/skill categories. */
 function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 	const systemPrompt: UsageCategory[] = [];
-	const systemTools: UsageCategory[] = [];
+	const builtInTools: UsageCategory[] = [];
 	const customTools: UsageCategory[] = [];
 	const mcpTools: UsageCategory[] = [];
 	const contextFiles: UsageCategory[] = [];
@@ -93,7 +96,7 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 					systemPrompt.push(leafFromItem(item));
 					break;
 				case "tool":
-					if (item.source.native) systemTools.push(...breakdownFromItem(item));
+					if (item.source.native) builtInTools.push(...breakdownFromItem(item));
 					else if (isMcpTool(item)) mcpTools.push(leafFromItem(item));
 					else customTools.push(leafFromItem(item));
 					break;
@@ -109,13 +112,15 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 			}
 		}
 	}
+	// Categories follow the order pi assembles them into a request: prompt text,
+	// context files, and skills first, then the tool definitions sent alongside.
 	return withoutEmpty([
-		aggregate("system-prompt", "System Prompt", systemPrompt),
-		aggregate("system-tools", "System Tools", systemTools),
+		aggregate("system-prompt", SYSTEM_PROMPT_LABEL, systemPrompt),
+		aggregate("context-files", INSTRUCTIONS_LABEL, contextFiles),
+		aggregate("skills", SKILLS_LABEL, skills),
+		aggregate("built-in-tools", BUILT_IN_TOOLS_LABEL, builtInTools),
 		aggregate("custom-tools", "Custom Tools", customTools),
 		aggregate("mcp-tools", "MCP Tools", mcpTools),
-		aggregate("context-files", INSTRUCTIONS_LABEL, contextFiles),
-		aggregate("skills", "Skills", skills),
 	]);
 }
 

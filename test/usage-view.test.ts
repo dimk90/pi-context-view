@@ -65,11 +65,11 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 		reported: { tokens, contextWindow: 1_000_000, percent: tokens / 10_000 },
 		categories: [
 			{ id: "system-prompt", label: "System Prompt", tokens: 3_700 },
-			{ id: "system-tools", label: "System Tools", tokens: 11_800 },
-			{ id: "custom-tools", label: "Custom Tools", tokens: 1_000 },
-			{ id: "mcp-tools", label: "MCP Tools", tokens: 1_200 },
 			{ id: "context-files", label: "Instructions / AGENTS.md", tokens: 1_500 },
 			{ id: "skills", label: "Skills", tokens: 1_000 },
+			{ id: "built-in-tools", label: "Built-in Tools", tokens: 11_800 },
+			{ id: "custom-tools", label: "Custom Tools", tokens: 1_000 },
+			{ id: "mcp-tools", label: "MCP Tools", tokens: 1_200 },
 			{ id: "user-messages", label: "User Messages", tokens: 3_000 },
 			{ id: "agent-text-messages", label: "Agent Text Messages", tokens: 4_000 },
 			{ id: "agent-thinking-messages", label: "Agent Thinking Messages", tokens: 2_000 },
@@ -160,7 +160,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.ok(plain.some((line) => /■ Tool Output \.{2,}\s+5k\s+0\.5%/.test(line)));
 	assert.ok(plain.some((line) => /⛶ Free Space \.{2,}\s+956\.2k\s+96%/.test(line)));
 	const categoryColors: Array<readonly [string, string]> = [
-		["22;23;24", "■"], // System Prompt and System Tools intentionally share one color.
+		["22;23;24", "■"], // System Prompt and Built-in Tools intentionally share one color.
 		["1;2;3", "■"],
 		["25;26;27", "■"],
 		["28;29;30", "■"],
@@ -180,7 +180,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.ok(lines.some((line) => /\u001b\[38;2;16;17;18m⛶/.test(line)));
 	const valueColumns = [
 		["System Prompt", "3.7k"],
-		["System Tools", "11.8k"],
+		["Built-in Tools", "11.8k"],
 		["Instructions / AGENTS.md", "1.5k"],
 		["Tool Output", "5k"],
 		["Free Space", "956.2k"],
@@ -193,7 +193,7 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	// Percentages are matched through their labels: the map key also carries one.
 	const percentColumns = [
 		["System Prompt", "0.4%"],
-		["System Tools", "1.2%"],
+		["Built-in Tools", "1.2%"],
 		["Instructions / AGENTS.md", "0.1%"],
 		["Tool Output", "0.5%"],
 		["Free Space", "96%"],
@@ -575,8 +575,8 @@ test("UsageView expands only direct Tool Output children and scrolls long tool l
 		...usage(1_600),
 		categories: [
 			{
-				id: "system-tools",
-				label: "System Tools",
+				id: "built-in-tools",
+				label: "Built-in Tools",
 				tokens: 100,
 				children: [{ id: "item:read", label: "read should stay collapsed", tokens: 100 }],
 			},
@@ -1256,7 +1256,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 				id: "system-prompt",
 				label: "System Prompt",
 				tokens: 1_000,
-				entries: [{ breadcrumb: ["Base Prompt"], tokens: 1_000, text: "You are pi." }],
+				entries: [{ breadcrumb: ["System Prompt"], tokens: 1_000, text: "You are pi." }],
 			},
 		],
 		estimatedTokens: 2_000,
@@ -1316,11 +1316,11 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
 	const snapshotPreview = view.render(100).map((line) => stripSgr(line).trimEnd());
-	const header = snapshotPreview.findIndex((line) => /^┃ \[Base Prompt\] 1k$/.test(line));
+	const header = snapshotPreview.findIndex((line) => /^┃ \[System Prompt\] 1k$/.test(line));
 	assert.ok(header >= 0, "snapshot entry header has no datetime cell");
 	assert.equal(snapshotPreview[header + 1], "┃   You are pi.");
 	// Without a datetime, the lead breadcrumb cell still uses bold mdHeading.
-	assert.ok((view.render(100)[header] ?? "").includes(theme.fg("mdHeading", theme.bold("Base Prompt"))));
+	assert.ok((view.render(100)[header] ?? "").includes(theme.fg("mdHeading", theme.bold("System Prompt"))));
 });
 
 test("UsageView shrinks the block cap with terminal height and re-caps on resize", () => {
