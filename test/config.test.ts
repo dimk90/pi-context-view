@@ -44,11 +44,11 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 		["customToolsColor", "accent"],
 		["mcpToolsColor", "mdLink"],
 		["userMessagesColor", "syntaxString"],
-		["agentTextMessagesColor", "syntaxFunction"],
-		["agentThinkingMessagesColor", "thinkingXhigh"],
-		["agentToolCallMessagesColor", "syntaxKeyword"],
+		["assistantMessagesColor", "syntaxFunction"],
+		["assistantThinkingColor", "thinkingXhigh"],
+		["toolCallsColor", "syntaxKeyword"],
 		["toolOutputColor", "toolOutput"],
-		["extensionsColor", "syntaxType"],
+		["extensionMessagesColor", "syntaxType"],
 		["compactedDataColor", "thinkingHigh"],
 		["autoCompactBufferColor", "dim"],
 		["freeSpaceColor", "dim"],
@@ -121,11 +121,11 @@ test("loadConfigFile applies every valid flat category color override", (context
 		instructionFilesColor: "dim",
 		skillsColor: "text",
 		userMessagesColor: "thinkingText",
-		agentTextMessagesColor: "searchMatchText",
-		agentThinkingMessagesColor: "thinkingMax",
-		agentToolCallMessagesColor: "mdCode",
+		assistantMessagesColor: "searchMatchText",
+		assistantThinkingColor: "thinkingMax",
+		toolCallsColor: "mdCode",
 		toolOutputColor: "syntaxNumber",
-		extensionsColor: "syntaxOperator",
+		extensionMessagesColor: "syntaxOperator",
 		compactedDataColor: "thinkingLow",
 		autoCompactBufferColor: "borderMuted",
 		freeSpaceColor: "accent",
@@ -141,9 +141,9 @@ test("loadConfigFile applies every valid flat category color override", (context
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "context-files"), "dim");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "skills"), "text");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "user-messages"), "thinkingText");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-text-messages"), "searchMatchText");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-thinking-messages"), "thinkingMax");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-tool-call-messages"), "mdCode");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "assistant-messages"), "searchMatchText");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "assistant-thinking"), "thinkingMax");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "tool-calls"), "mdCode");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "tool-output"), "syntaxNumber");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "extension-messages"), "syntaxOperator");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "compacted-data"), "thinkingLow");
@@ -208,6 +208,10 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 const RENAMED_KEY_CASES = [
 	{ old: "memoryColor", current: "instructionFilesColor", categoryId: "context-files" },
 	{ old: "systemToolsColor", current: "builtInToolsColor", categoryId: "built-in-tools" },
+	{ old: "agentTextMessagesColor", current: "assistantMessagesColor", categoryId: "assistant-messages" },
+	{ old: "agentThinkingMessagesColor", current: "assistantThinkingColor", categoryId: "assistant-thinking" },
+	{ old: "agentToolCallMessagesColor", current: "toolCallsColor", categoryId: "tool-calls" },
+	{ old: "extensionsColor", current: "extensionMessagesColor", categoryId: "extension-messages" },
 ] as const;
 
 for (const { old, current, categoryId } of RENAMED_KEY_CASES) {

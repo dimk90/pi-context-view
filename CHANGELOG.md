@@ -3,9 +3,11 @@
 ## `[v0.5.1]` - Unreleased
 
 ### Changed
-* `[context]` Align prompt and tool category ordering and naming with Pi terminology.
+* `[context]` Align category ordering and naming with Pi terminology - [#2](https://github.com/dimk90/pi-context-view/issues/2).
+* `[injections]` Align items naming with category names in context view.
 * `[config]` Rename `memoryColor` to `instructionFilesColor`, keep the old name as alias.
 * `[config]` Rename `systemToolsColor` to `builtInToolsColor`, keep the old name as alias.
+* `[package]` Bump dev dependencies to Pi 0.85.0.
 
 
 ## `[v0.5.0]` - 30.08.2026

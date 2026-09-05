@@ -17,11 +17,11 @@ The config file created with `/context config` will contain:
   "customToolsColor": "accent",
   "mcpToolsColor": "mdLink",
   "userMessagesColor": "syntaxString",
-  "agentTextMessagesColor": "syntaxFunction",
-  "agentThinkingMessagesColor": "thinkingXhigh",
-  "agentToolCallMessagesColor": "syntaxKeyword",
+  "assistantMessagesColor": "syntaxFunction",
+  "assistantThinkingColor": "thinkingXhigh",
+  "toolCallsColor": "syntaxKeyword",
   "toolOutputColor": "toolOutput",
-  "extensionsColor": "syntaxType",
+  "extensionMessagesColor": "syntaxType",
   "compactedDataColor": "thinkingHigh",
   "autoCompactBufferColor": "dim",
   "freeSpaceColor": "dim"
@@ -36,9 +36,13 @@ The config file created with `/context config` will contain:
 > Reopen `/context` to apply config changes. No need for pi `/reload`.
 
 > [!NOTE]
-> `builtInToolsColor` was named `systemToolsColor`, and `instructionFilesColor`
-> was named `memoryColor`, before `v0.5.1`. The old names remain accepted; the
-> current name wins when a file carries both.
+> Several keys were renamed in `v0.5.1`: `systemToolsColor` to
+> `builtInToolsColor`, `memoryColor` to `instructionFilesColor`,
+> `agentTextMessagesColor` to `assistantMessagesColor`,
+> `agentThinkingMessagesColor` to `assistantThinkingColor`,
+> `agentToolCallMessagesColor` to `toolCallsColor`, and `extensionsColor` to
+> `extensionMessagesColor`. The old names remain accepted; the current name
+> wins when a file carries both.
 
 
 ## Category Colors

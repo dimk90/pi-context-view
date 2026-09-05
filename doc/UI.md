@@ -269,9 +269,8 @@ both views name them identically:
 
 - System Prompt, Instruction Files, and Skills;
 - Built-in Tools, Custom Tools, and MCP Tools;
-- User Messages, Agent Text Messages, Agent Thinking Messages, and Agent Tool
-  Call Messages;
-- Tool Output and Extensions;
+- User Messages, Assistant Messages, Assistant Thinking, and Tool Calls;
+- Tool Output and Extension Messages;
 - Compacted Data and Free Space.
 
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
@@ -306,7 +305,7 @@ category order. Assistant messages split into constituent text, thinking, and
 tool-call entries; tool calls include the tool name. Add a `text i/n` cell only
 for multi-block text or thinking content.
 
-Agent Thinking Messages entries carry an invisible-reasoning cell after the
+Assistant Thinking entries carry an invisible-reasoning cell after the
 visible estimate, with `T` as the visible-plus-invisible message total:
 `+ Encoded ≈N (≈T)` for a provider-reported share on a message with a captured
 signature, `+ Encoded ~N (~T)` for the signature-size proxy, and

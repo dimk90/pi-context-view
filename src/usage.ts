@@ -142,9 +142,9 @@ function classifyMessages(
 	contextOnly: readonly InjectionItem[],
 ): UsageCategory[] {
 	const user: UsagePreviewEntry[] = [];
-	const agentText: UsagePreviewEntry[] = [];
-	const agentThinking: UsagePreviewEntry[] = [];
-	const agentToolCalls: UsagePreviewEntry[] = [];
+	const assistantText: UsagePreviewEntry[] = [];
+	const assistantThinking: UsagePreviewEntry[] = [];
+	const assistantToolCalls: UsagePreviewEntry[] = [];
 	const bashExecutions: UsagePreviewEntry[] = [];
 	const compacted: UsagePreviewEntry[] = [];
 	const toolResults = new Map<string, UsagePreviewEntry[]>();
@@ -170,12 +170,12 @@ function classifyMessages(
 				break;
 			case "assistant": {
 				const texts = message.content.flatMap((block) => (block.type === "text" ? [block.text] : []));
-				agentText.push(...blockEntries(message.timestamp, "text", texts));
-				agentThinking.push(...thinkingEntries(message));
+				assistantText.push(...blockEntries(message.timestamp, "text", texts));
+				assistantThinking.push(...thinkingEntries(message));
 				for (const block of message.content) {
 					if (block.type !== "toolCall") continue;
 					const args = JSON.stringify(block.arguments);
-					agentToolCalls.push({
+					assistantToolCalls.push({
 						timestamp: message.timestamp,
 						breadcrumb: ["assistant", block.name],
 						tokens: textTokens(block.name.length + args.length),
@@ -240,11 +240,11 @@ function classifyMessages(
 	]));
 	return withoutEmpty([
 		leaf("user-messages", "User Messages", user),
-		leaf("agent-text-messages", "Agent Text Messages", agentText),
-		leaf("agent-thinking-messages", "Agent Thinking Messages", agentThinking),
-		leaf("agent-tool-call-messages", "Agent Tool Call Messages", agentToolCalls),
+		leaf("assistant-messages", "Assistant Messages", assistantText),
+		leaf("assistant-thinking", "Assistant Thinking", assistantThinking),
+		leaf("tool-calls", "Tool Calls", assistantToolCalls),
 		toolOutput,
-		aggregate("extension-messages", "Extensions", leavesFromMap("custom-message", customMessages)),
+		aggregate("extension-messages", "Extension Messages", leavesFromMap("custom-message", customMessages)),
 		leaf("compacted-data", "Compacted Data", compacted),
 	]);
 }

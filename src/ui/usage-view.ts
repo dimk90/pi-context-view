@@ -1059,7 +1059,7 @@ export class UsageView {
 
 	/** Fixed explanation shown only when the thinking preview contains invisible-reasoning metadata. */
 	private previewDescriptionLines(width: number, row: CategoryLegendRow): string[] {
-		if (row.rootId !== "agent-thinking-messages") return [];
+		if (row.rootId !== "assistant-thinking") return [];
 		const hasInvisibleReasoning = this.previewEntries(row)
 			.some((entry) => entry.invisibleReasoning !== undefined);
 		return hasInvisibleReasoning

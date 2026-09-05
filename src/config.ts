@@ -66,11 +66,11 @@ const CATEGORY_COLOR_SPECS = {
 	"custom-tools": { key: "customToolsColor", color: "accent" },
 	"mcp-tools": { key: "mcpToolsColor", color: "mdLink" },
 	"user-messages": { key: "userMessagesColor", color: "syntaxString" },
-	"agent-text-messages": { key: "agentTextMessagesColor", color: "syntaxFunction" },
-	"agent-thinking-messages": { key: "agentThinkingMessagesColor", color: "thinkingXhigh" },
-	"agent-tool-call-messages": { key: "agentToolCallMessagesColor", color: "syntaxKeyword" },
+	"assistant-messages": { key: "assistantMessagesColor", color: "syntaxFunction" },
+	"assistant-thinking": { key: "assistantThinkingColor", color: "thinkingXhigh" },
+	"tool-calls": { key: "toolCallsColor", color: "syntaxKeyword" },
 	"tool-output": { key: "toolOutputColor", color: "toolOutput" },
-	"extension-messages": { key: "extensionsColor", color: "syntaxType" },
+	"extension-messages": { key: "extensionMessagesColor", color: "syntaxType" },
 	"compacted-data": { key: "compactedDataColor", color: "thinkingHigh" },
 	[AUTO_COMPACT_BUFFER_CATEGORY_ID]: { key: "autoCompactBufferColor", color: "dim" },
 	[FREE_SPACE_CATEGORY_ID]: { key: "freeSpaceColor", color: "dim" },
@@ -92,6 +92,10 @@ const CONFIG_KEY_CATEGORIES: ReadonlyMap<string, string> = new Map(
 const RENAMED_CONFIG_KEYS: ReadonlyMap<string, ConfigKey> = new Map([
 	["memoryColor", "instructionFilesColor"],
 	["systemToolsColor", "builtInToolsColor"],
+	["agentTextMessagesColor", "assistantMessagesColor"],
+	["agentThinkingMessagesColor", "assistantThinkingColor"],
+	["agentToolCallMessagesColor", "toolCallsColor"],
+	["extensionsColor", "extensionMessagesColor"],
 ]);
 
 /** Fast runtime membership check for configured Pi foreground color names. */

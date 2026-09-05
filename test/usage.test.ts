@@ -165,9 +165,9 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.equal(category(usage.categories, "skills").tokens, 6);
 	assert.equal(findCategory(usage.categories, "messages"), undefined);
 	assert.equal(category(usage.categories, "user-messages").tokens, 2);
-	assert.equal(category(usage.categories, "agent-text-messages").tokens, 1);
-	assert.equal(category(usage.categories, "agent-thinking-messages").tokens, 2);
-	assert.equal(category(usage.categories, "agent-tool-call-messages").tokens, 4);
+	assert.equal(category(usage.categories, "assistant-messages").tokens, 1);
+	assert.equal(category(usage.categories, "assistant-thinking").tokens, 2);
+	assert.equal(category(usage.categories, "tool-calls").tokens, 4);
 	assert.equal(category(usage.categories, "tool-output").tokens, 8);
 	assert.equal(category(usage.categories, "tool-result:read").tokens, 2);
 	assert.equal(findCategory(usage.categories, "tool-results"), undefined);
@@ -375,7 +375,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	]);
 
 	// Single text block: no index cell. Multiple text blocks: `text i/n` cells.
-	const textEntries = category(usage.categories, "agent-text-messages").entries ?? [];
+	const textEntries = category(usage.categories, "assistant-messages").entries ?? [];
 	assert.deepEqual(textEntries.map((entry) => [...entry.breadcrumb]), [
 		["assistant"],
 		["assistant", "text 1/2"],
@@ -384,7 +384,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	assert.equal(textEntries[1]?.text, "first block");
 
 	// Tool calls: one entry per call with the tool name as a breadcrumb cell.
-	const callEntries = category(usage.categories, "agent-tool-call-messages").entries ?? [];
+	const callEntries = category(usage.categories, "tool-calls").entries ?? [];
 	assert.deepEqual(callEntries.map((entry) => [entry.timestamp, [...entry.breadcrumb]]), [
 		[2, ["assistant", "read"]],
 		[20, ["assistant", "read"]],
@@ -395,7 +395,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	const argumentsSpan = callEntries[2]?.jsonSpan;
 	assert.ok(argumentsSpan !== undefined);
 	assert.equal(callEntries[2]?.text.slice(argumentsSpan.start, argumentsSpan.end), '{"command":"ls"}');
-	const callCategory = category(usage.categories, "agent-tool-call-messages");
+	const callCategory = category(usage.categories, "tool-calls");
 	assert.equal(callCategory.tokens, callEntries.reduce((sum, entry) => sum + entry.tokens, 0));
 
 	const bashEntries = category(usage.categories, "bash-executions").entries ?? [];
@@ -504,7 +504,7 @@ test("computeUsage uses provider reasoning per message and keeps signature estim
 	];
 
 	const usage = computeUsage({ snapshot: snapshot(), messages });
-	const thinking = category(usage.categories, "agent-thinking-messages");
+	const thinking = category(usage.categories, "assistant-thinking");
 	const entries = thinking.entries ?? [];
 
 	// Per-message totals are max(visible chars/4, reported reasoning): 11 + 2 + 4 + 6.
@@ -546,7 +546,7 @@ test("computeUsage represents encoded-only reasoning without retaining its signa
 	}];
 
 	const usage = computeUsage({ snapshot: snapshot(), messages });
-	const entries = category(usage.categories, "agent-thinking-messages").entries ?? [];
+	const entries = category(usage.categories, "assistant-thinking").entries ?? [];
 	assert.deepEqual(entries, [{
 		timestamp: 2,
 		breadcrumb: ["assistant"],

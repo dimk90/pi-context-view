@@ -71,9 +71,9 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 			{ id: "custom-tools", label: "Custom Tools", tokens: 1_000 },
 			{ id: "mcp-tools", label: "MCP Tools", tokens: 1_200 },
 			{ id: "user-messages", label: "User Messages", tokens: 3_000 },
-			{ id: "agent-text-messages", label: "Agent Text Messages", tokens: 4_000 },
-			{ id: "agent-thinking-messages", label: "Agent Thinking Messages", tokens: 2_000 },
-			{ id: "agent-tool-call-messages", label: "Agent Tool Call Messages", tokens: 4_000 },
+			{ id: "assistant-messages", label: "Assistant Messages", tokens: 4_000 },
+			{ id: "assistant-thinking", label: "Assistant Thinking", tokens: 2_000 },
+			{ id: "tool-calls", label: "Tool Calls", tokens: 4_000 },
 			{
 				id: "tool-output",
 				label: "Tool Output",
@@ -107,7 +107,7 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 					},
 				],
 			},
-			{ id: "extension-messages", label: "Extensions", tokens: 600 },
+			{ id: "extension-messages", label: "Extension Messages", tokens: 600 },
 			{ id: "compacted-data", label: "Compacted Data", tokens: 5_000 },
 		],
 		estimatedTokens: 43_800,
@@ -788,8 +788,8 @@ test("UsageView expands marked JSON in the stream and caps it on the expanded li
 	const callUsage: ContextUsageSnapshot = {
 		...usage(40),
 		categories: [{
-			id: "agent-tool-call-messages",
-			label: "Agent Tool Call Messages",
+			id: "tool-calls",
+			label: "Tool Calls",
 			tokens: 40,
 			entries: [{
 				timestamp: Date.UTC(2026, 6, 11, 14, 2, 19),
@@ -841,8 +841,8 @@ test("UsageView expands a block that fits the cap and leaves Enter a no-op", () 
 	const callUsage: ContextUsageSnapshot = {
 		...usage(12),
 		categories: [{
-			id: "agent-tool-call-messages",
-			label: "Agent Tool Call Messages",
+			id: "tool-calls",
+			label: "Tool Calls",
 			tokens: 12,
 			entries: [{
 				timestamp: Date.UTC(2026, 6, 11, 14, 2, 19),
@@ -1074,8 +1074,8 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 		computedAt: new Date("2026-07-24T12:00:00Z"),
 		reported: { tokens: 1_352, contextWindow: 10_000, percent: 13.52 },
 		categories: [{
-			id: "agent-thinking-messages",
-			label: "Agent Thinking Messages",
+			id: "assistant-thinking",
+			label: "Assistant Thinking",
 			tokens: 1_352,
 			entries: [
 				{

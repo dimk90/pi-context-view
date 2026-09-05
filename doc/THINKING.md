@@ -1,6 +1,6 @@
-# Agent thinking token counting
+# Assistant thinking token counting
 
-Implementation and measurement notes behind the **Agent Thinking Messages**
+Implementation and measurement notes behind the **Assistant Thinking**
 estimate and preview. Measurements were taken on 26.07.2026 against pi 0.82.1,
 `claude-opus-5` and `claude-fable-5`, using OAuth transport.
 [UI.md](UI.md) remains the canonical UI specification.
@@ -26,7 +26,7 @@ countedTokens  = max(visibleTokens, reportedTokens ?? 0)
 signatureChars = sum(thinkingSignature chars + thoughtSignature chars)
 ```
 
-`countedTokens` contributes to the **Agent Thinking Messages** category. `max`
+`countedTokens` contributes to the **Assistant Thinking** category. `max`
 is used instead of addition because `usage.reasoning` describes reasoning
 already represented, at least partly, by the visible text.
 
@@ -124,7 +124,7 @@ absent, and present the fallback as approximate.
 [UI.md](UI.md) owns the preview notation. The estimate surfaces like this:
 
 ```text
-Agent Thinking Messages                                      1.4k
+Assistant Thinking                                           1.4k
 
   [24-07-2026 17:15:02] [assistant] 594 + Encoded ≈547 (≈1.1k)
     I need to check how the session context is built
