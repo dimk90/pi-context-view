@@ -19,8 +19,9 @@
  *   after it was appended by before_agent_start handlers.
  */
 import {
-	AGGREGATE_SOURCE_ID,
+	AGGREGATE_SOURCE,
 	BUILT_IN_TOOLS_LABEL,
+	extensionSource,
 	type InjectedReference,
 	INSTRUCTION_FILES_LABEL,
 	type InjectionItem,
@@ -28,21 +29,21 @@ import {
 	type InjectionSection,
 	type InjectionSource,
 	type JsonSpan,
-	PI_SOURCE_ID,
+	PI_SOURCE,
 	SKILLS_LABEL,
 	SYSTEM_PROMPT_LABEL,
 } from "./model.ts";
-
-const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", native: true };
-const AGGREGATE_SOURCE: InjectionSource = {
-	id: AGGREGATE_SOURCE_ID,
-	label: "extensions (aggregate)",
-	native: false,
-};
+import { type PromptAdditionOptions, splitPromptAdditions } from "./prompt-additions.ts";
 
 /** Part names shared by a tool's carved prompt lines and pi's own prompt blocks. */
 const AVAILABLE_TOOLS_LABEL = "Available Tools";
 const GUIDELINES_LABEL = "Guidelines";
+
+/** System Prompt part hosting the text extensions appended after pi's footer. */
+const EXTENSION_ADDITIONS_BLOCK = { id: "base-prompt:additions", label: "Extension Additions" };
+
+/** Item name every prompt-addition owner carries, pi-adjacent rather than tool-shaped. */
+const PROMPT_ADDITIONS_LABEL = "system prompt additions";
 
 /** Leading part of pi's prompt, before the first block header pi renders. */
 const PREAMBLE_BLOCK = { id: "base-prompt:preamble", label: "Preamble" };
@@ -99,12 +100,13 @@ export interface ToolSlice {
 /**
  * Split a captured system prompt into semantic items: pi base prompt,
  * appended prompt, context files, skills, active tool contributions, and the
- * aggregate appended by extensions.
+ * additions extensions appended after pi's footer.
  */
 export function analyzeSystemPrompt(
 	systemPrompt: string,
 	options: PromptOptionsSlice,
 	tools: ToolSlice[] = [],
+	additions: PromptAdditionOptions = {},
 ): InjectionItem[] {
 	const items: InjectionItem[] = [];
 	const carvedSpans: Span[] = [];
@@ -130,25 +132,56 @@ export function analyzeSystemPrompt(
 	if (footer !== undefined) {
 		const text = systemPrompt.slice(footer.start, footer.end);
 		parts.push({ id: "base-prompt:current-dir", kind: "base-prompt", label: "Current Dir", text });
+		const references = measurePromptAdditions(systemPrompt, footer.end, additions, items);
+		if (references.length > 0) {
+			parts.push({
+				id: EXTENSION_ADDITIONS_BLOCK.id,
+				kind: "prompt-addition",
+				label: EXTENSION_ADDITIONS_BLOCK.label,
+				text: "",
+				injectedReferences: references,
+			});
+		}
 	}
 	items.unshift(createSystemPromptItem(parts));
 
-	if (footer !== undefined && footer.end < systemPrompt.length) {
-		const added = systemPrompt.slice(footer.end);
-		if (added.trim().length > 0) {
-			items.push(
-				createItem(
-					"prompt-addition:aggregate",
-					"prompt-addition",
-					AGGREGATE_SOURCE,
-					"system prompt additions",
-					added,
-				),
-			);
-		}
-	}
-
 	return items;
+}
+
+/**
+ * Attribute the text extensions appended after pi's footer, and return it as
+ * preview-only references on the System Prompt part it was taken from. Every
+ * run is counted by the extension it was guessed to belong to, or by the
+ * unattributed aggregate, never by pi's own prompt.
+ */
+function measurePromptAdditions(
+	systemPrompt: string,
+	start: number,
+	options: PromptAdditionOptions,
+	items: InjectionItem[],
+): InjectedReference[] {
+	if (systemPrompt.slice(start).trim().length === 0) return [];
+	const references: InjectedReference[] = [];
+	const owners = new Map<string, { source: InjectionSource; text: string }>();
+	for (const run of splitPromptAdditions(systemPrompt, start, options)) {
+		const itemId = additionItemId(run.source);
+		// One insertion point: the part itself holds no counted text of its own.
+		references.push({ offset: 0, text: run.text, itemId, source: run.source, attribution: run.attribution });
+		const owner = owners.get(itemId);
+		if (owner === undefined) owners.set(itemId, { source: run.source, text: run.text });
+		else owner.text += run.text;
+	}
+	for (const [itemId, owner] of owners) {
+		items.push(createItem(itemId, "prompt-addition", owner.source, PROMPT_ADDITIONS_LABEL, owner.text));
+	}
+	return references;
+}
+
+/** Stable id of the item counting one source's prompt additions. */
+function additionItemId(source: InjectionSource): string {
+	return source.id === AGGREGATE_SOURCE.id
+		? "prompt-addition:unattributed"
+		: `prompt-addition:${source.label}`;
 }
 
 /** Same chars/4 heuristic pi's estimateTokens uses for text content. */
@@ -643,11 +676,6 @@ function childJsonSpan(child: InjectionItem): JsonSpan | undefined {
 	const sections = child.sections;
 	if (sections === undefined) return child.jsonSpan;
 	return sections.length === 1 ? sections[0]?.jsonSpan : undefined;
-}
-
-/** Injection source for a non-builtin tool provenance string. */
-function extensionSource(source: string): InjectionSource {
-	return { id: `tool-source:${source}`, label: source, native: false };
 }
 
 /** Replace a leading home-directory prefix with `~` for compact path labels. */

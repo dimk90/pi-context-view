@@ -70,7 +70,7 @@ const CATEGORY_COLOR_SPECS = {
 	"assistant-thinking": { key: "assistantThinkingColor", color: "thinkingXhigh" },
 	"tool-calls": { key: "toolCallsColor", color: "syntaxKeyword" },
 	"tool-output": { key: "toolOutputColor", color: "toolOutput" },
-	"extension-messages": { key: "extensionMessagesColor", color: "syntaxType" },
+	"extensions": { key: "extensionsColor", color: "syntaxType" },
 	"compacted-data": { key: "compactedDataColor", color: "thinkingHigh" },
 	[AUTO_COMPACT_BUFFER_CATEGORY_ID]: { key: "autoCompactBufferColor", color: "dim" },
 	[FREE_SPACE_CATEGORY_ID]: { key: "freeSpaceColor", color: "dim" },
@@ -95,7 +95,7 @@ const RENAMED_CONFIG_KEYS: ReadonlyMap<string, ConfigKey> = new Map([
 	["agentTextMessagesColor", "assistantMessagesColor"],
 	["agentThinkingMessagesColor", "assistantThinkingColor"],
 	["agentToolCallMessagesColor", "toolCallsColor"],
-	["extensionsColor", "extensionMessagesColor"],
+	["extensionMessagesColor", "extensionsColor"],
 ]);
 
 /** Fast runtime membership check for configured Pi foreground color names. */

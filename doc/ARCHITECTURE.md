@@ -101,7 +101,15 @@ Keep semantics in typed model fields rather than display labels:
   owning tool still carries and counts those sections. Only actually rendered,
   exactly matched lines get references; absent lines and lines suppressed by a
   custom system prompt do not;
-- represent chained prompt edits as one unattributable extension aggregate;
+- attribute the text appended after pi's footer per blank-line block, bounded by
+  the prompt this extension observed in its own `before_agent_start` handler, so
+  no block spans extensions loaded before and after it. Name a block only when
+  exactly one loaded package specifier or extension path from
+  `getAllTools()`/`getCommands()` provenance occurs in it, and mark every such
+  name a guess: pi records no author for chained prompt edits. Everything else
+  stays one unattributable item. Additions are counted by the owner they were
+  attributed to and never by pi's own prompt, which carries them as a
+  reference-only `Extension Additions` part;
 - treat `customType` as a message type, not necessarily a package identity;
 - detect non-custom context-only injections by diffing against the session branch;
 - treat children as a breakdown of their parent, never additional tokens in totals;

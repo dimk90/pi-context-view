@@ -21,7 +21,7 @@ The config file created with `/context config` will contain:
   "assistantThinkingColor": "thinkingXhigh",
   "toolCallsColor": "syntaxKeyword",
   "toolOutputColor": "toolOutput",
-  "extensionMessagesColor": "syntaxType",
+  "extensionsColor": "syntaxType",
   "compactedDataColor": "thinkingHigh",
   "autoCompactBufferColor": "dim",
   "freeSpaceColor": "dim"
@@ -40,9 +40,7 @@ The config file created with `/context config` will contain:
 > `builtInToolsColor`, `memoryColor` to `instructionFilesColor`,
 > `agentTextMessagesColor` to `assistantMessagesColor`,
 > `agentThinkingMessagesColor` to `assistantThinkingColor`,
-> `agentToolCallMessagesColor` to `toolCallsColor`, and `extensionsColor` to
-> `extensionMessagesColor`. The old names remain accepted; the current name
-> wins when a file carries both.
+> `agentToolCallMessagesColor` to `toolCallsColor`.
 
 
 ## Category Colors

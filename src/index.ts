@@ -23,6 +23,7 @@ import {
 } from "./command.ts";
 import {
 	buildNativeSnapshot,
+	collectPromptSources,
 	CompactionState,
 	InitialCaptureState,
 	mergeContextOnlyMessages,
@@ -81,7 +82,9 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", (event) => {
 		probe.beginRun(event.prompt);
-		capture.prepare(event.systemPromptOptions);
+		// The chained prompt here already carries additions from extensions loaded
+		// earlier; anything the context event adds came from extensions after us.
+		capture.prepare(event.systemPromptOptions, event.systemPrompt);
 	});
 
 	pi.on("turn_start", (_event, ctx) => {
@@ -109,6 +112,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			allTools: pi.getAllTools(),
 			activeToolNames: pi.getActiveTools(),
+			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
 		}));
 		return messages === event.messages ? undefined : { messages };
@@ -162,6 +166,7 @@ export default function (pi: ExtensionAPI) {
 				options: ctx.getSystemPromptOptions(),
 				allTools: pi.getAllTools(),
 				activeToolNames: pi.getActiveTools(),
+				promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 			});
 			await showUsageView(ctx, {
 				usage: computeUsage({

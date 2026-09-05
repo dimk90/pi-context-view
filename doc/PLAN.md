@@ -11,7 +11,7 @@
 
 - [x] **Break `System Prompt` into sub-items in `/context injections`.**
    - The base prompt already contains the guidelines and the tool list, but that isn't obvious from the current view.
-   - Sub-items should make it visible: `Available Tools`, `Guidelines`, `Documentation`, `Current Dir: ...`, `Appended Prompt`....
+   - Sub-items should make it visible: `Available Tools`, `Guidelines`, `Documentation`, `Current Dir: ...`, `prompt-addition:aggregate`....
    - The `System Prompt` view should sub-items as sections, not blocks - for both usage and injections views.
 
 - [x] Show `--append-system-prompt` text inside `System Prompt` item but in separate section.
@@ -34,16 +34,17 @@
 
 - [x] Apply the same approach to mark injected stuff (by extension) for other `System Prompt` sub-items:
   - `Available Tools`
-  - No other sub-items carry extension text: `Preamble`, `Documentation` and `Current Dir` are pi-authored, `Instruction Files`/`Skills` are carved out as their own items, and `Appended Prompt` is covered by the next item.
+  - No other sub-items carry extension text: `Preamble`, `Documentation` and `Current Dir` are pi-authored, `Instruction Files`/`Skills` are carved out as their own items, and `prompt-addition:aggregate` is covered by the next item.
 
-- [ ] **Appended Prompt** extension attribution:
-  - Move to `System Prompt` as sub-item.
-  - If possible to detect from which extension/tool is came from add to the extension as item or inside tool item.
-  - Add token count for it to extension if extension for specific part of **Appended Prompt** successfully detected.
-  - Is extension detection reliable or only guess from the content is available.
-  - The **Appended Prompt** should be shown in distinct color in `System Prompt` view.
-  - The **Appended Prompt** parts should contain arrow (`->`) and extension which injected it.
-  - Need decision/discussion what to do if extension attribution is not possible (add Unattributed item after extensions?).
+- [x] **prompt-addition:aggregate** extension attribution:
+  - Moved to `System Prompt` as the reference-only `Extension Additions` sub-item.
+  - Attribution is only ever a guess: pi chains `before_agent_start` prompt edits through one string and records no author, so blocks are named from package specifiers and extension paths in the text itself, bounded by this extension's own handler position.
+  - An attributed block is counted by its extension, never by `System Prompt`; the rest stays one item in the `unattributed` group.
+  - Guessed names carry a dim `(guess)` marker and the attribution footer explains it.
+
+- [ ] **More detailed injections**:
+  - In case when injection can be attributed to extension tool mark it: "<- <extension>:<tool>".
+  - Use different color for ":<tool>".
 
 - [ ] **Mark the parts a `--system-prompt` replacement drops.**
    - `--system-prompt` replaces pi's whole base prompt, so pi's guidelines, its `Available tools:` list, and its documentation block are never sent. Tool definitions still are; extension-contributed guidelines and tool snippets are dropped along with pi's own.

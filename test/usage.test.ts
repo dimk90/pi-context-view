@@ -149,7 +149,8 @@ test("computeUsage classifies Initial components and live session messages witho
 		computedAt: new Date("2026-07-11T13:00:00Z"),
 	});
 
-	assert.equal(category(usage.categories, "system-prompt").tokens, 19);
+	// The prompt addition belongs to the extension that appended it, not to pi's prompt.
+	assert.equal(category(usage.categories, "system-prompt").tokens, 10);
 	assert.deepEqual(category(usage.categories, "built-in-tools").children?.map((entry) => entry.id), [
 		"item:bash",
 		"item:read",
@@ -171,7 +172,11 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.equal(category(usage.categories, "tool-output").tokens, 8);
 	assert.equal(category(usage.categories, "tool-result:read").tokens, 2);
 	assert.equal(findCategory(usage.categories, "tool-results"), undefined);
-	assert.equal(category(usage.categories, "extension-messages").tokens, 1);
+	assert.equal(category(usage.categories, "extensions").tokens, 10);
+	assert.deepEqual(
+		category(usage.categories, "extensions").children?.map((entry) => [entry.label, entry.tokens]),
+		[["npm:test", 9], ["marker", 1]],
+	);
 	// Bash and summary estimates cover pi's LLM-transform text, not just command/output/summary.
 	assert.equal(category(usage.categories, "bash-executions").tokens, 6);
 	assert.equal(category(usage.categories, "compacted-data").tokens, 55);
@@ -193,6 +198,7 @@ test("computeUsage orders prompt categories the way pi assembles a request", () 
 			["built-in-tools", "Built-in Tools"],
 			["custom-tools", "Custom Tools"],
 			["mcp-tools", "MCP Tools"],
+			["extensions", "Extensions"],
 		],
 	);
 });
@@ -211,7 +217,7 @@ test("computeUsage includes frozen context-only messages without recounting sess
 	const initial = snapshot();
 	const contextOnly = {
 		...item("context-user", "message", 8, false),
-		source: { id: "aggregate:extensions", label: "extensions (aggregate)", native: false },
+		source: { id: "aggregate:extensions", label: "unattributed", native: false },
 		label: "user message",
 		text: "context-only content",
 		contextOnly: true,
@@ -230,10 +236,10 @@ test("computeUsage includes frozen context-only messages without recounting sess
 		messages: [],
 	});
 
-	const extensions = category(usage.categories, "extension-messages");
-	assert.equal(extensions.tokens, 8);
-	assert.deepEqual(extensions.children?.map((entry) => entry.label), ["extensions (aggregate)"]);
-	assert.equal(collectPreviewEntries(extensions)[0]?.text, "context-only content");
+	const extensions = category(usage.categories, "extensions");
+	assert.equal(extensions.tokens, 17);
+	assert.deepEqual(extensions.children?.map((entry) => entry.label), ["npm:test", "unattributed"]);
+	assert.ok(collectPreviewEntries(extensions).some((entry) => entry.text === "context-only content"));
 });
 
 test("computeUsage carries measured tool parts into tool preview entries", () => {
@@ -341,8 +347,8 @@ test("computeUsage drops empty categories and aggregates duplicate tool/custom m
 	assert.equal(toolOutput.tokens, 3);
 	assert.deepEqual(toolOutput.children?.map((entry) => [entry.id, entry.tokens]), [["tool-result:read", 3]]);
 	assert.deepEqual(
-		category(usage.categories, "extension-messages").children?.map((entry) => [entry.id, entry.tokens]),
-		[["custom-message:marker", 3]],
+		category(usage.categories, "extensions").children?.map((entry) => [entry.id, entry.tokens]),
+		[["item:addition", 9], ["custom-message:marker", 3]],
 	);
 	assert.equal(category(usage.categories, "tool-result:read").entries?.length, 2);
 	assert.equal(findCategory(usage.categories, "user-messages"), undefined);

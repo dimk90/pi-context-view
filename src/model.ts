@@ -7,6 +7,21 @@
 export const PI_SOURCE_ID = "pi";
 export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
 
+/** Everything pi itself assembles: its prompt, context files, skills, and built-in tools. */
+export const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", native: true };
+
+/** Contributions no available signal attributes to one extension. */
+export const AGGREGATE_SOURCE: InjectionSource = {
+	id: AGGREGATE_SOURCE_ID,
+	label: "unattributed",
+	native: false,
+};
+
+/** Injection source for one non-builtin provenance string, e.g. `npm:pi-web-providers`. */
+export function extensionSource(source: string): InjectionSource {
+	return { id: `tool-source:${source}`, label: source, native: false };
+}
+
 /** Shared name of pi's own prompt; Usage and Injections must present it identically. */
 export const SYSTEM_PROMPT_LABEL = "System Prompt";
 
@@ -61,9 +76,15 @@ export interface InjectedReference {
 	readonly offset: number;
 	/** Captured line including its leading line break; never additional counted text. */
 	readonly text: string;
-	/** Stable id of the tool item that counts this line. */
+	/** Stable id of the item that counts this text. */
 	readonly itemId: string;
 	readonly source: InjectionSource;
+	/**
+	 * Present when the source was inferred from the text itself. Pi reports no
+	 * per-extension provenance for chained prompt edits, so such an attribution
+	 * is a guess and must be rendered as one.
+	 */
+	readonly attribution?: "guess";
 }
 
 /** One labeled part of an item's raw text, used only to shape its preview. */

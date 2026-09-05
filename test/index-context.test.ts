@@ -29,6 +29,7 @@ test("context handler skips the session baseline rebuild after the Initial snaps
 		registerCommand: () => undefined,
 		getAllTools: () => [],
 		getActiveTools: () => [],
+		getCommands: () => [],
 	} as unknown as ExtensionAPI;
 
 	// A resumed session with one real user message and the probe identities

@@ -182,6 +182,44 @@ test("Usage retains attribution inside one capped block and its full-content lev
 	assert.deepEqual(view.render(120), dashboard);
 });
 
+test("prompt additions render as guessed attributions with their own caveat", () => {
+	const theme = createTheme();
+	const addition = "\n\nAsk before editing: npm:web docs.";
+	const prompt = `Preamble\n\nGuidelines:\n- Native rule\nCurrent working directory: /fixture${addition}`;
+	const snapshot = buildSnapshot(
+		analyzeSystemPrompt(prompt, { cwd: "/fixture" }, [], {
+			sources: [{ source: "npm:web", path: "/pkgs/web/index.ts" }],
+		}),
+		"real-turn",
+		new Date("2026-07-10T12:00:00Z"),
+	);
+	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
+	// The addition is owned by its extension, never by pi's own prompt.
+	assert.match(plain(view.render(120)), /npm:web \.+ 9\n\s+└─ system prompt additions \.+ 9/);
+	view.handleInput("j"); // System Prompt
+	view.handleInput("\r");
+
+	const parent = view.render(120);
+	assert.ok(plain(parent).includes(`${addition.trim()} <- npm:web (guess)`));
+	const rendered = parent.find((line) => line.includes("(guess)"));
+	assert.ok(rendered?.includes(theme.fg("mdLink", "npm:web")));
+	assert.ok(rendered?.includes(theme.fg("dim", " (guess)")));
+	assert.match(plain(parent).replace(/\s+/g, " "), /Sources marked \(guess\) are inferred from the injected text itself\./);
+
+	view.handleInput("\u001b");
+	for (let step = 0; step < 4; step++) view.handleInput("j"); // Extension Additions
+	view.handleInput("\r");
+	const child = view.render(120);
+	assert.ok(plain(child).includes(`${addition.trim()} <- npm:web (guess)`));
+	assert.match(plain(child).replace(/\s+/g, " "), /Sources marked \(guess\) are inferred/);
+
+	// Usage counts it under the contributing extension, not under System Prompt.
+	const usage = computeUsage({ snapshot, messages: [] });
+	const extensions = usage.categories.find((category) => category.id === "extensions");
+	assert.deepEqual(extensions?.children?.map((entry) => entry.label), ["npm:web"]);
+	assert.equal(extensions?.tokens, collectPreviewEntries(extensions).reduce((sum, e) => sum + e.tokens, 0));
+});
+
 test("reference text and source are sanitized before coloring and wrapping", () => {
 	const theme = createTheme();
 	const lines = previewBodyLines(theme, {

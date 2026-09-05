@@ -160,7 +160,7 @@ test("measureInjectedMessages attributes custom and context-only messages withou
 });
 
 test("mergeContextOnlyMessages carries only provider-context mutations into Usage snapshots", () => {
-	const source = { id: "aggregate:extensions", label: "extensions (aggregate)", native: false };
+	const source = { id: "aggregate:extensions", label: "unattributed", native: false };
 	const contextMessage = {
 		id: "context-message",
 		phase: "initial",

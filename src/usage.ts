@@ -37,9 +37,10 @@ export interface UsageInputs {
  * every aggregate equals the exact sum of its children.
  */
 export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
+	const prompt = classifyPromptCategories(inputs.snapshot);
 	const categories = [
-		...classifyPromptCategories(inputs.snapshot),
-		...classifyMessages(inputs.messages, contextOnlyMessages(inputs.snapshot)),
+		...prompt.categories,
+		...classifyMessages(inputs.messages, contextOnlyMessages(inputs.snapshot), prompt.promptAdditions),
 	].filter((category) => category.tokens > 0);
 	return {
 		computedAt: inputs.computedAt ?? new Date(),
@@ -79,9 +80,17 @@ export function toReportedUsage(usage: ContextUsage | undefined): ReportedContex
 	};
 }
 
+/** Prompt-derived categories, plus the additions the Extensions category adopts. */
+interface PromptCategories {
+	readonly categories: UsageCategory[];
+	/** Prompt text appended by extensions, kept out of pi's own System Prompt total. */
+	readonly promptAdditions: UsageCategory[];
+}
+
 /** Map frozen snapshot items to prompt/tool/instruction/skill categories. */
-function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
+function classifyPromptCategories(snapshot: InitialSnapshot): PromptCategories {
 	const systemPrompt: UsageCategory[] = [];
+	const promptAdditions: UsageCategory[] = [];
 	const builtInTools: UsageCategory[] = [];
 	const customTools: UsageCategory[] = [];
 	const mcpTools: UsageCategory[] = [];
@@ -92,8 +101,11 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 			switch (item.kind) {
 				case "base-prompt":
 				case "append-prompt":
-				case "prompt-addition":
 					systemPrompt.push(leafFromItem(item));
+					break;
+				case "prompt-addition":
+					// Named by owner, because Extensions groups contributors rather than content.
+					promptAdditions.push({ ...leafFromItem(item), label: item.source.label });
 					break;
 				case "tool":
 					if (item.source.native) builtInTools.push(...breakdownFromItem(item));
@@ -114,14 +126,17 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
 	}
 	// Categories follow the order pi assembles them into a request: prompt text,
 	// context files, and skills first, then the tool definitions sent alongside.
-	return withoutEmpty([
-		aggregate("system-prompt", SYSTEM_PROMPT_LABEL, systemPrompt),
-		aggregate("context-files", INSTRUCTION_FILES_LABEL, contextFiles),
-		aggregate("skills", SKILLS_LABEL, skills),
-		aggregate("built-in-tools", BUILT_IN_TOOLS_LABEL, builtInTools),
-		aggregate("custom-tools", "Custom Tools", customTools),
-		aggregate("mcp-tools", "MCP Tools", mcpTools),
-	]);
+	return {
+		categories: withoutEmpty([
+			aggregate("system-prompt", SYSTEM_PROMPT_LABEL, systemPrompt),
+			aggregate("context-files", INSTRUCTION_FILES_LABEL, contextFiles),
+			aggregate("skills", SKILLS_LABEL, skills),
+			aggregate("built-in-tools", BUILT_IN_TOOLS_LABEL, builtInTools),
+			aggregate("custom-tools", "Custom Tools", customTools),
+			aggregate("mcp-tools", "MCP Tools", mcpTools),
+		]),
+		promptAdditions,
+	};
 }
 
 /** Best-effort MCP attribution from the only public provenance field available. */
@@ -140,6 +155,7 @@ function contextOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
 function classifyMessages(
 	messages: ContextEvent["messages"],
 	contextOnly: readonly InjectionItem[],
+	promptAdditions: readonly UsageCategory[],
 ): UsageCategory[] {
 	const user: UsagePreviewEntry[] = [];
 	const assistantText: UsagePreviewEntry[] = [];
@@ -244,7 +260,11 @@ function classifyMessages(
 		leaf("assistant-thinking", "Assistant Thinking", assistantThinking),
 		leaf("tool-calls", "Tool Calls", assistantToolCalls),
 		toolOutput,
-		aggregate("extension-messages", "Extension Messages", leavesFromMap("custom-message", customMessages)),
+		// One category per contributing extension, whether it sent messages or appended prompt text.
+		aggregate("extensions", "Extensions", [
+			...promptAdditions,
+			...leavesFromMap("custom-message", customMessages),
+		]),
 		leaf("compacted-data", "Compacted Data", compacted),
 	]);
 }

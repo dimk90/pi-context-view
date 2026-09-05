@@ -14,21 +14,28 @@ rows inside its body and leave captured text and token estimates unchanged.
 Part shares reconcile exactly with the item or entry estimate and never add to
 it. Show the applicable subheader even when `Definition` is the only captured
 part; omit parts with no captured text rather than rendering zero-token
-placeholders.
+placeholders. `Extension Additions` is the one exception: it carries no counted
+text by design, so it renders at 0 tokens whenever it hosts restored lines.
 
 Why `syntaxKeyword`: parts nest under item and entry headings that already carry
 `mdHeading`.
 
 ## Restored extension lines
 
-The System Prompt `Available Tools` and `Guidelines` previews restore the lines
-extensions contributed to those blocks in prompt order, alongside pi's own. Each
-restored line uses `syntaxNumber` followed by a `borderMuted` ` <- ` and the
-owning extension's source label in `mdLink` — fixed semantic theme colors,
-independent of category color overrides. A tool contributes at most one
-`Available Tools` snippet, and a shared guideline bullet names only the first
-owning tool's source, never every tool declaring it. Built-in tool lines are
-pi's own and carry no annotation.
+The System Prompt `Available Tools`, `Guidelines`, and `Extension Additions`
+previews restore the text extensions contributed to those blocks in prompt
+order, alongside pi's own. Each restored line uses `syntaxNumber` followed by a
+`borderMuted` ` <- ` and the owning extension's source label in `mdLink` — fixed
+semantic theme colors, independent of category color overrides. A tool
+contributes at most one `Available Tools` snippet, and a shared guideline bullet
+names only the first owning tool's source, never every tool declaring it.
+Built-in tool lines are pi's own and carry no annotation.
+
+A source pi did not report, but this extension inferred from the injected text,
+carries a `dim` ` (guess)` after its label. `Extension Additions` is the only
+block with such owners today: carved tool lines name a source pi reported. A
+part that opens with a restored line drops its captured leading blank lines, as
+plain part text does.
 
 The annotations are preview-only: the part and System Prompt estimates still
 exclude these lines, while the tool preview keeps its counted `Available Tools`
@@ -48,6 +55,11 @@ rows immediately above the hints:
 > Highlighted parts are injected by extensions into pi’s system prompt. They are
 > excluded from the System Prompt token count and included in the injecting
 > extension’s count.
+
+When any restored line in that preview names a guessed owner, the footer gains
+one more sentence:
+
+> Sources marked (guess) are inferred from the injected text itself.
 
 Wrap it without truncation and keep it pinned while scrolling, even when the
 highlighted text is offscreen or hidden by a block cap. It renders only for

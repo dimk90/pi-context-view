@@ -10,7 +10,7 @@
   "assistantThinkingColor": "#d4dd80",
   "toolCallsColor": "#ffb462",
   "toolOutputColor": "#ff7f42",
-  "extensionMessagesColor": "#ff4221",
+  "extensionsColor": "#ff4221",
   "compactedDataColor": "#ff0000",
   "autoCompactBufferColor": "dim",
   "freeSpaceColor": "dim"

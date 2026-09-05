@@ -107,7 +107,7 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 					},
 				],
 			},
-			{ id: "extension-messages", label: "Extension Messages", tokens: 600 },
+			{ id: "extensions", label: "Extensions", tokens: 600 },
 			{ id: "compacted-data", label: "Compacted Data", tokens: 5_000 },
 		],
 		estimatedTokens: 43_800,

@@ -15,6 +15,11 @@ import { BODY_INDENT, calculateViewport, descriptionBlockRows, wrapDescriptionLi
 const INJECTED_ATTRIBUTION_DESCRIPTION =
 	"Highlighted parts are injected by extensions into pi’s system prompt. " +
 	"They are excluded from the System Prompt token count and included in the injecting extension’s count.";
+/** Added only where an owner was inferred, because pi reports no author for chained prompt edits. */
+const GUESSED_ATTRIBUTION_DESCRIPTION =
+	" Sources marked (guess) are inferred from the injected text itself.";
+/** Suffix distinguishing an inferred owner from a carved line's known one. */
+const GUESS_MARKER = " (guess)";
 /** Keep a normal block's worth of content visible before making room for its explanation. */
 const DESCRIPTION_MIN_CONTENT_ROWS = 22;
 
@@ -48,7 +53,10 @@ export function injectedDescriptionLines(
 	layout: PreviewDescriptionLayout,
 ): string[] {
 	if (!contents.some(hasInjectedReferences)) return [];
-	const lines = wrapDescriptionLines(theme, INJECTED_ATTRIBUTION_DESCRIPTION, "dim", layout.width);
+	const description = contents.some(hasGuessedReferences)
+		? `${INJECTED_ATTRIBUTION_DESCRIPTION}${GUESSED_ATTRIBUTION_DESCRIPTION}`
+		: INJECTED_ATTRIBUTION_DESCRIPTION;
+	const lines = wrapDescriptionLines(theme, description, "dim", layout.width);
 	const availableRows = layout.availableRows - descriptionBlockRows(lines);
 	const viewport = calculateViewport(layout.contentLineCount, availableRows, 0);
 	const floor = Math.min(DESCRIPTION_MIN_CONTENT_ROWS, layout.contentLineCount);
@@ -86,8 +94,19 @@ export function previewBodyLines(
 
 /** Only metadata on rendered body parts triggers the footer, never a text or label match. */
 function hasInjectedReferences(content: SectionedContent): boolean {
-	const parts = content.sections?.length ? content.sections : [content];
-	return parts.some((part) => (part.injectedReferences?.length ?? 0) > 0);
+	return referenceParts(content).some((part) => (part.injectedReferences?.length ?? 0) > 0);
+}
+
+/** Whether any rendered reference names an inferred owner needing the extra caveat. */
+function hasGuessedReferences(content: SectionedContent): boolean {
+	return referenceParts(content).some((part) =>
+		part.injectedReferences?.some((reference) => reference.attribution === "guess") === true
+	);
+}
+
+/** Body parts carrying reference metadata: the item's sections, or the item itself. */
+function referenceParts(content: SectionedContent): readonly SectionedContent[] {
+	return content.sections?.length ? content.sections : [content];
 }
 
 /** Render referenced prompt lines locally; other content keeps the caller's JSON/skill transformations. */
@@ -104,9 +123,12 @@ function contentBodyLines(
 	let offset = 0;
 	for (const reference of references) {
 		text += normalizePreviewText(content.text.slice(offset, reference.offset));
-		text += theme.fg("syntaxNumber", normalizePreviewText(reference.text));
+		// A part that opens with a reference drops its captured lead, as plain text does.
+		const line = text.length === 0 ? reference.text.replace(/^\n+/, "") : reference.text;
+		text += theme.fg("syntaxNumber", normalizePreviewText(line));
 		text += theme.fg("borderMuted", " <- ");
 		text += theme.fg("mdLink", normalizeInlineText(reference.source.label));
+		if (reference.attribution === "guess") text += theme.fg("dim", GUESS_MARKER);
 		offset = reference.offset;
 	}
 	text += normalizePreviewText(content.text.slice(offset));

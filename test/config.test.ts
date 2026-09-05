@@ -48,7 +48,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 		["assistantThinkingColor", "thinkingXhigh"],
 		["toolCallsColor", "syntaxKeyword"],
 		["toolOutputColor", "toolOutput"],
-		["extensionMessagesColor", "syntaxType"],
+		["extensionsColor", "syntaxType"],
 		["compactedDataColor", "thinkingHigh"],
 		["autoCompactBufferColor", "dim"],
 		["freeSpaceColor", "dim"],
@@ -125,7 +125,7 @@ test("loadConfigFile applies every valid flat category color override", (context
 		assistantThinkingColor: "thinkingMax",
 		toolCallsColor: "mdCode",
 		toolOutputColor: "syntaxNumber",
-		extensionMessagesColor: "syntaxOperator",
+		extensionsColor: "syntaxOperator",
 		compactedDataColor: "thinkingLow",
 		autoCompactBufferColor: "borderMuted",
 		freeSpaceColor: "accent",
@@ -145,7 +145,7 @@ test("loadConfigFile applies every valid flat category color override", (context
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "assistant-thinking"), "thinkingMax");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "tool-calls"), "mdCode");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "tool-output"), "syntaxNumber");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "extension-messages"), "syntaxOperator");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "extensions"), "syntaxOperator");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "compacted-data"), "thinkingLow");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, AUTO_COMPACT_BUFFER_CATEGORY_ID), "borderMuted");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "accent");
@@ -211,7 +211,7 @@ const RENAMED_KEY_CASES = [
 	{ old: "agentTextMessagesColor", current: "assistantMessagesColor", categoryId: "assistant-messages" },
 	{ old: "agentThinkingMessagesColor", current: "assistantThinkingColor", categoryId: "assistant-thinking" },
 	{ old: "agentToolCallMessagesColor", current: "toolCallsColor", categoryId: "tool-calls" },
-	{ old: "extensionsColor", current: "extensionMessagesColor", categoryId: "extension-messages" },
+	{ old: "extensionMessagesColor", current: "extensionsColor", categoryId: "extensions" },
 ] as const;
 
 for (const { old, current, categoryId } of RENAMED_KEY_CASES) {

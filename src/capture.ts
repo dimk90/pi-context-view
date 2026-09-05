@@ -8,12 +8,13 @@ import {
 	type ContextEvent,
 	estimateTokens,
 	type InputSource,
+	type SlashCommandInfo,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
 import { analyzeSystemPrompt, type PromptOptionsSlice, type ToolSlice } from "./measure.ts";
 import {
-	AGGREGATE_SOURCE_ID,
+	AGGREGATE_SOURCE,
 	buildSnapshot,
 	type CaptureOrigin,
 	type InitialSnapshot,
@@ -21,17 +22,13 @@ import {
 	type InjectionSource,
 	type JsonSpan,
 } from "./model.ts";
+import type { PromptSourceSlice } from "./prompt-additions.ts";
 
 /** Session custom-entry type persisting probe message identities across extension runtimes. */
 export const PROBE_IDENTITIES_CUSTOM_TYPE = "pi-context-view:probe-identities";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
 const SETUP_ABORT_ERROR_MESSAGE = "This operation was aborted";
-const AGGREGATE_SOURCE: InjectionSource = {
-	id: AGGREGATE_SOURCE_ID,
-	label: "extensions (aggregate)",
-	native: false,
-};
 
 /** Everything available when the first context event finalizes a snapshot. */
 export interface CaptureFinalization {
@@ -40,6 +37,8 @@ export interface CaptureFinalization {
 	baselineMessages: ContextEvent["messages"];
 	allTools: readonly ToolInfo[];
 	activeToolNames: readonly string[];
+	/** Loaded extension provenance, used only to guess who appended prompt text. */
+	promptSources?: readonly PromptSourceSlice[];
 	origin: CaptureOrigin;
 	capturedAt?: Date;
 }
@@ -50,6 +49,8 @@ export interface NativeSnapshotInput {
 	options: BuildSystemPromptOptions;
 	allTools: readonly ToolInfo[];
 	activeToolNames: readonly string[];
+	/** Loaded extension provenance, used only to guess who appended prompt text. */
+	promptSources?: readonly PromptSourceSlice[];
 	capturedAt?: Date;
 }
 
@@ -74,6 +75,8 @@ export interface SyntheticMessageIdentity {
 interface CapturePreparation {
 	readonly promptOptions: PromptOptionsSlice;
 	readonly toolSnippets?: Readonly<Record<string, string>>;
+	/** Prompt as of this extension's own handler, bounding later extensions' additions. */
+	readonly promptAtHandler?: string;
 }
 
 /** Lifecycle of the single probe attempt, including ownership retained after its completion times out. */
@@ -100,12 +103,18 @@ export class InitialCaptureState {
 		return this.initialSnapshot;
 	}
 
-	/** Own the structured prompt inputs from `before_agent_start`; no-op once frozen. */
-	public prepare(options: BuildSystemPromptOptions): void {
+	/**
+	 * Own the structured prompt inputs from `before_agent_start`; no-op once
+	 * frozen. `promptAtHandler` is the chained prompt as this extension observed
+	 * it, which separates additions made before this extension loaded from those
+	 * made after it.
+	 */
+	public prepare(options: BuildSystemPromptOptions, promptAtHandler?: string): void {
 		if (this.initialSnapshot !== undefined) return;
 		this.pendingPreparation = {
 			promptOptions: copyPromptOptions(options),
 			toolSnippets: options.toolSnippets === undefined ? undefined : { ...options.toolSnippets },
+			promptAtHandler,
 		};
 	}
 
@@ -125,7 +134,10 @@ export class InitialCaptureState {
 			toolSnippets: preparation.toolSnippets,
 		});
 		const items = [
-			...analyzeSystemPrompt(input.systemPrompt, preparation.promptOptions, tools),
+			...analyzeSystemPrompt(input.systemPrompt, preparation.promptOptions, tools, {
+				sources: input.promptSources,
+				promptAtHandler: preparation.promptAtHandler,
+			}),
 			...measureInjectedMessages(input.messages, input.baselineMessages),
 		];
 		this.initialSnapshot = buildSnapshot(items, input.origin, input.capturedAt ?? new Date());
@@ -323,7 +335,7 @@ export function parsePersistedIdentities(data: unknown): SyntheticMessageIdentit
 export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot {
 	const options = copyPromptOptions(input.options);
 	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options);
-	const items = analyzeSystemPrompt(input.systemPrompt, options, tools);
+	const items = analyzeSystemPrompt(input.systemPrompt, options, tools, { sources: input.promptSources });
 	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
 }
 
@@ -359,6 +371,28 @@ export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOpti
 				filePath: skill.filePath,
 			})),
 	};
+}
+
+/**
+ * Collect the provenance of every loaded extension that registered a tool or a
+ * command. It is the only extension roster pi exposes, and it feeds attribution
+ * guesses alone: extensions registering neither are invisible here.
+ */
+export function collectPromptSources(
+	allTools: readonly ToolInfo[],
+	commands: readonly SlashCommandInfo[],
+): PromptSourceSlice[] {
+	const sources = new Map<string, PromptSourceSlice>();
+	for (const { sourceInfo } of [...allTools, ...commands]) {
+		if (sourceInfo.source === "builtin" || sourceInfo.source === "sdk") continue;
+		sources.set(`${sourceInfo.source}\n${sourceInfo.path}`, {
+			source: sourceInfo.source,
+			path: sourceInfo.path,
+			// A top-level extension's baseDir is a shared directory, not its own root.
+			baseDir: sourceInfo.origin === "package" ? sourceInfo.baseDir : undefined,
+		});
+	}
+	return [...sources.values()];
 }
 
 /**

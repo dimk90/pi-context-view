@@ -23,17 +23,21 @@ Present Initial contributions in this order:
   - System Prompt, including when `--system-prompt` replaced pi's default,
     with one child per part pi assembles it from, in prompt order: `Preamble`,
     `Available Tools`, `Guidelines`, `Documentation`, `Appended Prompt`
-    (`--append-system-prompt` text), and `Current Dir`. Parts pi rendered no
-    text into are absent, and a replaced prompt keeps its whole body as the
-    single `Preamble` part.
+    (`--append-system-prompt` text), `Current Dir`, and `Extension Additions`.
+    Parts pi rendered no text into are absent, and a replaced prompt keeps its
+    whole body as the single `Preamble` part. `Extension Additions` holds no
+    counted text of its own: it always reads 0 tokens and exists to present the
+    additions its owners count.
   - `Instruction Files (M)`, with one child per context file, abbreviating home
     paths with `~`
   - Skills (K), with one content-only child per skill
   - Built-in Tools (N), with one child per active built-in tool
 - each extension/tool source
   - one child per active tool
+  - `system prompt additions` when text appended after pi's footer was
+    attributed to that source
   - injected messages identified by `customType` where available
-- `extensions (aggregate)` for unattributable chained prompt additions
+- `unattributed` for prompt additions no signal could attribute
 
 Within the `pi` group, keep the fixed semantic order above and sort remaining
 prompt additions by size. Children break down parent contributions and do not

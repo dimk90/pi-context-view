@@ -29,7 +29,7 @@ test("groupInjections creates hierarchy and totals in display order", () => {
 		item("small", "tool-source:small", "small", false, 2),
 		item("pi-small", "pi", "pi", true, 1),
 		item("large-b", "tool-source:large", "large", false, 5),
-		item("aggregate", "aggregate:extensions", "extensions (aggregate)", false, 20),
+		item("aggregate", "aggregate:extensions", "unattributed", false, 20),
 		item("large-a", "tool-source:large", "large", false, 8),
 	]);
 

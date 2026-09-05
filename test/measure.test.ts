@@ -117,7 +117,7 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 			"tool:builtin",
 			"context-files",
 			"skills",
-			"prompt-addition:aggregate",
+			"prompt-addition:unattributed",
 		],
 	);
 	assert.equal(items.find((entry) => entry.id === "tool:npm:web:search")?.source.id, "tool-source:npm:web");
@@ -131,7 +131,17 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	assert.equal(contextFile?.kind, "context-file");
 	assert.equal(contextFile?.text, "Project rules");
 	assert.equal(contextFile?.chars, "Project rules".length);
-	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
+	const additions = items.find((entry) => entry.id === "prompt-addition:unattributed");
+	assert.equal(additions?.text, extensionAddition);
+	assert.equal(additions?.source.label, "unattributed");
+	// The addition is presented inside System Prompt, but never counted there.
+	const additionsPart = findItem(items, "base-prompt:additions");
+	assert.equal(additionsPart?.label, "Extension Additions");
+	assert.equal(additionsPart?.tokens, 0);
+	assert.deepEqual(
+		additionsPart?.injectedReferences?.map((reference) => [reference.text, reference.itemId]),
+		[[extensionAddition, "prompt-addition:unattributed"]],
+	);
 
 	const skills = items.find((entry) => entry.id === "skills");
 	assert.equal(skills?.label, "Skills (2)");
@@ -263,6 +273,57 @@ test("analyzeSystemPrompt breaks the System Prompt into the parts pi assembles i
 	assert.equal(findItem(items, "base-prompt:appended")?.text, append);
 	assert.equal(findItem(items, "base-prompt:current-dir")?.text, `\nCurrent working directory: ${CWD}`);
 	assert.doesNotMatch(findItem(items, "base-prompt:preamble")?.text ?? "", /Available tools:|Guidelines:/);
+});
+
+test("analyzeSystemPrompt gives guessed prompt additions to their extension and the rest to unattributed", () => {
+	const systemPrompt = buildSystemPrompt({ cwd: CWD, selectedTools: [] }) +
+		"\n\nBe brief." +
+		"\n\nRead npm:pi-web docs before searching.";
+	const sources = [{ source: "npm:pi-web", path: "/pkgs/pi-web/index.ts", baseDir: "/pkgs/pi-web" }];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, [], { sources });
+
+	const attributed = findItem(items, "prompt-addition:npm:pi-web");
+	const unattributed = findItem(items, "prompt-addition:unattributed");
+	assert.equal(attributed?.text, "\n\nRead npm:pi-web docs before searching.");
+	assert.equal(attributed?.source.id, "tool-source:npm:pi-web");
+	assert.equal(attributed?.label, "system prompt additions");
+	assert.equal(unattributed?.text, "\n\nBe brief.");
+	assert.equal(unattributed?.tokens, textTokens("\n\nBe brief."));
+
+	// System Prompt presents both runs in prompt order without counting either.
+	const base = findItem(items, "base-prompt");
+	const part = base?.children?.at(-1);
+	assert.equal(part?.id, "base-prompt:additions");
+	assert.equal(part?.text, "");
+	assert.equal(part?.tokens, 0);
+	assert.deepEqual(
+		part?.injectedReferences?.map((reference) => [reference.text, reference.source.label, reference.attribution]),
+		[
+			["\n\nBe brief.", "unattributed", undefined],
+			["\n\nRead npm:pi-web docs before searching.", "npm:pi-web", "guess"],
+		],
+	);
+	assert.doesNotMatch(base?.text ?? "", /Be brief|pi-web/);
+	assert.equal(base?.tokens, base?.children?.reduce((sum, child) => sum + child.tokens, 0));
+});
+
+test("analyzeSystemPrompt bounds prompt-addition attribution at this extension's own handler", () => {
+	const base = buildSystemPrompt({ cwd: CWD, selectedTools: [] });
+	const before = "\n\nShared wording.";
+	const after = "\n\nShared wording.";
+
+	const items = analyzeSystemPrompt(`${base}${before}${after}`, { cwd: CWD }, [], {
+		promptAtHandler: `${base}${before}`,
+	});
+
+	// Identical text on both sides has two authors, so the preview keeps two runs.
+	assert.deepEqual(
+		findItem(items, "base-prompt:additions")?.injectedReferences?.map((reference) => reference.text),
+		[before, after],
+	);
+	// They remain unattributable, so one item still counts them exactly once.
+	assert.equal(findItem(items, "prompt-addition:unattributed")?.text, `${before}${after}`);
 });
 
 test("analyzeSystemPrompt exposes each aggregate child as a labeled part carrying its marked JSON", () => {
@@ -635,7 +696,7 @@ test("analyzeSystemPrompt measures a replaced prompt as the content pi actually 
 	assert.deepEqual(findItem(items, "tool:npm:web:search")?.sections?.map((part) => part.label), ["Definition"]);
 	assert.deepEqual(findItem(items, "tool:builtin:read")?.sections?.map((part) => part.label), ["Definition"]);
 	// The custom branch ends its cwd footer with a newline, which is not an extension addition.
-	assert.equal(findItem(items, "prompt-addition:aggregate"), undefined);
+	assert.equal(findItem(items, "prompt-addition:unattributed"), undefined);
 	assert.ok(items.every((item) => item.injectedReferences === undefined &&
 		item.sections?.every((section) => section.injectedReferences === undefined) !== false));
 });
@@ -650,7 +711,7 @@ test("analyzeSystemPrompt recognizes the pi 0.81 CWD-only footer", () => {
 	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD });
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.equal(base?.text, `BASE PROMPT\nCurrent working directory: ${CWD}`);
-	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
+	assert.equal(items.find((entry) => entry.id === "prompt-addition:unattributed")?.text, extensionAddition);
 });
 
 test("analyzeSystemPrompt rejects CWD lines that are not the exact footer line", () => {
@@ -692,7 +753,7 @@ test("analyzeSystemPrompt finds the footer in real buildSystemPrompt output", ()
 	assert.equal(findItem(items, "base-prompt:current-dir")?.text, `\nCurrent working directory: ${CWD}`);
 	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
 	assert.equal(findItem(items, "base-prompt:appended")?.text, append);
-	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
+	assert.equal(items.find((entry) => entry.id === "prompt-addition:unattributed")?.text, extensionAddition);
 });
 
 test("analyzeSystemPrompt abbreviates home-directory context-file labels with ~", () => {

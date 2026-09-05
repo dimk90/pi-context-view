@@ -152,8 +152,13 @@ assembles them into a request, and both views name them identically:
 - System Prompt, Instruction Files, and Skills;
 - Built-in Tools, Custom Tools, and MCP Tools;
 - User Messages, Assistant Messages, Assistant Thinking, and Tool Calls;
-- Tool Output and Extension Messages;
+- Tool Output and Extensions;
 - Compacted Data and Free Space.
+
+Extensions groups what extensions contributed outside their tool definitions:
+one child per injected `customType`, plus one per source whose system-prompt
+additions were attributed, named by that source. Those additions stay out of the
+System Prompt total, which counts pi's own prompt alone.
 
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
 the smaller middle dot `·`. Keep aggregate breakdowns collapsed except Tool
