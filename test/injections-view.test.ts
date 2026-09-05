@@ -6,6 +6,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import type { InitialSnapshot, InjectionGroup, InjectionItem } from "../src/model.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
+import { previewBodyLines } from "../src/ui/section-preview.ts";
 
 const FG_COLORS: ThemeColor[] = [
 	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text",
@@ -395,6 +396,30 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	assert.match(view.render(80).join("\n"), /preview line 0 /);
 });
 
+test("preview subsections use two blank rows regardless of captured trailing whitespace", () => {
+	for (const trailing of ["", "\n", "\n\n", "\n \n\t\n\n"]) {
+		const content = {
+			text: "unchanged aggregate",
+			sections: [
+				{ label: "Preamble", text: `First paragraph\n\nLast paragraph${trailing}`, tokens: 8 },
+				{ label: "Guidelines", text: "\n\n- Native rule", tokens: 3 },
+			],
+		};
+		const original = structuredClone(content);
+		const lines = previewBodyLines(
+			createTheme(), content, 78,
+			(text) => text.split("\n").map((line) => `  ${line}`),
+		).map(stripSgr);
+		assert.deepEqual(lines, [
+			"  Preamble · 8 tokens",
+			"  First paragraph", "  ", "  Last paragraph",
+			"", "",
+			"  Guidelines · 3 tokens", "  - Native rule",
+		]);
+		assert.deepEqual(content, original, "spacing is preview-only");
+	}
+});
+
 test("InjectionsView preview labels every known section", () => {
 	const snippet = "\n- search: Search the web";
 	const guidelines = "\n- Use search when the user asks for current information\n- Cite sources";
@@ -450,7 +475,10 @@ test("InjectionsView preview labels every known section", () => {
 	assert.equal(plainLines[snippetIndex + 1], "  - search: Search the web");
 	assert.equal(plainLines[guidelinesIndex + 1], "  - Use search when the user asks for current information");
 	assert.equal(plainLines[guidelinesIndex + 2], "  - Cite sources");
-	assert.equal(plainLines[guidelinesIndex - 1], "");
+	assert.deepEqual(plainLines.slice(guidelinesIndex - 2, guidelinesIndex), ["", ""]);
+	assert.equal(plainLines[guidelinesIndex - 3], "  - search: Search the web");
+	assert.deepEqual(plainLines.slice(definitionIndex - 2, definitionIndex), ["", ""]);
+	assert.equal(plainLines[definitionIndex - 3], "  - Cite sources");
 	assert.equal(plainLines[definitionIndex + 1], "  search: Search");
 
 	// A single known section retains the same labeled structure.
@@ -572,9 +600,9 @@ test("InjectionsView preview separates aggregate children and expands each child
 	assert.equal(lines[readIndex + 1], "  read: Do read things");
 	assert.equal(lines[readIndex + 2], "  {");
 	assert.ok(!lines.some((line) => line.includes('{"type":"object"')), "schema left compact");
-	// One blank row separates the children instead of running them together.
-	assert.equal(lines[readIndex - 1], "");
-	assert.notEqual(lines[readIndex - 2], "");
+	// Exactly two blank rows separate children, including expanded JSON bodies
+	assert.deepEqual(lines.slice(readIndex - 2, readIndex), ["", ""]);
+	assert.equal(lines[readIndex - 3], "  }");
 });
 
 test("InjectionsView omits a skill name its heading already shows", () => {
@@ -616,6 +644,8 @@ test("InjectionsView omits a skill name its heading already shows", () => {
 	assert.ok(styleIndex > 0 && commitIndex > styleIndex, "missing per-child subheaders");
 	assert.equal(aggregate[styleIndex + 1], "  Do code-style things");
 	assert.equal(aggregate[commitIndex + 1], "  Do commit things");
+	assert.deepEqual(aggregate.slice(commitIndex - 2, commitIndex), ["", ""]);
+	assert.equal(aggregate[commitIndex - 3], "  /skills/code-style/SKILL.md");
 
 	// The child preview keeps its whole estimate while dropping the same repeated line.
 	view.handleInput("\u001b");

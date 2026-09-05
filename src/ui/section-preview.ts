@@ -72,7 +72,11 @@ export function previewBodyLines(
 	if (sections.length === 0) return contentBodyLines(theme, content, wrapWidth, wrapText, heading);
 	const lines: string[] = [];
 	for (const section of sections) {
-		if (lines.length > 0) lines.push("");
+		if (lines.length > 0) {
+			// Captured trailing whitespace must not add to the subsection separator
+			while (lines.length > 0 && normalizeInlineText(lines[lines.length - 1] ?? "") === "") lines.pop();
+			lines.push("", "");
+		}
 		lines.push(...sectionHeaderLines(theme, section, wrapWidth));
 		lines.push(...contentBodyLines(theme, section, wrapWidth, wrapText, section.label));
 	}

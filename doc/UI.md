@@ -42,8 +42,10 @@ rows and values, and `dim` for deeper breakdowns. Selected labels and values use
 Preview content that decomposes into labeled parts — a tool's `Available Tools`,
 `Guidelines`, and `Definition` parts, the System Prompt's own blocks — renders
 every part under its own bold
-`syntaxKeyword` subheader followed by a muted ` · N tokens` share, with one blank
-row between parts. Parts keep `syntaxKeyword` rather than the usual `mdHeading`
+`syntaxKeyword` subheader followed by a muted ` · N tokens` share, with exactly two
+blank rows between parts. Replace any trailing blank rows of the preceding part
+with this separator; preserve blank rows inside its body and leave captured text
+and token estimates unchanged. Parts keep `syntaxKeyword` rather than the usual `mdHeading`
 subheader color because they nest under item and entry headings that already
 carry `mdHeading`. Part shares reconcile exactly with the item or entry estimate
 and never add to it.
@@ -470,7 +472,7 @@ A tool item renders its labeled parts under the shared subheader rules, in
 place of one undivided block of raw text. An item with children — System
 Prompt, Instruction Files, Skills, Built-in Tools — renders one part per child
 under the same rules,
-so children stay separated by a blank line instead of running together. The
+so children stay separated by two blank rows instead of running together. The
 whole preview is full content, so marked JSON expands here, in an aggregate
 part as much as in a tool's own definition.
 

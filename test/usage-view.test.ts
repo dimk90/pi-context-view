@@ -734,7 +734,7 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 		estimatedTokens: 30,
 	};
 	const theme = createTheme();
-	const view = createView(theme, { usage: toolUsage }, () => {}, () => 24);
+	const view = createView(theme, { usage: toolUsage }, () => {}, () => 26);
 
 	view.render(80);
 	view.handleInput("\r");
@@ -746,13 +746,14 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 	assert.equal(streamPlain[entryHeader + 1], "┃   Available Tools · 6 tokens");
 	assert.equal(streamPlain[entryHeader + 2], "┃   - search: Search the web");
 	assert.equal(streamPlain[entryHeader + 3], "┃");
-	assert.equal(streamPlain[entryHeader + 4], "┃   Guidelines · 17 tokens");
-	assert.equal(streamPlain[entryHeader + 5], "┃   - Use search when the user asks for current information");
-	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));
-	assert.ok((stream[entryHeader + 4] ?? "").includes(theme.fg("muted", " · 17 tokens")));
+	assert.equal(streamPlain[entryHeader + 4], "┃");
+	assert.equal(streamPlain[entryHeader + 5], "┃   Guidelines · 17 tokens");
+	assert.equal(streamPlain[entryHeader + 6], "┃   - Use search when the user asks for current information");
+	assert.ok((stream[entryHeader + 5] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));
+	assert.ok((stream[entryHeader + 5] ?? "").includes(theme.fg("muted", " · 17 tokens")));
 	// Parts use syntaxKeyword so they stay distinct from the mdHeading entry header above them.
 	assert.ok((stream[entryHeader] ?? "").includes(theme.fg("mdHeading", theme.bold("search"))));
-	assert.doesNotMatch(stream[entryHeader + 4] ?? "", /\u001b\[38;2;22;23;24m/);
+	assert.doesNotMatch(stream[entryHeader + 5] ?? "", /\u001b\[38;2;22;23;24m/);
 	// The remaining parts stay behind the block cap until Enter opens the whole entry.
 	assert.ok(!streamPlain.some((line) => line.includes("Definition · 7 tokens")));
 	assert.ok(streamPlain.some((line) => /… \+\d+ lines · Enter - View Content/.test(line)));
@@ -771,7 +772,8 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 	const blockPlain = view.render(80).map((line) => stripSgr(line).trimEnd());
 	const definitionHeader = blockPlain.indexOf("    Definition · 7 tokens");
 	assert.ok(definitionHeader > 0);
-	assert.equal(blockPlain[definitionHeader - 1], "");
+	assert.deepEqual(blockPlain.slice(definitionHeader - 2, definitionHeader), ["", ""]);
+	assert.equal(blockPlain[definitionHeader - 3], "    - Cite sources");
 	assert.equal(blockPlain[definitionHeader + 1], "    search: Search");
 
 	// Escape returns to the stream with the same labeled block.
