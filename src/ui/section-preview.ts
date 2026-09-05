@@ -7,12 +7,12 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { GuidelineReference, InjectionSection, JsonSpan } from "../model.ts";
+import type { InjectedReference, InjectionSection, JsonSpan } from "../model.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { shiftJsonSpan } from "./json-preview.ts";
 import { BODY_INDENT, calculateViewport, descriptionBlockRows, wrapDescriptionLines } from "./layout.ts";
 
-const GUIDELINE_ATTRIBUTION_DESCRIPTION =
+const INJECTED_ATTRIBUTION_DESCRIPTION =
 	"Highlighted parts are injected by extensions into pi’s system prompt. " +
 	"They are excluded from the System Prompt token count and included in the injecting extension’s count.";
 /** Keep a normal block's worth of content visible before making room for its explanation. */
@@ -23,7 +23,7 @@ export interface SectionedContent {
 	readonly text: string;
 	readonly jsonSpan?: JsonSpan;
 	readonly sections?: readonly InjectionSection[];
-	readonly guidelineReferences?: readonly GuidelineReference[];
+	readonly injectedReferences?: readonly InjectedReference[];
 }
 
 /** Space shared by uncapped preview content, its counter, and the attribution footer. */
@@ -36,18 +36,19 @@ export interface PreviewDescriptionLayout {
 }
 
 /**
- * One fixed footer for previews with attributed guidelines, never part of their
- * raw content. Collapse it whole when fewer than ten content rows would remain,
- * or when a shorter preview would no longer fit in full. Uncapped line counts
- * keep the collapse decision independent of the Usage cap it helps determine.
+ * One fixed footer for previews with attributed extension lines, never part of
+ * their raw content. Collapse it whole when fewer than
+ * `DESCRIPTION_MIN_CONTENT_ROWS` content rows would remain, or when a shorter
+ * preview would no longer fit in full. Uncapped line counts keep the collapse
+ * decision independent of the Usage cap it helps determine.
  */
-export function guidelineDescriptionLines(
+export function injectedDescriptionLines(
 	theme: Theme,
 	contents: readonly SectionedContent[],
 	layout: PreviewDescriptionLayout,
 ): string[] {
-	if (!contents.some(hasGuidelineReferences)) return [];
-	const lines = wrapDescriptionLines(theme, GUIDELINE_ATTRIBUTION_DESCRIPTION, "dim", layout.width);
+	if (!contents.some(hasInjectedReferences)) return [];
+	const lines = wrapDescriptionLines(theme, INJECTED_ATTRIBUTION_DESCRIPTION, "dim", layout.width);
 	const availableRows = layout.availableRows - descriptionBlockRows(lines);
 	const viewport = calculateViewport(layout.contentLineCount, availableRows, 0);
 	const floor = Math.min(DESCRIPTION_MIN_CONTENT_ROWS, layout.contentLineCount);
@@ -84,12 +85,12 @@ export function previewBodyLines(
 }
 
 /** Only metadata on rendered body parts triggers the footer, never a text or label match. */
-function hasGuidelineReferences(content: SectionedContent): boolean {
+function hasInjectedReferences(content: SectionedContent): boolean {
 	const parts = content.sections?.length ? content.sections : [content];
-	return parts.some((part) => (part.guidelineReferences?.length ?? 0) > 0);
+	return parts.some((part) => (part.injectedReferences?.length ?? 0) > 0);
 }
 
-/** Render referenced guidelines locally; other content keeps the caller's JSON/skill transformations. */
+/** Render referenced prompt lines locally; other content keeps the caller's JSON/skill transformations. */
 function contentBodyLines(
 	theme: Theme,
 	content: SectionedContent,
@@ -97,7 +98,7 @@ function contentBodyLines(
 	wrapText: (text: string, jsonSpan: JsonSpan | undefined) => string[],
 	heading: string | undefined,
 ): string[] {
-	const references = content.guidelineReferences ?? [];
+	const references = content.injectedReferences ?? [];
 	if (references.length === 0) return bodyLines(content.text, content.jsonSpan, heading, wrapText);
 	let text = "";
 	let offset = 0;

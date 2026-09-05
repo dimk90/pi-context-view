@@ -32,11 +32,12 @@
   - More clear description: e.g. "Highlighted parts are injected by extension into the pi's system prompt, excluded from system prompt token count but included to extension that injects it".
   - Show description not only on sub-item preview but also on `System Prompt` preview.
 
-- [ ] Apply the same approach to mark injected stuff (by extension) for other `System Prompt` sub-items:
+- [x] Apply the same approach to mark injected stuff (by extension) for other `System Prompt` sub-items:
   - `Available Tools`
-  - any other sub-items?
+  - No other sub-items carry extension text: `Preamble`, `Documentation` and `Current Dir` are pi-authored, `Instruction Files`/`Skills` are carved out as their own items, and `Appended Prompt` is covered by the next item.
 
 - [ ] **Appended Prompt** extension attribution:
+  - Move to `System Prompt` as sub-item.
   - If possible to detect from which extension/tool is came from add to the extension as item or inside tool item.
   - Add token count for it to extension if extension for specific part of **Appended Prompt** successfully detected.
   - Is extension detection reliable or only guess from the content is available.

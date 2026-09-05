@@ -37,7 +37,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { guidelineDescriptionLines, previewBodyLines } from "./section-preview.ts";
+import { injectedDescriptionLines, previewBodyLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import {
 	buildUsageMap,
@@ -872,7 +872,7 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const body = this.blockBodyLines(width, row, entry);
-		const descriptionLines = guidelineDescriptionLines(theme, [entry], {
+		const descriptionLines = injectedDescriptionLines(theme, [entry], {
 			width,
 			availableRows: terminalRows - BLOCK_FIXED_LINE_COUNT,
 			contentLineCount: body.length,
@@ -1071,7 +1071,7 @@ export class UsageView {
 			// Count entry headers and separator rows before applying the footer-dependent cap
 			const contentLineCount = this.previewContent(width, row)
 				.reduce((total, lines) => total + lines.length + 2, -1);
-			return guidelineDescriptionLines(this.theme, this.previewEntries(row), {
+			return injectedDescriptionLines(this.theme, this.previewEntries(row), {
 				width,
 				availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
 				contentLineCount: Math.max(1, contentLineCount),

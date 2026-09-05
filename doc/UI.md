@@ -12,7 +12,7 @@ touches:
 | Document | Covers |
 | --- | --- |
 | This file | Frame, color, casing, descriptions, interaction, responsive rendering |
-| [ui/previews.md](ui/previews.md) | Labeled parts, restored guideline bullets, attribution footer, repeated headings, marked JSON |
+| [ui/previews.md](ui/previews.md) | Labeled parts, restored extension lines, attribution footer, repeated headings, marked JSON |
 | [ui/usage.md](ui/usage.md) | Context Usage: header, notices, map, map scale, legend, category preview |
 | [ui/injections.md](ui/injections.md) | Context Injections: contribution tree, injection preview |
 
@@ -84,7 +84,7 @@ partial and never ellipsized.
 | --- | --- |
 | Usage dashboard | Map, complete legend, and full key all fit |
 | Injections list | `LIST_DESCRIPTION_MIN_ROWS` (26) rows visible, or a shorter list in full |
-| Attribution footer | `DESCRIPTION_MIN_CONTENT_ROWS` (10) content rows visible, or a shorter preview in full |
+| Attribution footer | `DESCRIPTION_MIN_CONTENT_ROWS` (22) content rows visible, or a shorter preview in full |
 
 Hints, borders, capture warnings, and configuration notices are not descriptions
 and never collapse. The Injections `[Degraded: …]` indicator belongs to its

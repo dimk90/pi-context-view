@@ -19,29 +19,31 @@ placeholders.
 Why `syntaxKeyword`: parts nest under item and entry headings that already carry
 `mdHeading`.
 
-## Restored guideline bullets
+## Restored extension lines
 
-The System Prompt `Guidelines` preview restores extension-contributed bullets in
-prompt order, alongside pi's own. Each restored bullet uses `customMessageLabel`
-followed by a dim ` -> ` and the owning extension's source label in `mdLink` —
-fixed semantic theme colors, independent of category color overrides. Shared
-bullets name only the first owning tool's source, never every tool declaring
-them.
+The System Prompt `Available Tools` and `Guidelines` previews restore the lines
+extensions contributed to those blocks in prompt order, alongside pi's own. Each
+restored line uses `syntaxNumber` followed by a `borderMuted` ` <- ` and the
+owning extension's source label in `mdLink` — fixed semantic theme colors,
+independent of category color overrides. A tool contributes at most one
+`Available Tools` snippet, and a shared guideline bullet names only the first
+owning tool's source, never every tool declaring it. Built-in tool lines are
+pi's own and carry no annotation.
 
-The annotations are preview-only: Guidelines and System Prompt estimates still
-exclude these bullets, while the tool preview keeps its counted Guidelines
-section unchanged. Sanitize bullet text and source labels before applying
-colors, preserve styling through wrapping, and include annotations in preview
-scrolling and cap line counts. Never show raw bullets in the overview list or
-dashboard.
+The annotations are preview-only: the part and System Prompt estimates still
+exclude these lines, while the tool preview keeps its counted `Available Tools`
+and `Guidelines` sections unchanged. Sanitize line text and source labels before
+applying colors, preserve styling through wrapping, and include annotations in
+preview scrolling and cap line counts. Never show raw lines in the overview list
+or dashboard.
 
 ## Attribution footer
 
-Restored bullets appear in the System Prompt preview of both views, in its
-capped and full Usage levels, and in the standalone Guidelines child in
-Injections. Each of those previews shows one dim description at the bottom,
-outside the scrollable content and block-selection gutter, between blank rows
-immediately above the hints:
+Restored lines appear in the System Prompt preview of both views, in its capped
+and full Usage levels, and in the standalone `Available Tools` and `Guidelines`
+children in Injections. Each of those previews shows one dim description at the
+bottom, outside the scrollable content and block-selection gutter, between blank
+rows immediately above the hints:
 
 > Highlighted parts are injected by extensions into pi’s system prompt. They are
 > excluded from the System Prompt token count and included in the injecting
@@ -49,9 +51,8 @@ immediately above the hints:
 
 Wrap it without truncation and keep it pinned while scrolling, even when the
 highlighted text is offscreen or hidden by a block cap. It renders only for
-content carrying guideline-reference metadata: native-only System
-Prompt/Guidelines previews, sibling parts without references, and owning-tool
-previews have none. The Usage category stream inspects all entries; the
+content carrying injected-reference metadata: native-only System Prompt and part
+previews, sibling parts without references, and owning-tool previews have none. The Usage category stream inspects all entries; the
 full-content level inspects only its open entry.
 
 It collapses whole, including its preceding blank row, below the floor in

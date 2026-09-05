@@ -21,7 +21,7 @@
 import {
 	AGGREGATE_SOURCE_ID,
 	BUILT_IN_TOOLS_LABEL,
-	type GuidelineReference,
+	type InjectedReference,
 	INSTRUCTION_FILES_LABEL,
 	type InjectionItem,
 	type InjectionKind,
@@ -40,11 +40,6 @@ const AGGREGATE_SOURCE: InjectionSource = {
 	native: false,
 };
 
-/** Header opening the block pi renders one bullet per visible tool into. */
-const AVAILABLE_TOOLS_HEADER = "\nAvailable tools:\n";
-/** Header opening the block pi renders tool guideline bullets into. */
-const GUIDELINES_HEADER = "\nGuidelines:\n";
-
 /** Part names shared by a tool's carved prompt lines and pi's own prompt blocks. */
 const AVAILABLE_TOOLS_LABEL = "Available Tools";
 const GUIDELINES_LABEL = "Guidelines";
@@ -52,10 +47,19 @@ const GUIDELINES_LABEL = "Guidelines";
 /** Leading part of pi's prompt, before the first block header pi renders. */
 const PREAMBLE_BLOCK = { id: "base-prompt:preamble", label: "Preamble" };
 
+/** Block pi renders one bullet per visible tool into. */
+const AVAILABLE_TOOLS_BLOCK = {
+	id: "base-prompt:available-tools",
+	label: AVAILABLE_TOOLS_LABEL,
+	header: "\nAvailable tools:\n",
+};
+/** Block pi renders tool guideline bullets into. */
+const GUIDELINES_BLOCK = { id: "base-prompt:guidelines", label: GUIDELINES_LABEL, header: "\nGuidelines:\n" };
+
 /** Blocks pi renders into its own base prompt, in emission order. */
 const BASE_PROMPT_BLOCKS = [
-	{ id: "base-prompt:available-tools", label: AVAILABLE_TOOLS_LABEL, header: AVAILABLE_TOOLS_HEADER },
-	{ id: "base-prompt:guidelines", label: GUIDELINES_LABEL, header: GUIDELINES_HEADER },
+	AVAILABLE_TOOLS_BLOCK,
+	GUIDELINES_BLOCK,
 	{ id: "base-prompt:documentation", label: "Documentation", header: "\nPi documentation" },
 ];
 
@@ -109,16 +113,16 @@ export function analyzeSystemPrompt(
 	const base = footer === undefined ? systemPrompt : systemPrompt.slice(0, footer.start);
 
 	const usesCustomPrompt = options.customPrompt !== undefined && options.customPrompt.length > 0;
-	const guidelineSpans = measureTools(usesCustomPrompt ? "" : base, tools, items, carvedSpans);
+	const injectedSpans = measureTools(usesCustomPrompt ? "" : base, tools, items, carvedSpans);
 	measureContextFiles(base, options, items, carvedSpans);
 	measureSkills(base, options, items, carvedSpans);
 	const appended = carveAppendedPrompt(base, options, carvedSpans);
 
-	const parts = addGuidelineReferences(
+	const parts = addInjectedReferences(
 		splitBasePromptParts(carve(base, carvedSpans), usesCustomPrompt),
 		base,
 		carvedSpans,
-		guidelineSpans,
+		injectedSpans,
 	);
 	if (appended !== undefined) {
 		parts.push({ id: "base-prompt:appended", kind: "append-prompt", label: "Appended Prompt", text: appended });
@@ -167,7 +171,7 @@ function measureTools(
 	tools: ToolSlice[],
 	items: InjectionItem[],
 	carvedSpans: Span[],
-): GuidelineSpan[] {
+): InjectedSpan[] {
 	const carver = createPromptCarver(base, carvedSpans);
 	const claimedGuidelines = new Set(piOwnedGuidelines(tools));
 	const builtinChildren: InjectionItem[] = [];
@@ -190,7 +194,7 @@ function measureTools(
 		const label = `${BUILT_IN_TOOLS_LABEL} (${builtinChildren.length})`;
 		items.push(createAggregateItem("tool:builtin", "tool", PI_SOURCE, label, builtinChildren));
 	}
-	return carver.guidelineSpans;
+	return carver.injectedSpans;
 }
 
 /** One labeled part of a tool item's text, before it receives its token share. */
@@ -199,8 +203,8 @@ interface SectionDraft {
 	readonly text: string;
 	/** Serialized JSON inside `text`; marked here rather than detected in the preview. */
 	readonly jsonSpan?: JsonSpan;
-	/** Guideline insertions that affect only the preview, never this section's estimate. */
-	readonly guidelineReferences?: readonly GuidelineReference[];
+	/** Prompt-line insertions that affect only the preview, never this section's estimate. */
+	readonly injectedReferences?: readonly InjectedReference[];
 }
 
 /** The payload one tool sends with every request: its name, description, and parameter schema. */
@@ -224,22 +228,21 @@ function carveToolPromptSections(
 	ownedGuidelines: string[],
 ): SectionDraft[] {
 	const sections: SectionDraft[] = [];
+	const owner: InjectedOwner = {
+		itemId: `tool:${tool.source}:${tool.name}`,
+		source: extensionSource(tool.source),
+	};
 	const snippet = tool.snippet === undefined
 		? undefined
-		: carveBlockLine(carver, carver.toolsBlock, `\n- ${tool.name}: ${tool.snippet}`);
+		: carveInjectedLine(carver, carver.toolsBlock, `\n- ${tool.name}: ${tool.snippet}`, owner);
 	if (snippet !== undefined) {
 		sections.push({ label: AVAILABLE_TOOLS_LABEL, text: carver.base.slice(snippet.start, snippet.end) });
 	}
 	let bullets = "";
 	for (const guideline of ownedGuidelines) {
-		const span = carveBlockLine(carver, carver.guidelinesBlock, `\n- ${guideline}`);
+		const span = carveInjectedLine(carver, carver.guidelinesBlock, `\n- ${guideline}`, owner);
 		if (span === undefined) continue;
 		bullets += carver.base.slice(span.start, span.end);
-		carver.guidelineSpans.push({
-			...span,
-			itemId: `tool:${tool.source}:${tool.name}`,
-			source: extensionSource(tool.source),
-		});
 	}
 	if (bullets.length > 0) sections.push({ label: GUIDELINES_LABEL, text: bullets });
 	return sections;
@@ -249,27 +252,39 @@ function carveToolPromptSections(
 interface PromptCarver {
 	readonly base: string;
 	/** Bullet lines pi renders under "Available tools:". */
-	readonly toolsBlock: Span | undefined;
+	readonly toolsBlock: CarvedBlock;
 	/** Bullet lines pi renders under "Guidelines:". */
-	readonly guidelinesBlock: Span | undefined;
+	readonly guidelinesBlock: CarvedBlock;
 	readonly carvedSpans: Span[];
-	readonly guidelineSpans: GuidelineSpan[];
+	readonly injectedSpans: InjectedSpan[];
 }
 
-/** Original prompt location and exact owner of a carved guideline bullet. */
-interface GuidelineSpan extends Span {
+/** One System Prompt part and the region of it pi renders tool prompt lines into. */
+interface CarvedBlock {
+	/** Id of the System Prompt part that keeps these lines as preview references. */
+	readonly partId: string;
+	readonly span: Span | undefined;
+}
+
+/** The tool item that counts a carved prompt line. */
+interface InjectedOwner {
 	readonly itemId: string;
 	readonly source: InjectionSource;
+}
+
+/** Original prompt location, owner, and System Prompt part of a carved prompt line. */
+interface InjectedSpan extends Span, InjectedOwner {
+	readonly partId: string;
 }
 
 /** Locate the two bullet blocks pi renders tool prompt lines into. */
 function createPromptCarver(base: string, carvedSpans: Span[]): PromptCarver {
 	return {
 		base,
-		toolsBlock: findBulletBlock(base, AVAILABLE_TOOLS_HEADER),
-		guidelinesBlock: findBulletBlock(base, GUIDELINES_HEADER),
+		toolsBlock: { partId: AVAILABLE_TOOLS_BLOCK.id, span: findBulletBlock(base, AVAILABLE_TOOLS_BLOCK.header) },
+		guidelinesBlock: { partId: GUIDELINES_BLOCK.id, span: findBulletBlock(base, GUIDELINES_BLOCK.header) },
 		carvedSpans,
-		guidelineSpans: [],
+		injectedSpans: [],
 	};
 }
 
@@ -284,6 +299,21 @@ function findBulletBlock(text: string, header: string): Span | undefined {
 	const start = headerStart + header.length - 1;
 	const blank = text.indexOf("\n\n", start);
 	return { start, end: blank === -1 ? text.length : blank };
+}
+
+/**
+ * Carve one rendered prompt line out of its block and remember where pi put it,
+ * so the part it left keeps it as a preview reference owned by its tool.
+ */
+function carveInjectedLine(
+	carver: PromptCarver,
+	block: CarvedBlock,
+	line: string,
+	owner: InjectedOwner,
+): Span | undefined {
+	const span = carveBlockLine(carver, block.span, line);
+	if (span !== undefined) carver.injectedSpans.push({ ...span, ...owner, partId: block.partId });
+	return span;
 }
 
 /** Record one complete prompt bullet inside its block, never a prefix of another bullet. */
@@ -424,29 +454,30 @@ interface PromptPart {
 	readonly kind: InjectionKind;
 	readonly label: string;
 	readonly text: string;
-	readonly guidelineReferences?: readonly GuidelineReference[];
+	readonly injectedReferences?: readonly InjectedReference[];
 }
 
 /**
- * Restore guideline locations as preview-only references in the Guidelines part.
- * Offsets refer to the carved text, so all existing char counts, rounded token
- * shares, and section concatenation remain unchanged.
+ * Restore carved prompt lines as preview-only references in the part each was
+ * taken from. Offsets refer to the carved text, so all existing char counts,
+ * rounded token shares, and section concatenation remain unchanged.
  */
-function addGuidelineReferences(
+function addInjectedReferences(
 	parts: PromptPart[],
 	base: string,
 	carvedSpans: Span[],
-	guidelineSpans: GuidelineSpan[],
+	injectedSpans: InjectedSpan[],
 ): PromptPart[] {
-	if (guidelineSpans.length === 0) return parts;
+	if (injectedSpans.length === 0) return parts;
 	let offset = 0;
 	return parts.map((part) => {
 		const partStart = offset;
 		offset += part.text.length;
-		if (part.id !== "base-prompt:guidelines") return part;
+		const spans = injectedSpans.filter((span) => span.partId === part.id);
+		if (spans.length === 0) return part;
 		return {
 			...part,
-			guidelineReferences: [...guidelineSpans]
+			injectedReferences: spans
 				.sort((a, b) => a.start - b.start)
 				.map((span) => ({
 					offset: carve(base.slice(0, span.start), carvedSpans).length - partStart,
@@ -500,7 +531,7 @@ function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 	const sections = allocateSectionTokens(parts.map((part) => ({
 		label: part.label,
 		text: part.text,
-		guidelineReferences: part.guidelineReferences,
+		injectedReferences: part.injectedReferences,
 	})));
 	return {
 		...item,
@@ -508,7 +539,7 @@ function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 		children: parts.map((part, index) => ({
 			...createItem(part.id, part.kind, PI_SOURCE, part.label, part.text),
 			tokens: sections[index]?.tokens ?? 0,
-			guidelineReferences: part.guidelineReferences,
+			injectedReferences: part.injectedReferences,
 		})),
 	};
 }

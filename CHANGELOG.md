@@ -6,7 +6,7 @@
 * `[context]` Align category ordering and naming with Pi terminology - [#2](https://github.com/dimk90/pi-context-view/issues/2).
 * `[injections]` Align item naming with the category names in the injections view.
 * `[injections]` Add sub-items for `System Prompt`: `Preamble`, `Available Tools`, `Guidelines`, etc - [#2](https://github.com/dimk90/pi-context-view/issues/2)..
-* `[injections]` Show injected extension guidelines in `System Prompt`, highlighted and marked `<- <extension>`.
+* `[injections]` Show injected stuff by extensions in `System Prompt`, highlighted and marked `<- <extension>`.
 * `[usage]` Show `System Prompt` parts as sections of one preview block.
 * `[config]` Rename `memoryColor` to `instructionFilesColor`, keeping the old name as an alias.
 * `[config]` Rename `systemToolsColor` to `builtInToolsColor`, keeping the old name as an alias.

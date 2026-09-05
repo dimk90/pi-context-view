@@ -55,13 +55,13 @@ export interface JsonSpan {
 	readonly end: number;
 }
 
-/** A rendered guideline counted by its owning tool, inserted only for prompt previews. */
-export interface GuidelineReference {
+/** A rendered prompt line counted by its owning tool, inserted only for prompt previews. */
+export interface InjectedReference {
 	/** Insertion offset in the containing item's or section's counted text, in prompt order. */
 	readonly offset: number;
-	/** Captured bullet including its leading line break; never additional counted text. */
+	/** Captured line including its leading line break; never additional counted text. */
 	readonly text: string;
-	/** Stable id of the tool item that counts this bullet. */
+	/** Stable id of the tool item that counts this line. */
 	readonly itemId: string;
 	readonly source: InjectionSource;
 }
@@ -76,8 +76,8 @@ export interface InjectionSection {
 	readonly tokens: number;
 	/** Serialized JSON inside `text`, e.g. a tool's parameter schema. */
 	readonly jsonSpan?: JsonSpan;
-	/** Preview-only guideline insertions; their owning tools count them instead. */
-	readonly guidelineReferences?: readonly GuidelineReference[];
+	/** Preview-only extension prompt lines; their owning tools count them instead. */
+	readonly injectedReferences?: readonly InjectedReference[];
 }
 
 /** One measured context injection. */
@@ -98,8 +98,8 @@ export interface InjectionItem {
 	readonly jsonSpan?: JsonSpan;
 	/** Labeled parts of `text`, e.g. a tool's prompt lines and definition; never extra tokens. */
 	readonly sections?: readonly InjectionSection[];
-	/** Preview-only guideline insertions for a standalone Guidelines child. */
-	readonly guidelineReferences?: readonly GuidelineReference[];
+	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
+	readonly injectedReferences?: readonly InjectedReference[];
 	/** True when a message exists only in the transformed provider context, not the session branch. */
 	readonly contextOnly?: boolean;
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
@@ -237,20 +237,20 @@ function copyItem(item: InjectionItem): InjectionItem {
 		...item,
 		source: { ...item.source },
 		jsonSpan: copyJsonSpan(item.jsonSpan),
-		guidelineReferences: copyGuidelineReferences(item.guidelineReferences),
+		injectedReferences: copyInjectedReferences(item.injectedReferences),
 		sections: item.sections?.map((section) => ({
 			...section,
 			jsonSpan: copyJsonSpan(section.jsonSpan),
-			guidelineReferences: copyGuidelineReferences(section.guidelineReferences),
+			injectedReferences: copyInjectedReferences(section.injectedReferences),
 		})),
 		children: item.children?.map((child) => copyItem(child)),
 	};
 }
 
 /** Own reference records and their nested provenance without adding their text to totals. */
-function copyGuidelineReferences(
-	references: readonly GuidelineReference[] | undefined,
-): GuidelineReference[] | undefined {
+function copyInjectedReferences(
+	references: readonly InjectedReference[] | undefined,
+): InjectedReference[] | undefined {
 	return references?.map((reference) => ({ ...reference, source: { ...reference.source } }));
 }
 

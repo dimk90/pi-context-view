@@ -32,7 +32,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { guidelineDescriptionLines, previewBodyLines } from "./section-preview.ts";
+import { injectedDescriptionLines, previewBodyLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 /**
@@ -264,7 +264,7 @@ export class InjectionsView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const wrapped = this.getPreviewLines(width, item);
-		const descriptionLines = guidelineDescriptionLines(theme, [item], {
+		const descriptionLines = injectedDescriptionLines(theme, [item], {
 			width,
 			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
 			contentLineCount: wrapped.length,

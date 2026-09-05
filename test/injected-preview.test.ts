@@ -8,11 +8,14 @@ import { DEFAULT_CATEGORY_COLORS, THEME_COLOR_NAMES } from "../src/config.ts";
 import { analyzeSystemPrompt } from "../src/measure.ts";
 import { buildSnapshot, type InitialSnapshot } from "../src/model.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
-import { guidelineDescriptionLines, previewBodyLines } from "../src/ui/section-preview.ts";
+import { injectedDescriptionLines, previewBodyLines } from "../src/ui/section-preview.ts";
 import { UsageView } from "../src/ui/usage-view.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
 
 const GUIDELINE = "Use search to verify claims";
+const SNIPPET = "Search the web";
+/** Line pi renders for the extension tool under "Available tools:". */
+const SNIPPET_LINE = `search: ${SNIPPET}`;
 const SOURCE = "npm:web";
 const DESCRIPTION = "Highlighted parts are injected by extensions into pi’s system prompt. " +
 	"They are excluded from the System Prompt token count and included in the injecting extension’s count.";
@@ -26,12 +29,14 @@ function createTheme(): Theme {
 	}, "256color");
 }
 
-/** Measured prompt with a short attributed bullet and enough native lines to exercise caps. */
-function createSnapshot(nativeLineCount = 16): InitialSnapshot {
+/** Measured prompt with short attributed lines and enough native lines to exercise caps. */
+function createSnapshot(nativeLineCount = 16, withSnippet = false): InitialSnapshot {
 	const nativeLines = Array.from({ length: nativeLineCount }, (_, index) => `- Native rule ${index}`).join("\n");
-	const prompt = `Preamble\n\nGuidelines:\n- ${GUIDELINE}\n${nativeLines}`;
+	const toolsBlock = withSnippet ? `\nAvailable tools:\n- ${SNIPPET_LINE}\n- read: Read files\n` : "";
+	const prompt = `Preamble\n${toolsBlock}\nGuidelines:\n- ${GUIDELINE}\n${nativeLines}`;
 	const items = analyzeSystemPrompt(prompt, { cwd: "/fixture" }, [{
 		name: "search", description: "Search", parametersJson: "{}",
+		snippet: withSnippet ? SNIPPET : undefined,
 		guidelines: [GUIDELINE], source: SOURCE,
 	}]);
 	return buildSnapshot(items, "real-turn", new Date("2026-07-10T12:00:00Z"));
@@ -43,13 +48,13 @@ function plain(lines: readonly string[]): string {
 }
 
 /** Parent and standalone previews share these semantic colors and a single fixed accounting footer. */
-function assertAttribution(lines: readonly string[], theme: Theme): void {
+function assertAttribution(lines: readonly string[], theme: Theme, text = GUIDELINE): void {
 	assertFooter(lines, theme);
-	assert.match(plain(lines), /- Use search to verify claims -> npm:web/);
-	const bullet = lines.find((line) => line.includes(GUIDELINE));
-	assert.ok(bullet?.includes(theme.fg("customMessageLabel", `- ${GUIDELINE}`)));
-	assert.ok(bullet?.includes(theme.fg("dim", " -> ")));
-	assert.ok(bullet?.includes(theme.fg("mdLink", SOURCE)));
+	assert.ok(plain(lines).includes(`- ${text} <- ${SOURCE}`));
+	const rendered = lines.find((line) => line.includes(text));
+	assert.ok(rendered?.includes(theme.fg("syntaxNumber", `- ${text}`)));
+	assert.ok(rendered?.includes(theme.fg("borderMuted", " <- ")));
+	assert.ok(rendered?.includes(theme.fg("mdLink", SOURCE)));
 }
 
 /** The complete dim explanation sits outside the content/gutter and directly above hints. */
@@ -100,7 +105,7 @@ test("Injections shows attributed guidelines only after Enter, for parent and ch
 	assertAttribution(view.render(120), theme);
 
 	const originalFg = theme.fg.bind(theme);
-	theme.fg = (color, text) => originalFg(color === "customMessageLabel" ? "warning" : color, text);
+	theme.fg = (color, text) => originalFg(color === "syntaxNumber" ? "warning" : color, text);
 	view.invalidate();
 	assertAttribution(view.render(120), theme);
 	view.handleInput("\u001b");
@@ -113,7 +118,27 @@ test("Injections shows attributed guidelines only after Enter, for parent and ch
 	view.handleInput("\u001b[F"); // Last tool
 	view.handleInput("\r");
 	assert.match(plain(view.render(120)), /- Use search to verify claims/);
-	assert.doesNotMatch(plain(view.render(120)), /Highlighted parts|-> npm:web/);
+	assert.doesNotMatch(plain(view.render(120)), /Highlighted parts|<- npm:web/);
+});
+
+test("Injections attributes Available Tools snippets in the parent and standalone child", () => {
+	const theme = createTheme();
+	const view = new InjectionsView(theme, { snapshot: createSnapshot(16, true) }, () => {}, () => 40);
+	view.handleInput("j"); // System Prompt
+	view.handleInput("\r");
+	const parent = view.render(120);
+	assertAttribution(parent, theme, SNIPPET_LINE);
+	assertAttribution(parent, theme);
+	// Pi's own bullet keeps the plain body treatment in the same part.
+	assert.match(plain(parent), /- read: Read files/);
+	assert.equal(plain(parent).match(/Highlighted parts/g)?.length, 1);
+	view.handleInput("\u001b");
+	view.handleInput("j"); // Preamble
+	view.handleInput("j"); // Available Tools
+	view.handleInput("\r");
+	const child = view.render(120);
+	assertAttribution(child, theme, SNIPPET_LINE);
+	assert.doesNotMatch(plain(child), /verify claims/);
 });
 
 test("Usage retains attribution inside one capped block and its full-content level", () => {
@@ -161,7 +186,7 @@ test("reference text and source are sanitized before coloring and wrapping", () 
 	const theme = createTheme();
 	const lines = previewBodyLines(theme, {
 		text: "Guidelines:\n- Native rule",
-		guidelineReferences: [{
+		injectedReferences: [{
 			offset: "Guidelines:".length,
 			text: "\n- A\u001b[2JB\u001b]52;c;clipboard-secret\u0007\n  continuation\t界",
 			itemId: "tool:unsafe",
@@ -173,7 +198,7 @@ test("reference text and source are sanitized before coloring and wrapping", () 
 	assert.match(plain(lines), /npm:web owner/);
 	assert.ok(lines.every((line) => visibleWidth(line) <= 30));
 	const continuation = lines.find((line) => line.includes("continuation"));
-	assert.ok(continuation?.includes(theme.getFgAnsi("customMessageLabel")), "multiline guidelines keep their color");
+	assert.ok(continuation?.includes(theme.getFgAnsi("syntaxNumber")), "multiline references keep their color");
 	assert.doesNotMatch(plain(lines), /Highlighted parts|Arrow-marked/);
 });
 
@@ -241,18 +266,18 @@ test("attribution footer gives short content every row and never truncates on ti
 	const theme = createTheme();
 	const content = {
 		text: "Guidelines:",
-		guidelineReferences: [{
+		injectedReferences: [{
 			offset: 11, text: "\n- Use search", itemId: "tool:search",
 			source: { id: "web", label: SOURCE, native: false },
 		}],
 	};
 	// At 120 columns the footer occupies two wrapped lines and its preceding blank row
-	for (const contentLineCount of [1, 2, 9, 10, 11, 80]) {
-		const required = 3 + Math.min(10, contentLineCount) + (contentLineCount > 10 ? 1 : 0);
+	for (const contentLineCount of [1, 2, 21, 22, 23, 80]) {
+		const required = 3 + Math.min(22, contentLineCount) + (contentLineCount > 22 ? 1 : 0);
 		const layout = { width: 120, contentLineCount, availableRows: required };
-		assert.equal(plain(guidelineDescriptionLines(theme, [content], layout)).replace(/\s+/g, " ").trim(), DESCRIPTION);
+		assert.equal(plain(injectedDescriptionLines(theme, [content], layout)).replace(/\s+/g, " ").trim(), DESCRIPTION);
 		for (let availableRows = -5; availableRows < required; availableRows++) {
-			assert.deepEqual(guidelineDescriptionLines(theme, [content], { ...layout, availableRows }), []);
+			assert.deepEqual(injectedDescriptionLines(theme, [content], { ...layout, availableRows }), []);
 		}
 	}
 });

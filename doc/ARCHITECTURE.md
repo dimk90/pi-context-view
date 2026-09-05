@@ -93,13 +93,14 @@ Keep semantics in typed model fields rather than display labels:
   bullet to the first tool that declares it in pi's active-tool order, so a
   bullet several tools share is measured once and pi's own bullets stay in the
   base prompt;
-- retain each carved extension guideline's original position and tool-source
-  provenance as a typed, owned preview reference on the System Prompt's
-  Guidelines section and standalone child; references restore prompt order for
-  inspection but never enter the base item's counted text, character count, or
-  token shares. The owning tool still carries and counts its Guidelines section.
-  Only actually rendered, exactly matched bullets get references; absent bullets
-  and guidelines suppressed by a custom system prompt do not;
+- retain each carved extension prompt line's original position and tool-source
+  provenance as a typed, owned preview reference on the System Prompt section and
+  standalone child it was carved from — `Available Tools` snippets and
+  `Guidelines` bullets alike; references restore prompt order for inspection but
+  never enter the base item's counted text, character count, or token shares. The
+  owning tool still carries and counts those sections. Only actually rendered,
+  exactly matched lines get references; absent lines and lines suppressed by a
+  custom system prompt do not;
 - represent chained prompt edits as one unattributable extension aggregate;
 - treat `customType` as a message type, not necessarily a package identity;
 - detect non-custom context-only injections by diffing against the session branch;
