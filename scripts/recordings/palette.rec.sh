@@ -23,7 +23,7 @@ if [[ ! $PALETTE =~ ^(default|terrain|rainbow)$ ]]; then
 fi
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 1
 
 
 ## Constants
@@ -110,8 +110,8 @@ SetTheme 'asciinema'
 SetOptimize 'off'
 SetLoop 'off'
 
-# Configure clean up chain for the case of sudden failure
-trap '_svhs_cleanup; remove_agent_mirror' EXIT
+# Keep s-vhs teardown intact and remove the mirror even if recording fails
+Finally 'remove_agent_mirror'
 
 # Change Pi config directory to temporary dir
 mirror_agent_dir "$PALETTE" || exit 1

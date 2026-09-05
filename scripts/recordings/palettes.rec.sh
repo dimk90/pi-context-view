@@ -13,7 +13,7 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 1
 
 
 ## Constants
@@ -119,8 +119,8 @@ SetLastFrameDuration "$HOLD_SECONDS"
 # The GIF is committed to the repository, so shrink it losslessly
 SetOptimize 'on'
 
-# Configure clean up chain for the case of sudden failure
-trap '_svhs_cleanup; remove_agent_mirror' EXIT
+# Keep s-vhs teardown intact and remove the mirror even if recording fails
+Finally 'remove_agent_mirror'
 
 # Create temporary dir with custom config for pi-context-view
 mirror_agent_dir || exit 1

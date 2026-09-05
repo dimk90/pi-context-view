@@ -13,7 +13,7 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 1
 
 
 ## Constants
@@ -72,7 +72,7 @@ Wait 'Context Injections'
 Sleep 2
 
 # Walk the items
-Down 21 0.07
+Down 22 0.07
 Sleep 1
 
 # Preview the selected item, then close
