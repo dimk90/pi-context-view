@@ -282,6 +282,38 @@ test("computeUsage carries measured tool parts into tool preview entries", () =>
 	assert.equal(promptEntry?.sections, undefined);
 });
 
+test("computeUsage keeps System Prompt parts as sections of one entry, not separate blocks", () => {
+	const preamble = "You are an expert coding assistant.";
+	const guidelines = "\nGuidelines:\n- Be concise";
+	const basePrompt: InjectionItem = {
+		...item("base", "base-prompt", 13),
+		text: `${preamble}${guidelines}`,
+		sections: [
+			{ label: "Preamble", text: preamble, tokens: 9 },
+			{ label: "Guidelines", text: guidelines, tokens: 4 },
+		],
+		children: [
+			{ ...item("base-prompt:preamble", "base-prompt", 9), label: "Preamble", text: preamble },
+			{ ...item("base-prompt:guidelines", "base-prompt", 4), label: "Guidelines", text: guidelines },
+		],
+	};
+	const usage = computeUsage({
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-11T12:00:00Z"),
+			groups: [{ source: { id: "pi", label: "pi", native: true }, items: [basePrompt], totalTokens: 13 }],
+			totalTokens: 13,
+		},
+		messages: [],
+	});
+
+	// Prompt parts break one preview block down; they never become blocks of their own.
+	const entries = collectPreviewEntries(category(usage.categories, "system-prompt"));
+	assert.equal(entries.length, 1);
+	assert.equal(entries[0]?.tokens, 13);
+	assert.deepEqual(entries[0]?.sections?.map((section) => section.label), ["Preamble", "Guidelines"]);
+});
+
 test("computeUsage drops empty categories and aggregates duplicate tool/custom message sources", () => {
 	const messages: ContextEvent["messages"] = [
 		{

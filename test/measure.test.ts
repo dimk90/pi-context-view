@@ -116,7 +116,6 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 			"tool:builtin",
 			"context-files",
 			"skills",
-			"append-prompt",
 			"prompt-addition:aggregate",
 		],
 	);
@@ -125,7 +124,6 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	assert.equal(base?.label, "System Prompt");
 	assert.doesNotMatch(base?.text ?? "", /project_context|project_instructions|Project-specific instructions/);
 	assert.doesNotMatch(base?.text ?? "", /available_skills|The following skills/);
-	assert.doesNotMatch(base?.text ?? "", /Current date|Current working directory/);
 	const instructions = items.find((entry) => entry.id === "context-files");
 	assert.equal(instructions?.label, "Instruction Files (1)");
 	const contextFile = findItem(items, "context-file:./AGENTS.md");
@@ -209,6 +207,61 @@ test("analyzeSystemPrompt breaks tool items into reconciling prompt and definiti
 	assert.equal(builtin?.sections?.[0]?.tokens, builtin?.tokens);
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.doesNotMatch(base?.text ?? "", /Cite sources|search: Search the web/);
+});
+
+test("analyzeSystemPrompt breaks the System Prompt into the parts pi assembles it from", () => {
+	const append = "APPENDED RULE";
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		selectedTools: ["read", "bash"],
+		toolSnippets: { read: "Read files", bash: "Run commands" },
+		appendSystemPrompt: append,
+		contextFiles: [{ path: "./AGENTS.md", content: "Project rules" }],
+	});
+	const tools: ToolSlice[] = [{
+		name: "read",
+		description: "Read files",
+		parametersJson: "{}",
+		snippet: "Read files",
+		guidelines: [],
+		source: "builtin",
+	}];
+
+	const items = analyzeSystemPrompt(systemPrompt, {
+		cwd: CWD,
+		appendSystemPrompt: append,
+		contextFilePaths: ["./AGENTS.md"],
+	}, tools);
+	const base = items.find((entry) => entry.id === "base-prompt");
+	const parts = ["Preamble", "Available Tools", "Guidelines", "Documentation", "Appended Prompt", "Current Dir"];
+	assert.deepEqual(base?.children?.map((child) => child.label), parts);
+	assert.deepEqual(base?.sections?.map((section) => section.label), parts);
+	assert.deepEqual(
+		base?.children?.map((child) => child.id),
+		[
+			"base-prompt:preamble",
+			"base-prompt:available-tools",
+			"base-prompt:guidelines",
+			"base-prompt:documentation",
+			"base-prompt:appended",
+			"base-prompt:current-dir",
+		],
+	);
+	// Parts break the prompt down: they partition its text and its estimate.
+	assert.equal(base?.sections?.map((section) => section.text).join(""), base?.text);
+	assert.equal(base?.sections?.reduce((sum, section) => sum + section.tokens, 0), base?.tokens);
+	assert.equal(base?.children?.reduce((sum, child) => sum + child.tokens, 0), base?.tokens);
+	assert.deepEqual(
+		base?.children?.map((child) => child.tokens),
+		base?.sections?.map((section) => section.tokens),
+	);
+	// The blocks pi renders keep the lines it puts there, footer included.
+	assert.match(findItem(items, "base-prompt:available-tools")?.text ?? "", /^\nAvailable tools:\n- read: Read files/);
+	assert.match(findItem(items, "base-prompt:guidelines")?.text ?? "", /^\nGuidelines:\n- /);
+	assert.match(findItem(items, "base-prompt:documentation")?.text ?? "", /^\nPi documentation /);
+	assert.equal(findItem(items, "base-prompt:appended")?.text, append);
+	assert.equal(findItem(items, "base-prompt:current-dir")?.text, `\nCurrent working directory: ${CWD}`);
+	assert.doesNotMatch(findItem(items, "base-prompt:preamble")?.text ?? "", /Available tools:|Guidelines:/);
 });
 
 test("analyzeSystemPrompt exposes each aggregate child as a labeled part carrying its marked JSON", () => {
@@ -390,10 +443,9 @@ test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt
 		contextFilePaths: [filePath],
 	}, tools);
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
-	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.equal(search?.text, "search: Search\n{}");
 	assert.deepEqual(search?.sections?.map((section) => section.label), ["Definition"]);
-	assert.equal(base?.text.trim(), "CUSTOM PROMPT");
+	assert.equal(findItem(items, "base-prompt:preamble")?.text.trim(), "CUSTOM PROMPT");
 });
 
 test("analyzeSystemPrompt measures a replaced prompt as the content pi actually sends", () => {
@@ -446,8 +498,13 @@ test("analyzeSystemPrompt measures a replaced prompt as the content pi actually 
 	}, tools);
 
 	// System Prompt carries the replacement text itself, not pi's replaced base prompt.
-	assert.equal(findItem(items, "base-prompt")?.text.trim(), customPrompt);
-	assert.equal(findItem(items, "append-prompt")?.text, "APPENDED RULE");
+	assert.equal(findItem(items, "base-prompt:preamble")?.text.trim(), customPrompt);
+	assert.equal(findItem(items, "base-prompt:appended")?.text, "APPENDED RULE");
+	// A replacement carries none of pi's blocks, so no part claims to be one.
+	assert.deepEqual(
+		findItem(items, "base-prompt")?.children?.map((child) => child.label),
+		["Preamble", "Appended Prompt", "Current Dir"],
+	);
 	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
 	assert.equal(findItem(items, "skills")?.children?.length, 1);
 	// Snippet and guideline lines pi never rendered stay unmeasured for every tool.
@@ -466,7 +523,7 @@ test("analyzeSystemPrompt recognizes the pi 0.81 CWD-only footer", () => {
 
 	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD });
 	const base = items.find((entry) => entry.id === "base-prompt");
-	assert.equal(base?.text, "BASE PROMPT");
+	assert.equal(base?.text, `BASE PROMPT\nCurrent working directory: ${CWD}`);
 	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
 });
 
@@ -484,6 +541,9 @@ test("analyzeSystemPrompt rejects CWD lines that are not the exact footer line",
 	assert.equal(items.length, 1);
 	assert.equal(items[0]?.id, "base-prompt");
 	assert.equal(items[0]?.text, systemPrompt);
+	// One part is no breakdown: an undivided prompt exposes no sub-items.
+	assert.equal(items[0]?.children, undefined);
+	assert.equal(items[0]?.sections, undefined);
 });
 
 test("analyzeSystemPrompt finds the footer in real buildSystemPrompt output", () => {
@@ -503,9 +563,9 @@ test("analyzeSystemPrompt finds the footer in real buildSystemPrompt output", ()
 	const items = analyzeSystemPrompt(systemPrompt + extensionAddition, options);
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.ok(base !== undefined);
-	assert.doesNotMatch(base.text, /Current working directory/);
+	assert.equal(findItem(items, "base-prompt:current-dir")?.text, `\nCurrent working directory: ${CWD}`);
 	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
-	assert.equal(items.find((entry) => entry.id === "append-prompt")?.text, append);
+	assert.equal(findItem(items, "base-prompt:appended")?.text, append);
 	assert.equal(items.find((entry) => entry.id === "prompt-addition:aggregate")?.text, extensionAddition);
 });
 

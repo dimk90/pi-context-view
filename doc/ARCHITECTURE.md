@@ -83,6 +83,11 @@ Follow [THINKING.md](THINKING.md) for reasoning counts, opaque signatures, model
 Keep semantics in typed model fields rather than display labels:
 
 - derive tool ownership from `ToolInfo.sourceInfo`;
+- split pi's own system prompt into the parts it assembles — the preamble, the
+  blocks it renders under `Available tools:`, `Guidelines:`, and
+  `Pi documentation`, any `--append-system-prompt` text, and the
+  working-directory footer pi sends with every request — as parts that
+  concatenate back to the item text and share out its estimate;
 - carve a tool's prompt lines only from the blocks pi renders them into, and
   give each rendered guideline bullet to the first tool that declares it in
   pi's active-tool order, so a bullet several tools share is measured once and

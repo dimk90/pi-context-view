@@ -4,10 +4,15 @@
 
 ### Changed
 * `[context]` Align category ordering and naming with Pi terminology - [#2](https://github.com/dimk90/pi-context-view/issues/2).
-* `[injections]` Align items naming with category names in context view.
-* `[config]` Rename `memoryColor` to `instructionFilesColor`, keep the old name as alias.
-* `[config]` Rename `systemToolsColor` to `builtInToolsColor`, keep the old name as alias.
+* `[injections]` Align item naming with the category names in the context view.
+* `[injections]` Add sub-items for `System Prompt`: `Preamble`, `Available Tools`, `Guidelines`, etc.
+* `[usage]` Show `System Prompt` parts as sections of one preview block.
+* `[config]` Rename `memoryColor` to `instructionFilesColor`, keeping the old name as an alias.
+* `[config]` Rename `systemToolsColor` to `builtInToolsColor`, keeping the old name as an alias.
 * `[package]` Bump dev dependencies to Pi 0.85.0.
+
+### Fixed
+* `[context]` Count tokens for `Current working directory` footer.
 
 
 ## `[v0.5.0]` - 30.08.2026

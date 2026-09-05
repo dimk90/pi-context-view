@@ -10,9 +10,13 @@
  * - tool prompt lines: the bullet blocks under "Available tools:" and
  *   "Guidelines:", where pi renders each distinct bullet exactly once, in
  *   active-tool order (verified against pi 0.84.3)
- * - base prompt ends before the "Current working directory" footer (pi 0.81),
- *   optionally preceded by a "Current date" line (pi 0.80)
- *   → anything after that footer was appended by before_agent_start handlers.
+ * - base prompt blocks: the "Available tools:", "Guidelines:", and
+ *   "Pi documentation" headers pi emits in that order, which split its own
+ *   prompt into the parts System Prompt presents as sub-items
+ * - the "Current working directory" footer (pi 0.81), optionally preceded by a
+ *   "Current date" line (pi 0.80), closes pi's own prompt: pi sends it with
+ *   every request, so it is measured as the Current Dir part, and anything
+ *   after it was appended by before_agent_start handlers.
  */
 import {
 	AGGREGATE_SOURCE_ID,
@@ -34,6 +38,25 @@ const AGGREGATE_SOURCE: InjectionSource = {
 	label: "extensions (aggregate)",
 	native: false,
 };
+
+/** Header opening the block pi renders one bullet per visible tool into. */
+const AVAILABLE_TOOLS_HEADER = "\nAvailable tools:\n";
+/** Header opening the block pi renders tool guideline bullets into. */
+const GUIDELINES_HEADER = "\nGuidelines:\n";
+
+/** Part names shared by a tool's carved prompt lines and pi's own prompt blocks. */
+const AVAILABLE_TOOLS_LABEL = "Available Tools";
+const GUIDELINES_LABEL = "Guidelines";
+
+/** Leading part of pi's prompt, before the first block header pi renders. */
+const PREAMBLE_BLOCK = { id: "base-prompt:preamble", label: "Preamble" };
+
+/** Blocks pi renders into its own base prompt, in emission order. */
+const BASE_PROMPT_BLOCKS = [
+	{ id: "base-prompt:available-tools", label: AVAILABLE_TOOLS_LABEL, header: AVAILABLE_TOOLS_HEADER },
+	{ id: "base-prompt:guidelines", label: GUIDELINES_LABEL, header: GUIDELINES_HEADER },
+	{ id: "base-prompt:documentation", label: "Documentation", header: "\nPi documentation" },
+];
 
 /** One visible skill before pi adds XML transport framing. */
 export interface SkillSlice {
@@ -88,9 +111,17 @@ export function analyzeSystemPrompt(
 	measureTools(usesCustomPrompt ? "" : base, tools, items, carvedSpans);
 	measureContextFiles(base, options, items, carvedSpans);
 	measureSkills(base, options, items, carvedSpans);
-	measureAppendedPrompt(base, options, items, carvedSpans);
+	const appended = carveAppendedPrompt(base, options, carvedSpans);
 
-	items.unshift(createItem("base-prompt", "base-prompt", PI_SOURCE, SYSTEM_PROMPT_LABEL, carve(base, carvedSpans)));
+	const parts = splitBasePromptParts(carve(base, carvedSpans), usesCustomPrompt);
+	if (appended !== undefined) {
+		parts.push({ id: "base-prompt:appended", kind: "append-prompt", label: "Appended Prompt", text: appended });
+	}
+	if (footer !== undefined) {
+		const text = systemPrompt.slice(footer.start, footer.end);
+		parts.push({ id: "base-prompt:current-dir", kind: "base-prompt", label: "Current Dir", text });
+	}
+	items.unshift(createSystemPromptItem(parts));
 
 	if (footer !== undefined && footer.end < systemPrompt.length) {
 		const added = systemPrompt.slice(footer.end);
@@ -182,12 +213,12 @@ function carveToolPromptSections(
 	const snippet = tool.snippet === undefined
 		? undefined
 		: carveBlockLine(carver, carver.toolsBlock, `\n- ${tool.name}: ${tool.snippet}`);
-	if (snippet !== undefined) sections.push({ label: "Available Tools", text: snippet });
+	if (snippet !== undefined) sections.push({ label: AVAILABLE_TOOLS_LABEL, text: snippet });
 	let bullets = "";
 	for (const guideline of ownedGuidelines) {
 		bullets += carveBlockLine(carver, carver.guidelinesBlock, `\n- ${guideline}`) ?? "";
 	}
-	if (bullets.length > 0) sections.push({ label: "Guidelines", text: bullets });
+	if (bullets.length > 0) sections.push({ label: GUIDELINES_LABEL, text: bullets });
 	return sections;
 }
 
@@ -205,8 +236,8 @@ interface PromptCarver {
 function createPromptCarver(base: string, carvedSpans: Span[]): PromptCarver {
 	return {
 		base,
-		toolsBlock: findBulletBlock(base, "\nAvailable tools:\n"),
-		guidelinesBlock: findBulletBlock(base, "\nGuidelines:\n"),
+		toolsBlock: findBulletBlock(base, AVAILABLE_TOOLS_HEADER),
+		guidelinesBlock: findBulletBlock(base, GUIDELINES_HEADER),
 		carvedSpans,
 	};
 }
@@ -328,24 +359,84 @@ function measureSkills(
 	items.push(createAggregateItem("skills", "skills", PI_SOURCE, `${SKILLS_LABEL} (${children.length})`, children));
 }
 
-/** Carve the --append-system-prompt text out of the base prompt when present. */
-function measureAppendedPrompt(
+/**
+ * Carve the --append-system-prompt text out of the base prompt so it becomes a
+ * labeled part of System Prompt instead of free text inside pi's own blocks.
+ */
+function carveAppendedPrompt(
 	base: string,
 	options: PromptOptionsSlice,
-	items: InjectionItem[],
 	carvedSpans: Span[],
-): void {
+): string | undefined {
 	const append = options.appendSystemPrompt;
-	if (append === undefined || append.length === 0) return;
+	if (append === undefined || append.length === 0) return undefined;
 	const generatedStarts = [findContextSectionSpan(base)?.start, findSkillsSpan(base)?.start]
 		.filter((start): start is number => start !== undefined);
 	const generatedStart = generatedStarts.length === 0 ? base.length : Math.min(...generatedStarts);
 	const beforeGeneratedSections = Math.max(0, generatedStart - append.length);
 	const expectedStart = base.lastIndexOf(append, beforeGeneratedSections);
 	const start = expectedStart === -1 ? base.lastIndexOf(append) : expectedStart;
-	if (start === -1) return;
-	items.push(createItem("append-prompt", "append-prompt", PI_SOURCE, "appended system prompt", append));
+	if (start === -1) return undefined;
 	carvedSpans.push({ start, end: start + append.length });
+	return append;
+}
+
+/** One labeled part of the System Prompt item, before it receives its token share. */
+interface PromptPart {
+	readonly id: string;
+	readonly kind: InjectionKind;
+	readonly label: string;
+	readonly text: string;
+}
+
+/**
+ * Split pi's own prompt at the block headers it renders deterministically, so
+ * the tool list, guidelines, and documentation it already carries become
+ * visible parts. Text before the first header opens the list as the preamble.
+ * A --system-prompt replacement carries none of pi's blocks, so it stays one
+ * undivided preamble.
+ */
+function splitBasePromptParts(base: string, usesCustomPrompt: boolean): PromptPart[] {
+	const parts: PromptPart[] = [];
+	let block = PREAMBLE_BLOCK;
+	let start = 0;
+	if (!usesCustomPrompt) {
+		for (const next of BASE_PROMPT_BLOCKS) {
+			const headerStart = base.indexOf(next.header, start);
+			if (headerStart === -1) continue;
+			appendPromptPart(parts, block, base.slice(start, headerStart));
+			block = next;
+			start = headerStart;
+		}
+	}
+	appendPromptPart(parts, block, base.slice(start));
+	return parts;
+}
+
+/** Record one pi-authored part, skipping a block pi rendered no text into. */
+function appendPromptPart(parts: PromptPart[], block: { id: string; label: string }, text: string): void {
+	if (text.length === 0) return;
+	parts.push({ id: block.id, kind: "base-prompt", label: block.label, text });
+}
+
+/**
+ * Build the System Prompt item from its labeled parts. Parts concatenate back to
+ * the item text and take cumulative shares of its estimate, so children break the
+ * item down without adding tokens. A prompt with one part stays undivided.
+ */
+function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
+	const text = parts.map((part) => part.text).join("");
+	const item = createItem("base-prompt", "base-prompt", PI_SOURCE, SYSTEM_PROMPT_LABEL, text);
+	if (parts.length < 2) return item;
+	const sections = allocateSectionTokens(parts.map((part) => ({ label: part.label, text: part.text })));
+	return {
+		...item,
+		sections,
+		children: parts.map((part, index) => ({
+			...createItem(part.id, part.kind, PI_SOURCE, part.label, part.text),
+			tokens: sections[index]?.tokens ?? 0,
+		})),
+	};
 }
 
 /** Build an initial-phase InjectionItem with derived char/token sizes. */

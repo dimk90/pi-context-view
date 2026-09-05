@@ -40,7 +40,8 @@ rows and values, and `dim` for deeper breakdowns. Selected labels and values use
 `accent` with no background. Subheaders are bold and use `mdHeading`.
 
 Preview content that decomposes into labeled parts — a tool's `Available Tools`,
-`Guidelines`, and `Definition` parts — renders every part under its own bold
+`Guidelines`, and `Definition` parts, the System Prompt's own blocks — renders
+every part under its own bold
 `syntaxKeyword` subheader followed by a muted ` · N tokens` share, with one blank
 row between parts. Parts keep `syntaxKeyword` rather than the usual `mdHeading`
 subheader color because they nest under item and entry headings that already
@@ -336,8 +337,10 @@ block so paging alone can reach `(1/n)` and `(n/n)`. Home/End select the first o
 last block.
 
 Indent content by two spaces after the gutter and separate blocks with one blank
-row. A tool entry renders its labeled parts inside the block under the shared
-subheader rules; its entry header keeps the whole tool estimate. In User
+row. An entry that carries labeled parts — a tool's prompt lines and definition,
+the System Prompt's blocks — renders them inside its own block under the shared
+subheader rules, never as separate blocks; its entry header keeps the whole
+estimate. In User
 Messages only, replace complete attached
 `<skill name="…">…</skill>` expansions with pi-colored `[skill] name` badges;
 leave malformed wrappers visible. This is a preview-only transformation, and
@@ -376,8 +379,12 @@ label on separate lines with one empty row before and after the label.
 Present Initial contributions in this order:
 
 - `pi`
-  - System Prompt, including when `--system-prompt` replaced pi's default
-  - appended prompt content
+  - System Prompt, including when `--system-prompt` replaced pi's default,
+    with one child per part pi assembles it from, in prompt order: `Preamble`,
+    `Available Tools`, `Guidelines`, `Documentation`, `Appended Prompt`
+    (`--append-system-prompt` text), and `Current Dir`. Parts pi rendered no
+    text into are absent, and a replaced prompt keeps its whole body as the
+    single `Preamble` part.
   - `Instruction Files (M)`, with one child per context file,
     abbreviating home paths with `~`
   - Skills (K), with one content-only child per skill
@@ -389,9 +396,9 @@ Present Initial contributions in this order:
 
 Within the `pi` group, keep the fixed semantic order above and sort remaining
 prompt additions by size. Children break down parent contributions and do not
-increase totals. Measurements and previews exclude transport wrappers,
-section-introduction scaffolding, and the dynamic date/working-directory
-footer.
+increase totals. Measurements and previews exclude transport wrappers and
+section-introduction scaffolding; pi sends its working-directory footer with
+every request, so it is measured as the `Current Dir` part instead.
 
 Use dim `├─`, `└─`, and `│` connectors to show source, item, and constituent
 hierarchy. Align every token estimate to one shared column capped near the tree
@@ -421,8 +428,9 @@ support arrow and page scrolling. Escape returns to the same selected row. Raw
 text must never appear in row descriptions.
 
 A tool item renders its labeled parts under the shared subheader rules, in
-place of one undivided block of raw text. An item with children — Instruction
-Files, Skills, Built-in Tools — renders one part per child under the same rules,
+place of one undivided block of raw text. An item with children — System
+Prompt, Instruction Files, Skills, Built-in Tools — renders one part per child
+under the same rules,
 so children stay separated by a blank line instead of running together. The
 whole preview is full content, so marked JSON expands here, in an aggregate
 part as much as in a tool's own definition.
