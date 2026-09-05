@@ -11,7 +11,7 @@
 * `[injections]` Add sub-items for `System Prompt`: `Preamble`, `Available Tools`, `Guidelines`, etc - [#2](https://github.com/dimk90/pi-context-view/issues/2)..
 * `[injections]` Show injected stuff by extensions in `System Prompt`, highlighted and marked `<- <extension>`.
 * `[injections]` Attribute system-prompt additions to the injecting extension, marked `(guess)`.
-* `[usage]` Show `System Prompt` parts as sections of one preview block.
+* `[usage]` Open single-entry categories directly as uncapped, scrollable content.
 * `[config]` Rename `memoryColor` to `instructionFilesColor`, keeping the old name as an alias.
 * `[config]` Rename `systemToolsColor` to `builtInToolsColor`, keeping the old name as an alias.
 * `[package]` Bump dev dependencies to Pi 0.85.1.

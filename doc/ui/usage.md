@@ -208,11 +208,30 @@ defining `≈`, `~`, and `Encoded`; the per-block cap shrinks around it. Never
 render, preview, or log raw signature bytes. [THINKING.md](../THINKING.md) owns
 the estimate.
 
+### Single-entry categories
+
+When the selected category contains exactly one preview entry, including across
+its children, Enter opens that entry's full, uncapped content directly. This
+applies to every category, including System Prompt and individual Tool Output
+rows, regardless of content length. Keep the category summary and entry identity
+header, labeled parts, expanded marked JSON, skill badges, and applicable
+attribution or reasoning explanation. Token estimates remain unchanged.
+
+There is no selection gutter, block cap, hidden-line marker, or second Enter
+level. Use the full-content scrolling keys and hints below, with a line-progress
+counter only on overflow. Enter is a no-op; Escape returns directly to the same
+category selection and legend viewport. Reopening any category starts its content
+at the top. Width and height changes reflow and clamp the scroll position.
+
+System Prompt's sections therefore form one continuous scrollable preview, not
+selectable blocks.
+
 ### Blocks
 
-Treat each entry as one navigable block with a two-column gutter before its
-header and content. Mark every line of the selected block, including blank
-content lines, with an accent `┃` (`BLOCK_GUTTER`); leave the blank separator
+For a category with multiple entries, treat each entry as one navigable block
+with a two-column gutter before its header and content. Mark every line of the
+selected block, including blank content lines, with an accent `┃`
+(`BLOCK_GUTTER`); leave the blank separator
 row between blocks unmarked. Unselected blocks keep the same spacing with no
 gutter. When the stream overflows, show the selected block ordinal as a dim
 `(i/n)` counter.
@@ -228,7 +247,7 @@ block.
 
 Indent content two spaces after the gutter and separate blocks with one blank
 row. An entry carrying labeled parts — a tool's prompt lines and definition, the
-System Prompt's blocks — renders them inside its own block under the
+System Prompt's sections — renders them inside its own block under the
 [labeled part rules](previews.md#labeled-parts), never as separate blocks, and
 its entry header keeps the whole estimate. In User Messages only, replace
 complete attached `<skill name="…">…</skill>` expansions with pi-colored
@@ -237,9 +256,9 @@ still contributes to token estimates.
 
 ### Block cap and full content
 
-Cap each block so two whole blocks stay visible: derive the cap from terminal
-height and reserved footer rows — never from the viewport, whose counter row
-depends on the capped stream — and clamp it between `PREVIEW_BLOCK_MIN_LINES`
+In a multi-entry stream, cap each block so two whole blocks stay visible: derive
+the cap from terminal height and reserved footer rows — never from the viewport,
+whose counter row depends on the capped stream — and clamp it between `PREVIEW_BLOCK_MIN_LINES`
 (4) and `PREVIEW_BLOCK_MAX_LINES` (10) wrapped content lines. When content is
 hidden, left-align a dim `… +N lines` marker with the block content; for the
 selected block only, append dim ` · ` and accent `Enter - View Content`, never

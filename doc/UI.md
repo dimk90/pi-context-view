@@ -99,7 +99,9 @@ would otherwise hide theirs permanently.
 ## Interaction
 
 The Injections view has list and raw-preview states. The Usage view has a
-category legend, a category block stream, and a full-content view for one block.
+category legend and opens a single-entry category directly as full content.
+Multi-entry categories have a block stream with a full-content level for capped
+blocks; empty categories keep their explicit no-content state.
 
 - Up/Down and vim-style `k`/`j` navigate selectable rows or blocks and scroll
   full-content previews. Hints render the pair as one `↑↓/jk` label

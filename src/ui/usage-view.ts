@@ -1,8 +1,8 @@
 /**
  * Focused `/context usage` view: estimated context composition with a
  * proportional context-window map, pi-reported metadata, selectable category
- * rows, an Enter-opened chronological block stream, and uncapped content for
- * a selected block that hides lines.
+ * rows, direct uncapped content for single-entry categories, and chronological
+ * block streams with opt-in full content for multi-entry categories.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
@@ -234,8 +234,8 @@ export class UsageView {
 	public handleInput(data: string): void {
 		if (this.previewRow !== undefined) {
 			// Route on the same predicate the renderer uses, so keys always target the visible level.
-			if (this.openBlockEntry(this.previewRow) === undefined) this.handlePreviewInput(data);
-			else this.handleBlockInput(data);
+			if (this.getFullContentEntry(this.previewRow) === undefined) this.handlePreviewInput(data);
+			else this.handleContentInput(data);
 			return;
 		}
 		if (matchesKey(data, Key.escape) || data === "q") {
@@ -292,13 +292,13 @@ export class UsageView {
 		this.clearCache();
 	}
 
-	/** Render the active level: dashboard, category block stream, or one full block. */
+	/** Render the dashboard, a multi-entry block stream, or one entry's full content. */
 	private renderActiveMode(width: number, terminalRows: number): string[] {
 		const row = this.previewRow;
 		if (row === undefined) return this.renderDashboard(width, terminalRows);
-		const entry = this.openBlockEntry(row);
+		const entry = this.getFullContentEntry(row);
 		if (entry === undefined) return this.renderPreview(width, terminalRows, row);
-		return this.renderBlockView(width, terminalRows, row, entry);
+		return this.renderContentView(width, terminalRows, row, entry);
 	}
 
 	// === Dashboard mode ===
@@ -758,10 +758,11 @@ export class UsageView {
 		}
 	}
 
-	/** Full-block scrolling and return-to-blocks keys. */
-	private handleBlockInput(data: string): void {
+	/** Scroll full content and return to its category or originating block stream. */
+	private handleContentInput(data: string): void {
 		if (matchesKey(data, Key.escape) || data === "q") {
-			this.closeBlock();
+			if (this.openBlockIndex === undefined) this.closePreview();
+			else this.closeBlock();
 			return;
 		}
 		const wheel = parseWheelDirection(data);
@@ -784,7 +785,7 @@ export class UsageView {
 		}
 	}
 
-	/** Open the selected category's block stream; free space has no preview. */
+	/** Open the selected category, bypassing blocks when it has exactly one entry. */
 	private openPreview(): void {
 		const row = this.legendRows[this.navigator.selected];
 		if (row === undefined || row.type !== "category") return;
@@ -792,6 +793,7 @@ export class UsageView {
 		this.cachedPreviewEntries = undefined;
 		this.clearPreviewContent();
 		this.blockNavigator.reset();
+		this.previewScroller.reset();
 		this.clearCache();
 	}
 
@@ -862,8 +864,8 @@ export class UsageView {
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
-	/** Full, uncapped content of the open block below its identity header. */
-	private renderBlockView(
+	/** Full content below its identity header, opened directly or from a capped block. */
+	private renderContentView(
 		width: number,
 		terminalRows: number,
 		row: CategoryLegendRow,
@@ -872,11 +874,13 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const body = this.blockBodyLines(width, row, entry);
-		const descriptionLines = injectedDescriptionLines(theme, [entry], {
-			width,
-			availableRows: terminalRows - BLOCK_FIXED_LINE_COUNT,
-			contentLineCount: body.length,
-		});
+		const descriptionLines = row.rootId === "assistant-thinking" && this.openBlockIndex === undefined
+			? this.thinkingDescriptionLines(width, row)
+			: injectedDescriptionLines(theme, [entry], {
+				width,
+				availableRows: terminalRows - BLOCK_FIXED_LINE_COUNT,
+				contentLineCount: body.length,
+			});
 		const viewport = calculateViewport(
 			body.length, terminalRows, BLOCK_FIXED_LINE_COUNT, descriptionBlockRows(descriptionLines),
 		);
@@ -1024,10 +1028,11 @@ export class UsageView {
 		return lines;
 	}
 
-	/** Entry behind the open block, or undefined while the block view is inactive. */
-	private openBlockEntry(row: CategoryLegendRow): UsagePreviewEntry | undefined {
-		if (this.openBlockIndex === undefined) return undefined;
-		return this.previewEntries(row)[this.openBlockIndex];
+	/** The sole category entry or an explicitly opened block; undefined for a block stream. */
+	private getFullContentEntry(row: CategoryLegendRow): UsagePreviewEntry | undefined {
+		const entries = this.previewEntries(row);
+		if (entries.length === 1) return entries[0];
+		return this.openBlockIndex === undefined ? undefined : entries[this.openBlockIndex];
 	}
 
 	/** Collect and cache the immutable entries shared by preview body and description rendering. */
@@ -1077,6 +1082,11 @@ export class UsageView {
 				contentLineCount: Math.max(1, contentLineCount),
 			});
 		}
+		return this.thinkingDescriptionLines(width, row);
+	}
+
+	/** Keep reasoning notation visible when the category opens as blocks or direct full content. */
+	private thinkingDescriptionLines(width: number, row: CategoryLegendRow): string[] {
 		if (row.rootId !== "assistant-thinking") return [];
 		const hasInvisibleReasoning = this.previewEntries(row)
 			.some((entry) => entry.invisibleReasoning !== undefined);

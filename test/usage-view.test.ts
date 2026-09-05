@@ -705,16 +705,146 @@ test("UsageView opens a category block stream and skips full previews for comple
 	assert.equal(closed, true);
 });
 
+test("UsageView opens every single-entry category directly without a block cap or gutter", () => {
+	for (const { id, label } of usage().categories) {
+		for (const lineCount of [1, 30]) {
+			const text = Array.from({ length: lineCount }, (_, index) => `line ${index + 1}`).join("\n");
+			const singleton: ContextUsageSnapshot = {
+				...usage(42),
+				categories: [{
+					id, label, tokens: 42,
+					children: [{
+						id: "item:only", label: "Only entry", tokens: 42,
+						entries: [{ breadcrumb: ["Only entry"], tokens: 42, text: `\u001b]0;unsafe\u0007${text}` }],
+					}],
+				}],
+				estimatedTokens: 42,
+			};
+			const view = createView(createTheme(), { usage: singleton }, () => {}, () => 24);
+			const dashboard = view.render(80);
+			assert.doesNotMatch(stripSgr(dashboard.join("\n")), /line 1|unsafe/);
+			view.handleInput("\r");
+			const content = view.render(80);
+			const plain = stripSgr(content.join("\n"));
+			assert.match(plain, /\[Only entry\] 42/);
+			assert.match(plain, /    line 1\b/);
+			assert.match(plain, /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
+			assert.doesNotMatch(plain, /┃|… \+|Enter|unsafe|\u0007/);
+			view.handleInput("\r");
+			assert.deepEqual(view.render(80), content, `${id}: Enter never adds another level`);
+			view.handleInput("\u001b[F");
+			const ending = stripSgr(view.render(80).join("\n"));
+			assert.ok(ending.includes(`    line ${lineCount}\n`));
+			if (lineCount > 1) assert.match(ending, /\(30\/30\)/);
+			else assert.doesNotMatch(ending, /\(\d+\/\d+\)/);
+			view.handleInput("\u001b");
+			assert.deepEqual(view.render(80), dashboard, `${id}: Escape returns directly to the category`);
+			view.handleInput("\r");
+			assert.deepEqual(view.render(80), content, `${id}: reopening resets the scroll position`);
+		}
+	}
+});
+
+test("UsageView scrolls a single Tool Output child and restores its category selection across resize", () => {
+	const children = ["bash", "read"].map((name) => ({
+		id: `tool-result:${name}`, label: name, tokens: 100,
+		entries: [{
+			breadcrumb: [name], tokens: 100,
+			text: Array.from({ length: 60 }, (_, index) => `${name} line ${index + 1}`).join("\n"),
+		}],
+	}));
+	const scrollUsage: ContextUsageSnapshot = {
+		...usage(200),
+		categories: [{ id: "tool-output", label: "Tool Output", tokens: 200, children }],
+		estimatedTokens: 200,
+	};
+	let rows = 24;
+	const arrows = createView(createTheme(), { usage: scrollUsage }, () => {}, () => rows);
+	const aliases = createView(createTheme(), { usage: scrollUsage }, () => {}, () => rows, 4);
+	for (const view of [arrows, aliases]) {
+		view.render(80);
+		view.handleInput("j"); // The bash child has one entry; its parent still has two
+	}
+	const dashboard = aliases.render(80);
+	for (const view of [arrows, aliases]) view.handleInput("\r");
+	const top = aliases.render(80);
+	assert.deepEqual(arrows.render(80), top);
+	for (const [key, alias] of [["\u001b[B", "j"], ["\u001b[A", "k"], ["\u001b[6~", "\u0004"], ["\u001b[5~", "\u0015"]]) {
+		arrows.handleInput(key);
+		aliases.handleInput(alias);
+		assert.deepEqual(aliases.render(80), arrows.render(80));
+	}
+	assert.deepEqual(aliases.render(80), top);
+	for (let step = 0; step < 4; step++) arrows.handleInput("j");
+	aliases.handleInput("\u001b[<65;1;1M");
+	const scrolled = aliases.render(80);
+	assert.notDeepEqual(scrolled, top);
+	assert.deepEqual(scrolled, arrows.render(80), "the wheel scrolls by pi's configured line step");
+	aliases.handleInput("\r");
+	assert.deepEqual(aliases.render(80), scrolled);
+	aliases.handleInput("\u001b[<64;1;1M");
+	assert.deepEqual(aliases.render(80), top);
+
+	for (const width of [24, 40, 60, 80, 120]) {
+		for (rows of [12, 24, 40]) {
+			aliases.render(width);
+			aliases.handleInput("\u001b[F");
+			const ending = aliases.render(width);
+			assert.ok(ending.length <= rows && ending.every((line) => visibleWidth(line) <= width));
+			assert.match(stripSgr(ending.join("\n")), /bash line 60/);
+		}
+	}
+	rows = 24;
+	aliases.handleInput("\u001b");
+	assert.deepEqual(aliases.render(80), dashboard, "Escape skips the parent block stream");
+	aliases.handleInput("j");
+	aliases.handleInput("\r");
+	const next = stripSgr(aliases.render(80).join("\n"));
+	assert.match(next, /read line 1\b/);
+	assert.doesNotMatch(next, /bash line|read line 60/);
+	aliases.handleInput("\u001b");
+	aliases.handleInput("\u001b[H");
+	aliases.handleInput("\r");
+	assert.match(stripSgr(aliases.render(80).join("\n")), /┃|Enter - View Content/);
+});
+
+test("UsageView keeps the reasoning explanation in a direct single-entry preview", () => {
+	const thinkingUsage: ContextUsageSnapshot = {
+		...usage(500),
+		categories: [{
+			id: "assistant-thinking", label: "Assistant Thinking", tokens: 500,
+			entries: [{
+				breadcrumb: ["assistant"], tokens: 500, visibleTokens: 0, text: "",
+				invisibleReasoning: { tokens: 500, basis: "provider-reported", encoded: true },
+			}],
+		}],
+		estimatedTokens: 500,
+	};
+	let rows = 40;
+	const view = createView(createTheme(), { usage: thinkingUsage }, () => {}, () => rows);
+	view.handleInput("\r");
+	for (rows of [20, 40]) {
+		const frame = view.render(80);
+		const plain = stripSgr(frame.join("\n"));
+		assert.match(plain, /\[assistant\] 0 \+ Encoded ≈500 \(≈500\)/);
+		assert.match(plain, /Entry headers read:/);
+		assert.match(plain.replace(/\s+/g, " "), /Encoded replaces Reasoning when the provider replays encrypted reasoning/);
+		assert.equal(plain.match(/Entry headers read:/g)?.length, 1);
+		assert.doesNotMatch(plain, /┃|No content captured/);
+		assert.ok(frame.length <= rows);
+	}
+});
+
 test("UsageView labels tool parts inside the block and its full-content view", () => {
 	const snippet = "\n- search: Search the web";
 	const guidelines = "\n- Use search when the user asks for current information\n- Cite sources";
 	const definition = `search: Search\n${Array.from({ length: 14 }, (_, line) => `param ${line}`).join("\n")}`;
 	const toolUsage: ContextUsageSnapshot = {
-		...usage(30),
+		...usage(31),
 		categories: [{
 			id: "custom-tools",
 			label: "Custom Tools",
-			tokens: 30,
+			tokens: 31,
 			children: [{
 				id: "item:tool:npm:web:search",
 				label: "search",
@@ -729,9 +859,12 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 						{ label: "Definition", text: definition, tokens: 7 },
 					],
 				}],
+			}, {
+				id: "item:other", label: "Other", tokens: 1,
+				entries: [{ breadcrumb: ["Other"], tokens: 1, text: "More" }],
 			}],
 		}],
-		estimatedTokens: 30,
+		estimatedTokens: 31,
 	};
 	const theme = createTheme();
 	const view = createView(theme, { usage: toolUsage }, () => {}, () => 26);
@@ -788,20 +921,20 @@ test("UsageView expands marked JSON in the stream and caps it on the expanded li
 	const argumentsJson = JSON.stringify(args);
 	const text = `read(${argumentsJson})`;
 	const callUsage: ContextUsageSnapshot = {
-		...usage(40),
+		...usage(41),
 		categories: [{
 			id: "tool-calls",
 			label: "Tool Calls",
-			tokens: 40,
+			tokens: 41,
 			entries: [{
 				timestamp: Date.UTC(2026, 6, 11, 14, 2, 19),
 				breadcrumb: ["assistant", "read"],
 				tokens: 40,
 				text,
 				jsonSpan: { start: 5, end: text.length - 1 },
-			}],
+			}, { breadcrumb: ["Other"], tokens: 1, text: "More" }],
 		}],
-		estimatedTokens: 40,
+		estimatedTokens: 41,
 	};
 	const view = createView(createTheme(), { usage: callUsage }, () => {}, () => 24);
 
@@ -838,7 +971,7 @@ test("UsageView expands marked JSON in the stream and caps it on the expanded li
 	assert.ok(tailPlain.some((line) => line === "    })"));
 });
 
-test("UsageView expands a block that fits the cap and leaves Enter a no-op", () => {
+test("UsageView expands marked JSON directly in a short single-entry category", () => {
 	const text = 'read({"path":"src/index.ts"})';
 	const callUsage: ContextUsageSnapshot = {
 		...usage(12),
@@ -866,7 +999,7 @@ test("UsageView expands a block that fits the cap and leaves Enter a no-op", () 
 	assert.ok(streamPlain.some((line) => line.endsWith('"path": "src/index.ts"')));
 	assert.ok(!streamPlain.some((line) => line.includes("Enter - View Content")));
 
-	// Nothing is hidden, so the block level stays closed.
+	// A single entry has no intermediate block level, even when its content is short
 	view.handleInput("\r");
 	assert.deepEqual(view.render(80), stream);
 });
@@ -1232,17 +1365,17 @@ test("UsageView previews empty categories, free space, and long content safely",
 test("UsageView caps long entries, sanitizes content, and omits snapshot datetimes", () => {
 	const longText = Array.from({ length: 30 }, (_, line) => `line ${line + 1}`).join("\n");
 	const cappedUsage: ContextUsageSnapshot = {
-		...usage(2_000),
+		...usage(2_001),
 		categories: [
 			{
 				id: "tool-output",
 				label: "Tool Output",
-				tokens: 1_000,
+				tokens: 1_001,
 				children: [
 					{
 						id: "tool-result:bash",
 						label: "bash",
-						tokens: 1_000,
+						tokens: 1_001,
 						entries: [
 							{
 								timestamp: Date.UTC(2026, 6, 11, 15, 0, 0),
@@ -1250,6 +1383,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 								tokens: 1_000,
 								text: `\u001b]0;evil\u0007${longText}`,
 							},
+							{ breadcrumb: ["Other"], tokens: 1, text: "More" },
 						],
 					},
 				],
@@ -1261,7 +1395,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 				entries: [{ breadcrumb: ["System Prompt"], tokens: 1_000, text: "You are pi." }],
 			},
 		],
-		estimatedTokens: 2_000,
+		estimatedTokens: 2_001,
 	};
 	const theme = createTheme();
 	const view = createView(theme, { usage: cappedUsage }, () => {}, () => 40);
@@ -1318,9 +1452,10 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
 	const snapshotPreview = view.render(100).map((line) => stripSgr(line).trimEnd());
-	const header = snapshotPreview.findIndex((line) => /^┃ \[System Prompt\] 1k$/.test(line));
+	const header = snapshotPreview.findIndex((line) => /^  \[System Prompt\] 1k$/.test(line));
 	assert.ok(header >= 0, "snapshot entry header has no datetime cell");
-	assert.equal(snapshotPreview[header + 1], "┃   You are pi.");
+	assert.equal(snapshotPreview[header + 1], "");
+	assert.equal(snapshotPreview[header + 2], "    You are pi.");
 	// Without a datetime, the lead breadcrumb cell still uses bold mdHeading.
 	assert.ok((view.render(100)[header] ?? "").includes(theme.fg("mdHeading", theme.bold("System Prompt"))));
 });
@@ -1373,7 +1508,7 @@ test("UsageView shrinks the block cap with terminal height and re-caps on resize
 	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Content"));
 });
 
-test("UsageView refits open block content when narrow widths share a wrap width", () => {
+test("UsageView refits direct full content when narrow widths share a wrap width", () => {
 	// Unbreakable tokens keep wrapped lines at the clamped minimum wrap width, where widths 15 and 12
 	// wrap identically but must still truncate differently.
 	const wideText = Array.from({ length: 30 }, (_, line) => `L${line + 1}_${"x".repeat(20)}`).join("\n");
@@ -1395,10 +1530,8 @@ test("UsageView refits open block content when narrow widths share a wrap width"
 	const view = createView(createTheme(), { usage: wideUsage }, () => {}, () => 40);
 
 	view.render(15);
-	view.handleInput("\r"); // category block stream
-	view.render(15);
-	view.handleInput("\r"); // full content of the capped block
-	assert.ok(view.render(15).map(stripSgr).some((line) => line.includes("L1_")), "the block view is open");
+	view.handleInput("\r"); // Single-entry category opens full content immediately
+	assert.ok(view.render(15).map(stripSgr).some((line) => line.includes("L1_")), "full content is open");
 	for (const width of [12, 15, 12]) {
 		for (const line of view.render(width)) {
 			assert.ok(visibleWidth(line) <= width, `full block line exceeds width ${width}: ${JSON.stringify(line)}`);

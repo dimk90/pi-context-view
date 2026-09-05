@@ -54,11 +54,12 @@ or dashboard.
 
 ## Attribution footer
 
-Restored lines appear in the System Prompt preview of both views, in its capped
-and full Usage levels, and in the standalone `Available Tools` and `Guidelines`
-children in Injections. Each of those previews shows one dim description at the
-bottom, outside the scrollable content and block-selection gutter, between blank
-rows immediately above the hints:
+Restored lines appear in the System Prompt preview of both views, including the
+direct single-entry Usage preview, and in the standalone `Available Tools` and
+`Guidelines` children in Injections. Multi-entry Usage streams and their full
+content levels retain the same attribution treatment. Each of those previews
+shows one dim description at the bottom, outside the scrollable content and
+block-selection gutter, between blank rows immediately above the hints:
 
 > Highlighted parts are injected by extensions into pi’s system prompt. They are
 > excluded from the System Prompt token count and included in the injecting
@@ -75,8 +76,9 @@ and never gets a marker of its own.
 Wrap it without truncation and keep it pinned while scrolling, even when the
 highlighted text is offscreen or hidden by a block cap. It renders only for
 content carrying injected-reference metadata: native-only System Prompt and part
-previews, sibling parts without references, and owning-tool previews have none. The Usage category stream inspects all entries; the
-full-content level inspects only its open entry.
+previews, sibling parts without references, and owning-tool previews have none.
+The Usage category stream inspects all entries; full content, opened directly or
+from a block, inspects only its open entry.
 
 It collapses whole, including its preceding blank row, below the floor in
 [Descriptions](../UI.md#descriptions), allowing for the overflow counter, and

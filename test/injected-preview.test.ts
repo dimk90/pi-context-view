@@ -145,7 +145,7 @@ test("Injections attributes Available Tools snippets in the parent and standalon
 	assert.doesNotMatch(plain(child), /verify claims/);
 });
 
-test("Usage retains attribution inside one capped block and its full-content level", () => {
+test("Usage opens System Prompt sections directly and retains attribution without a block layer", () => {
 	let height = 40;
 	const theme = createTheme();
 	const usage = computeUsage({ snapshot: createSnapshot(), messages: [] });
@@ -153,19 +153,19 @@ test("Usage retains attribution inside one capped block and its full-content lev
 	const dashboard = view.render(120);
 	assert.doesNotMatch(plain(dashboard), /verify claims|Highlighted parts/);
 	view.handleInput("\r");
-	const stream = view.render(120);
-	assertAttribution(stream, theme);
-	assert.match(plain(stream), /… \+\d+ lines · Enter - View Content/);
-	assert.equal(plain(stream).match(/\[System Prompt\]/g)?.length, 1);
+	const content = view.render(120);
+	assertAttribution(content, theme);
+	assert.doesNotMatch(plain(content), /┃|… \+|Enter - View Content/);
+	assert.equal(plain(content).match(/\[System Prompt\]/g)?.length, 1);
+	assert.match(plain(content), /Native rule 15/);
 	const category = usage.categories.find((category) => category.id === "system-prompt");
 	assert.ok(category);
 	const entry = collectPreviewEntries(category)[0];
 	assert.ok(entry);
 	const body = previewBodyLines(theme, entry, 115, (text) => text.split("\n"), "System Prompt");
 	assert.doesNotMatch(plain(body), /Highlighted parts|Arrow-marked/);
-	assert.equal(Number(plain(stream).match(/… \+(\d+) lines/)?.[1]), body.length - 10);
 	view.handleInput("\r");
-	assertAttribution(view.render(120), theme);
+	assert.deepEqual(view.render(120), content, "Enter does not add a redundant full-content level");
 	for (const width of [30, 60, 80, 120]) {
 		for (height of [12, 24, 40]) {
 			assertFrame(view.render(width), width, height);
@@ -179,9 +179,6 @@ test("Usage retains attribution inside one capped block and its full-content lev
 	theme.fg = (color, text) => originalFg(color === "mdLink" ? "success" : color, text);
 	view.invalidate();
 	assertAttribution(view.render(120), theme);
-	view.handleInput("\u001b");
-	assertAttribution(view.render(120), theme);
-	assert.equal(plain(view.render(120)), plain(stream));
 	view.handleInput("\u001b");
 	assert.deepEqual(view.render(120), dashboard);
 });
@@ -268,7 +265,7 @@ test("reference text and source are sanitized before coloring and wrapping", () 
 });
 
 /** All preview levels that can render attributed System Prompt text. */
-type PreviewTarget = "injections-parent" | "injections-child" | "usage-stream" | "usage-full";
+type PreviewTarget = "injections-parent" | "injections-child" | "usage-single" | "usage-stream" | "usage-full";
 
 /** Open a synthetic long preview through the same Enter gates as a user. */
 function createPreview(target: PreviewTarget, theme: Theme, getRows: () => number): InjectionsView | UsageView {
@@ -280,8 +277,16 @@ function createPreview(target: PreviewTarget, theme: Theme, getRows: () => numbe
 		view.handleInput("\r");
 		return view;
 	}
+	const usage = computeUsage({ snapshot, messages: [] });
+	// Multi-entry fixtures keep coverage of capped and full-block attribution alongside the direct path
+	const categories = target === "usage-single" ? usage.categories : usage.categories.map((category) =>
+		category.id !== "system-prompt" ? category : {
+			...category, tokens: category.tokens + 1, children: undefined,
+			entries: [...collectPreviewEntries(category), { breadcrumb: ["Other"], tokens: 1, text: "More" }],
+		}
+	);
 	const view = new UsageView(theme, {
-		usage: computeUsage({ snapshot, messages: [] }),
+		usage: { ...usage, categories, estimatedTokens: usage.estimatedTokens + (target === "usage-single" ? 0 : 1) },
 		categoryColors: new Map(DEFAULT_CATEGORY_COLORS).set("system-prompt", "error"),
 	}, () => {}, getRows);
 	view.render(120);
@@ -291,7 +296,7 @@ function createPreview(target: PreviewTarget, theme: Theme, getRows: () => numbe
 	return view;
 }
 
-for (const target of ["injections-parent", "injections-child", "usage-stream", "usage-full"] as const) {
+for (const target of ["injections-parent", "injections-child", "usage-single", "usage-stream", "usage-full"] as const) {
 	test(`${target} footer stays pinned, collapses whole, and returns on height-only resize`, () => {
 		let height = 40;
 		const theme = createTheme();

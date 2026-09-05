@@ -49,8 +49,10 @@
     `(guess)` marker covers both halves of the label.
   - `:<tool>` renders in `mdLinkUrl`, colon included, beside the `mdLink` extension label.
 
-- [ ] **Category Content Flattening**:
-  - `System Prompt` already contents sub-section -> no need for blocks.
+- [x] **Category Content Flattening**:
+  - Every single-entry Usage category opens directly as uncapped, scrollable content.
+  - `System Prompt` keeps its labeled sections without a redundant block layer.
+  - Multi-entry categories keep block navigation; Escape from a single entry returns to the legend.
 
 - [ ] **Mark the parts a `--system-prompt` replacement drops.**
    - `--system-prompt` replaces pi's whole base prompt, so pi's guidelines, its `Available tools:` list, and its documentation block are never sent. Tool definitions still are; extension-contributed guidelines and tool snippets are dropped along with pi's own.
