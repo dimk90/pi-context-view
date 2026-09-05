@@ -31,6 +31,7 @@ const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 export const THEME_COLOR_NAMES = [
 	"accent", "border", "borderAccent", "borderMuted", "success",
 	"error", "warning", "muted", "dim", "text", "thinkingText",
+	"scrollbarTrack", "scrollbarThumb",
 	"searchMatchText", "userMessageText", "customMessageText",
 	"customMessageLabel", "toolTitle", "toolOutput", "mdHeading",
 	"mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder",

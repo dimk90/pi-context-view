@@ -151,6 +151,20 @@ test("loadConfigFile applies every valid flat category color override", (context
 	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "accent");
 });
 
+test("loadConfigFile accepts scrollbar theme colors without warnings", (context) => {
+	const filePath = createConfigPath(context);
+	writeFileSync(filePath, JSON.stringify({
+		systemPromptColor: "scrollbarTrack",
+		skillsColor: "scrollbarThumb",
+	}));
+
+	const result = loadConfigFile(filePath);
+
+	assert.deepEqual(result.warnings, []);
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "scrollbarTrack");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "skills"), "scrollbarThumb");
+});
+
 test("loadConfigFile accepts literal hex colors and normalizes them", (context) => {
 	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({
