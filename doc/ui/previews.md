@@ -1,0 +1,82 @@
+# Preview rules
+
+Rules shared by every preview in both views. Frame, color, description, and
+interaction rules live in the [UI specification](../UI.md).
+
+## Labeled parts
+
+Content that decomposes into labeled parts — a tool's `Available Tools`,
+`Guidelines`, and `Definition`, the System Prompt's own blocks — renders every
+part under its own bold `syntaxKeyword` subheader followed by a muted
+` · N tokens` share, with exactly two blank rows between parts. Replace any
+trailing blank rows of the preceding part with this separator; preserve blank
+rows inside its body and leave captured text and token estimates unchanged.
+Part shares reconcile exactly with the item or entry estimate and never add to
+it. Show the applicable subheader even when `Definition` is the only captured
+part; omit parts with no captured text rather than rendering zero-token
+placeholders.
+
+Why `syntaxKeyword`: parts nest under item and entry headings that already carry
+`mdHeading`.
+
+## Restored guideline bullets
+
+The System Prompt `Guidelines` preview restores extension-contributed bullets in
+prompt order, alongside pi's own. Each restored bullet uses `customMessageLabel`
+followed by a dim ` -> ` and the owning extension's source label in `mdLink` —
+fixed semantic theme colors, independent of category color overrides. Shared
+bullets name only the first owning tool's source, never every tool declaring
+them.
+
+The annotations are preview-only: Guidelines and System Prompt estimates still
+exclude these bullets, while the tool preview keeps its counted Guidelines
+section unchanged. Sanitize bullet text and source labels before applying
+colors, preserve styling through wrapping, and include annotations in preview
+scrolling and cap line counts. Never show raw bullets in the overview list or
+dashboard.
+
+## Attribution footer
+
+Restored bullets appear in the System Prompt preview of both views, in its
+capped and full Usage levels, and in the standalone Guidelines child in
+Injections. Each of those previews shows one dim description at the bottom,
+outside the scrollable content and block-selection gutter, between blank rows
+immediately above the hints:
+
+> Highlighted parts are injected by extensions into pi’s system prompt. They are
+> excluded from the System Prompt token count and included in the injecting
+> extension’s count.
+
+Wrap it without truncation and keep it pinned while scrolling, even when the
+highlighted text is offscreen or hidden by a block cap. It renders only for
+content carrying guideline-reference metadata: native-only System
+Prompt/Guidelines previews, sibling parts without references, and owning-tool
+previews have none. The Usage category stream inspects all entries; the
+full-content level inspects only its open entry.
+
+It collapses whole, including its preceding blank row, below the floor in
+[Descriptions](../UI.md#descriptions), allowing for the overflow counter, and
+returns on height-only resize. It never contributes to scroll counters or
+`… +N lines` counts, though its reserved rows affect the viewport and block cap.
+For a Usage stream, decide collapse from the uncapped content plus entry headers
+and separators, before deriving the footer-dependent block cap — otherwise the
+layout decision is circular.
+
+## Repeated headings
+
+A preview body never repeats the heading directly above it: drop a first content
+line identical to the item title, part label, or entry name, as a skill block
+that opens with its own name has. This preview-only omission still counts the
+dropped line toward the estimate shown in that heading.
+
+## Marked JSON
+
+Preview text may carry a JSON document that the model marks structurally — a
+tool's parameter schema, tool-call arguments, serialized message content. Every
+preview level re-serializes that run across lines indented `JSON_INDENT` (2)
+spaces per level, so a block small enough to escape the cap still shows its
+expanded form, and block caps and `… +N lines` counts measure the expanded lines
+the Enter level opens. Marking is structural, never heuristic: text that merely
+looks like JSON stays as captured, and a marked run that no longer parses
+renders unchanged. Like skill badges, this transformation never changes token
+estimates.

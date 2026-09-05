@@ -121,7 +121,7 @@ absent, and present the fallback as approximate.
 
 ## Preview presentation
 
-[UI.md](UI.md) owns the preview notation. The estimate surfaces like this:
+[ui/usage.md](ui/usage.md#thinking-notation) owns the preview notation. The estimate surfaces like this:
 
 ```text
 Assistant Thinking                                           1.4k

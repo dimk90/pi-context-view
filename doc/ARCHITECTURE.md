@@ -1,6 +1,6 @@
 # Capture and usage architecture
 
-Canonical contract for how pi-context-view captures hidden context, estimates current usage, and keeps raw data isolated. The roadmap lives in [PLAN.md](PLAN.md), and the rendering contract lives in [UI.md](UI.md).
+Canonical contract for how pi-context-view captures hidden context, estimates current usage, and keeps raw data isolated. The roadmap lives in [PLAN.md](PLAN.md), and the rendering contract lives in [UI.md](UI.md) with its per-view pages under `doc/ui/`.
 
 ## Module boundaries
 
@@ -112,7 +112,7 @@ Keep semantics in typed model fields rather than display labels:
   parameter schemas, tool-call arguments, non-string message content — with a
   span on the item, section, or entry instead of detecting JSON in preview text;
   the compact provider-bound form always backs the estimate, and expansion stays
-  a rendering concern owned by [UI.md](UI.md).
+  a rendering concern owned by [ui/previews.md](ui/previews.md#marked-json).
 
 ## Configuration
 
@@ -126,7 +126,7 @@ Every user-configurable value follows one contract, whatever it configures:
 - `/context config` is the explicit create-only action: it writes every default through one atomic `O_EXCL` create, never overwrites or modifies an existing path, and stays available in every run mode because it needs no UI — only the views are gated on `ctx.mode === "tui"`;
 - later actions that update an existing file must be debounced and merge over a fresh read so concurrent edits and unknown keys survive.
 
-Configuration holds preferences only; the privacy contract below forbids storing captured prompt or message content there. [PLAN.md](PLAN.md) tracks which values are configurable, and [UI.md](UI.md) owns the rendering rules for configurable colors and map geometry.
+Configuration holds preferences only; the privacy contract below forbids storing captured prompt or message content there. [PLAN.md](PLAN.md) tracks which values are configurable, and [UI.md](UI.md#color-and-casing) owns the rendering rules for configurable colors, and [ui/usage.md](ui/usage.md#context-map) those for map geometry.
 
 ## Privacy
 
@@ -148,4 +148,4 @@ Lifecycle or accounting changes must preserve all of these:
 - parent and child contributions are never double-counted;
 - every rendered line respects width, and views reflow with width and height.
 
-For lifecycle smoke tests, load `test/fixtures/marker.ts` before and after this extension and use an `after_provider_response` sentinel for provider-call detection. Follow [UI.md](UI.md) for the rendering matrix.
+For lifecycle smoke tests, load `test/fixtures/marker.ts` before and after this extension and use an `after_provider_response` sentinel for provider-call detection. Follow [UI.md](UI.md#responsive-rendering) for the rendering matrix.
