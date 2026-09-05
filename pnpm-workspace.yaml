@@ -4,4 +4,4 @@ allowBuilds:
   protobufjs: true
 minimumReleaseAgeExclude:
   - "@earendil-works/pi-*"
-  - '@earendil-works/chord@0.85.0'
+  - '@earendil-works/chord@0.85.0 || 0.85.1'

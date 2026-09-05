@@ -9,7 +9,7 @@
 * `[usage]` Show `System Prompt` parts as sections of one preview block.
 * `[config]` Rename `memoryColor` to `instructionFilesColor`, keeping the old name as an alias.
 * `[config]` Rename `systemToolsColor` to `builtInToolsColor`, keeping the old name as an alias.
-* `[package]` Bump dev dependencies to Pi 0.85.0.
+* `[package]` Bump dev dependencies to Pi 0.85.1.
 
 ### Fixed
 * `[context]` Count tokens for `Current working directory` footer.
