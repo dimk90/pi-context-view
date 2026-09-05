@@ -80,6 +80,12 @@ export interface InjectedReference {
 	readonly itemId: string;
 	readonly source: InjectionSource;
 	/**
+	 * Tool or slash command of `source` this text belongs to, e.g. `web_search`
+	 * or `/ask`. Qualifies the rendered source label only: `itemId` still names
+	 * the item that counts the text.
+	 */
+	readonly tool?: string;
+	/**
 	 * Present when the source was inferred from the text itself. Pi reports no
 	 * per-extension provenance for chained prompt edits, so such an attribution
 	 * is a guess and must be rendered as one.

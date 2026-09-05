@@ -4,11 +4,13 @@ import { test } from "node:test";
 import type {
 	BuildSystemPromptOptions,
 	ContextEvent,
+	SlashCommandInfo,
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
 import {
 	captureActiveTools,
+	collectPromptSources,
 	CompactionState,
 	copyPromptOptions,
 	InitialCaptureState,
@@ -108,6 +110,26 @@ test("captureActiveTools keeps pi's active-tool order and drops repeated names",
 	// Guideline ownership follows this order, so it must match the order pi
 	// builds its Guidelines section from.
 	assert.deepEqual(tools.map((entry) => entry.name), ["search", "read"]);
+});
+
+test("collectPromptSources rosters the names of extension tools and commands", () => {
+	const command = (name: string, source: string): SlashCommandInfo => ({
+		name,
+		source: "extension",
+		sourceInfo: { path: `/tmp/${name}.ts`, source, scope: "temporary", origin: "top-level" },
+	});
+	const sources = collectPromptSources(
+		[tool("read", "builtin"), tool("search", "npm:web"), tool("fetch", "npm:web")],
+		[command("ask", "npm:ask"), command("/web", "npm:web")],
+	);
+
+	// One roster entry per extension file, and commands keep the slash prompts use.
+	assert.deepEqual(sources.map((source) => [source.source, source.names]), [
+		["npm:web", ["search"]],
+		["npm:web", ["fetch"]],
+		["npm:ask", ["/ask"]],
+		["npm:web", ["/web"]],
+	]);
 });
 
 test("copyPromptOptions owns decomposition metadata and keeps only visible skills", () => {

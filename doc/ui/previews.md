@@ -31,11 +31,19 @@ contributes at most one `Available Tools` snippet, and a shared guideline bullet
 names only the first owning tool's source, never every tool declaring it.
 Built-in tool lines are pi's own and carry no annotation.
 
+When the line belongs to one tool or slash command of that extension, the label
+gains a `mdLinkUrl` `:<tool>` — colon included, e.g.
+`<- npm:pi-web:web_search` or `<- npm:@eko24ive/pi-ask:/ask`. Carved tool lines
+always carry it; an `Extension Additions` block carries it only when its text
+names exactly one of that extension's registered names. An extension label
+without a qualifier means no single owner was identified, never that the
+extension registered none.
+
 A source pi did not report, but this extension inferred from the injected text,
-carries a `dim` ` (guess)` after its label. `Extension Additions` is the only
-block with such owners today: carved tool lines name a source pi reported. A
-part that opens with a restored line drops its captured leading blank lines, as
-plain part text does.
+carries a `dim` ` (guess)` after its label, once for the whole
+`extension:tool` label. `Extension Additions` is the only block with such owners
+today: carved tool lines name a source pi reported. A part that opens with a
+restored line drops its captured leading blank lines, as plain part text does.
 
 The annotations are preview-only: the part and System Prompt estimates still
 exclude these lines, while the tool preview keeps its counted `Available Tools`
@@ -60,6 +68,9 @@ When any restored line in that preview names a guessed owner, the footer gains
 one more sentence:
 
 > Sources marked (guess) are inferred from the injected text itself.
+
+It covers a guessed `:<tool>` qualifier as well, which is inferred the same way
+and never gets a marker of its own.
 
 Wrap it without truncation and keep it pinned while scrolling, even when the
 highlighted text is offscreen or hidden by a block cap. It renders only for

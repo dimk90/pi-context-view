@@ -8,11 +8,13 @@ const ASK: PromptSourceSlice = {
 	source: "npm:@eko24ive/pi-ask",
 	path: "/home/tester/.pi/agent/npm/node_modules/@eko24ive/pi-ask/dist/index.js",
 	baseDir: "/home/tester/.pi/agent/npm/node_modules/@eko24ive/pi-ask",
+	names: ["ask_user", "/ask"],
 };
 const WEB: PromptSourceSlice = {
 	source: "npm:pi-web",
 	path: "/home/tester/.pi/agent/npm/node_modules/pi-web/index.ts",
 	baseDir: "/home/tester/.pi/agent/npm/node_modules/pi-web",
+	names: ["web_search", "fetch", "go"],
 };
 const BUILTIN: PromptSourceSlice = { source: "builtin", path: "<builtin:read>" };
 
@@ -31,6 +33,59 @@ function split(
 	assert.equal(runs.map((run) => run.text).join(""), addition);
 	return runs.map((run) => [run.text, run.source.label, run.attribution]);
 }
+
+/** Owner of each run: its extension label and the tool or command the text named. */
+function owners(
+	addition: string,
+	sources: readonly PromptSourceSlice[],
+): Array<[string, string, string | undefined]> {
+	const runs = splitPromptAdditions(`${FOOTER}${addition}`, FOOTER.length, { sources });
+	return runs.map((run) => [run.text, run.source.label, run.tool]);
+}
+
+test("splitPromptAdditions names a tool or command only on a unique, complete mention", () => {
+	assert.deepEqual(
+		owners("\n\nCall web_search before answering; see npm:pi-web.", [ASK, WEB]),
+		[["\n\nCall web_search before answering; see npm:pi-web.", "npm:pi-web", "web_search"]],
+	);
+	// A command counts only where it is written with the slash a user types.
+	assert.deepEqual(
+		owners("\n\nRun /ask before editing @eko24ive/pi-ask config.", [ASK, WEB]),
+		[["\n\nRun /ask before editing @eko24ive/pi-ask config.", "npm:@eko24ive/pi-ask", "/ask"]],
+	);
+	assert.deepEqual(
+		owners("\n\nAsk the user first; @eko24ive/pi-ask explains why.", [ASK, WEB]),
+		[["\n\nAsk the user first; @eko24ive/pi-ask explains why.", "npm:@eko24ive/pi-ask", undefined]],
+	);
+});
+
+test("splitPromptAdditions leaves ambiguous, embedded, and short tool names unnamed", () => {
+	// Two tools of one extension cannot both own one block, as two packages cannot.
+	assert.deepEqual(
+		owners("\n\nUse web_search, then fetch. See npm:pi-web.", [WEB]),
+		[["\n\nUse web_search, then fetch. See npm:pi-web.", "npm:pi-web", undefined]],
+	);
+	// A path segment naming the tool is documentation, not a mention.
+	assert.deepEqual(
+		owners(`\n\nSee ${WEB.baseDir}/docs/web_search.md.`, [WEB]),
+		[[`\n\nSee ${WEB.baseDir}/docs/web_search.md.`, "npm:pi-web", undefined]],
+	);
+	// Two-character names match ordinary prose, so they never qualify a label.
+	assert.deepEqual(
+		owners("\n\nGo on, npm:pi-web knows the way.", [WEB]),
+		[["\n\nGo on, npm:pi-web knows the way.", "npm:pi-web", undefined]],
+	);
+});
+
+test("splitPromptAdditions keeps blocks naming different tools of one extension apart", () => {
+	assert.deepEqual(
+		owners("\n\nnpm:pi-web: call web_search.\n\nnpm:pi-web: call fetch.\n\nnpm:pi-web again: fetch.", [WEB]),
+		[
+			["\n\nnpm:pi-web: call web_search.", "npm:pi-web", "web_search"],
+			["\n\nnpm:pi-web: call fetch.\n\nnpm:pi-web again: fetch.", "npm:pi-web", "fetch"],
+		],
+	);
+});
 
 test("splitPromptAdditions names a package only on a unique, complete match", () => {
 	assert.deepEqual(

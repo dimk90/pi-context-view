@@ -9,6 +9,7 @@ import {
 	estimateTokens,
 	type InputSource,
 	type SlashCommandInfo,
+	type SourceInfo,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
@@ -375,24 +376,48 @@ export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOpti
 
 /**
  * Collect the provenance of every loaded extension that registered a tool or a
- * command. It is the only extension roster pi exposes, and it feeds attribution
- * guesses alone: extensions registering neither are invisible here.
+ * command, together with the names it registered. It is the only extension
+ * roster pi exposes, and it feeds attribution guesses alone: extensions
+ * registering neither are invisible here.
  */
 export function collectPromptSources(
 	allTools: readonly ToolInfo[],
 	commands: readonly SlashCommandInfo[],
 ): PromptSourceSlice[] {
-	const sources = new Map<string, PromptSourceSlice>();
-	for (const { sourceInfo } of [...allTools, ...commands]) {
-		if (sourceInfo.source === "builtin" || sourceInfo.source === "sdk") continue;
-		sources.set(`${sourceInfo.source}\n${sourceInfo.path}`, {
+	const sources = new Map<string, CollectedPromptSource>();
+	for (const tool of allTools) addPromptSource(sources, tool.sourceInfo, tool.name);
+	// Prompt text refers to a command the way a user types it, so keep its slash.
+	for (const command of commands) {
+		addPromptSource(sources, command.sourceInfo, command.name.startsWith("/") ? command.name : `/${command.name}`);
+	}
+	return [...sources.values()];
+}
+
+/** Slice under construction: its names arrive one tool or command at a time. */
+interface CollectedPromptSource extends Omit<PromptSourceSlice, "names"> {
+	readonly names: string[];
+}
+
+/** Record one registered name under its extension's provenance, skipping pi's own sources. */
+function addPromptSource(
+	sources: Map<string, CollectedPromptSource>,
+	sourceInfo: SourceInfo,
+	name: string,
+): void {
+	if (sourceInfo.source === "builtin" || sourceInfo.source === "sdk") return;
+	const key = `${sourceInfo.source}\n${sourceInfo.path}`;
+	let collected = sources.get(key);
+	if (collected === undefined) {
+		collected = {
 			source: sourceInfo.source,
 			path: sourceInfo.path,
 			// A top-level extension's baseDir is a shared directory, not its own root.
 			baseDir: sourceInfo.origin === "package" ? sourceInfo.baseDir : undefined,
-		});
+			names: [],
+		};
+		sources.set(key, collected);
 	}
-	return [...sources.values()];
+	if (!collected.names.includes(name)) collected.names.push(name);
 }
 
 /**

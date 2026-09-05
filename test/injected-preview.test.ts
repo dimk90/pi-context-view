@@ -17,6 +17,8 @@ const SNIPPET = "Search the web";
 /** Line pi renders for the extension tool under "Available tools:". */
 const SNIPPET_LINE = `search: ${SNIPPET}`;
 const SOURCE = "npm:web";
+/** Carved lines name the tool pi reported for them, qualifying their source label. */
+const TOOL = "search";
 const DESCRIPTION = "Highlighted parts are injected by extensions into pi’s system prompt. " +
 	"They are excluded from the System Prompt token count and included in the injecting extension’s count.";
 
@@ -50,11 +52,13 @@ function plain(lines: readonly string[]): string {
 /** Parent and standalone previews share these semantic colors and a single fixed accounting footer. */
 function assertAttribution(lines: readonly string[], theme: Theme, text = GUIDELINE): void {
 	assertFooter(lines, theme);
-	assert.ok(plain(lines).includes(`- ${text} <- ${SOURCE}`));
+	assert.ok(plain(lines).includes(`- ${text} <- ${SOURCE}:${TOOL}`));
 	const rendered = lines.find((line) => line.includes(text));
 	assert.ok(rendered?.includes(theme.fg("syntaxNumber", `- ${text}`)));
 	assert.ok(rendered?.includes(theme.fg("borderMuted", " <- ")));
 	assert.ok(rendered?.includes(theme.fg("mdLink", SOURCE)));
+	// The tool is a distinct span, so a themed label never swallows its qualifier.
+	assert.ok(rendered?.includes(theme.fg("mdLinkUrl", `:${TOOL}`)));
 }
 
 /** The complete dim explanation sits outside the content/gutter and directly above hints. */
@@ -203,6 +207,7 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 	assert.ok(plain(parent).includes(`${addition.trim()} <- npm:web (guess)`));
 	const rendered = parent.find((line) => line.includes("(guess)"));
 	assert.ok(rendered?.includes(theme.fg("mdLink", "npm:web")));
+	// One marker covers a guessed extension and any tool guessed inside it.
 	assert.ok(rendered?.includes(theme.fg("dim", " (guess)")));
 	assert.match(plain(parent).replace(/\s+/g, " "), /Sources marked \(guess\) are inferred from the injected text itself\./);
 
@@ -220,6 +225,27 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 	assert.equal(extensions?.tokens, collectPreviewEntries(extensions).reduce((sum, e) => sum + e.tokens, 0));
 });
 
+test("a guessed addition names the extension tool its text mentions", () => {
+	const theme = createTheme();
+	const addition = "\n\nCall web_search before answering; npm:web docs explain why.";
+	const prompt = `Preamble\n\nGuidelines:\n- Native rule\nCurrent working directory: /fixture${addition}`;
+	const snapshot = buildSnapshot(
+		analyzeSystemPrompt(prompt, { cwd: "/fixture" }, [], {
+			sources: [{ source: "npm:web", path: "/pkgs/web/index.ts", names: ["web_search", "/web"] }],
+		}),
+		"real-turn",
+		new Date("2026-07-10T12:00:00Z"),
+	);
+	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
+	view.handleInput("j"); // System Prompt
+	view.handleInput("\r");
+
+	const parent = view.render(120);
+	assert.ok(plain(parent).includes(`${addition.trim()} <- npm:web:web_search (guess)`));
+	const rendered = parent.find((line) => line.includes("(guess)"));
+	assert.ok(rendered?.includes(theme.fg("mdLinkUrl", ":web_search")));
+});
+
 test("reference text and source are sanitized before coloring and wrapping", () => {
 	const theme = createTheme();
 	const lines = previewBodyLines(theme, {
@@ -229,11 +255,12 @@ test("reference text and source are sanitized before coloring and wrapping", () 
 			text: "\n- A\u001b[2JB\u001b]52;c;clipboard-secret\u0007\n  continuation\t界",
 			itemId: "tool:unsafe",
 			source: { id: "unsafe", label: "npm:\u001b[31mweb\u001b[0m\r\nowner", native: false },
+			tool: "sea\u001b[31mrch\u0007",
 		}],
 	}, 28, () => { throw new Error("Referenced content must sanitize before adding theme colors"); });
 	assert.doesNotMatch(plain(lines), /\u001b|clipboard-secret|\t|\r/);
 	assert.match(plain(lines), /- AB/);
-	assert.match(plain(lines), /npm:web owner/);
+	assert.match(plain(lines), /npm:web owner:search/);
 	assert.ok(lines.every((line) => visibleWidth(line) <= 30));
 	const continuation = lines.find((line) => line.includes("continuation"));
 	assert.ok(continuation?.includes(theme.getFgAnsi("syntaxNumber")), "multiline references keep their color");

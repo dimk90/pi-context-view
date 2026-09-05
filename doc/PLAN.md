@@ -42,9 +42,15 @@
   - An attributed block is counted by its extension, never by `System Prompt`; the rest stays one item in the `unattributed` group.
   - Guessed names carry a dim `(guess)` marker and the attribution footer explains it.
 
-- [ ] **More detailed injections**:
-  - In case when injection can be attributed to extension tool mark it: "<- <extension>:<tool>".
-  - Use different color for ":<tool>".
+- [x] **More detailed injections**:
+  - Carved prompt lines name the tool pi reported for them: `<- <extension>:<tool>`.
+  - An `Extension Additions` block names a tool or slash command only when exactly one
+    registered name of its guessed extension occurs in it as a complete token; the single
+    `(guess)` marker covers both halves of the label.
+  - `:<tool>` renders in `mdLinkUrl`, colon included, beside the `mdLink` extension label.
+
+- [ ] **Category Content Flattening**:
+  - `System Prompt` already contents sub-section -> no need for blocks.
 
 - [ ] **Mark the parts a `--system-prompt` replacement drops.**
    - `--system-prompt` replaces pi's whole base prompt, so pi's guidelines, its `Available tools:` list, and its documentation block are never sent. Tool definitions still are; extension-contributed guidelines and tool snippets are dropped along with pi's own.
@@ -52,5 +58,6 @@
    - Show no pi-authored content in a dropped section: only extension-contributed entries stay visible (guidelines, tool snippets), each `Dropped` at 0 tokens in the color that attributes it to its extension. A section with no extension content renders empty.
    - Mark each extension's own guidelines `Dropped` at 0 tokens as well, so no extension preview claims tokens pi never sent.
    - `Dropped` uses one fixed theme color rather than a configurable category color: it marks a state, not a usage category, and a 0-token entry never colors map cells.
+
 
 - [ ] Update logo for package and README.

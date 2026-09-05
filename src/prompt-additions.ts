@@ -7,6 +7,8 @@ export interface PromptSourceSlice {
 	readonly path: string;
 	/** Package root only, never a shared directory of loose extension files. */
 	readonly baseDir?: string;
+	/** Tools and slash commands this source registered; commands carry their `/`. */
+	readonly names?: readonly string[];
 }
 
 /** Optional observations that improve guesses without claiming handler-level provenance. */
@@ -20,11 +22,16 @@ export interface PromptAdditionOptions {
 export interface PromptAdditionRun {
 	readonly text: string;
 	readonly source: InjectionSource;
+	/** Tool or command of `source` the run named, when exactly one of them occurs in it. */
+	readonly tool?: string;
 	readonly attribution?: "guess";
 }
 
 /** Characters that may follow a matched path: its own separator, or ordinary prose punctuation. */
 const PATH_BOUNDARY = "[/\\s\"'`<>\\[\\](),;:]";
+
+/** Shortest registered name worth guessing; shorter tokens match ordinary prose too readily. */
+const MIN_NAME_LENGTH = 3;
 
 /**
  * Bound blank-line blocks at our handler position, then guess a source only on
@@ -41,17 +48,17 @@ export function splitPromptAdditions(
 		? observed.length
 		: start;
 	const regions = [prompt.slice(start, boundary), prompt.slice(boundary)];
-	const runs: Array<{ text: string; source: InjectionSource }> = [];
+	const runs: Array<{ text: string; source: InjectionSource; tool?: string }> = [];
 	for (const region of regions) {
-		let previous: { text: string; source: InjectionSource } | undefined;
+		let previous: { text: string; source: InjectionSource; tool?: string } | undefined;
 		for (const text of splitBlocks(region)) {
-			const source = guessSource(text, options.sources ?? []);
+			const owner = guessOwner(text, options.sources ?? []);
 			// Merge only inside one region: text on either side of the boundary has different authors.
-			if (previous?.source.id === source.id) {
+			if (previous?.source.id === owner.source.id && previous.tool === owner.tool) {
 				previous.text += text;
 				continue;
 			}
-			previous = { text, source };
+			previous = { text, ...owner };
 			runs.push(previous);
 		}
 	}
@@ -75,8 +82,14 @@ function splitBlocks(text: string): string[] {
 	return blocks;
 }
 
+/** Extension a block was guessed to belong to, and the tool or command it named. */
+interface PromptAdditionOwner {
+	readonly source: InjectionSource;
+	readonly tool?: string;
+}
+
 /** Several tools/commands from one package are one candidate, not an ambiguous match. */
-function guessSource(text: string, sources: readonly PromptSourceSlice[]): InjectionSource {
+function guessOwner(text: string, sources: readonly PromptSourceSlice[]): PromptAdditionOwner {
 	const normalized = text.replaceAll("\\", "/");
 	const matches = new Set<string>();
 	for (const source of sources) {
@@ -88,8 +101,40 @@ function guessSource(text: string, sources: readonly PromptSourceSlice[]): Injec
 			(/^(npm:|git:|https?:\/\/|ssh:\/\/)/.test(source.source) && containsPackage(normalized, source.source))
 		) matches.add(source.source);
 	}
-	const [source] = matches;
-	return matches.size === 1 && source !== undefined ? extensionSource(source) : AGGREGATE_SOURCE;
+	const [match] = matches;
+	if (matches.size !== 1 || match === undefined) return { source: AGGREGATE_SOURCE };
+	return { source: extensionSource(match), tool: guessTool(normalized, sources, match) };
+}
+
+/**
+ * Registered tool or command of the owning extension the block names, when
+ * exactly one of them occurs in it. Two mentions name no tool, as two packages
+ * name no extension; the result only qualifies a guessed label, so it never
+ * changes which item counts the text.
+ */
+function guessTool(
+	text: string,
+	sources: readonly PromptSourceSlice[],
+	owner: string,
+): string | undefined {
+	const matches = new Set<string>();
+	for (const source of sources) {
+		if (source.source !== owner) continue;
+		for (const name of source.names ?? []) {
+			if (name.length >= MIN_NAME_LENGTH && containsName(text, name)) matches.add(name);
+		}
+	}
+	const [name] = matches;
+	return matches.size === 1 ? name : undefined;
+}
+
+/**
+ * Require a complete name token, so a longer identifier and a path segment are
+ * no mention: `web_search` matches in prose but not in `tools/web_search.md`,
+ * and the command `/ask` matches only where it is written with its slash.
+ */
+function containsName(text: string, name: string): boolean {
+	return new RegExp(`(?<![\\w/-])${escapePattern(name)}(?![\\w-])`).test(text);
 }
 
 /**

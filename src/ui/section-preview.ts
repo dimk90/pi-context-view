@@ -128,6 +128,9 @@ function contentBodyLines(
 		text += theme.fg("syntaxNumber", normalizePreviewText(line));
 		text += theme.fg("borderMuted", " <- ");
 		text += theme.fg("mdLink", normalizeInlineText(reference.source.label));
+		if (reference.tool !== undefined) {
+			text += theme.fg("mdLinkUrl", `:${normalizeInlineText(reference.tool)}`);
+		}
 		if (reference.attribution === "guess") text += theme.fg("dim", GUESS_MARKER);
 		offset = reference.offset;
 	}

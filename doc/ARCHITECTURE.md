@@ -93,9 +93,9 @@ Keep semantics in typed model fields rather than display labels:
   bullet to the first tool that declares it in pi's active-tool order, so a
   bullet several tools share is measured once and pi's own bullets stay in the
   base prompt;
-- retain each carved extension prompt line's original position and tool-source
-  provenance as a typed, owned preview reference on the System Prompt section and
-  standalone child it was carved from — `Available Tools` snippets and
+- retain each carved extension prompt line's original position, tool-source
+  provenance, and owning tool name as a typed, owned preview reference on the
+  System Prompt section and standalone child it was carved from — `Available Tools` snippets and
   `Guidelines` bullets alike; references restore prompt order for inspection but
   never enter the base item's counted text, character count, or token shares. The
   owning tool still carries and counts those sections. Only actually rendered,
@@ -106,7 +106,11 @@ Keep semantics in typed model fields rather than display labels:
   no block spans extensions loaded before and after it. Name a block only when
   exactly one loaded package specifier or extension path from
   `getAllTools()`/`getCommands()` provenance occurs in it, and mark every such
-  name a guess: pi records no author for chained prompt edits. Everything else
+  name a guess: pi records no author for chained prompt edits. Qualify such a
+  name with a tool or slash command of that same extension only when exactly one
+  of its registered names occurs in the block as a complete token — a name in a
+  path segment, a command without its slash, and a name under three characters
+  are no mention — and treat the qualifier as display-only. Everything else
   stays one unattributable item. Additions are counted by the owner they were
   attributed to and never by pi's own prompt, which carries them as a
   reference-only `Extension Additions` part;

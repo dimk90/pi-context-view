@@ -166,7 +166,14 @@ function measurePromptAdditions(
 	for (const run of splitPromptAdditions(systemPrompt, start, options)) {
 		const itemId = additionItemId(run.source);
 		// One insertion point: the part itself holds no counted text of its own.
-		references.push({ offset: 0, text: run.text, itemId, source: run.source, attribution: run.attribution });
+		references.push({
+			offset: 0,
+			text: run.text,
+			itemId,
+			source: run.source,
+			tool: run.tool,
+			attribution: run.attribution,
+		});
 		const owner = owners.get(itemId);
 		if (owner === undefined) owners.set(itemId, { source: run.source, text: run.text });
 		else owner.text += run.text;
@@ -264,6 +271,7 @@ function carveToolPromptSections(
 	const owner: InjectedOwner = {
 		itemId: `tool:${tool.source}:${tool.name}`,
 		source: extensionSource(tool.source),
+		tool: tool.name,
 	};
 	const snippet = tool.snippet === undefined
 		? undefined
@@ -303,6 +311,8 @@ interface CarvedBlock {
 interface InjectedOwner {
 	readonly itemId: string;
 	readonly source: InjectionSource;
+	/** Tool of `source` that produced the line, rendered as a label qualifier. */
+	readonly tool?: string;
 }
 
 /** Original prompt location, owner, and System Prompt part of a carved prompt line. */
@@ -517,6 +527,7 @@ function addInjectedReferences(
 					text: base.slice(span.start, span.end),
 					itemId: span.itemId,
 					source: span.source,
+					tool: span.tool,
 				})),
 		};
 	});
