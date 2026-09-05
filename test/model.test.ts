@@ -93,3 +93,28 @@ test("buildSnapshot owns nested input data and computes the total", () => {
 	assert.equal(snapshot.capturedAt.toISOString(), "2026-07-10T12:00:00.000Z");
 	assert.equal(snapshot.totalTokens, 3);
 });
+
+test("buildSnapshot owns guideline references on sections and standalone children", () => {
+	const source = { id: "tool-source:npm:web", label: "npm:web", native: false };
+	const reference = { offset: 12, text: "\n- Cite sources", itemId: "tool:npm:web:search", source };
+	const references = [reference];
+	const child = { ...item("guidelines", "pi", "pi", true, 3), guidelineReferences: references };
+	const input = {
+		...item("base", "pi", "pi", true, 3),
+		sections: [{ label: "Guidelines", text: child.text, tokens: 3, guidelineReferences: references }],
+		children: [child],
+	};
+	const snapshot = buildSnapshot([input], "real-turn", new Date());
+	reference.offset = 0;
+	reference.text = "changed";
+	source.label = "changed";
+	references.length = 0;
+	const base = snapshot.groups[0]?.items[0];
+	for (const owned of [base?.sections?.[0]?.guidelineReferences, base?.children?.[0]?.guidelineReferences]) {
+		assert.equal(owned?.length, 1);
+		assert.equal(owned?.[0]?.offset, 12);
+		assert.equal(owned?.[0]?.text, "\n- Cite sources");
+		assert.equal(owned?.[0]?.source.label, "npm:web");
+	}
+	assert.equal(snapshot.totalTokens, 3);
+});

@@ -32,7 +32,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { previewBodyLines } from "./section-preview.ts";
+import { guidelineDescriptionLines, previewBodyLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 /**
@@ -264,7 +264,14 @@ export class InjectionsView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const wrapped = this.getPreviewLines(width, item);
-		const viewport = calculateViewport(wrapped.length, terminalRows, PREVIEW_FIXED_LINE_COUNT);
+		const descriptionLines = guidelineDescriptionLines(theme, [item], {
+			width,
+			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
+			contentLineCount: wrapped.length,
+		});
+		const viewport = calculateViewport(
+			wrapped.length, terminalRows, PREVIEW_FIXED_LINE_COUNT, descriptionBlockRows(descriptionLines),
+		);
 		this.previewScroller.setExtent(wrapped.length, viewport.visibleCount);
 
 		const lines: string[] = [border, ""];
@@ -280,6 +287,7 @@ export class InjectionsView {
 		}
 
 		if (viewport.showScroll) lines.push(this.previewScrollLine(width, wrapped.length));
+		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(
 			this.fit(

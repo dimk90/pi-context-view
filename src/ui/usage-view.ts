@@ -37,7 +37,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { previewBodyLines } from "./section-preview.ts";
+import { guidelineDescriptionLines, previewBodyLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import {
 	buildUsageMap,
@@ -834,8 +834,8 @@ export class UsageView {
 	private renderPreview(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const descriptionLines = this.previewDescriptionLines(width, row);
-		const descriptionLineCount = descriptionLines.length === 0 ? 0 : descriptionLines.length + 1;
+		const descriptionLines = this.previewDescriptionLines(width, terminalRows, row);
+		const descriptionLineCount = descriptionBlockRows(descriptionLines);
 		const stream = this.previewStream(width, previewBlockMaxLines(terminalRows, descriptionLineCount), row);
 		const viewport = calculateViewport(
 			Math.max(1, stream.layout.lines.length),
@@ -872,7 +872,14 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const body = this.blockBodyLines(width, row, entry);
-		const viewport = calculateViewport(body.length, terminalRows, BLOCK_FIXED_LINE_COUNT);
+		const descriptionLines = guidelineDescriptionLines(theme, [entry], {
+			width,
+			availableRows: terminalRows - BLOCK_FIXED_LINE_COUNT,
+			contentLineCount: body.length,
+		});
+		const viewport = calculateViewport(
+			body.length, terminalRows, BLOCK_FIXED_LINE_COUNT, descriptionBlockRows(descriptionLines),
+		);
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
 
 		const lines: string[] = [
@@ -892,6 +899,7 @@ export class UsageView {
 				this.fit(theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${body.length})`), width),
 			);
 		}
+		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(
 			this.fit(
@@ -1057,8 +1065,18 @@ export class UsageView {
 		return cells.join(" ");
 	}
 
-	/** Fixed explanation shown only when the thinking preview contains invisible-reasoning metadata. */
-	private previewDescriptionLines(width: number, row: CategoryLegendRow): string[] {
+	/** Attribution collapses around uncapped content geometry; reasoning notation keeps its existing fixed footer. */
+	private previewDescriptionLines(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
+		if (row.rootId === "system-prompt") {
+			// Count entry headers and separator rows before applying the footer-dependent cap
+			const contentLineCount = this.previewContent(width, row)
+				.reduce((total, lines) => total + lines.length + 2, -1);
+			return guidelineDescriptionLines(this.theme, this.previewEntries(row), {
+				width,
+				availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
+				contentLineCount: Math.max(1, contentLineCount),
+			});
+		}
 		if (row.rootId !== "assistant-thinking") return [];
 		const hasInvisibleReasoning = this.previewEntries(row)
 			.some((entry) => entry.invisibleReasoning !== undefined);

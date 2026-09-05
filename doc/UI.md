@@ -27,8 +27,8 @@ at all, never as a partial sentence and never ellipsized. Each view names the
 content threshold that keeps its description, because the two views crowd
 differently: the Usage dashboard has a bounded legend and keeps its description
 only while the rest renders at full detail, while the unbounded Injections list
-keeps its description until the visible list window falls below a readable
-floor. Hints, borders, capture warnings, and configuration notices are not
+and attributed-content previews keep their descriptions until the visible
+content window falls below their readable floors. Hints, borders, capture warnings, and configuration notices are not
 descriptions and never collapse; the Injections `[Degraded: …]` indicator
 belongs to its description block and collapses with it, while the wrapped reason
 below the header stays.
@@ -50,6 +50,45 @@ and never add to it.
 Show the applicable subheader even when `Definition` is the only captured part;
 omit parts that have no captured text rather than rendering zero-token
 placeholders.
+
+System Prompt's `Guidelines` preview restores extension-contributed bullets in
+prompt order, alongside pi's own bullets. Each restored bullet uses
+`customMessageLabel`, followed by a dim ` -> ` and the owning extension's source
+label in `mdLink`. These are fixed semantic theme colors, independent of category
+color overrides. The annotations are preview-only: the Guidelines and System
+Prompt estimates still exclude these bullets, while the tool preview retains
+its counted Guidelines section unchanged. Shared bullets name only the first
+owning tool's source, never every tool declaring them.
+
+Apply this presentation to the System Prompt preview in both views, its capped
+and full Usage levels, and the standalone Guidelines child in Injections.
+Each of these previews shows one dim description at the bottom, outside the
+scrollable content and block-selection gutter, between blank rows immediately
+above the hints:
+
+> Highlighted parts are injected by extensions into pi’s system prompt. They are
+> excluded from the System Prompt token count and included in the injecting
+> extension’s count.
+
+Wrap the description without truncation and keep it pinned while scrolling,
+even when the highlighted text is offscreen or hidden by a block cap. It renders
+only for content carrying guideline-reference metadata: native-only System
+Prompt/Guidelines previews, sibling parts without references, and owning-tool
+previews have no such description. In the Usage category stream, inspect all
+entries; the full-content level inspects only its open entry.
+
+The attribution description collapses whole, including its preceding blank row,
+when it would leave fewer than ten content rows visible, or when a preview shorter
+than ten rows would no longer fit in full. Allow for the overflow counter when
+checking this floor. For a Usage stream, determine collapse from the uncapped
+content plus entry headers and separators, before deriving the footer-dependent
+block cap; this avoids a circular layout decision. Height-only resizing restores
+the description once space returns. It never contributes to scroll counters or
+`… +N lines` counts, though its reserved rows affect the viewport and block cap.
+
+Sanitize bullet text and source labels before applying colors, preserve styling
+through wrapping, and include annotations in preview scrolling and cap line
+counts. Never show raw bullets in the overview list or dashboard.
 
 A preview body never repeats the heading directly above it: drop a first content
 line identical to the item title, part label, or entry name, as a skill block
@@ -347,8 +386,8 @@ leave malformed wrappers visible. This is a preview-only transformation, and
 the full content still contributes to token estimates.
 
 Cap each block so two whole blocks stay visible: derive the cap from terminal
-height alone — never from the viewport, whose counter row depends on the capped
-stream — and clamp it between 4 and 10 wrapped content lines. When content is
+height and reserved footer rows — never from the viewport, whose counter row
+depends on the capped stream — and clamp it between 4 and 10 wrapped content lines. When content is
 hidden, left-align a dim `… +N lines` marker with the block content. For the
 selected block only, append dim ` · ` and accent `Enter - View Content`. Do not
 repeat that action in the footer hint row. Fully visible blocks show no Enter

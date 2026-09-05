@@ -88,10 +88,18 @@ Keep semantics in typed model fields rather than display labels:
   `Pi documentation`, any `--append-system-prompt` text, and the
   working-directory footer pi sends with every request — as parts that
   concatenate back to the item text and share out its estimate;
-- carve a tool's prompt lines only from the blocks pi renders them into, and
-  give each rendered guideline bullet to the first tool that declares it in
-  pi's active-tool order, so a bullet several tools share is measured once and
-  pi's own bullets stay in the base prompt;
+- carve a tool's complete prompt bullets only from the blocks pi renders them
+  into, never a prefix of a longer bullet, and give each rendered guideline
+  bullet to the first tool that declares it in pi's active-tool order, so a
+  bullet several tools share is measured once and pi's own bullets stay in the
+  base prompt;
+- retain each carved extension guideline's original position and tool-source
+  provenance as a typed, owned preview reference on the System Prompt's
+  Guidelines section and standalone child; references restore prompt order for
+  inspection but never enter the base item's counted text, character count, or
+  token shares. The owning tool still carries and counts its Guidelines section.
+  Only actually rendered, exactly matched bullets get references; absent bullets
+  and guidelines suppressed by a custom system prompt do not;
 - represent chained prompt edits as one unattributable extension aggregate;
 - treat `customType` as a message type, not necessarily a package identity;
 - detect non-custom context-only injections by diffing against the session branch;

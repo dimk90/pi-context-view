@@ -17,11 +17,24 @@
 - [x] Show `--append-system-prompt` text inside `System Prompt` item but in separate section.
 
 
-- [ ] **Keep extension-related guidelines excluded from the base count.**
+- [x] **Keep extension-related guidelines excluded from the base count.**
    - Today the extension shows extension-provided guidelines in each extension's preview rather than in the `Guidelines` section where they actually sit.
    - Show those guidelines inside `System Prompt`, in a distinct color, with an explicit note that they're attributed to their extension instead.
    - For the guidlines items which are came from extensions show arrow (`->`) and extension which injected it.
    - Discussion about "distinct" color, `->` color and extension color.
+
+- [x] Update style for injected stuff in `System Prompt`:
+  - Better colors:
+    - Injected text: `customMessageLabel`;
+    - `->`: `dim`;
+    - extension name: `mdLink`;
+  - Descriptions at the bottom of the view as for other view.
+  - More clear description: e.g. "Highlighted parts are injected by extension into the pi's system prompt, excluded from system prompt token count but included to extension that injects it".
+  - Show description not only on sub-item preview but also on `System Prompt` preview.
+
+- [ ] Apply the same approach to mark injected stuff (by extension) for other `System Prompt` sub-items:
+  - `Available Tools`
+  - any other sub-items?
 
 - [ ] **Appended Prompt** extension attribution:
   - If possible to detect from which extension/tool is came from add to the extension as item or inside tool item.

@@ -55,6 +55,17 @@ export interface JsonSpan {
 	readonly end: number;
 }
 
+/** A rendered guideline counted by its owning tool, inserted only for prompt previews. */
+export interface GuidelineReference {
+	/** Insertion offset in the containing item's or section's counted text, in prompt order. */
+	readonly offset: number;
+	/** Captured bullet including its leading line break; never additional counted text. */
+	readonly text: string;
+	/** Stable id of the tool item that counts this bullet. */
+	readonly itemId: string;
+	readonly source: InjectionSource;
+}
+
 /** One labeled part of an item's raw text, used only to shape its preview. */
 export interface InjectionSection {
 	/** Section name rendered as a preview subheader. */
@@ -65,6 +76,8 @@ export interface InjectionSection {
 	readonly tokens: number;
 	/** Serialized JSON inside `text`, e.g. a tool's parameter schema. */
 	readonly jsonSpan?: JsonSpan;
+	/** Preview-only guideline insertions; their owning tools count them instead. */
+	readonly guidelineReferences?: readonly GuidelineReference[];
 }
 
 /** One measured context injection. */
@@ -85,6 +98,8 @@ export interface InjectionItem {
 	readonly jsonSpan?: JsonSpan;
 	/** Labeled parts of `text`, e.g. a tool's prompt lines and definition; never extra tokens. */
 	readonly sections?: readonly InjectionSection[];
+	/** Preview-only guideline insertions for a standalone Guidelines child. */
+	readonly guidelineReferences?: readonly GuidelineReference[];
 	/** True when a message exists only in the transformed provider context, not the session branch. */
 	readonly contextOnly?: boolean;
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
@@ -222,9 +237,21 @@ function copyItem(item: InjectionItem): InjectionItem {
 		...item,
 		source: { ...item.source },
 		jsonSpan: copyJsonSpan(item.jsonSpan),
-		sections: item.sections?.map((section) => ({ ...section, jsonSpan: copyJsonSpan(section.jsonSpan) })),
+		guidelineReferences: copyGuidelineReferences(item.guidelineReferences),
+		sections: item.sections?.map((section) => ({
+			...section,
+			jsonSpan: copyJsonSpan(section.jsonSpan),
+			guidelineReferences: copyGuidelineReferences(section.guidelineReferences),
+		})),
 		children: item.children?.map((child) => copyItem(child)),
 	};
+}
+
+/** Own reference records and their nested provenance without adding their text to totals. */
+function copyGuidelineReferences(
+	references: readonly GuidelineReference[] | undefined,
+): GuidelineReference[] | undefined {
+	return references?.map((reference) => ({ ...reference, source: { ...reference.source } }));
 }
 
 /** Owned copy of an optional span. */
