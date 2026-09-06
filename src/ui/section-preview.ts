@@ -18,6 +18,12 @@ const INJECTED_ATTRIBUTION_DESCRIPTION =
 /** Added only where an owner was inferred, because pi reports no author for chained prompt edits. */
 const GUESSED_ATTRIBUTION_DESCRIPTION =
 	" Sources marked (guess) are inferred from the injected text itself.";
+/**
+ * Arrow introducing a restored line's source label. The trailing separator is a
+ * non-breaking space, so wrapping never splits the arrow from the label it
+ * points at: the whole annotation moves to the next line instead.
+ */
+const SOURCE_ARROW = " <-\u00A0";
 /** Suffix distinguishing an inferred owner from a carved line's known one. */
 const GUESS_MARKER = " (guess)";
 /** Keep a normal block's worth of content visible before making room for its explanation. */
@@ -126,7 +132,7 @@ function contentBodyLines(
 		// A part that opens with a reference drops its captured lead, as plain text does.
 		const line = text.length === 0 ? reference.text.replace(/^\n+/, "") : reference.text;
 		text += theme.fg("syntaxNumber", normalizePreviewText(line));
-		text += theme.fg("borderMuted", " <- ");
+		text += theme.fg("borderMuted", SOURCE_ARROW);
 		text += theme.fg("mdLink", normalizeInlineText(reference.source.label));
 		if (reference.tool !== undefined) {
 			text += theme.fg("mdLinkUrl", `:${normalizeInlineText(reference.tool)}`);

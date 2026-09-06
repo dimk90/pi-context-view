@@ -17,6 +17,8 @@ const SNIPPET = "Search the web";
 /** Line pi renders for the extension tool under "Available tools:". */
 const SNIPPET_LINE = `search: ${SNIPPET}`;
 const SOURCE = "npm:web";
+/** Arrow and label form one wrapping unit, joined by a non-breaking space. */
+const ARROW = " <-\u00A0";
 /** Carved lines name the tool pi reported for them, qualifying their source label. */
 const TOOL = "search";
 const DESCRIPTION = "Highlighted parts are injected by extensions into pi’s system prompt. " +
@@ -52,10 +54,10 @@ function plain(lines: readonly string[]): string {
 /** Parent and standalone previews share these semantic colors and a single fixed accounting footer. */
 function assertAttribution(lines: readonly string[], theme: Theme, text = GUIDELINE): void {
 	assertFooter(lines, theme);
-	assert.ok(plain(lines).includes(`- ${text} <- ${SOURCE}:${TOOL}`));
+	assert.ok(plain(lines).includes(`- ${text}${ARROW}${SOURCE}:${TOOL}`));
 	const rendered = lines.find((line) => line.includes(text));
 	assert.ok(rendered?.includes(theme.fg("syntaxNumber", `- ${text}`)));
-	assert.ok(rendered?.includes(theme.fg("borderMuted", " <- ")));
+	assert.ok(rendered?.includes(theme.fg("borderMuted", ARROW)));
 	assert.ok(rendered?.includes(theme.fg("mdLink", SOURCE)));
 	// The tool is a distinct span, so a themed label never swallows its qualifier.
 	assert.ok(rendered?.includes(theme.fg("mdLinkUrl", `:${TOOL}`)));
@@ -122,7 +124,7 @@ test("Injections shows attributed guidelines only after Enter, for parent and ch
 	view.handleInput("\u001b[F"); // Last tool
 	view.handleInput("\r");
 	assert.match(plain(view.render(120)), /- Use search to verify claims/);
-	assert.doesNotMatch(plain(view.render(120)), /Highlighted parts|<- npm:web/);
+	assert.doesNotMatch(plain(view.render(120)), /Highlighted parts|<-\u00A0npm:web/);
 });
 
 test("Injections attributes Available Tools snippets in the parent and standalone child", () => {
@@ -204,7 +206,7 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 	view.handleInput("\r");
 
 	const parent = view.render(120);
-	assert.ok(plain(parent).includes(`${addition.trim()} <- npm:web (guess)`));
+	assert.ok(plain(parent).includes(`${addition.trim()}${ARROW}npm:web (guess)`));
 	const rendered = parent.find((line) => line.includes("(guess)"));
 	assert.ok(rendered?.includes(theme.fg("mdLink", "npm:web")));
 	// One marker covers a guessed extension and any tool guessed inside it.
@@ -215,7 +217,7 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 	for (let step = 0; step < 4; step++) view.handleInput("j"); // Extension Additions
 	view.handleInput("\r");
 	const child = view.render(120);
-	assert.ok(plain(child).includes(`${addition.trim()} <- npm:web (guess)`));
+	assert.ok(plain(child).includes(`${addition.trim()}${ARROW}npm:web (guess)`));
 	assert.match(plain(child).replace(/\s+/g, " "), /Sources marked \(guess\) are inferred/);
 
 	// Usage counts it under the contributing extension, not under System Prompt.
@@ -241,7 +243,7 @@ test("a guessed addition names the extension tool its text mentions", () => {
 	view.handleInput("\r");
 
 	const parent = view.render(120);
-	assert.ok(plain(parent).includes(`${addition.trim()} <- npm:web:web_search (guess)`));
+	assert.ok(plain(parent).includes(`${addition.trim()}${ARROW}npm:web:web_search (guess)`));
 	const rendered = parent.find((line) => line.includes("(guess)"));
 	assert.ok(rendered?.includes(theme.fg("mdLinkUrl", ":web_search")));
 });
@@ -265,6 +267,30 @@ test("reference text and source are sanitized before coloring and wrapping", () 
 	const continuation = lines.find((line) => line.includes("continuation"));
 	assert.ok(continuation?.includes(theme.getFgAnsi("syntaxNumber")), "multiline references keep their color");
 	assert.doesNotMatch(plain(lines), /Highlighted parts|Arrow-marked/);
+});
+
+test("the arrow stays attached to its label at every wrap width", () => {
+	const theme = createTheme();
+	const label = "npm:@eko24ive/pi-ask";
+	const content = {
+		text: "Guidelines:",
+		injectedReferences: [{
+			offset: "Guidelines:".length,
+			text: "\n- Ask the user before choosing between valid directions",
+			itemId: "tool:ask",
+			source: { id: "ask", label, native: false },
+			tool: "ask_user",
+		}],
+	};
+	for (let width = 12; width <= 90; width++) {
+		const lines = plain(previewBodyLines(theme, content, width, () => [])).split("\n");
+		const annotation = `<-\u00A0${label}:ask_user`;
+		// Only a line too narrow for the whole annotation may break it, and never right after the arrow.
+		if (width >= visibleWidth(annotation) + 2) {
+			assert.ok(lines.some((line) => line.includes(annotation)), `annotation kept whole at width ${width}`);
+		}
+		assert.ok(lines.every((line) => !/<-\u00A0?$/.test(line)), `no wrap after the arrow at width ${width}`);
+	}
 });
 
 /** All preview levels that can render attributed System Prompt text. */

@@ -45,6 +45,12 @@ carries a `dim` ` (guess)` after its label, once for the whole
 today: carved tool lines name a source pi reported. A part that opens with a
 restored line drops its captured leading blank lines, as plain part text does.
 
+The arrow and the label it points at form one wrapping unit, joined by a
+non-breaking space: a line too narrow for both moves the whole annotation down
+instead of stranding the arrow, and only an annotation wider than the content
+width breaks mid-label. The space before the arrow stays an ordinary break
+opportunity.
+
 The annotations are preview-only: the part and System Prompt estimates still
 exclude these lines, while the tool preview keeps its counted `Available Tools`
 and `Guidelines` sections unchanged. Sanitize line text and source labels before
