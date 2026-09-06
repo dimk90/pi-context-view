@@ -23,7 +23,7 @@ const GUESSED_ATTRIBUTION_DESCRIPTION =
  * non-breaking space, so wrapping never splits the arrow from the label it
  * points at: the whole annotation moves to the next line instead.
  */
-const SOURCE_ARROW = " <-\u00A0";
+const SOURCE_ARROW = "\u00A0<-\u00A0";
 /** Suffix distinguishing an inferred owner from a carved line's known one. */
 const GUESS_MARKER = " (guess)";
 /** Keep a normal block's worth of content visible before making room for its explanation. */
