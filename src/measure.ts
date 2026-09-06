@@ -56,13 +56,15 @@ const AVAILABLE_TOOLS_BLOCK = {
 };
 /** Block pi renders tool guideline bullets into. */
 const GUIDELINES_BLOCK = { id: "base-prompt:guidelines", label: GUIDELINES_LABEL, header: "\nGuidelines:\n" };
+/** Block pi renders its own documentation into; no tool contributes to it. */
+const DOCUMENTATION_BLOCK = { id: "base-prompt:documentation", label: "Documentation", header: "\nPi documentation" };
 
-/** Blocks pi renders into its own base prompt, in emission order. */
-const BASE_PROMPT_BLOCKS = [
-	AVAILABLE_TOOLS_BLOCK,
-	GUIDELINES_BLOCK,
-	{ id: "base-prompt:documentation", label: "Documentation", header: "\nPi documentation" },
-];
+/**
+ * Blocks pi renders into its own base prompt, in emission order. A
+ * `--system-prompt` replacement carries none of them, so these are exactly the
+ * blocks it drops.
+ */
+const BASE_PROMPT_BLOCKS = [AVAILABLE_TOOLS_BLOCK, GUIDELINES_BLOCK, DOCUMENTATION_BLOCK];
 
 /** One visible skill before pi adds XML transport framing. */
 export interface SkillSlice {
@@ -115,17 +117,15 @@ export function analyzeSystemPrompt(
 	const base = footer === undefined ? systemPrompt : systemPrompt.slice(0, footer.start);
 
 	const usesCustomPrompt = options.customPrompt !== undefined && options.customPrompt.length > 0;
-	const injectedSpans = measureTools(usesCustomPrompt ? "" : base, tools, items, carvedSpans);
+	const promptLines = measureTools(base, tools, items, carvedSpans, usesCustomPrompt);
 	measureContextFiles(base, options, items, carvedSpans);
 	measureSkills(base, options, items, carvedSpans);
 	const appended = carveAppendedPrompt(base, options, carvedSpans);
 
-	const parts = addInjectedReferences(
-		splitBasePromptParts(carve(base, carvedSpans), usesCustomPrompt),
-		base,
-		carvedSpans,
-		injectedSpans,
-	);
+	const remaining = carve(base, carvedSpans);
+	const parts = usesCustomPrompt
+		? droppedBasePromptParts(remaining, promptLines.dropped)
+		: addInjectedReferences(splitBasePromptParts(remaining), base, carvedSpans, promptLines.carved);
 	if (appended !== undefined) {
 		parts.push({ id: "base-prompt:appended", kind: "append-prompt", label: "Appended Prompt", text: appended });
 	}
@@ -201,19 +201,31 @@ function charTokens(chars: number): number {
 	return Math.ceil(chars / 4);
 }
 
+/** Where each tool's prompt lines ended up: carved out of pi's blocks, or dropped with them. */
+interface ToolPromptLines {
+	/** Carved lines, restored as references on the System Prompt part each came from. */
+	readonly carved: InjectedSpan[];
+	/** Extension lines a replacement suppressed, keyed by the part that would have carried them. */
+	readonly dropped: Map<string, InjectedReference[]>;
+}
+
 /**
  * Measure active tool contributions: per-tool definition payloads plus the
  * prompt snippet/guideline lines carved out of the base prompt. Built-in
- * tools collapse into one aggregate pi-native item.
+ * tools collapse into one aggregate pi-native item. A `--system-prompt`
+ * replacement carries no prompt lines at all, so each tool keeps its own as
+ * dropped, uncounted sections instead.
  */
 function measureTools(
 	base: string,
 	tools: ToolSlice[],
 	items: InjectionItem[],
 	carvedSpans: Span[],
-): InjectedSpan[] {
+	replaced: boolean,
+): ToolPromptLines {
 	const carver = createPromptCarver(base, carvedSpans);
 	const claimedGuidelines = new Set(piOwnedGuidelines(tools));
+	const dropped = new Map<string, InjectedReference[]>();
 	const builtinChildren: InjectionItem[] = [];
 	for (const tool of tools) {
 		// Built-in tools claim their bullets without carving them, so a later
@@ -221,26 +233,97 @@ function measureTools(
 		// pi itself or for a built-in tool.
 		const ownedGuidelines = claimGuidelines(tool, claimedGuidelines);
 		const definition = createDefinitionSection(tool);
+		const droppedLines = replaced ? droppedPromptLines(tool, ownedGuidelines) : [];
 		if (tool.source === "builtin") {
-			builtinChildren.push(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, [definition]));
+			// Pi renders built-in lines on its own behalf, so they become visible here only once dropped.
+			const sections = [...droppedSections(droppedLines), definition];
+			builtinChildren.push(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, sections));
 			continue;
 		}
-		const sections = [...carveToolPromptSections(carver, tool, ownedGuidelines), definition];
-		const source = extensionSource(tool.source);
-		items.push(createToolItem(`tool:${tool.source}:${tool.name}`, source, tool.name, sections));
+		const owner: InjectedOwner = {
+			itemId: `tool:${tool.source}:${tool.name}`,
+			source: extensionSource(tool.source),
+			tool: tool.name,
+		};
+		collectDroppedReferences(dropped, droppedLines, owner);
+		const promptSections = replaced
+			? droppedSections(droppedLines)
+			: carveToolPromptSections(carver, tool, ownedGuidelines, owner);
+		items.push(createToolItem(owner.itemId, owner.source, tool.name, [...promptSections, definition]));
 	}
 	if (builtinChildren.length > 0) {
 		builtinChildren.sort((a, b) => b.tokens - a.tokens);
 		const label = `${BUILT_IN_TOOLS_LABEL} (${builtinChildren.length})`;
 		items.push(createAggregateItem("tool:builtin", "tool", PI_SOURCE, label, builtinChildren));
 	}
-	return carver.injectedSpans;
+	return { carved: carver.injectedSpans, dropped };
+}
+
+/** One prompt line a replacement suppressed, and the System Prompt part pi would have rendered it into. */
+interface DroppedLine {
+	readonly partId: string;
+	/** Section name the line belongs to, shared by the part and the owning tool. */
+	readonly label: string;
+	/** Line exactly as pi would have rendered it, including its leading line break. */
+	readonly text: string;
+}
+
+/** Prompt lines pi would have rendered for one tool: its snippet bullet, then the guidelines it owns. */
+function droppedPromptLines(tool: ToolSlice, ownedGuidelines: string[]): DroppedLine[] {
+	const lines: DroppedLine[] = [];
+	if (tool.snippet !== undefined) {
+		lines.push({
+			partId: AVAILABLE_TOOLS_BLOCK.id,
+			label: AVAILABLE_TOOLS_LABEL,
+			text: `\n- ${tool.name}: ${tool.snippet}`,
+		});
+	}
+	for (const guideline of ownedGuidelines) {
+		lines.push({ partId: GUIDELINES_BLOCK.id, label: GUIDELINES_LABEL, text: `\n- ${guideline}` });
+	}
+	return lines;
+}
+
+/**
+ * Group one tool's dropped lines into a preview-only section per part, so its
+ * preview shows what the replacement gave up without claiming tokens pi never
+ * sent.
+ */
+function droppedSections(lines: readonly DroppedLine[]): SectionDraft[] {
+	const sections: SectionDraft[] = [];
+	for (const line of lines) {
+		const last = sections.length - 1;
+		const current = sections[last];
+		if (current !== undefined && current.label === line.label) {
+			sections[last] = { ...current, text: current.text + line.text };
+			continue;
+		}
+		sections.push({ label: line.label, text: line.text, dropped: true });
+	}
+	return sections;
+}
+
+/** Restore one extension tool's dropped lines as references on the parts pi would have rendered them into. */
+function collectDroppedReferences(
+	dropped: Map<string, InjectedReference[]>,
+	lines: readonly DroppedLine[],
+	owner: InjectedOwner,
+): void {
+	for (const line of lines) {
+		// One insertion point: a dropped part holds no counted text of its own.
+		const reference: InjectedReference = { offset: 0, text: line.text, ...owner };
+		const references = dropped.get(line.partId);
+		if (references === undefined) dropped.set(line.partId, [reference]);
+		else references.push(reference);
+	}
 }
 
 /** One labeled part of a tool item's text, before it receives its token share. */
 interface SectionDraft {
 	readonly label: string;
 	readonly text: string;
+	/** True for text a `--system-prompt` replacement dropped: shown for reference, never counted. */
+	readonly dropped?: boolean;
 	/** Serialized JSON inside `text`; marked here rather than detected in the preview. */
 	readonly jsonSpan?: JsonSpan;
 	/** Prompt-line insertions that affect only the preview, never this section's estimate. */
@@ -266,13 +349,9 @@ function carveToolPromptSections(
 	carver: PromptCarver,
 	tool: ToolSlice,
 	ownedGuidelines: string[],
+	owner: InjectedOwner,
 ): SectionDraft[] {
 	const sections: SectionDraft[] = [];
-	const owner: InjectedOwner = {
-		itemId: `tool:${tool.source}:${tool.name}`,
-		source: extensionSource(tool.source),
-		tool: tool.name,
-	};
 	const snippet = tool.snippet === undefined
 		? undefined
 		: carveInjectedLine(carver, carver.toolsBlock, `\n- ${tool.name}: ${tool.snippet}`, owner);
@@ -497,6 +576,8 @@ interface PromptPart {
 	readonly kind: InjectionKind;
 	readonly label: string;
 	readonly text: string;
+	/** True for a block a `--system-prompt` replacement dropped: no pi text, no tokens. */
+	readonly dropped?: boolean;
 	readonly injectedReferences?: readonly InjectedReference[];
 }
 
@@ -537,23 +618,44 @@ function addInjectedReferences(
  * Split pi's own prompt at the block headers it renders deterministically, so
  * the tool list, guidelines, and documentation it already carries become
  * visible parts. Text before the first header opens the list as the preamble.
- * A --system-prompt replacement carries none of pi's blocks, so it stays one
- * undivided preamble.
  */
-function splitBasePromptParts(base: string, usesCustomPrompt: boolean): PromptPart[] {
+function splitBasePromptParts(base: string): PromptPart[] {
 	const parts: PromptPart[] = [];
 	let block = PREAMBLE_BLOCK;
 	let start = 0;
-	if (!usesCustomPrompt) {
-		for (const next of BASE_PROMPT_BLOCKS) {
-			const headerStart = base.indexOf(next.header, start);
-			if (headerStart === -1) continue;
-			appendPromptPart(parts, block, base.slice(start, headerStart));
-			block = next;
-			start = headerStart;
-		}
+	for (const next of BASE_PROMPT_BLOCKS) {
+		const headerStart = base.indexOf(next.header, start);
+		if (headerStart === -1) continue;
+		appendPromptPart(parts, block, base.slice(start, headerStart));
+		block = next;
+		start = headerStart;
 	}
 	appendPromptPart(parts, block, base.slice(start));
+	return parts;
+}
+
+/**
+ * Parts of a replaced prompt: the replacement text itself, then every block pi
+ * would have assembled, kept visible as dropped so the view shows what the
+ * replacement gave up. A dropped block carries no pi-authored text — only the
+ * extension lines pi never rendered, as preview-only references.
+ */
+function droppedBasePromptParts(
+	base: string,
+	dropped: Map<string, InjectedReference[]>,
+): PromptPart[] {
+	const parts: PromptPart[] = [];
+	appendPromptPart(parts, PREAMBLE_BLOCK, base);
+	for (const block of BASE_PROMPT_BLOCKS) {
+		parts.push({
+			id: block.id,
+			kind: "base-prompt",
+			label: block.label,
+			text: "",
+			dropped: true,
+			injectedReferences: dropped.get(block.id),
+		});
+	}
 	return parts;
 }
 
@@ -569,12 +671,13 @@ function appendPromptPart(parts: PromptPart[], block: { id: string; label: strin
  * item down without adding tokens. A prompt with one part stays undivided.
  */
 function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
-	const text = parts.map((part) => part.text).join("");
+	const text = countedText(parts);
 	const item = createItem("base-prompt", "base-prompt", PI_SOURCE, SYSTEM_PROMPT_LABEL, text);
 	if (parts.length < 2) return item;
 	const sections = allocateSectionTokens(parts.map((part) => ({
 		label: part.label,
 		text: part.text,
+		dropped: part.dropped,
 		injectedReferences: part.injectedReferences,
 	})));
 	return {
@@ -583,6 +686,7 @@ function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 		children: parts.map((part, index) => ({
 			...createItem(part.id, part.kind, PI_SOURCE, part.label, part.text),
 			tokens: sections[index]?.tokens ?? 0,
+			dropped: part.dropped,
 			injectedReferences: part.injectedReferences,
 		})),
 	};
@@ -615,19 +719,26 @@ function createToolItem(
 	label: string,
 	sections: SectionDraft[],
 ): InjectionItem {
-	const text = sections.map((section) => section.text).join("");
+	const text = countedText(sections);
 	return { ...createItem(id, "tool", source, label, text), sections: allocateSectionTokens(sections) };
+}
+
+/** Text an item actually sends: everything but the parts a prompt replacement dropped. */
+function countedText(parts: readonly { readonly text: string; readonly dropped?: boolean }[]): string {
+	return parts.filter((part) => part.dropped !== true).map((part) => part.text).join("");
 }
 
 /**
  * Give each section its share of the item estimate. Shares are cumulative
  * differences rather than independently rounded counts, so they always sum to
- * the item total.
+ * the item total. A dropped section reads 0 tokens and leaves the shares of
+ * the sections pi did send unchanged.
  */
 function allocateSectionTokens(sections: SectionDraft[]): InjectionSection[] {
 	let chars = 0;
 	let allocated = 0;
 	return sections.map((section) => {
+		if (section.dropped === true) return { ...section, tokens: 0 };
 		chars += section.text.length;
 		const cumulative = charTokens(chars);
 		const tokens = cumulative - allocated;

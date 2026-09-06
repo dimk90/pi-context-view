@@ -17,8 +17,8 @@ const SNIPPET = "Search the web";
 /** Line pi renders for the extension tool under "Available tools:". */
 const SNIPPET_LINE = `search: ${SNIPPET}`;
 const SOURCE = "npm:web";
-/** Arrow and label form one wrapping unit, joined by a non-breaking space. */
-const ARROW = " <-\u00A0";
+/** Non-breaking spaces join the preceding word, arrow, and source label. */
+const ARROW = "\u00A0<-\u00A0";
 /** Carved lines name the tool pi reported for them, qualifying their source label. */
 const TOOL = "search";
 const DESCRIPTION = "Highlighted parts are injected by extensions into pi’s system prompt. " +
@@ -269,7 +269,7 @@ test("reference text and source are sanitized before coloring and wrapping", () 
 	assert.doesNotMatch(plain(lines), /Highlighted parts|Arrow-marked/);
 });
 
-test("the arrow stays attached to its label at every wrap width", () => {
+test("attribution wraps the preceding word and label together unless wider than the content", () => {
 	const theme = createTheme();
 	const label = "npm:@eko24ive/pi-ask";
 	const content = {
@@ -282,15 +282,22 @@ test("the arrow stays attached to its label at every wrap width", () => {
 			tool: "ask_user",
 		}],
 	};
+	const joinedSuffix = `directions${ARROW}${label}:ask_user`;
 	for (let width = 12; width <= 90; width++) {
 		const lines = plain(previewBodyLines(theme, content, width, () => [])).split("\n");
-		const annotation = `<-\u00A0${label}:ask_user`;
-		// Only a line too narrow for the whole annotation may break it, and never right after the arrow.
-		if (width >= visibleWidth(annotation) + 2) {
-			assert.ok(lines.some((line) => line.includes(annotation)), `annotation kept whole at width ${width}`);
+		assert.ok(lines.every((line) => visibleWidth(line) <= width + 2), `bounded lines at width ${width}`);
+		// The leading non-breaking space also binds the last content word to the annotation
+		if (width >= visibleWidth(joinedSuffix)) {
+			assert.ok(lines.some((line) => line.includes(joinedSuffix)), `suffix kept whole at width ${width}`);
 		}
-		assert.ok(lines.every((line) => !/<-\u00A0?$/.test(line)), `no wrap after the arrow at width ${width}`);
+		assert.equal(
+			lines.join("").replace(/ /g, ""),
+			`Guidelines:- Ask the user before choosing between valid ${joinedSuffix}`.replace(/ /g, ""),
+			`wrapped content and both non-breaking spaces survive at width ${width}`,
+		);
 	}
+	const narrow = plain(previewBodyLines(theme, content, 13, () => [])).split("\n");
+	assert.ok(narrow.some((line) => line.endsWith("directions\u00A0<-")), "oversized suffix may split after the arrow");
 });
 
 /** All preview levels that can render attributed System Prompt text. */
@@ -379,6 +386,88 @@ test("attribution footer gives short content every row and never truncates on ti
 			assert.deepEqual(injectedDescriptionLines(theme, [content], { ...layout, availableRows }), []);
 		}
 	}
+});
+
+/** Snapshot of a --system-prompt replacement: every pi block dropped, one addition still sent. */
+function createReplacedSnapshot(): InitialSnapshot {
+	const addition = "\n\nAsk before editing: npm:web docs.";
+	const prompt = `Custom reviewer prompt.\nCurrent working directory: /fixture${addition}`;
+	const items = analyzeSystemPrompt(prompt, { cwd: "/fixture", customPrompt: "Custom reviewer prompt." }, [{
+		name: "search", description: "Search", parametersJson: "{}",
+		snippet: SNIPPET, guidelines: [GUIDELINE], source: SOURCE,
+	}], { sources: [{ source: SOURCE, path: "/pkgs/web/index.ts" }] });
+	return buildSnapshot(items, "real-turn", new Date("2026-07-10T12:00:00Z"));
+}
+
+test("a replaced prompt marks its dropped blocks in the tree and in previews", () => {
+	let height = 40;
+	const theme = createTheme();
+	const view = new InjectionsView(theme, { snapshot: createReplacedSnapshot() }, () => {}, () => height);
+	const list = view.render(120);
+
+	// Dropped blocks stay visible at 0 tokens, marked after the estimate they explain.
+	for (const label of ["Available Tools", "Guidelines", "Documentation"]) {
+		assert.match(plain(list).replace(/\.{2,}/g, "\u2026"), new RegExp(`${label} \u2026 0 · Dropped`));
+	}
+	const row = list.find((line) => plain([line]).includes("Documentation"));
+	assert.ok(row?.includes(theme.fg("toolDiffRemoved", " · Dropped")), "one fixed color marks the state");
+	// A marker that no longer fits is dropped whole rather than truncated.
+	assert.doesNotMatch(plain(view.render(34)), /Dropped/);
+	assert.match(plain(view.render(34)), /Documentation/);
+
+	view.handleInput("j"); // System Prompt
+	view.handleInput("\r");
+	const parent = plain(view.render(120));
+	assert.match(parent.replace(/\s+/g, " "), /Available Tools · 0 tokens · Dropped/);
+	assert.match(parent.replace(/\s+/g, " "), /Documentation · 0 tokens · Dropped/);
+	assert.ok(parent.includes(`- search: ${SNIPPET}${ARROW}${SOURCE}:${TOOL}`));
+	assert.ok(parent.includes(`- ${GUIDELINE}${ARROW}${SOURCE}:${TOOL}`));
+	// Extension Additions survive the replacement, so this preview mixes both accountings.
+	assert.match(
+		parent.replace(/\s+/g, " "),
+		/injecting extension’s count\. Parts marked Dropped were replaced by a custom system prompt and are counted nowhere\./,
+	);
+
+	view.handleInput("\u001b");
+	view.handleInput("j"); // Preamble
+	view.handleInput("j"); // Available Tools
+	view.handleInput("\r");
+	const child = plain(view.render(120));
+	assert.ok(child.includes(`- search: ${SNIPPET}${ARROW}${SOURCE}:${TOOL}`));
+	// Nothing counts a dropped line, so the footer never claims its extension does.
+	assert.match(
+		child.replace(/\s+/g, " "),
+		/A custom system prompt replaced them, so they are counted neither by the System Prompt nor by the injecting extension\./,
+	);
+	assert.doesNotMatch(child, /included in the injecting extension’s count/);
+
+	for (const width of [30, 60, 80, 120]) {
+		for (height of [12, 24, 40]) assertFrame(view.render(width), width, height);
+	}
+});
+
+test("a tool preview shows its dropped prompt lines without claiming their tokens", () => {
+	const theme = createTheme();
+	const snapshot = createReplacedSnapshot();
+	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
+	view.handleInput("\u001b[F"); // last selectable row: the extension's prompt additions
+	view.handleInput("k"); // the extension tool above it
+	view.handleInput("\r");
+	const preview = plain(view.render(120)).replace(/\s+/g, " ");
+	assert.match(preview, new RegExp(`Available Tools · 0 tokens · Dropped - search: ${SNIPPET}`));
+	assert.match(preview, new RegExp(`Guidelines · 0 tokens · Dropped - ${GUIDELINE}`));
+	// A tool's own lines are not injections into someone else's text.
+	assert.doesNotMatch(preview, /Highlighted parts/);
+
+	// Usage counts the same tool without its dropped lines.
+	const usage = computeUsage({ snapshot, messages: [] });
+	const customTools = usage.categories.find((category) => category.id === "custom-tools");
+	const entry = collectPreviewEntries(customTools ?? { id: "", label: "", tokens: 0 })[0];
+	assert.equal(entry?.tokens, customTools?.tokens);
+	assert.deepEqual(
+		entry?.sections?.filter((section) => section.dropped === true).map((section) => section.tokens),
+		[0, 0],
+	);
 });
 
 test("native-only System Prompt and sibling previews do not claim extension injection", () => {

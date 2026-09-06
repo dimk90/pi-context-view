@@ -99,8 +99,16 @@ Keep semantics in typed model fields rather than display labels:
   `Guidelines` bullets alike; references restore prompt order for inspection but
   never enter the base item's counted text, character count, or token shares. The
   owning tool still carries and counts those sections. Only actually rendered,
-  exactly matched lines get references; absent lines and lines suppressed by a
-  custom system prompt do not;
+  exactly matched lines get references, and a line pi never rendered gets none
+  unless a prompt replacement dropped its whole block;
+- keep the blocks a `--system-prompt` replacement drops — `Available Tools`,
+  `Guidelines`, and `Documentation` — as marked, uncounted parts of System
+  Prompt instead of omitting them, so the model records what the replacement
+  gave up. A dropped part holds no pi-authored text, only the extension lines pi
+  would have rendered into it as references; each tool likewise keeps its own
+  dropped snippet and guideline sections. Every dropped part and section reads 0
+  tokens and stays out of its item's counted text, character count, and token
+  shares, so no item claims tokens pi never sent;
 - attribute the text appended after pi's footer per blank-line block, bounded by
   the prompt this extension observed in its own `before_agent_start` handler, so
   no block spans extensions loaded before and after it. Name a block only when

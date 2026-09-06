@@ -24,8 +24,11 @@ Present Initial contributions in this order:
     with one child per part pi assembles it from, in prompt order: `Preamble`,
     `Available Tools`, `Guidelines`, `Documentation`, `Appended Prompt`
     (`--append-system-prompt` text), `Current Dir`, and `Extension Additions`.
-    Parts pi rendered no text into are absent, and a replaced prompt keeps its
-    whole body as the single `Preamble` part. `Extension Additions` holds no
+    Parts pi rendered no text into are absent. A replaced prompt keeps its whole
+    body as the `Preamble` part and still lists `Available Tools`, `Guidelines`,
+    and `Documentation`, each at 0 tokens with the
+    [`Dropped` marker](../UI.md#color-and-casing) after its estimate, so the
+    tree shows what the replacement gave up. `Extension Additions` holds no
     counted text of its own: it always reads 0 tokens and exists to present the
     additions its owners count.
   - `Instruction Files (M)`, with one child per context file, abbreviating home

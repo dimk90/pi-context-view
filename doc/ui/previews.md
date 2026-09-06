@@ -14,8 +14,11 @@ rows inside its body and leave captured text and token estimates unchanged.
 Part shares reconcile exactly with the item or entry estimate and never add to
 it. Show the applicable subheader even when `Definition` is the only captured
 part; omit parts with no captured text rather than rendering zero-token
-placeholders. `Extension Additions` is the one exception: it carries no counted
-text by design, so it renders at 0 tokens whenever it hosts restored lines.
+placeholders. Two kinds of part carry no counted text by design and still
+render at 0 tokens: `Extension Additions` whenever it hosts restored lines, and
+any part a `--system-prompt` replacement dropped, which keeps its subheader with
+the [`Dropped` marker](../UI.md#color-and-casing) after its estimate — even with
+an empty body, since the point is to show what the replacement gave up.
 
 Why `syntaxKeyword`: parts nest under item and entry headings that already carry
 `mdHeading`.
@@ -24,7 +27,11 @@ Why `syntaxKeyword`: parts nest under item and entry headings that already carry
 
 The System Prompt `Available Tools`, `Guidelines`, and `Extension Additions`
 previews restore the text extensions contributed to those blocks in prompt
-order, alongside pi's own. Each restored line uses `syntaxNumber` followed by a
+order, alongside pi's own. A dropped block restores the extension lines pi would
+have rendered into it and shows no pi-authored content at all, so it renders
+empty when no extension contributed to it; the tools themselves keep the same
+lines as their own dropped sections, unannotated like any other owning-tool
+preview. Each restored line uses `syntaxNumber` followed by a
 `borderMuted` ` <- ` and the owning extension's source label in `mdLink` — fixed
 semantic theme colors, independent of category color overrides. A tool
 contributes at most one `Available Tools` snippet, and a shared guideline bullet
@@ -45,11 +52,11 @@ carries a `dim` ` (guess)` after its label, once for the whole
 today: carved tool lines name a source pi reported. A part that opens with a
 restored line drops its captured leading blank lines, as plain part text does.
 
-The arrow and the label it points at form one wrapping unit, joined by a
-non-breaking space: a line too narrow for both moves the whole annotation down
-instead of stranding the arrow, and only an annotation wider than the content
-width breaks mid-label. The space before the arrow stays an ordinary break
-opportunity.
+Non-breaking spaces on both sides of the arrow join the preceding content word,
+arrow, and source label into one wrapping unit. Move that whole unit to the next
+line when it fits the content width but not the remaining space. If the unit is
+wider than the content width, hard-wrap it to fit; this may split the label or
+leave the arrow at the end of a line.
 
 The annotations are preview-only: the part and System Prompt estimates still
 exclude these lines, while the tool preview keeps its counted `Available Tools`
@@ -70,6 +77,20 @@ block-selection gutter, between blank rows immediately above the hints:
 > Highlighted parts are injected by extensions into pi’s system prompt. They are
 > excluded from the System Prompt token count and included in the injecting
 > extension’s count.
+
+When every highlighted part in that preview was dropped, the accounting sentence
+is replaced rather than extended, because nothing counts those lines:
+
+> Highlighted parts are injected by extensions into pi’s system prompt. A custom
+> system prompt replaced them, so they are counted neither by the System Prompt
+> nor by the injecting extension.
+
+A preview mixing dropped parts with parts pi still sends — the System Prompt
+item preview under a replacement, whose `Extension Additions` survived it — keeps
+the original sentence and adds:
+
+> Parts marked Dropped were replaced by a custom system prompt and are counted
+> nowhere.
 
 When any restored line in that preview names a guessed owner, the footer gains
 one more sentence:

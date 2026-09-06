@@ -97,10 +97,15 @@ export interface InjectedReference {
 export interface InjectionSection {
 	/** Section name rendered as a preview subheader. */
 	readonly label: string;
-	/** Slice of the parent item's text; sections concatenate back to it. */
+	/** Slice of the parent item's text; sections concatenate back to it, except when dropped. */
 	readonly text: string;
 	/** Share of the parent estimate; sections sum exactly to the item total. */
 	readonly tokens: number;
+	/**
+	 * True when a `--system-prompt` replacement suppressed this part: pi never
+	 * sent its text, so it carries no counted characters and always reads 0 tokens.
+	 */
+	readonly dropped?: boolean;
 	/** Serialized JSON inside `text`, e.g. a tool's parameter schema. */
 	readonly jsonSpan?: JsonSpan;
 	/** Preview-only extension prompt lines; their owning tools count them instead. */
@@ -125,6 +130,8 @@ export interface InjectionItem {
 	readonly jsonSpan?: JsonSpan;
 	/** Labeled parts of `text`, e.g. a tool's prompt lines and definition; never extra tokens. */
 	readonly sections?: readonly InjectionSection[];
+	/** True when a `--system-prompt` replacement suppressed this item; it reads 0 tokens. */
+	readonly dropped?: boolean;
 	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
 	readonly injectedReferences?: readonly InjectedReference[];
 	/** True when a message exists only in the transformed provider context, not the session branch. */

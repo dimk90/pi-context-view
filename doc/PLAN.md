@@ -54,7 +54,7 @@
   - `System Prompt` keeps its labeled sections without a redundant block layer.
   - Multi-entry categories keep block navigation; Escape from a single entry returns to the legend.
 
-- [ ] **Mark the parts a `--system-prompt` replacement drops.**
+- [x] **Mark the parts a `--system-prompt` replacement drops.**
    - `--system-prompt` replaces pi's whole base prompt, so pi's guidelines, its `Available tools:` list, and its documentation block are never sent. Tool definitions still are; extension-contributed guidelines and tool snippets are dropped along with pi's own.
    - Keep `Available Tools`, `Guidelines`, and `Documentation` visible under `System Prompt`, each marked `Dropped` at 0 tokens, so the view shows what the custom prompt gave up instead of silently omitting it.
    - Show no pi-authored content in a dropped section: only extension-contributed entries stay visible (guidelines, tool snippets), each `Dropped` at 0 tokens in the color that attributes it to its extension. A section with no extension content renders empty.

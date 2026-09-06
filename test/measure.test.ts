@@ -628,8 +628,9 @@ test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt
 		contextFilePaths: [filePath],
 	}, tools);
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
+	// The dropped lines stay out of the counted text, so the context file keeps them.
 	assert.equal(search?.text, "search: Search\n{}");
-	assert.deepEqual(search?.sections?.map((section) => section.label), ["Definition"]);
+	assert.equal(findItem(items, `context-file:${filePath}`)?.text.includes("- Cite sources"), true);
 	assert.equal(findItem(items, "base-prompt:preamble")?.text.trim(), "CUSTOM PROMPT");
 });
 
@@ -685,20 +686,91 @@ test("analyzeSystemPrompt measures a replaced prompt as the content pi actually 
 	// System Prompt carries the replacement text itself, not pi's replaced base prompt.
 	assert.equal(findItem(items, "base-prompt:preamble")?.text.trim(), customPrompt);
 	assert.equal(findItem(items, "base-prompt:appended")?.text, "APPENDED RULE");
-	// A replacement carries none of pi's blocks, so no part claims to be one.
+	// The blocks the replacement gave up stay visible, at no cost, instead of vanishing.
 	assert.deepEqual(
 		findItem(items, "base-prompt")?.children?.map((child) => child.label),
-		["Preamble", "Appended Prompt", "Current Dir"],
+		["Preamble", "Available Tools", "Guidelines", "Documentation", "Appended Prompt", "Current Dir"],
 	);
 	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
 	assert.equal(findItem(items, "skills")?.children?.length, 1);
-	// Snippet and guideline lines pi never rendered stay unmeasured for every tool.
-	assert.deepEqual(findItem(items, "tool:npm:web:search")?.sections?.map((part) => part.label), ["Definition"]);
-	assert.deepEqual(findItem(items, "tool:builtin:read")?.sections?.map((part) => part.label), ["Definition"]);
 	// The custom branch ends its cwd footer with a newline, which is not an extension addition.
 	assert.equal(findItem(items, "prompt-addition:unattributed"), undefined);
-	assert.ok(items.every((item) => item.injectedReferences === undefined &&
-		item.sections?.every((section) => section.injectedReferences === undefined) !== false));
+});
+
+test("analyzeSystemPrompt marks the parts a replaced prompt drops without counting them", () => {
+	const customPrompt = "You are a terse reviewer.";
+	const guidelines = ["Cite sources"];
+	const systemPrompt = buildSystemPrompt({
+		cwd: CWD,
+		customPrompt,
+		selectedTools: ["read", "search"],
+		toolSnippets: { read: "Read files", search: "Search the web" },
+		promptGuidelines: guidelines,
+	});
+	const tools: ToolSlice[] = [
+		{
+			name: "read",
+			description: "Read files",
+			parametersJson: "{}",
+			snippet: "Read files",
+			guidelines: [],
+			source: "builtin",
+		},
+		{
+			name: "search",
+			description: "Search",
+			parametersJson: "{}",
+			snippet: "Search the web",
+			guidelines,
+			source: "npm:web",
+		},
+	];
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD, customPrompt }, tools);
+	const basePrompt = findItem(items, "base-prompt");
+	const droppedChildren = (basePrompt?.children ?? []).filter((child) => child.dropped === true);
+
+	// Every dropped block is present, empty of pi's own text, and free.
+	assert.deepEqual(droppedChildren.map((child) => child.label), ["Available Tools", "Guidelines", "Documentation"]);
+	assert.ok(droppedChildren.every((child) => child.text === "" && child.tokens === 0));
+	assert.equal(findItem(items, "base-prompt:documentation")?.injectedReferences, undefined);
+	assert.equal(basePrompt?.tokens, textTokens(basePrompt?.text ?? ""));
+	assert.equal(
+		basePrompt?.tokens,
+		(basePrompt?.sections ?? []).reduce((sum, section) => sum + section.tokens, 0),
+	);
+
+	// Only extension lines stay visible in a dropped block, attributed to their tool.
+	assert.deepEqual(
+		findItem(items, "base-prompt:available-tools")?.injectedReferences?.map((reference) => ({
+			text: reference.text,
+			source: reference.source.label,
+			tool: reference.tool,
+		})),
+		[{ text: "\n- search: Search the web", source: "npm:web", tool: "search" }],
+	);
+	assert.deepEqual(
+		findItem(items, "base-prompt:guidelines")?.injectedReferences?.map((reference) => reference.text),
+		["\n- Cite sources"],
+	);
+
+	// Each tool keeps its own dropped lines, at 0 tokens, outside its counted text.
+	for (const id of ["tool:npm:web:search", "tool:builtin:read"]) {
+		const tool = findItem(items, id);
+		const dropped = (tool?.sections ?? []).filter((section) => section.dropped === true);
+		assert.ok(dropped.length > 0, `${id} shows the prompt lines the replacement dropped`);
+		assert.ok(dropped.every((section) => section.tokens === 0));
+		assert.equal(tool?.text.includes("Search the web"), false);
+		assert.equal(tool?.tokens, textTokens(tool?.text ?? ""));
+	}
+	assert.deepEqual(
+		findItem(items, "tool:npm:web:search")?.sections?.map((section) => section.label),
+		["Available Tools", "Guidelines", "Definition"],
+	);
+	assert.deepEqual(
+		findItem(items, "tool:builtin:read")?.sections?.map((section) => section.label),
+		["Available Tools", "Definition"],
+	);
 });
 
 test("analyzeSystemPrompt recognizes the pi 0.81 CWD-only footer", () => {

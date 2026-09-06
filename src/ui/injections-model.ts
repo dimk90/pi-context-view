@@ -22,6 +22,8 @@ export type InjectionRow =
 		readonly isLast: boolean;
 		/** Whether a depth-two row's parent has a following sibling. */
 		readonly parentContinues?: boolean;
+		/** Whether a `--system-prompt` replacement dropped this contribution. */
+		readonly dropped?: boolean;
 		/** Stable preview target id from the snapshot. */
 		readonly itemId: string;
 	}
@@ -68,6 +70,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 				tokens: item.tokens,
 				depth: 1,
 				isLast: isLastItem,
+				dropped: item.dropped,
 				itemId: item.id,
 			});
 			const children = item.children ?? [];
@@ -79,6 +82,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 					depth: 2,
 					isLast: childIndex === children.length - 1,
 					parentContinues: !isLastItem,
+					dropped: child.dropped,
 					itemId: child.id,
 				});
 			});

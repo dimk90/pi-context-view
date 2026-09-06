@@ -32,7 +32,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { injectedDescriptionLines, previewBodyLines } from "./section-preview.ts";
+import { droppedMarker, injectedDescriptionLines, previewBodyLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 /**
@@ -402,7 +402,19 @@ export class InjectionsView {
 		const tokens = row.kind === "total"
 			? this.theme.bold(this.theme.fg("text", value))
 			: this.theme.fg(selected ? "accent" : "muted", value);
-		return fitLine(`${left}${leader}${tokens}`, width);
+		const line = `${left}${leader}${tokens}`;
+		return fitLine(`${line}${this.rowMarker(row, columns.value + value.length, width)}`, width);
+	}
+
+	/** State marker after the estimate, dropped whole rather than truncated when it does not fit. */
+	private rowMarker(
+		row: Exclude<InjectionRow, { readonly kind: "separator" }>,
+		lineWidth: number,
+		width: number,
+	): string {
+		if (row.kind !== "item" || row.dropped !== true) return "";
+		const marker = droppedMarker(this.theme);
+		return lineWidth + visibleWidth(marker) <= width ? marker : "";
 	}
 
 	/** Fill a label/value gap with dim dots, retaining spaces at both ends. */
