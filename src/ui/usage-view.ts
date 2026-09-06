@@ -864,7 +864,7 @@ export class UsageView {
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
-	/** Full content below its identity header, opened directly or from a capped block. */
+	/** Full content with an identity header unless the System Prompt category already identifies it. */
 	private renderContentView(
 		width: number,
 		terminalRows: number,
@@ -874,15 +874,17 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const body = this.blockBodyLines(width, row, entry);
+		const showEntryHeader = row.rootId !== "system-prompt" || this.openBlockIndex !== undefined;
+		const fixedLineCount = showEntryHeader ? BLOCK_FIXED_LINE_COUNT : PREVIEW_FIXED_LINE_COUNT;
 		const descriptionLines = row.rootId === "assistant-thinking" && this.openBlockIndex === undefined
 			? this.thinkingDescriptionLines(width, row)
 			: injectedDescriptionLines(theme, [entry], {
 				width,
-				availableRows: terminalRows - BLOCK_FIXED_LINE_COUNT,
+				availableRows: terminalRows - fixedLineCount,
 				contentLineCount: body.length,
 			});
 		const viewport = calculateViewport(
-			body.length, terminalRows, BLOCK_FIXED_LINE_COUNT, descriptionBlockRows(descriptionLines),
+			body.length, terminalRows, fixedLineCount, descriptionBlockRows(descriptionLines),
 		);
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
 
@@ -891,8 +893,7 @@ export class UsageView {
 			"",
 			this.categoryHeaderLine(row, width),
 			"",
-			this.fit(`${BODY_INDENT}${this.entryHeader(entry)}`, width),
-			"",
+			...(showEntryHeader ? [this.fit(`${BODY_INDENT}${this.entryHeader(entry)}`, width), ""] : []),
 		];
 		const start = this.previewScroller.offset;
 		for (let index = start; index < start + viewport.visibleCount; index++) {

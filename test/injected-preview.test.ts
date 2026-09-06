@@ -156,7 +156,10 @@ test("Usage opens System Prompt sections directly and retains attribution withou
 	const content = view.render(120);
 	assertAttribution(content, theme);
 	assert.doesNotMatch(plain(content), /┃|… \+|Enter - View Content/);
-	assert.equal(plain(content).match(/\[System Prompt\]/g)?.length, 1);
+	assert.doesNotMatch(plain(content), /\[System Prompt\]/);
+	assert.match(plain([content[2] ?? ""]), /^System Prompt\s+/);
+	assert.equal(content[3], "");
+	assert.match(plain([content[4] ?? ""]), /^\s+Preamble · \d+ tokens$/);
 	assert.match(plain(content), /Native rule 15/);
 	const category = usage.categories.find((category) => category.id === "system-prompt");
 	assert.ok(category);

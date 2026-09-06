@@ -726,7 +726,13 @@ test("UsageView opens every single-entry category directly without a block cap o
 			view.handleInput("\r");
 			const content = view.render(80);
 			const plain = stripSgr(content.join("\n"));
-			assert.match(plain, /\[Only entry\] 42/);
+			if (id === "system-prompt") {
+				assert.doesNotMatch(plain, /\[Only entry\]/);
+				assert.equal(stripSgr(content[4] ?? ""), "    line 1");
+				if (lineCount > 1) assert.match(plain, /\(15\/30\)/);
+			} else {
+				assert.match(plain, /\[Only entry\] 42/);
+			}
 			assert.match(plain, /    line 1\b/);
 			assert.match(plain, /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
 			assert.doesNotMatch(plain, /┃|… \+|Enter|unsafe|\u0007/);
@@ -1446,18 +1452,16 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	view.handleInput("\u001b");
 	view.handleInput("\u001b");
 
-	// Snapshot-backed category: breadcrumb-only header without a datetime cell.
-	// Two rows down: past the expanded `bash` child row to System Prompt.
+	// System Prompt keeps its total in the category header without a duplicate entry header
+	// Two rows down: past the expanded `bash` child row to System Prompt
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
 	const snapshotPreview = view.render(100).map((line) => stripSgr(line).trimEnd());
-	const header = snapshotPreview.findIndex((line) => /^  \[System Prompt\] 1k$/.test(line));
-	assert.ok(header >= 0, "snapshot entry header has no datetime cell");
-	assert.equal(snapshotPreview[header + 1], "");
-	assert.equal(snapshotPreview[header + 2], "    You are pi.");
-	// Without a datetime, the lead breadcrumb cell still uses bold mdHeading.
-	assert.ok((view.render(100)[header] ?? "").includes(theme.fg("mdHeading", theme.bold("System Prompt"))));
+	assert.match(snapshotPreview[2] ?? "", /^System Prompt\s+1k/);
+	assert.equal(snapshotPreview[3], "");
+	assert.equal(snapshotPreview[4], "    You are pi.");
+	assert.doesNotMatch(snapshotPreview.join("\n"), /\[System Prompt\]|\[\d{2}-\d{2}-\d{4}/);
 });
 
 test("UsageView shrinks the block cap with terminal height and re-caps on resize", () => {

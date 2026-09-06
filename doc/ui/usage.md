@@ -224,7 +224,11 @@ category selection and legend viewport. Reopening any category starts its conten
 at the top. Width and height changes reflow and clamp the scroll position.
 
 System Prompt's sections therefore form one continuous scrollable preview, not
-selectable blocks.
+selectable blocks. Omit its redundant `[System Prompt]` entry header and the
+blank row after it: the category title already names the content and shows its
+total. The body starts after the category header's single blank separator, and
+the two reclaimed rows belong to the content viewport. Other categories retain
+their entry identity headers.
 
 ### Blocks
 
