@@ -63,3 +63,6 @@
 
 
 - [ ] Update logo for package and README.
+
+- [ ] Change all README links to `master` for stable docs:
+	- Except for `[PI-THEME-COLORS](https://github.com/dimk90/pi-context-view/doc/PI-THEME-COLORS.md`.

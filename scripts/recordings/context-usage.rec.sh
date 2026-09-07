@@ -20,7 +20,7 @@ source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 
 
 
 # The demo replays one recorded session, so its id and model are pinned
-PI_COMMAND='pi -e . --session 01a0529a-687b-74a7-9076-11919f491954'
+PI_COMMAND='pi -e . --session 01a07844-4448-77ed-805f-b2d4af9cd00a'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
@@ -51,7 +51,7 @@ Start
 
 # Bring pi up off camera, so the GIF opens on an idle TUI
 Run "$PI_COMMAND"
-Wait 'Session compacted 2 times'
+Wait '• Release v0.2.0' # wait for session name to appear
 
 Show
 
