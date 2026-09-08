@@ -34,6 +34,13 @@ const GUESSED_ATTRIBUTION_DESCRIPTION =
 const DROPPED_MARKER = " · Dropped";
 const DROPPED_MARKER_COLOR: ThemeColor = "toolDiffRemoved";
 /**
+ * State marker for a block an extension moved out of the region pi renders it
+ * into. Pi still sends the text, so the marker explains the position alone and
+ * its color is fixed like the dropped one.
+ */
+const MOVED_MARKER = " · Moved";
+const MOVED_MARKER_COLOR: ThemeColor = "warning";
+/**
  * Arrow introducing a restored line's source label. Non-breaking spaces bind
  * the preceding word, arrow, and label into one wrapping unit. Units wider
  * than the content width still hard-wrap, possibly just after the arrow.
@@ -52,11 +59,18 @@ export interface SectionedContent {
 	readonly injectedReferences?: readonly InjectedReference[];
 	/** True when a `--system-prompt` replacement dropped this content; it reads 0 tokens. */
 	readonly dropped?: boolean;
+	/** True when an extension moved this content out of the region pi renders it into. */
+	readonly moved?: boolean;
 }
 
 /** Themed marker naming content pi never sent, for a preview subheader or a hierarchy row. */
 export function droppedMarker(theme: Theme): string {
 	return theme.fg(DROPPED_MARKER_COLOR, DROPPED_MARKER);
+}
+
+/** Themed marker naming content pi sends from elsewhere in the prompt than it wrote it. */
+export function movedMarker(theme: Theme): string {
+	return theme.fg(MOVED_MARKER_COLOR, MOVED_MARKER);
 }
 
 /** Space shared by uncapped preview content, its counter, and the attribution footer. */
@@ -222,6 +236,6 @@ function headingKey(text: string): string {
 function sectionHeaderLines(theme: Theme, section: InjectionSection, wrapWidth: number): string[] {
 	const label = theme.fg("syntaxKeyword", theme.bold(normalizeInlineText(section.label)));
 	const tokens = theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
-	const marker = section.dropped === true ? droppedMarker(theme) : "";
+	const marker = section.dropped === true ? droppedMarker(theme) : section.moved === true ? movedMarker(theme) : "";
 	return wrapTextWithAnsi(`${label}${tokens}${marker}`, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
 }

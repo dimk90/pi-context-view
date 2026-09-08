@@ -6,6 +6,7 @@ import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-age
 import { analyzeSystemPrompt, type PromptOptionsSlice, textTokens, type ToolSlice } from "../src/measure.ts";
 import { buildSnapshot, type InjectionItem } from "../src/model.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
+import { relocateToolSurface } from "./fixtures/relocated-prompt.ts";
 
 const CWD = "/tmp/context-project";
 
@@ -771,6 +772,170 @@ test("analyzeSystemPrompt marks the parts a replaced prompt drops without counti
 		findItem(items, "tool:builtin:read")?.sections?.map((section) => section.label),
 		["Available Tools", "Definition"],
 	);
+});
+
+/** Active tools of a session whose tool-surface blocks an extension relocates. */
+const RELOCATION_TOOLS: ToolSlice[] = [
+	{
+		name: "read",
+		description: "Read files",
+		parametersJson: "{}",
+		snippet: "Read files",
+		guidelines: [],
+		source: "builtin",
+	},
+	{
+		name: "search",
+		description: "Search",
+		parametersJson: "{}",
+		snippet: "Search the web",
+		guidelines: ["Cite sources"],
+		source: "npm:web",
+	},
+];
+
+/** Pi's own prompt for the tools above, before any extension rewrites it. */
+function buildRelocationPrompt(): string {
+	return buildSystemPrompt({
+		cwd: CWD,
+		selectedTools: ["read", "search"],
+		toolSnippets: { read: "Read files", search: "Search the web" },
+		promptGuidelines: ["Cite sources"],
+	});
+}
+
+test("analyzeSystemPrompt recovers the prompt blocks an extension relocated past the footer", () => {
+	const addition = "EXTENSION INSTRUCTION";
+	const systemPrompt = relocateToolSurface(buildRelocationPrompt())
+		.replace(/\n\nAvailable tools:/, `\n\n${addition}\n\nAvailable tools:`);
+
+	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, RELOCATION_TOOLS);
+	const basePrompt = findItem(items, "base-prompt");
+
+	// The moved blocks are pi's parts again, following the footer they now sit behind.
+	assert.deepEqual(
+		basePrompt?.children?.map((child) => child.label),
+		["Preamble", "Documentation", "Current Dir", "Available Tools", "Guidelines", "Extension Additions"],
+	);
+	assert.deepEqual(
+		basePrompt?.children?.filter((child) => child.moved === true).map((child) => child.label),
+		["Available Tools", "Guidelines"],
+	);
+	assert.deepEqual(
+		basePrompt?.sections?.filter((section) => section.moved === true).map((section) => section.label),
+		["Available Tools", "Guidelines"],
+	);
+
+	// A moved block counts exactly like an unmoved one: shares still reconcile.
+	assert.equal(basePrompt?.tokens, textTokens(basePrompt?.text ?? ""));
+	assert.equal(
+		basePrompt?.tokens,
+		(basePrompt?.sections ?? []).reduce((sum, section) => sum + section.tokens, 0),
+	);
+	assert.equal(findItem(items, "base-prompt:available-tools")?.text.includes("- read: Read files"), true);
+	assert.equal(findItem(items, "base-prompt:guidelines")?.text.includes("- Be concise in your responses"), true);
+
+	// Extension lines are carved out of the moved blocks and attributed as usual.
+	assert.deepEqual(
+		findItem(items, "base-prompt:available-tools")?.injectedReferences?.map((reference) => ({
+			text: reference.text,
+			source: reference.source.label,
+			tool: reference.tool,
+		})),
+		[{ text: "\n- search: Search the web", source: "npm:web", tool: "search" }],
+	);
+	assert.deepEqual(
+		findItem(items, "tool:npm:web:search")?.sections?.map((section) => section.label),
+		["Available Tools", "Guidelines", "Definition"],
+	);
+
+	// Pi's own text stays pi's: only the real addition is attributed to an extension.
+	assert.equal(findItem(items, "prompt-addition:unattributed")?.text.trim(), addition);
+});
+
+test("recovered references retain exact offsets when every tool line is extension-owned", () => {
+	const tool = RELOCATION_TOOLS[1];
+	assert.ok(tool);
+	const surface = "\nAvailable tools:\n- search: Search the web\n\nGuidelines:\n- Cite sources";
+	const prompt = `Preamble\nPi documentation:\n- Manual\nCurrent working directory: ${CWD}${surface}`;
+	const items = analyzeSystemPrompt(prompt, { cwd: CWD }, [tool]);
+	assert.equal(findItem(items, "prompt-addition:unattributed"), undefined);
+	for (const [id, expected] of [
+		["base-prompt:available-tools", "\nAvailable tools:\n- search: Search the web"],
+		["base-prompt:guidelines", "\nGuidelines:\n- Cite sources"],
+	]) {
+		const part = findItem(items, id);
+		assert.ok(part);
+		let restored = part.text;
+		for (const reference of [...part.injectedReferences ?? []].reverse()) {
+			assert.ok(reference.offset >= 0 && reference.offset <= part.text.length);
+			restored = restored.slice(0, reference.offset) + reference.text + restored.slice(reference.offset);
+		}
+		assert.equal(restored, expected);
+	}
+});
+
+test("rearranged pre-footer blocks and appended instructions retain their real order", () => {
+	const append = "APPEND RULE";
+	const surface = "\nAvailable tools:\n- read: Read files\n\nGuidelines:\n- Cite sources";
+	const prompt = `Preamble\nPi documentation:\n- Manual\n\n${append}${surface}\nCurrent working directory: ${CWD}`;
+	const items = analyzeSystemPrompt(prompt, { cwd: CWD, appendSystemPrompt: append }, RELOCATION_TOOLS);
+	const base = findItem(items, "base-prompt");
+	assert.deepEqual(base?.children?.map((child) => child.label), [
+		"Preamble", "Documentation", "Appended Prompt", "Available Tools", "Guidelines", "Current Dir",
+	]);
+	assert.equal(findItem(items, "base-prompt:available-tools")?.moved, true);
+	assert.equal(findItem(items, "base-prompt:guidelines")?.moved, true);
+	assert.equal(base?.text, base?.sections?.map((section) => section.text).join(""));
+	assert.equal(base?.tokens, base?.children?.reduce((sum, child) => sum + child.tokens, 0));
+});
+
+test("separated relocated blocks preserve additions on both sides and never recreate withheld tools", () => {
+	const prompt = `Preamble\nPi documentation:\n- Manual\nCurrent working directory: ${CWD}` +
+		"\n\nFirst addition.\n\nAvailable tools:\n- read: Read files" +
+		"\n\nMiddle addition.\n\nGuidelines:\n- Be concise in your responses\n\nLast addition.";
+	const items = analyzeSystemPrompt(prompt, { cwd: CWD }, RELOCATION_TOOLS.slice(0, 1));
+	const addition = findItem(items, "prompt-addition:unattributed");
+	assert.ok(addition);
+	for (const word of ["First addition.", "Middle addition.", "Last addition."]) assert.ok(addition.text.includes(word));
+	assert.doesNotMatch(addition.text, /Available tools:|Guidelines:|Read files/);
+	assert.equal(findItem(items, "tool:npm:web:search"), undefined);
+	assert.equal(findItem(items, "base-prompt:available-tools")?.moved, true);
+	assert.equal(findItem(items, "base-prompt:guidelines")?.moved, true);
+});
+
+test("instruction-file header examples cannot capture or suppress moved tool lines", () => {
+	const example = "Available tools:\n- search: Search the web\n\nGuidelines:\n- Cite sources";
+	const prompt = `Preamble\nPi documentation:\n- Manual\n\n<project_context>\n` +
+		`<project_instructions path=\"./AGENTS.md\">\n${example}\n</project_instructions>\n</project_context>` +
+		`\nCurrent working directory: ${CWD}\n\n${example}`;
+	const items = analyzeSystemPrompt(prompt, { cwd: CWD, contextFilePaths: ["./AGENTS.md"] }, RELOCATION_TOOLS);
+	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, example);
+	assert.equal(findItem(items, "base-prompt:available-tools")?.moved, true);
+	assert.equal(findItem(items, "base-prompt:guidelines")?.moved, true);
+});
+
+test("analyzeSystemPrompt keeps block-shaped additions out of pi's own prompt", () => {
+	// Shaped exactly like a relocated run, bullets pi could have written included.
+	const surface = ["Available tools:", "- read: Read files", "", "Guidelines:", "- Cite sources"].join("\n");
+	const rendered = `${buildRelocationPrompt()}\n\n${surface}`;
+	const replaced = ["CUSTOM PROMPT", `Current working directory: ${CWD}`, "", surface].join("\n");
+
+	// Pi rendered its own blocks, so nothing was moved and the later run is an addition.
+	const renderedItems = analyzeSystemPrompt(rendered, { cwd: CWD }, RELOCATION_TOOLS);
+	assert.equal(
+		(findItem(renderedItems, "base-prompt")?.children ?? []).some((child) => child.moved === true),
+		false,
+	);
+	assert.equal(findItem(renderedItems, "prompt-addition:unattributed")?.text.includes("Available tools:"), true);
+
+	// A replacement makes pi render no blocks, so an identical run is the extension's own text.
+	const replacedItems = analyzeSystemPrompt(replaced, { cwd: CWD, customPrompt: "CUSTOM PROMPT" }, RELOCATION_TOOLS);
+	assert.equal(
+		(findItem(replacedItems, "base-prompt")?.children ?? []).some((child) => child.moved === true),
+		false,
+	);
+	assert.equal(findItem(replacedItems, "prompt-addition:unattributed")?.text.includes("Available tools:"), true);
 });
 
 test("analyzeSystemPrompt recognizes the pi 0.81 CWD-only footer", () => {

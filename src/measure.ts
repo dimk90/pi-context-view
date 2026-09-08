@@ -11,12 +11,14 @@
  *   "Guidelines:", where pi renders each distinct bullet exactly once, in
  *   active-tool order (verified against pi 0.84.3)
  * - base prompt blocks: the "Available tools:", "Guidelines:", and
- *   "Pi documentation" headers pi emits in that order, which split its own
- *   prompt into the parts System Prompt presents as sub-items
+ *   "Pi documentation" headers pi emits, which split its own prompt into the
+ *   parts System Prompt presents as sub-items. A `before_agent_start` handler
+ *   may relocate the two tool-surface blocks past pi's footer, so blocks are
+ *   located independently and ordered by where they ended up
  * - the "Current working directory" footer (pi 0.81), optionally preceded by a
  *   "Current date" line (pi 0.80), closes pi's own prompt: pi sends it with
- *   every request, so it is measured as the Current Dir part, and anything
- *   after it was appended by before_agent_start handlers.
+ *   every request, so it is measured as the Current Dir part. Text after it
+ *   is an extension addition unless it is a structurally recovered tool block.
  */
 import {
 	AGGREGATE_SOURCE,
@@ -34,10 +36,17 @@ import {
 	SYSTEM_PROMPT_LABEL,
 } from "./model.ts";
 import { type PromptAdditionOptions, splitPromptAdditions } from "./prompt-additions.ts";
+import {
+	AVAILABLE_TOOLS_BLOCK,
+	BASE_PROMPT_BLOCKS,
+	findPromptBlocks,
+	GUIDELINES_BLOCK,
+	type LocatedPromptBlock,
+} from "./prompt-blocks.ts";
 
 /** Part names shared by a tool's carved prompt lines and pi's own prompt blocks. */
-const AVAILABLE_TOOLS_LABEL = "Available Tools";
-const GUIDELINES_LABEL = "Guidelines";
+const AVAILABLE_TOOLS_LABEL = AVAILABLE_TOOLS_BLOCK.label;
+const GUIDELINES_LABEL = GUIDELINES_BLOCK.label;
 
 /** System Prompt part hosting the text extensions appended after pi's footer. */
 const EXTENSION_ADDITIONS_BLOCK = { id: "base-prompt:additions", label: "Extension Additions" };
@@ -47,24 +56,6 @@ const PROMPT_ADDITIONS_LABEL = "system prompt additions";
 
 /** Leading part of pi's prompt, before the first block header pi renders. */
 const PREAMBLE_BLOCK = { id: "base-prompt:preamble", label: "Preamble" };
-
-/** Block pi renders one bullet per visible tool into. */
-const AVAILABLE_TOOLS_BLOCK = {
-	id: "base-prompt:available-tools",
-	label: AVAILABLE_TOOLS_LABEL,
-	header: "\nAvailable tools:\n",
-};
-/** Block pi renders tool guideline bullets into. */
-const GUIDELINES_BLOCK = { id: "base-prompt:guidelines", label: GUIDELINES_LABEL, header: "\nGuidelines:\n" };
-/** Block pi renders its own documentation into; no tool contributes to it. */
-const DOCUMENTATION_BLOCK = { id: "base-prompt:documentation", label: "Documentation", header: "\nPi documentation" };
-
-/**
- * Blocks pi renders into its own base prompt, in emission order. A
- * `--system-prompt` replacement carries none of them, so these are exactly the
- * blocks it drops.
- */
-const BASE_PROMPT_BLOCKS = [AVAILABLE_TOOLS_BLOCK, GUIDELINES_BLOCK, DOCUMENTATION_BLOCK];
 
 /** One visible skill before pi adds XML transport framing. */
 export interface SkillSlice {
@@ -117,32 +108,53 @@ export function analyzeSystemPrompt(
 	const base = footer === undefined ? systemPrompt : systemPrompt.slice(0, footer.start);
 
 	const usesCustomPrompt = options.customPrompt !== undefined && options.customPrompt.length > 0;
-	const promptLines = measureTools(base, tools, items, carvedSpans, usesCustomPrompt);
+	// Exclude separately attributed content before looking for headers inside it
 	measureContextFiles(base, options, items, carvedSpans);
 	measureSkills(base, options, items, carvedSpans);
 	const appended = carveAppendedPrompt(base, options, carvedSpans);
+	const appendedStart = appended === undefined ? undefined : carvedSpans[carvedSpans.length - 1]?.start;
+	// A custom prompt drops pi's blocks; a tool list added to it is not a relocation
+	const located = usesCustomPrompt ? [] : findPromptBlocks(systemPrompt, base.length, tools, carvedSpans);
+	const tailBlocks = located.filter((block) => block.start >= base.length);
+	const body = base + tailBlocks.map((block) => systemPrompt.slice(block.start, block.end)).join("");
+	const bodyBlocks = positionBodyBlocks(located, base.length);
+	const toolItems: InjectionItem[] = [];
+	const promptLines = measureTools(body, tools, toolItems, carvedSpans, usesCustomPrompt, bodyBlocks);
+	items.unshift(...toolItems);
 
-	const remaining = carve(base, carvedSpans);
-	const parts = usesCustomPrompt
+	const remaining = carve(body, carvedSpans);
+	const blocks = usesCustomPrompt
 		? droppedBasePromptParts(remaining, promptLines.dropped)
-		: addInjectedReferences(splitBasePromptParts(remaining), base, carvedSpans, promptLines.carved);
+		: addInjectedReferences(
+			splitBasePromptParts(remaining, bodyBlocks.map((block) => ({
+				...block, start: carve(body.slice(0, block.start), carvedSpans).length,
+			}))),
+			body,
+			carvedSpans,
+			promptLines.carved,
+		);
+	const references = footer === undefined
+		? []
+		: measurePromptAdditions(systemPrompt, footer.end, { ...additions, excluded: tailBlocks }, items);
+
+	const parts = blocks;
 	if (appended !== undefined) {
 		parts.push({ id: "base-prompt:appended", kind: "append-prompt", label: "Appended Prompt", text: appended });
 	}
 	if (footer !== undefined) {
 		const text = systemPrompt.slice(footer.start, footer.end);
 		parts.push({ id: "base-prompt:current-dir", kind: "base-prompt", label: "Current Dir", text });
-		const references = measurePromptAdditions(systemPrompt, footer.end, additions, items);
-		if (references.length > 0) {
-			parts.push({
-				id: EXTENSION_ADDITIONS_BLOCK.id,
-				kind: "prompt-addition",
-				label: EXTENSION_ADDITIONS_BLOCK.label,
-				text: "",
-				injectedReferences: references,
-			});
-		}
 	}
+	if (references.length > 0) {
+		parts.push({
+			id: EXTENSION_ADDITIONS_BLOCK.id,
+			kind: "prompt-addition",
+			label: EXTENSION_ADDITIONS_BLOCK.label,
+			text: "",
+			injectedReferences: references,
+		});
+	}
+	if (!usesCustomPrompt) orderPromptParts(parts, located, footer, appendedStart);
 	items.unshift(createSystemPromptItem(parts));
 
 	return items;
@@ -222,8 +234,9 @@ function measureTools(
 	items: InjectionItem[],
 	carvedSpans: Span[],
 	replaced: boolean,
+	blocks: readonly LocatedPromptBlock[],
 ): ToolPromptLines {
-	const carver = createPromptCarver(base, carvedSpans);
+	const carver = createPromptCarver(base, carvedSpans, blocks);
 	const claimedGuidelines = new Set(piOwnedGuidelines(tools));
 	const dropped = new Map<string, InjectedReference[]>();
 	const builtinChildren: InjectionItem[] = [];
@@ -324,6 +337,8 @@ interface SectionDraft {
 	readonly text: string;
 	/** True for text a `--system-prompt` replacement dropped: shown for reference, never counted. */
 	readonly dropped?: boolean;
+	/** True for a block an extension moved out of the region pi rendered it into. */
+	readonly moved?: boolean;
 	/** Serialized JSON inside `text`; marked here rather than detected in the preview. */
 	readonly jsonSpan?: JsonSpan;
 	/** Prompt-line insertions that affect only the preview, never this section's estimate. */
@@ -400,27 +415,24 @@ interface InjectedSpan extends Span, InjectedOwner {
 }
 
 /** Locate the two bullet blocks pi renders tool prompt lines into. */
-function createPromptCarver(base: string, carvedSpans: Span[]): PromptCarver {
+function createPromptCarver(
+	base: string,
+	carvedSpans: Span[],
+	blocks: readonly LocatedPromptBlock[],
+): PromptCarver {
 	return {
 		base,
-		toolsBlock: { partId: AVAILABLE_TOOLS_BLOCK.id, span: findBulletBlock(base, AVAILABLE_TOOLS_BLOCK.header) },
-		guidelinesBlock: { partId: GUIDELINES_BLOCK.id, span: findBulletBlock(base, GUIDELINES_BLOCK.header) },
+		toolsBlock: {
+			partId: AVAILABLE_TOOLS_BLOCK.id,
+			span: blocks.find((block) => block.id === AVAILABLE_TOOLS_BLOCK.id)?.bullets,
+		},
+		guidelinesBlock: {
+			partId: GUIDELINES_BLOCK.id,
+			span: blocks.find((block) => block.id === GUIDELINES_BLOCK.id)?.bullets,
+		},
 		carvedSpans,
 		injectedSpans: [],
 	};
-}
-
-/**
- * Span of the bullet lines one section header introduces: from the line break
- * before the first bullet to the blank line that closes the section. Bullets
- * never contain a blank line, so the block ends exactly where pi ends it.
- */
-function findBulletBlock(text: string, header: string): Span | undefined {
-	const headerStart = text.indexOf(header);
-	if (headerStart === -1) return undefined;
-	const start = headerStart + header.length - 1;
-	const blank = text.indexOf("\n\n", start);
-	return { start, end: blank === -1 ? text.length : blank };
 }
 
 /**
@@ -490,6 +502,39 @@ function claimGuidelines(tool: ToolSlice, claimed: Set<string>): string[] {
 		owned.push(text);
 	}
 	return owned;
+}
+
+/** Retain actual block order, including movements past appended instructions or the CWD footer. */
+function orderPromptParts(
+	parts: PromptPart[],
+	blocks: readonly LocatedPromptBlock[],
+	footer: Span | undefined,
+	appendedStart: number | undefined,
+): void {
+	const positions = new Map(blocks.map((block) => [block.id, block.start]));
+	positions.set(PREAMBLE_BLOCK.id, -1);
+	if (footer !== undefined) positions.set("base-prompt:current-dir", footer.start);
+	if (appendedStart !== undefined) positions.set("base-prompt:appended", appendedStart);
+	// Extension Additions consolidates all owners and always closes the preview
+	parts.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
+}
+
+/** Translate recovered tail coordinates into the local body used for carving and references. */
+function positionBodyBlocks(blocks: readonly LocatedPromptBlock[], baseLength: number): LocatedPromptBlock[] {
+	let tailOffset = baseLength;
+	return blocks.map((block) => {
+		if (block.start < baseLength) return block;
+		const shift = tailOffset - block.start;
+		tailOffset += block.end - block.start;
+		return {
+			...block,
+			start: block.start + shift,
+			end: block.end + shift,
+			bullets: block.bullets === undefined ? undefined : {
+				start: block.bullets.start + shift, end: block.bullets.end + shift,
+			},
+		};
+	});
 }
 
 /**
@@ -578,6 +623,8 @@ interface PromptPart {
 	readonly text: string;
 	/** True for a block a `--system-prompt` replacement dropped: no pi text, no tokens. */
 	readonly dropped?: boolean;
+	/** True for a block an extension moved out of the region pi rendered it into. */
+	readonly moved?: boolean;
 	readonly injectedReferences?: readonly InjectedReference[];
 }
 
@@ -617,18 +664,18 @@ function addInjectedReferences(
 /**
  * Split pi's own prompt at the block headers it renders deterministically, so
  * the tool list, guidelines, and documentation it already carries become
- * visible parts. Text before the first header opens the list as the preamble.
+ * visible parts. Headers are located independently and cut in the order they
+ * occur, because a relocated block appears after the ones pi wrote later. Text
+ * before the first header opens the list as the preamble.
  */
-function splitBasePromptParts(base: string): PromptPart[] {
+function splitBasePromptParts(base: string, cuts: readonly LocatedPromptBlock[]): PromptPart[] {
 	const parts: PromptPart[] = [];
-	let block = PREAMBLE_BLOCK;
+	let block: Pick<PromptPart, "id" | "label" | "moved"> = PREAMBLE_BLOCK;
 	let start = 0;
-	for (const next of BASE_PROMPT_BLOCKS) {
-		const headerStart = base.indexOf(next.header, start);
-		if (headerStart === -1) continue;
-		appendPromptPart(parts, block, base.slice(start, headerStart));
-		block = next;
-		start = headerStart;
+	for (const cut of cuts) {
+		appendPromptPart(parts, block, base.slice(start, cut.start));
+		block = cut;
+		start = cut.start;
 	}
 	appendPromptPart(parts, block, base.slice(start));
 	return parts;
@@ -660,9 +707,13 @@ function droppedBasePromptParts(
 }
 
 /** Record one pi-authored part, skipping a block pi rendered no text into. */
-function appendPromptPart(parts: PromptPart[], block: { id: string; label: string }, text: string): void {
+function appendPromptPart(
+	parts: PromptPart[],
+	block: Pick<PromptPart, "id" | "label" | "moved">,
+	text: string,
+): void {
 	if (text.length === 0) return;
-	parts.push({ id: block.id, kind: "base-prompt", label: block.label, text });
+	parts.push({ id: block.id, kind: "base-prompt", label: block.label, text, moved: block.moved });
 }
 
 /**
@@ -678,6 +729,7 @@ function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 		label: part.label,
 		text: part.text,
 		dropped: part.dropped,
+		moved: part.moved,
 		injectedReferences: part.injectedReferences,
 	})));
 	return {
@@ -687,6 +739,7 @@ function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 			...createItem(part.id, part.kind, PI_SOURCE, part.label, part.text),
 			tokens: sections[index]?.tokens ?? 0,
 			dropped: part.dropped,
+			moved: part.moved,
 			injectedReferences: part.injectedReferences,
 		})),
 	};

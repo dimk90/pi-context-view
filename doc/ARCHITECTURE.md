@@ -11,6 +11,7 @@ Canonical contract for how pi-context-view captures hidden context, estimates cu
 | `src/config.ts`           | Load, validate, cache, resolve, and explicitly create global override-only configuration. |
 | `src/capture.ts`          | Own Initial, silent-probe, compaction, identity persistence, and injected-message state.  |
 | `src/measure.ts`          | Carve and estimate prompt and tool contributions without pi API access.                   |
+| `src/prompt-blocks.ts`    | Locate native and relocated prompt blocks using structural markers and tool metadata.   |
 | `src/usage.ts`            | Classify provider-bound messages and build current usage totals and previews.             |
 | `src/model.ts`            | Define semantic capture and usage types, ownership, hierarchy, and grouping.              |
 | `src/text.ts`             | Sanitize dynamic text for the terminal before reporting or rendering it.                  |
@@ -88,9 +89,30 @@ Keep semantics in typed model fields rather than display labels:
   `Pi documentation`, any `--append-system-prompt` text, and the
   working-directory footer pi sends with every request — as parts that
   concatenate back to the item text and share out its estimate;
-- carve a tool's complete prompt bullets only from the blocks pi renders them
-  into, never a prefix of a longer bullet, and give each rendered guideline
-  bullet to the first tool that declares it in pi's active-tool order, so a
+- locate block headers independently, in actual prompt order. A
+  `before_agent_start` handler can rewrite or relocate blocks, not only append
+  text: pi's footer is not an absolute boundary for `Available Tools` and
+  `Guidelines`. Outside their normal pre-documentation region, recover a block
+  only from a line-start header followed immediately by consecutive bullet
+  lines, with at least one exact active-tool `name: snippet` match for Available
+  Tools, or an active-tool/universal pi guideline match for Guidelines. Stop at
+  the first non-bullet line; include pi's exact optional custom-tools filler
+  with Available Tools. Never synthesize missing or withheld tool lines;
+- ignore header examples inside separately carved instruction files, skills,
+  appended instructions, and Markdown fences. A pre-footer occurrence wins
+  over later copies; several post-footer candidates are ambiguous and remain
+  additions. A block occurring after a normally later block or after the footer
+  carries typed `moved` metadata. This is positional inference, not evidence of
+  which extension moved it or proof of byte-identical authorship. Its native
+  text still counts under System Prompt, and extension tool lines retain their
+  normal tool ownership. Recovered blocks remain in actual prompt order,
+  including relative to Appended Prompt and Current Dir. A custom prompt's
+  dropped-block contract is unchanged: a newly added tool list is an addition,
+  not a relocation of text pi never rendered;
+- carve a tool's complete prompt bullets only from the selected blocks, including
+  recovered relocated blocks, never from unrelated text or a prefix of a longer
+  bullet. Give each rendered guideline bullet to the first tool that declares
+  it in pi's active-tool order, so a
   bullet several tools share is measured once and pi's own bullets stay in the
   base prompt;
 - retain each carved extension prompt line's original position, tool-source
@@ -109,8 +131,11 @@ Keep semantics in typed model fields rather than display labels:
   dropped snippet and guideline sections. Every dropped part and section reads 0
   tokens and stays out of its item's counted text, character count, and token
   shares, so no item claims tokens pi never sent;
-- attribute the text appended after pi's footer per blank-line block, bounded by
-  the prompt this extension observed in its own `before_agent_start` handler, so
+- attribute text after pi's footer outside recovered block ranges per blank-line
+  block. Keep gaps on either side of a recovered block separate, so removing it
+  cannot join unrelated source evidence; ignore whitespace-only gaps. Bound
+  these regions by the original prompt this extension observed in its own
+  `before_agent_start` handler, so
   no block spans extensions loaded before and after it. Name a block only when
   exactly one loaded package specifier or extension path from
   `getAllTools()`/`getCommands()` provenance occurs in it, and mark every such

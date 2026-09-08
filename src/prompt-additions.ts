@@ -1,5 +1,5 @@
 /** Pure, deliberately heuristic attribution of the text after pi's prompt footer. */
-import { AGGREGATE_SOURCE, extensionSource, type InjectionSource } from "./model.ts";
+import { AGGREGATE_SOURCE, extensionSource, type InjectionSource, type TextSpan } from "./model.ts";
 
 /** Public tool/command provenance only; no extension files are read to guess an owner. */
 export interface PromptSourceSlice {
@@ -16,9 +16,11 @@ export interface PromptAdditionOptions {
 	readonly sources?: readonly PromptSourceSlice[];
 	/** Prompt seen at our latest before_agent_start handler; used only if still a prefix. */
 	readonly promptAtHandler?: string;
+	/** Ordered, non-overlapping ranges counted as recovered System Prompt blocks, not additions. */
+	readonly excluded?: readonly TextSpan[];
 }
 
-/** One contiguous captured run. Concatenating runs restores the exact addition region. */
+/** One contiguous captured run outside recovered prompt blocks and whitespace-only gaps. */
 export interface PromptAdditionRun {
 	readonly text: string;
 	readonly source: InjectionSource;
@@ -47,7 +49,10 @@ export function splitPromptAdditions(
 	const boundary = observed !== undefined && observed.length > start && prompt.startsWith(observed)
 		? observed.length
 		: start;
-	const regions = [prompt.slice(start, boundary), prompt.slice(boundary)];
+	const regions = [
+		...additionRegions(prompt, start, boundary, options.excluded ?? []),
+		...additionRegions(prompt, boundary, prompt.length, options.excluded ?? []),
+	];
 	const runs: Array<{ text: string; source: InjectionSource; tool?: string }> = [];
 	for (const region of regions) {
 		let previous: { text: string; source: InjectionSource; tool?: string } | undefined;
@@ -68,6 +73,19 @@ export function splitPromptAdditions(
 	}));
 }
 
+/** Keep gaps separate: removing a moved block must not join evidence from different additions. */
+function additionRegions(prompt: string, start: number, end: number, excluded: readonly TextSpan[]): string[] {
+	const regions: string[] = [];
+	let cursor = start;
+	for (const span of excluded) {
+		if (span.end <= cursor || span.start >= end) continue;
+		if (span.start > cursor) regions.push(prompt.slice(cursor, span.start));
+		cursor = Math.min(end, span.end);
+	}
+	if (cursor < end) regions.push(prompt.slice(cursor, end));
+	return regions;
+}
+
 /** Keep separators with the following block; trailing whitespace stays with the final block. */
 function splitBlocks(text: string): string[] {
 	const blocks: string[] = [];
@@ -78,7 +96,8 @@ function splitBlocks(text: string): string[] {
 		blocks.push(text.slice(start, separator.index));
 		start = separator.index;
 	}
-	if (start < text.length) blocks.push(text.slice(start));
+	// Removing a relocated block can leave a separator behind; blank text has no author.
+	if (text.slice(start).trim().length > 0) blocks.push(text.slice(start));
 	return blocks;
 }
 

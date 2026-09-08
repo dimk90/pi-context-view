@@ -446,6 +446,93 @@ test("a replaced prompt marks its dropped blocks in the tree and in previews", (
 	}
 });
 
+/** Snapshot of a prompt whose tool-surface blocks an extension moved past pi's footer. */
+function createRelocatedSnapshot(): InitialSnapshot {
+	const prompt = [
+		"Preamble line.",
+		"",
+		"Pi documentation (read only when the user asks about pi itself):",
+		"- Main documentation: /docs/README.md",
+		"",
+		"Current working directory: /fixture",
+		"",
+		"Available tools:",
+		`- ${SNIPPET_LINE}`,
+		"- read: Read files",
+		"",
+		"Guidelines:",
+		`- ${GUIDELINE}`,
+		"- Be concise in your responses",
+	].join("\n");
+	const items = analyzeSystemPrompt(prompt, { cwd: "/fixture" }, [
+		{
+			name: "search", description: "Search", parametersJson: "{}",
+			snippet: SNIPPET, guidelines: [GUIDELINE], source: SOURCE,
+		},
+		{
+			name: "read", description: "Read", parametersJson: "{}",
+			snippet: "Read files", guidelines: [], source: "builtin",
+		},
+	]);
+	return buildSnapshot(items, "real-turn", new Date("2026-07-10T12:00:00Z"));
+}
+
+test("a relocated block stays a counted System Prompt part, marked where it now sits", () => {
+	let height = 40;
+	const theme = createTheme();
+	const view = new InjectionsView(theme, { snapshot: createRelocatedSnapshot() }, () => {}, () => height);
+	const list = view.render(120);
+
+	// Both blocks follow the footer, keep their estimates, and name their new position.
+	const rows = plain(list).replace(/\.{2,}/g, "\u2026").split("\n");
+	assert.deepEqual(
+		rows.filter((row) => /Current Dir|Available Tools|Guidelines/.test(row))
+			.map((row) => row.replace(/^[\s│├└─]+/, "")),
+		["Current Dir \u2026 9", "Available Tools \u2026 9 · Moved", "Guidelines \u2026 11 · Moved"],
+	);
+	const row = list.find((line) => plain([line]).includes("Guidelines"));
+	assert.ok(row?.includes(theme.fg("warning", " · Moved")), "one fixed color marks the state");
+	// A marker that no longer fits is dropped whole rather than truncated.
+	assert.doesNotMatch(plain(view.render(32)), /Moved/);
+	assert.match(plain(view.render(32)), /Guidelines/);
+
+	view.handleInput("j"); // System Prompt
+	view.handleInput("\r");
+	const parent = plain(view.render(120));
+	assert.match(parent.replace(/\s+/g, " "), /Available Tools · 9 tokens · Moved/);
+	assert.match(parent.replace(/\s+/g, " "), /Guidelines · 11 tokens · Moved/);
+	assert.ok(parent.includes(`- ${SNIPPET_LINE}${ARROW}${SOURCE}:${TOOL}`));
+
+	view.handleInput("\u001b");
+	for (let step = 0; step < 4; step++) view.handleInput("j"); // Available Tools
+	view.handleInput("\r");
+	assert.match(plain(view.render(120)), /Available Tools\s+pi · 9 tokens · Moved/);
+	assert.ok(plain(view.render(120)).includes(`- ${SNIPPET_LINE}${ARROW}${SOURCE}:${TOOL}`));
+
+	for (const width of [30, 60, 80, 120]) {
+		for (height of [12, 24, 40]) assertFrame(view.render(width), width, height);
+	}
+});
+
+test("Usage preserves moved parts, their estimates, and their marker across theme invalidation", () => {
+	const theme = createTheme();
+	const usage = computeUsage({ snapshot: createRelocatedSnapshot(), messages: [] });
+	const view = new UsageView(theme, { usage, categoryColors: DEFAULT_CATEGORY_COLORS }, () => {}, () => 40);
+	const dashboard = view.render(120);
+	assert.doesNotMatch(plain(dashboard), /Read files|Moved/);
+	view.handleInput("\r");
+	const preview = view.render(120);
+	assert.match(plain(preview), /Available Tools · 9 tokens · Moved/);
+	assert.match(plain(preview), /Guidelines · 11 tokens · Moved/);
+	assert.ok(preview.some((line) => line.includes(theme.fg("warning", " · Moved"))));
+	const originalFg = theme.fg.bind(theme);
+	theme.fg = (color, text) => originalFg(color === "warning" ? "success" : color, text);
+	view.invalidate();
+	assert.ok(view.render(120).some((line) => line.includes(theme.fg("warning", " · Moved"))));
+	view.handleInput("\u001b");
+	assert.deepEqual(view.render(120), dashboard);
+});
+
 test("a tool preview shows its dropped prompt lines without claiming their tokens", () => {
 	const theme = createTheme();
 	const snapshot = createReplacedSnapshot();
