@@ -420,6 +420,37 @@ test("preview subsections use two blank rows regardless of captured trailing whi
 	}
 });
 
+test("preview drops a pi block header its part label already shows", () => {
+	const documentation = "\nPi documentation (read only when the user asks about pi itself):\n- Main docs: /pi/README.md";
+	const content = {
+		text: "unchanged part text",
+		sections: [
+			{ label: "Available Tools", text: "\nAvailable tools:\n- read: Read file contents", tokens: 11 },
+			{ label: "Guidelines", text: "\nGuidelines:\n- Be concise in your responses", tokens: 10 },
+			{ label: "Documentation", text: documentation, tokens: 27 },
+		],
+	};
+	const original = structuredClone(content);
+	const lines = previewBodyLines(
+		createTheme(), content, 78,
+		(text) => text.split("\n").map((line) => `  ${line}`),
+	).map(stripSgr);
+
+	assert.deepEqual(lines, [
+		"  Available Tools · 11 tokens",
+		"  - read: Read file contents",
+		"", "",
+		"  Guidelines · 10 tokens",
+		"  - Be concise in your responses",
+		"", "",
+		"  Documentation · 27 tokens",
+		// A header carrying more than its label is content, not a repetition.
+		"  Pi documentation (read only when the user asks about pi itself):",
+		"  - Main docs: /pi/README.md",
+	]);
+	assert.deepEqual(content, original, "dropped headers stay part of the measured text");
+});
+
 test("InjectionsView preview labels every known section", () => {
 	const snippet = "\n- search: Search the web";
 	const guidelines = "\n- Use search when the user asks for current information\n- Cite sources";

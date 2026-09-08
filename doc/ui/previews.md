@@ -119,8 +119,11 @@ layout decision is circular.
 
 A preview body never repeats the heading directly above it: drop a first content
 line identical to the item title, part label, or entry name, as a skill block
-that opens with its own name has. This preview-only omission still counts the
-dropped line toward the estimate shown in that heading.
+that opens with its own name has. Matching ignores case and a trailing colon, so
+pi's own block headers (`Available tools:`, `Guidelines:`) disappear under the
+parts named after them; a line carrying more than its heading, such as pi's
+`Pi documentation (…):` sentence, stays visible. This preview-only omission
+still counts the dropped line toward the estimate shown in that heading.
 
 ## Marked JSON
 

@@ -201,8 +201,17 @@ function bodyLines(
 function withoutRepeatedHeading(text: string, heading: string | undefined): string {
 	if (heading === undefined) return text;
 	const lineEnd = text.indexOf("\n");
-	if (lineEnd === -1 || text.slice(0, lineEnd) !== heading) return text;
+	if (lineEnd === -1 || headingKey(text.slice(0, lineEnd)) !== headingKey(heading)) return text;
 	return text.slice(lineEnd + 1);
+}
+
+/**
+ * Comparable form of a heading or a first content line: case and a trailing
+ * colon carry no information here, so pi's own block headers ("Available
+ * tools:", "Guidelines:") read as repeats of the part labels above them.
+ */
+function headingKey(text: string): string {
+	return text.trim().replace(/:$/, "").toLowerCase();
 }
 
 /**
