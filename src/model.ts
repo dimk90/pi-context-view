@@ -7,6 +7,33 @@
 export const PI_SOURCE_ID = "pi";
 export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
 
+/** Everything pi itself assembles: its prompt, context files, skills, and built-in tools. */
+export const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", native: true };
+
+/** Contributions no available signal attributes to one extension. */
+export const AGGREGATE_SOURCE: InjectionSource = {
+	id: AGGREGATE_SOURCE_ID,
+	label: "unattributed",
+	native: false,
+};
+
+/** Injection source for one non-builtin provenance string, e.g. `npm:pi-web-providers`. */
+export function extensionSource(source: string): InjectionSource {
+	return { id: `tool-source:${source}`, label: source, native: false };
+}
+
+/** Shared name of pi's own prompt; Usage and Injections must present it identically. */
+export const SYSTEM_PROMPT_LABEL = "System Prompt";
+
+/** Shared name of pi's context files; Usage and Injections must present it identically. */
+export const INSTRUCTION_FILES_LABEL = "Instruction Files";
+
+/** Shared name of pi's skill records; Usage and Injections must present it identically. */
+export const SKILLS_LABEL = "Skills";
+
+/** Shared name of pi's built-in tools; Usage and Injections must present it identically. */
+export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
+
 /** What produced the captured snapshot. */
 export type CaptureOrigin = "real-turn" | "synthetic-probe";
 
@@ -43,16 +70,46 @@ export interface JsonSpan {
 	readonly end: number;
 }
 
+/** A rendered prompt line counted by its owning tool, inserted only for prompt previews. */
+export interface InjectedReference {
+	/** Insertion offset in the containing item's or section's counted text, in prompt order. */
+	readonly offset: number;
+	/** Captured line including its leading line break; never additional counted text. */
+	readonly text: string;
+	/** Stable id of the item that counts this text. */
+	readonly itemId: string;
+	readonly source: InjectionSource;
+	/**
+	 * Tool or slash command of `source` this text belongs to, e.g. `web_search`
+	 * or `/ask`. Qualifies the rendered source label only: `itemId` still names
+	 * the item that counts the text.
+	 */
+	readonly tool?: string;
+	/**
+	 * Present when the source was inferred from the text itself. Pi reports no
+	 * per-extension provenance for chained prompt edits, so such an attribution
+	 * is a guess and must be rendered as one.
+	 */
+	readonly attribution?: "guess";
+}
+
 /** One labeled part of an item's raw text, used only to shape its preview. */
 export interface InjectionSection {
 	/** Section name rendered as a preview subheader. */
 	readonly label: string;
-	/** Slice of the parent item's text; sections concatenate back to it. */
+	/** Slice of the parent item's text; sections concatenate back to it, except when dropped. */
 	readonly text: string;
 	/** Share of the parent estimate; sections sum exactly to the item total. */
 	readonly tokens: number;
+	/**
+	 * True when a `--system-prompt` replacement suppressed this part: pi never
+	 * sent its text, so it carries no counted characters and always reads 0 tokens.
+	 */
+	readonly dropped?: boolean;
 	/** Serialized JSON inside `text`, e.g. a tool's parameter schema. */
 	readonly jsonSpan?: JsonSpan;
+	/** Preview-only extension prompt lines; their owning tools count them instead. */
+	readonly injectedReferences?: readonly InjectedReference[];
 }
 
 /** One measured context injection. */
@@ -73,6 +130,10 @@ export interface InjectionItem {
 	readonly jsonSpan?: JsonSpan;
 	/** Labeled parts of `text`, e.g. a tool's prompt lines and definition; never extra tokens. */
 	readonly sections?: readonly InjectionSection[];
+	/** True when a `--system-prompt` replacement suppressed this item; it reads 0 tokens. */
+	readonly dropped?: boolean;
+	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
+	readonly injectedReferences?: readonly InjectedReference[];
 	/** True when a message exists only in the transformed provider context, not the session branch. */
 	readonly contextOnly?: boolean;
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
@@ -159,8 +220,9 @@ export interface ContextUsageSnapshot {
 /**
  * Group measured items by source. Pi-native components come first, extension
  * sources follow by total size, and the unattributable aggregate comes last.
- * Items inside each group follow a fixed semantic order (base prompt, tools,
- * skills, then everything else by size). Returned objects own all nested data;
+ * Items inside each group follow the order pi assembles them into a request
+ * (base prompt, appended prompt, context files, skills, built-in tools, other
+ * tools, then everything else by size). Returned objects own all nested data;
  * later mutation of the input cannot change the groups.
  */
 export function groupInjections(items: readonly InjectionItem[]): InjectionGroup[] {
@@ -209,9 +271,21 @@ function copyItem(item: InjectionItem): InjectionItem {
 		...item,
 		source: { ...item.source },
 		jsonSpan: copyJsonSpan(item.jsonSpan),
-		sections: item.sections?.map((section) => ({ ...section, jsonSpan: copyJsonSpan(section.jsonSpan) })),
+		injectedReferences: copyInjectedReferences(item.injectedReferences),
+		sections: item.sections?.map((section) => ({
+			...section,
+			jsonSpan: copyJsonSpan(section.jsonSpan),
+			injectedReferences: copyInjectedReferences(section.injectedReferences),
+		})),
 		children: item.children?.map((child) => copyItem(child)),
 	};
+}
+
+/** Own reference records and their nested provenance without adding their text to totals. */
+function copyInjectedReferences(
+	references: readonly InjectedReference[] | undefined,
+): InjectedReference[] | undefined {
+	return references?.map((reference) => ({ ...reference, source: { ...reference.source } }));
 }
 
 /** Owned copy of an optional span. */
@@ -220,8 +294,9 @@ function copyJsonSpan(span: JsonSpan | undefined): JsonSpan | undefined {
 }
 
 /**
- * Order items within a group: base/appended prompt first, then built-in tools,
- * other tools, skills, and finally everything else by size descending.
+ * Order items within a group by the order pi assembles them into a request:
+ * base prompt, appended prompt, context files, skills, built-in tools, other
+ * tools, and finally everything else by size descending.
  */
 function compareItems(a: InjectionItem, b: InjectionItem): number {
 	const rankDelta = itemRank(a) - itemRank(b);
@@ -233,14 +308,17 @@ function compareItems(a: InjectionItem, b: InjectionItem): number {
 function itemRank(item: InjectionItem): number {
 	switch (item.kind) {
 		case "base-prompt":
-		case "append-prompt":
 			return 0;
-		case "tool":
-			return item.id === "tool:builtin" ? 1 : 2;
+		case "append-prompt":
+			return 1;
+		case "context-file":
+			return 2;
 		case "skills":
 			return 3;
+		case "tool":
+			return item.id === "tool:builtin" ? 4 : 5;
 		default:
-			return 4;
+			return 6;
 	}
 }
 

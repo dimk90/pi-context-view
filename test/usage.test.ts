@@ -36,10 +36,11 @@ function item(
 function snapshot(): InitialSnapshot {
 	const builtins = [item("read", "tool", 3), item("bash", "tool", 5)];
 	const skills = [item("code-style", "skills", 2), item("typescript-code", "skills", 4)];
+	const contextFiles = [item("agents", "context-file", 2), item("global-agents", "context-file", 4)];
 	const piItems = [
 		item("base", "base-prompt", 10),
 		item("builtins", "tool", 8, true, builtins),
-		item("agents", "context-file", 6),
+		item("context-files", "context-file", 6, true, contextFiles),
 		item("skills", "skills", 6, true, skills),
 	];
 	const mcpTool: InjectionItem = {
@@ -148,25 +149,34 @@ test("computeUsage classifies Initial components and live session messages witho
 		computedAt: new Date("2026-07-11T13:00:00Z"),
 	});
 
-	assert.equal(category(usage.categories, "system-prompt").tokens, 19);
-	assert.deepEqual(category(usage.categories, "system-tools").children?.map((entry) => entry.id), [
+	// The prompt addition belongs to the extension that appended it, not to pi's prompt.
+	assert.equal(category(usage.categories, "system-prompt").tokens, 10);
+	assert.deepEqual(category(usage.categories, "built-in-tools").children?.map((entry) => entry.id), [
 		"item:bash",
 		"item:read",
 	]);
-	assert.equal(category(usage.categories, "system-tools").tokens, 8);
+	assert.equal(category(usage.categories, "built-in-tools").tokens, 8);
 	assert.equal(category(usage.categories, "custom-tools").tokens, 7);
 	assert.equal(category(usage.categories, "mcp-tools").tokens, 5);
+	assert.deepEqual(category(usage.categories, "context-files").children?.map((entry) => entry.id), [
+		"item:global-agents",
+		"item:agents",
+	]);
 	assert.equal(category(usage.categories, "context-files").tokens, 6);
 	assert.equal(category(usage.categories, "skills").tokens, 6);
 	assert.equal(findCategory(usage.categories, "messages"), undefined);
 	assert.equal(category(usage.categories, "user-messages").tokens, 2);
-	assert.equal(category(usage.categories, "agent-text-messages").tokens, 1);
-	assert.equal(category(usage.categories, "agent-thinking-messages").tokens, 2);
-	assert.equal(category(usage.categories, "agent-tool-call-messages").tokens, 4);
+	assert.equal(category(usage.categories, "assistant-messages").tokens, 1);
+	assert.equal(category(usage.categories, "assistant-thinking").tokens, 2);
+	assert.equal(category(usage.categories, "tool-calls").tokens, 4);
 	assert.equal(category(usage.categories, "tool-output").tokens, 8);
 	assert.equal(category(usage.categories, "tool-result:read").tokens, 2);
 	assert.equal(findCategory(usage.categories, "tool-results"), undefined);
-	assert.equal(category(usage.categories, "extension-messages").tokens, 1);
+	assert.equal(category(usage.categories, "extensions").tokens, 10);
+	assert.deepEqual(
+		category(usage.categories, "extensions").children?.map((entry) => [entry.label, entry.tokens]),
+		[["npm:test", 9], ["marker", 1]],
+	);
 	// Bash and summary estimates cover pi's LLM-transform text, not just command/output/summary.
 	assert.equal(category(usage.categories, "bash-executions").tokens, 6);
 	assert.equal(category(usage.categories, "compacted-data").tokens, 55);
@@ -174,6 +184,23 @@ test("computeUsage classifies Initial components and live session messages witho
 	assert.equal(usage.modelLabel, "test-model");
 	assert.equal(usage.computedAt.toISOString(), "2026-07-11T13:00:00.000Z");
 	assert.ok(!usage.categories.some((entry) => entry.tokens === 99));
+});
+
+test("computeUsage orders prompt categories the way pi assembles a request", () => {
+	const usage = computeUsage({ snapshot: snapshot(), messages: [] });
+
+	assert.deepEqual(
+		usage.categories.map((entry) => [entry.id, entry.label]),
+		[
+			["system-prompt", "System Prompt"],
+			["context-files", "Instruction Files"],
+			["skills", "Skills"],
+			["built-in-tools", "Built-in Tools"],
+			["custom-tools", "Custom Tools"],
+			["mcp-tools", "MCP Tools"],
+			["extensions", "Extensions"],
+		],
+	);
 });
 
 test("computeUsage produces exactly the top-level categories that carry a configurable color", () => {
@@ -190,7 +217,7 @@ test("computeUsage includes frozen context-only messages without recounting sess
 	const initial = snapshot();
 	const contextOnly = {
 		...item("context-user", "message", 8, false),
-		source: { id: "aggregate:extensions", label: "extensions (aggregate)", native: false },
+		source: { id: "aggregate:extensions", label: "unattributed", native: false },
 		label: "user message",
 		text: "context-only content",
 		contextOnly: true,
@@ -209,10 +236,10 @@ test("computeUsage includes frozen context-only messages without recounting sess
 		messages: [],
 	});
 
-	const extensions = category(usage.categories, "extension-messages");
-	assert.equal(extensions.tokens, 8);
-	assert.deepEqual(extensions.children?.map((entry) => entry.label), ["extensions (aggregate)"]);
-	assert.equal(collectPreviewEntries(extensions)[0]?.text, "context-only content");
+	const extensions = category(usage.categories, "extensions");
+	assert.equal(extensions.tokens, 17);
+	assert.deepEqual(extensions.children?.map((entry) => entry.label), ["npm:test", "unattributed"]);
+	assert.ok(collectPreviewEntries(extensions).some((entry) => entry.text === "context-only content"));
 });
 
 test("computeUsage carries measured tool parts into tool preview entries", () => {
@@ -261,6 +288,38 @@ test("computeUsage carries measured tool parts into tool preview entries", () =>
 	assert.equal(promptEntry?.sections, undefined);
 });
 
+test("computeUsage keeps System Prompt parts as sections of one entry, not separate blocks", () => {
+	const preamble = "You are an expert coding assistant.";
+	const guidelines = "\nGuidelines:\n- Be concise";
+	const basePrompt: InjectionItem = {
+		...item("base", "base-prompt", 13),
+		text: `${preamble}${guidelines}`,
+		sections: [
+			{ label: "Preamble", text: preamble, tokens: 9 },
+			{ label: "Guidelines", text: guidelines, tokens: 4 },
+		],
+		children: [
+			{ ...item("base-prompt:preamble", "base-prompt", 9), label: "Preamble", text: preamble },
+			{ ...item("base-prompt:guidelines", "base-prompt", 4), label: "Guidelines", text: guidelines },
+		],
+	};
+	const usage = computeUsage({
+		snapshot: {
+			origin: "real-turn",
+			capturedAt: new Date("2026-07-11T12:00:00Z"),
+			groups: [{ source: { id: "pi", label: "pi", native: true }, items: [basePrompt], totalTokens: 13 }],
+			totalTokens: 13,
+		},
+		messages: [],
+	});
+
+	// Prompt parts break one preview block down; they never become blocks of their own.
+	const entries = collectPreviewEntries(category(usage.categories, "system-prompt"));
+	assert.equal(entries.length, 1);
+	assert.equal(entries[0]?.tokens, 13);
+	assert.deepEqual(entries[0]?.sections?.map((section) => section.label), ["Preamble", "Guidelines"]);
+});
+
 test("computeUsage drops empty categories and aggregates duplicate tool/custom message sources", () => {
 	const messages: ContextEvent["messages"] = [
 		{
@@ -288,8 +347,8 @@ test("computeUsage drops empty categories and aggregates duplicate tool/custom m
 	assert.equal(toolOutput.tokens, 3);
 	assert.deepEqual(toolOutput.children?.map((entry) => [entry.id, entry.tokens]), [["tool-result:read", 3]]);
 	assert.deepEqual(
-		category(usage.categories, "extension-messages").children?.map((entry) => [entry.id, entry.tokens]),
-		[["custom-message:marker", 3]],
+		category(usage.categories, "extensions").children?.map((entry) => [entry.id, entry.tokens]),
+		[["item:addition", 9], ["custom-message:marker", 3]],
 	);
 	assert.equal(category(usage.categories, "tool-result:read").entries?.length, 2);
 	assert.equal(findCategory(usage.categories, "user-messages"), undefined);
@@ -354,7 +413,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	]);
 
 	// Single text block: no index cell. Multiple text blocks: `text i/n` cells.
-	const textEntries = category(usage.categories, "agent-text-messages").entries ?? [];
+	const textEntries = category(usage.categories, "assistant-messages").entries ?? [];
 	assert.deepEqual(textEntries.map((entry) => [...entry.breadcrumb]), [
 		["assistant"],
 		["assistant", "text 1/2"],
@@ -363,7 +422,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	assert.equal(textEntries[1]?.text, "first block");
 
 	// Tool calls: one entry per call with the tool name as a breadcrumb cell.
-	const callEntries = category(usage.categories, "agent-tool-call-messages").entries ?? [];
+	const callEntries = category(usage.categories, "tool-calls").entries ?? [];
 	assert.deepEqual(callEntries.map((entry) => [entry.timestamp, [...entry.breadcrumb]]), [
 		[2, ["assistant", "read"]],
 		[20, ["assistant", "read"]],
@@ -374,7 +433,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	const argumentsSpan = callEntries[2]?.jsonSpan;
 	assert.ok(argumentsSpan !== undefined);
 	assert.equal(callEntries[2]?.text.slice(argumentsSpan.start, argumentsSpan.end), '{"command":"ls"}');
-	const callCategory = category(usage.categories, "agent-tool-call-messages");
+	const callCategory = category(usage.categories, "tool-calls");
 	assert.equal(callCategory.tokens, callEntries.reduce((sum, entry) => sum + entry.tokens, 0));
 
 	const bashEntries = category(usage.categories, "bash-executions").entries ?? [];
@@ -483,7 +542,7 @@ test("computeUsage uses provider reasoning per message and keeps signature estim
 	];
 
 	const usage = computeUsage({ snapshot: snapshot(), messages });
-	const thinking = category(usage.categories, "agent-thinking-messages");
+	const thinking = category(usage.categories, "assistant-thinking");
 	const entries = thinking.entries ?? [];
 
 	// Per-message totals are max(visible chars/4, reported reasoning): 11 + 2 + 4 + 6.
@@ -525,7 +584,7 @@ test("computeUsage represents encoded-only reasoning without retaining its signa
 	}];
 
 	const usage = computeUsage({ snapshot: snapshot(), messages });
-	const entries = category(usage.categories, "agent-thinking-messages").entries ?? [];
+	const entries = category(usage.categories, "assistant-thinking").entries ?? [];
 	assert.deepEqual(entries, [{
 		timestamp: 2,
 		breadcrumb: ["assistant"],
@@ -561,8 +620,8 @@ test("collectPreviewEntries flattens aggregates chronologically", () => {
 	assert.deepEqual(flattened.map((entry) => entry.text), ["earlier bash", "later read"]);
 
 	// Timeless snapshot entries keep category order instead of sorting.
-	const systemTools = collectPreviewEntries(category(usage.categories, "system-tools"));
-	assert.deepEqual(systemTools.map((entry) => [...entry.breadcrumb]), [["bash"], ["read"]]);
+	const builtInTools = collectPreviewEntries(category(usage.categories, "built-in-tools"));
+	assert.deepEqual(builtInTools.map((entry) => [...entry.breadcrumb]), [["bash"], ["read"]]);
 });
 
 test("toReportedUsage preserves known values and maps unknown nullable values to undefined", () => {

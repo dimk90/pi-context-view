@@ -35,23 +35,24 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(createDefaultConfigFile(filePath), { type: "created", filePath });
 	const text = readFileSync(filePath, "utf8");
 	assert.ok(text.endsWith("\n"));
-	assert.deepEqual(JSON.parse(text), {
-		systemPromptColor: "mdHeading",
-		systemToolsColor: "mdHeading",
-		customToolsColor: "accent",
-		mcpToolsColor: "mdLink",
-		memoryColor: "mdCodeBlock",
-		skillsColor: "customMessageLabel",
-		userMessagesColor: "syntaxString",
-		agentTextMessagesColor: "syntaxFunction",
-		agentThinkingMessagesColor: "thinkingXhigh",
-		agentToolCallMessagesColor: "syntaxKeyword",
-		toolOutputColor: "toolOutput",
-		extensionsColor: "syntaxType",
-		compactedDataColor: "thinkingHigh",
-		autoCompactBufferColor: "dim",
-		freeSpaceColor: "dim",
-	});
+	// Entries, not the parsed object: the file must also list keys in legend order.
+	assert.deepEqual(Object.entries(JSON.parse(text)), [
+		["systemPromptColor", "mdHeading"],
+		["instructionFilesColor", "mdCodeBlock"],
+		["skillsColor", "customMessageLabel"],
+		["builtInToolsColor", "mdHeading"],
+		["customToolsColor", "accent"],
+		["mcpToolsColor", "mdLink"],
+		["userMessagesColor", "syntaxString"],
+		["assistantMessagesColor", "syntaxFunction"],
+		["assistantThinkingColor", "thinkingXhigh"],
+		["toolCallsColor", "syntaxKeyword"],
+		["toolOutputColor", "toolOutput"],
+		["extensionsColor", "syntaxType"],
+		["compactedDataColor", "thinkingHigh"],
+		["autoCompactBufferColor", "dim"],
+		["freeSpaceColor", "dim"],
+	]);
 	assert.deepEqual(readdirSync(dirname(filePath)), ["pi-context-view.json"]);
 
 	const loaded = loadConfigFile(filePath);
@@ -104,7 +105,7 @@ test("loadConfigFile treats an absent override file as built-in defaults", (cont
 	assert.equal(result.config, DEFAULT_CONFIG);
 	assert.deepEqual(result.warnings, []);
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "mdHeading");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-tools"), "mdHeading");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "built-in-tools"), "mdHeading");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, AUTO_COMPACT_BUFFER_CATEGORY_ID), "dim");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "dim");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "unknown-category"), "muted");
@@ -114,15 +115,15 @@ test("loadConfigFile applies every valid flat category color override", (context
 	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({
 		systemPromptColor: "success",
-		systemToolsColor: "error",
+		builtInToolsColor: "error",
 		customToolsColor: "warning",
 		mcpToolsColor: "muted",
-		memoryColor: "dim",
+		instructionFilesColor: "dim",
 		skillsColor: "text",
 		userMessagesColor: "thinkingText",
-		agentTextMessagesColor: "searchMatchText",
-		agentThinkingMessagesColor: "thinkingMax",
-		agentToolCallMessagesColor: "mdCode",
+		assistantMessagesColor: "searchMatchText",
+		assistantThinkingColor: "thinkingMax",
+		toolCallsColor: "mdCode",
 		toolOutputColor: "syntaxNumber",
 		extensionsColor: "syntaxOperator",
 		compactedDataColor: "thinkingLow",
@@ -134,20 +135,34 @@ test("loadConfigFile applies every valid flat category color override", (context
 
 	assert.deepEqual(result.warnings, []);
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "success");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-tools"), "error");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "built-in-tools"), "error");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "custom-tools"), "warning");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "mcp-tools"), "muted");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "context-files"), "dim");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "skills"), "text");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "user-messages"), "thinkingText");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-text-messages"), "searchMatchText");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-thinking-messages"), "thinkingMax");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "agent-tool-call-messages"), "mdCode");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "assistant-messages"), "searchMatchText");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "assistant-thinking"), "thinkingMax");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "tool-calls"), "mdCode");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "tool-output"), "syntaxNumber");
-	assert.equal(resolveCategoryColor(result.config.categoryColors, "extension-messages"), "syntaxOperator");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "extensions"), "syntaxOperator");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "compacted-data"), "thinkingLow");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, AUTO_COMPACT_BUFFER_CATEGORY_ID), "borderMuted");
 	assert.equal(resolveCategoryColor(result.config.categoryColors, FREE_SPACE_CATEGORY_ID), "accent");
+});
+
+test("loadConfigFile accepts scrollbar theme colors without warnings", (context) => {
+	const filePath = createConfigPath(context);
+	writeFileSync(filePath, JSON.stringify({
+		systemPromptColor: "scrollbarTrack",
+		skillsColor: "scrollbarThumb",
+	}));
+
+	const result = loadConfigFile(filePath);
+
+	assert.deepEqual(result.warnings, []);
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "system-prompt"), "scrollbarTrack");
+	assert.equal(resolveCategoryColor(result.config.categoryColors, "skills"), "scrollbarThumb");
 });
 
 test("loadConfigFile accepts literal hex colors and normalizes them", (context) => {
@@ -171,7 +186,7 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 	writeFileSync(filePath, JSON.stringify({
 		systemPromptColor: "success",
 		skillsColor: "#ff00f",
-		memoryColor: "crimson",
+		instructionFilesColor: "crimson",
 		userMessagesColor: 42,
 		unknownColor: "accent",
 	}));
@@ -184,10 +199,37 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 	assert.equal(resolveCategoryColor(result.config.categoryColors, "user-messages"), "syntaxString");
 	assert.equal(result.warnings.length, 4);
 	assert.ok(result.warnings.some((warning) => warning.includes("skillsColor")));
-	assert.ok(result.warnings.some((warning) => warning.includes("memoryColor")));
+	assert.ok(result.warnings.some((warning) => warning.includes("instructionFilesColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("userMessagesColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("unknownColor")));
 });
+
+/** Every renamed config key with the current name and the category both color. */
+const RENAMED_KEY_CASES = [
+	{ old: "memoryColor", current: "instructionFilesColor", categoryId: "context-files" },
+	{ old: "systemToolsColor", current: "builtInToolsColor", categoryId: "built-in-tools" },
+	{ old: "agentTextMessagesColor", current: "assistantMessagesColor", categoryId: "assistant-messages" },
+	{ old: "agentThinkingMessagesColor", current: "assistantThinkingColor", categoryId: "assistant-thinking" },
+	{ old: "agentToolCallMessagesColor", current: "toolCallsColor", categoryId: "tool-calls" },
+	{ old: "extensionMessagesColor", current: "extensionsColor", categoryId: "extensions" },
+] as const;
+
+for (const { old, current, categoryId } of RENAMED_KEY_CASES) {
+	test(`loadConfigFile honors the renamed ${old} key without warning`, (context) => {
+		const filePath = createConfigPath(context);
+		writeFileSync(filePath, JSON.stringify({ [old]: "warning" }));
+
+		const renamed = loadConfigFile(filePath);
+		assert.deepEqual(renamed.warnings, []);
+		assert.equal(resolveCategoryColor(renamed.config.categoryColors, categoryId), "warning");
+
+		// Both names present: the current one wins whichever order the file lists them in.
+		writeFileSync(filePath, `{"${current}":"success","${old}":"warning"}`);
+		assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, categoryId), "success");
+		writeFileSync(filePath, `{"${old}":"warning","${current}":"success"}`);
+		assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, categoryId), "success");
+	});
+}
 
 test("loadConfigFile degrades invalid JSON and non-object roots to defaults", (context) => {
 	const filePath = createConfigPath(context);

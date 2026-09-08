@@ -31,6 +31,7 @@ const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 export const THEME_COLOR_NAMES = [
 	"accent", "border", "borderAccent", "borderMuted", "success",
 	"error", "warning", "muted", "dim", "text", "thinkingText",
+	"scrollbarTrack", "scrollbarThumb",
 	"searchMatchText", "userMessageText", "customMessageText",
 	"customMessageLabel", "toolTitle", "toolOutput", "mdHeading",
 	"mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder",
@@ -54,30 +55,48 @@ type _EveryThemeColorIsListed = AssertNever<Exclude<ThemeColor, (typeof THEME_CO
 
 /**
  * Every configurable usage color: the category id the view resolves, the flat
- * config key overriding it, and the built-in default.
+ * config key overriding it, and the built-in default. Listed in legend order,
+ * which a created override file reproduces.
  */
 const CATEGORY_COLOR_SPECS = {
 	"system-prompt": { key: "systemPromptColor", color: "mdHeading" },
-	"system-tools": { key: "systemToolsColor", color: "mdHeading" },
+	"context-files": { key: "instructionFilesColor", color: "mdCodeBlock" },
+	"skills": { key: "skillsColor", color: "customMessageLabel" },
+	"built-in-tools": { key: "builtInToolsColor", color: "mdHeading" },
 	"custom-tools": { key: "customToolsColor", color: "accent" },
 	"mcp-tools": { key: "mcpToolsColor", color: "mdLink" },
-	"context-files": { key: "memoryColor", color: "mdCodeBlock" },
-	"skills": { key: "skillsColor", color: "customMessageLabel" },
 	"user-messages": { key: "userMessagesColor", color: "syntaxString" },
-	"agent-text-messages": { key: "agentTextMessagesColor", color: "syntaxFunction" },
-	"agent-thinking-messages": { key: "agentThinkingMessagesColor", color: "thinkingXhigh" },
-	"agent-tool-call-messages": { key: "agentToolCallMessagesColor", color: "syntaxKeyword" },
+	"assistant-messages": { key: "assistantMessagesColor", color: "syntaxFunction" },
+	"assistant-thinking": { key: "assistantThinkingColor", color: "thinkingXhigh" },
+	"tool-calls": { key: "toolCallsColor", color: "syntaxKeyword" },
 	"tool-output": { key: "toolOutputColor", color: "toolOutput" },
-	"extension-messages": { key: "extensionsColor", color: "syntaxType" },
+	"extensions": { key: "extensionsColor", color: "syntaxType" },
 	"compacted-data": { key: "compactedDataColor", color: "thinkingHigh" },
 	[AUTO_COMPACT_BUFFER_CATEGORY_ID]: { key: "autoCompactBufferColor", color: "dim" },
 	[FREE_SPACE_CATEGORY_ID]: { key: "freeSpaceColor", color: "dim" },
 } as const satisfies Record<string, { readonly key: string; readonly color: ThemeColor }>;
 
+/** Flat config key of one configurable category color. */
+type ConfigKey = (typeof CATEGORY_COLOR_SPECS)[keyof typeof CATEGORY_COLOR_SPECS]["key"];
+
 /** Config keys mapped to the category they color. */
 const CONFIG_KEY_CATEGORIES: ReadonlyMap<string, string> = new Map(
 	Object.entries(CATEGORY_COLOR_SPECS).map(([categoryId, spec]) => [spec.key, categoryId]),
 );
+
+/**
+ * Renamed keys still honored, mapped to their current name, so a rename never
+ * silently drops an override an existing file already carries. The value type
+ * fails the build when a rename points at a key no category declares.
+ */
+const RENAMED_CONFIG_KEYS: ReadonlyMap<string, ConfigKey> = new Map([
+	["memoryColor", "instructionFilesColor"],
+	["systemToolsColor", "builtInToolsColor"],
+	["agentTextMessagesColor", "assistantMessagesColor"],
+	["agentThinkingMessagesColor", "assistantThinkingColor"],
+	["agentToolCallMessagesColor", "toolCallsColor"],
+	["extensionMessagesColor", "extensionsColor"],
+]);
 
 /** Fast runtime membership check for configured Pi foreground color names. */
 const THEME_COLORS: ReadonlySet<string> = new Set(THEME_COLOR_NAMES);
@@ -227,7 +246,10 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 	const colors = new Map(DEFAULT_CATEGORY_COLORS);
 	const warnings: string[] = [];
 	for (const [key, value] of Object.entries(raw)) {
-		const categoryId = CONFIG_KEY_CATEGORIES.get(key);
+		const currentKey = RENAMED_CONFIG_KEYS.get(key);
+		// The current name always wins, so a file carrying both names loads order-independently.
+		if (currentKey !== undefined && currentKey in raw) continue;
+		const categoryId = CONFIG_KEY_CATEGORIES.get(currentKey ?? key);
 		if (categoryId === undefined) {
 			warnings.push(`Ignoring unknown ${CONFIG_FILE_NAME} key "${key}".`);
 			continue;

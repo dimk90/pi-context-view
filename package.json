@@ -1,6 +1,6 @@
 {
 	"name": "pi-context-view",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"description": "Pi extension to visualize context usage and inspect the hidden parts: base prompt, tools defs, and extension injections",
 	"type": "module",
 	"license": "MIT",
@@ -37,15 +37,15 @@
 		"extensions": [
 			"./src/index.ts"
 		],
-		"image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/1485fe4da1ddefc832230b14bcc949f2a53d87a2/doc/images/pi-context-view.png"
+		"image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/9a9f9f4fafaa09c77759485d53c42f8694650755/doc/images/pi-context-view.png"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-coding-agent": "0.84.4",
-		"@earendil-works/pi-tui": "0.84.4",
+		"@earendil-works/pi-coding-agent": "0.85.1",
+		"@earendil-works/pi-tui": "0.85.1",
 		"@types/node": "^22.20.1",
 		"typescript": "^7.0.2"
 	}

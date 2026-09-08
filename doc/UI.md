@@ -1,13 +1,38 @@
 # UI specification
 
-This is the canonical UI reference for pi-context-view. Both `/context` views
-are focused fullscreen TUI overlays. Usage and Injections are separate views;
-there is no tab state. `/context config` is a utility command rather than a
-third view: it opens no overlay, so it runs in every run mode and reports
-creation, refusal, or failure through a notification, or through stderr where
-no UI is available.
+Canonical rendering contract for pi-context-view. Both `/context` views are
+focused fullscreen TUI overlays; Usage and Injections are separate views, with
+no tab state. `/context config` opens no overlay, so it runs in every run mode
+and reports creation, refusal, or failure through a notification, or through
+stderr where no UI is available.
 
-## Shared layout and styling
+This file holds the rules both views share. Load only the page your change
+touches:
+
+| Document | Covers |
+| --- | --- |
+| This file | Frame, color, casing, descriptions, interaction, responsive rendering |
+| [ui/previews.md](ui/previews.md) | Labeled parts, restored extension lines, attribution footer, repeated headings, marked JSON |
+| [ui/usage.md](ui/usage.md) | Context Usage: header, notices, map, map scale, legend, category preview |
+| [ui/injections.md](ui/injections.md) | Context Injections: contribution tree, injection preview |
+
+Constants are named where a rule needs a number; the module owning the constant
+is authoritative.
+
+| Area | Module |
+| --- | --- |
+| Frame, viewport, description blocks | `src/ui/layout.ts` |
+| Configurable color resolution | `src/ui/color.ts` |
+| Map cell model, Fit scale | `src/ui/usage-map.ts` |
+| Usage rendering and interaction | `src/ui/usage-view.ts` |
+| Usage entry and block model | `src/ui/usage-preview.ts` |
+| Injections tree model / rendering | `src/ui/injections-model.ts`, `src/ui/injections-view.ts` |
+| Labeled parts, attribution footer | `src/ui/section-preview.ts` |
+| Marked JSON, skill badges, wheel | `src/ui/json-preview.ts`, `src/ui/skill-preview.ts`, `src/ui/wheel.ts` |
+
+## Style rules
+
+### Frame
 
 Follow pi's native selector style (`/settings`, `/model`):
 
@@ -20,423 +45,107 @@ Follow pi's native selector style (`/settings`, `/model`):
 - dim key plus muted description hints joined by ` · `;
 - dim `(current/total)` shown only when content overflows.
 
-A description is the least important block on a frame: when the terminal is too
-short, it collapses whole — together with the blank row above it — and reappears
-once the terminal grows back. It is therefore rendered either completely or not
-at all, never as a partial sentence and never ellipsized. Each view names the
-content threshold that keeps its description, because the two views crowd
-differently: the Usage dashboard has a bounded legend and keeps its description
-only while the rest renders at full detail, while the unbounded Injections list
-keeps its description until the visible list window falls below a readable
-floor. Hints, borders, capture warnings, and configuration notices are not
-descriptions and never collapse; the Injections `[Degraded: …]` indicator
-belongs to its description block and collapses with it, while the wrapped reason
-below the header stays.
-
 Headers, subheaders, and the cursor start at column 0. Indent descriptions,
-scroll counters, hint rows, and preview bodies by two spaces. Use `dim` for
-dialog descriptions, bright `text` for primary rows, `muted` for subordinate
-rows and values, and `dim` for deeper breakdowns. Selected labels and values use
-`accent` with no background. Subheaders are bold and use `mdHeading`.
+scroll counters, hint rows, and preview bodies by two spaces (`BODY_INDENT`).
 
-Preview content that decomposes into labeled parts — a tool's `Available Tools`,
-`Guidelines`, and `Definition` parts — renders every part under its own bold
-`syntaxKeyword` subheader followed by a muted ` · N tokens` share, with one blank
-row between parts. Parts keep `syntaxKeyword` rather than the usual `mdHeading`
-subheader color because they nest under item and entry headings that already
-carry `mdHeading`. Part shares reconcile exactly with the item or entry estimate
-and never add to it.
-Show the applicable subheader even when `Definition` is the only captured part;
-omit parts that have no captured text rather than rendering zero-token
-placeholders.
+### Color and casing
 
-A preview body never repeats the heading directly above it: drop a first content
-line identical to the item title, part label, or entry name, as a skill block
-that opens with its own name has. This is a preview-only omission; the dropped
-line still counts toward the estimate shown in that heading.
-
-Preview text may carry a JSON document that the model marks structurally — a
-tool's parameter schema, tool-call arguments, serialized message content. Every
-preview level re-serializes that run across lines indented two spaces per level,
-so a block small enough to escape the cap still shows its expanded form, and
-block caps and `… +N lines` counts measure the expanded lines the Enter level
-opens. Marking is structural, never heuristic:
-text that merely looks like JSON stays as captured, and a marked run that no
-longer parses renders unchanged. Like skill badges, this is a preview-only
-transformation that never changes token estimates.
+Use `dim` for dialog descriptions, bright `text` for primary rows, `muted` for
+subordinate rows and values, and `dim` for deeper breakdowns. Selected labels
+and values use `accent` with no background. Subheaders are bold `mdHeading`.
 
 Always use current-theme semantic colors through `theme.fg(...)` and themed
-border colorizers. Never hardcode ANSI escapes, hex values, or named terminal
+border colorizers; never hardcode ANSI escapes, hex values, or named terminal
 colors. Use pi's injected keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and theme invalidation.
 
-A color exposed for user configuration names either a pi theme color key, which
-keeps the element tracking the active theme, or a literal `#rgb`/`#rrggbb`
-value, which pins it across themes. Literal values render through pi's own
-theme conversion, so they down-convert to the closest 256-color index wherever
-pi itself would; ANSI escapes and terminal color names stay invalid in
-configuration, and code keeps naming theme keys alone. An unrecognized value
-falls back to the built-in color for that element and warns once instead of
-failing the view. [PI-THEME-COLORS.md](PI-THEME-COLORS.md) lists the available
-keys.
+Content a `--system-prompt` replacement dropped carries a fixed `toolDiffRemoved`
+` · Dropped` marker directly after the estimate it explains, in hierarchy rows
+and preview subheaders alike. It marks a state rather than a usage category, so
+it is never configurable, and its 0-token entries never color map cells. A row
+too narrow for the whole marker drops it instead of truncating it.
+
+A user-configurable color names either a pi theme color key, which tracks the
+active theme, or a literal `#rgb`/`#rrggbb` value, which pins the element across
+themes. Literals render through pi's own theme conversion, so they down-convert
+to the closest 256-color index wherever pi itself would. ANSI escapes and
+terminal color names stay invalid in configuration, and code keeps naming theme
+keys alone. An unrecognized value falls back to the built-in color for that
+element and warns once instead of failing the view.
+[PI-THEME-COLORS.md](PI-THEME-COLORS.md) lists the keys.
 
 Titles, section names, and hint labels use Title Case (`Context Injections`,
 `Esc Close`). Key names use conventional casing (`PgUp/PgDn`). Preserve literal
 identifiers such as `pi`, `edit`, and `web_search`; descriptions use sentence
 case.
 
+### Descriptions
+
+A description is the least important block on a frame. It renders completely or
+not at all: when the terminal is too short it collapses whole, together with the
+blank row above it, and reappears once the terminal grows back. It is never
+partial and never ellipsized.
+
+| Description | Renders while |
+| --- | --- |
+| Usage dashboard | Map, complete legend, and full key all fit |
+| Injections list | `LIST_DESCRIPTION_MIN_ROWS` (26) rows visible, or a shorter list in full |
+| Attribution footer | `DESCRIPTION_MIN_CONTENT_ROWS` (22) content rows visible, or a shorter preview in full |
+
+Hints, borders, capture warnings, and configuration notices are not descriptions
+and never collapse. The Injections `[Degraded: …]` indicator belongs to its
+description block and collapses with it, while the wrapped reason below the
+header stays. The Usage thinking-notation explanation is view content, not a
+description, and also never collapses.
+
+Why the floors differ: the Usage dashboard has a bounded legend and can drop its
+description early, while the unbounded Injections list and attributed previews
+would otherwise hide theirs permanently.
+
 ## Interaction
 
 The Injections view has list and raw-preview states. The Usage view has a
-category legend, a category block stream, and a full-content view for one block:
+category legend and opens a single-entry category directly as full content.
+Multi-entry categories have a block stream with a full-content level for capped
+blocks; empty categories keep their explicit no-content state.
 
-- Up/Down, and the vim-style `k`/`j`, navigate selectable rows or blocks and
-  scroll full-content previews. Hints render the pair as one `↑↓/jk` key label.
-- PgUp/PgDn, and `Ctrl+U`/`Ctrl+D`, page through lists or previews. From the
-  first or last page of a Usage block stream, another page key selects the
-  first or last block.
+- Up/Down and vim-style `k`/`j` navigate selectable rows or blocks and scroll
+  full-content previews. Hints render the pair as one `↑↓/jk` label
+  (`STEP_KEY_HINT`).
+- PgUp/PgDn and `Ctrl+U`/`Ctrl+D` page through lists or previews. From the first
+  or last page of a Usage block stream, another page key selects the first or
+  last block.
 - Home/End jump to boundaries.
 - Enter opens the selected row's preview; in a Usage block stream it opens full
   content only when the selected block is capped.
 - Escape returns one level while preserving selection, then closes the view.
-
-Views may add their own keys; the Usage view adds `z` for the map scale.
+- Views may add keys; Usage adds `z` for the map scale.
 
 The mouse wheel scrolls wherever the keys navigate: one notch moves the
-selection one row or one block, and scrolls a full-content preview by the step
-pi's own viewport uses, defaulting to three lines when that step is unreadable.
-Only fullscreen mode enables mouse reporting, so in regular mode the wheel keeps
-scrolling the terminal's scrollback. Hint rows stay keyboard-only, so they never
-advertise an affordance one mode lacks.
+selection one row or block, and scrolls a full-content preview by pi's own
+viewport step, defaulting to `DEFAULT_WHEEL_SCROLL_LINES` (3) when that step is
+unreadable. Only fullscreen mode enables mouse reporting, so in regular mode the
+wheel keeps scrolling the terminal's scrollback; hint rows therefore stay
+keyboard-only and never advertise an affordance one mode lacks.
 
 Navigation skips non-selectable rows and remains bounded after terminal resize.
 All content is terminal-sanitized before rendering and raw content appears only
 after explicit Enter selection; [ARCHITECTURE.md](ARCHITECTURE.md) owns the full
 privacy contract.
 
-## Usage view
-
-`/context` and `/context usage` open **Context Usage**. Three width tiers apply
-throughout the view:
-
-- 72 columns and above: map cells have inter-cell spacing;
-- 52–71 columns: the map renders without inter-cell spacing;
-- below 52 columns (the narrow layout): the map, its key, and the zoom hint and
-  label are hidden, and the selectable category list remains.
-
-At map widths, render the header as:
-
-```text
-Context Usage                         model · used/window (percent)
-```
-
-Omit the model completely if the full metadata does not fit; never abbreviate
-it. Keep the usage summary right-aligned. In the narrow layout, hide the model
-and render the header, summary, and category heading flush at column 0, with one
-blank row before and after the summary:
-
-```text
-Context Usage
-
-used/window (percent)
-
-Category:
-```
-
-At map widths, while Fit scale is active, append the zoom label to the title
-with the shared ` · ` separator:
-
-```text
-Context Usage · Zoom 1M → 120k        model · used/window (percent)
-```
-
-The label reads `Zoom window → scale` using the same token formatting as the
-usage summary. Drop the model before the label. If the title and label still do
-not fit on one line, put them on separate lines with one empty row before and
-after the label, as the Injections header does. The label is absent at Window
-scale and in the narrow layout.
-
-Do not append the redundant word `tokens` to Usage header or category-preview
-summaries. Preserve `≈` when the usage total is estimated.
-
-Non-fatal problems appear as `warning` notices between the header and the
-dashboard, indented like other body content and wrapped to the width: the
-degraded-capture reason first, then configuration problems such as ignored
-entries. Sanitize every notice, since configuration text is untrusted. Report
-them here rather than through a notification, which the fullscreen overlay
-hides. Cap the block at three rows; when notices do not fit, keep the rows that
-fit and close with `… +N more`, counting the notices not shown in full.
-
-### Context map
-
-The overview pairs a proportional map, 14×14 cells by default, with an
-interactive category legend. Map geometry is an input rather than a constant:
-derive the key, Block Size, and every layout decision from the live geometry,
-and clamp a requested size to what the viewport can render, so the rules in
-[Responsive rendering](#responsive-rendering) always win over a requested size.
-
-Cells use themed `■` for full occupancy, `◧` for partial occupancy, `▦` for
-compacted data, `⛝` for the auto-compact buffer, and `⛶` for free space. Each
-glyph follows its category color; buffer and free space are dim by default.
-Allocate occupied cells from estimated category totals against the current map
-scale, which is the context window unless Fit is active (see
-[Map scale](#map-scale)); display pi-reported usage separately because the
-values may differ.
-
-A dedicated key appears beside the map, below the `Category:` legend and its
-scroll counter, separated from them by one empty detail row:
-
-```text
-Map:
-  ■ - Single category block
-  ◧ - Shared block, largest category shown
-  ⛶ - Block Size: 5.1k (0.5%)
-```
-
-Compacted, buffer, and free glyphs need no key row, because their category rows
-identify them. Block Size is the mapped range divided by the cell count, so it
-states the map's resolution: what the smallest visible cell is worth. Its
-percentage is the cell's share of the mapped range, not of the context window,
-and both values derive from the live map geometry rather than an assumed grid
-size. Only the token value follows the active scale; it renders in `muted` at
-Window and, while Fit is active, in the same `mdHeading` treatment as the
-header's zoom label, so zooming visibly shrinks and highlights it.
-
-The key claims only the rows the complete legend leaves over, counted as the
-detail column minus the `Category:` heading and every legend row, so the key is
-the first dashboard element a shrinking terminal collapses once the description
-is already gone:
-
-- five or more spare rows: the full key;
-- two to four spare rows: the single-line
-  `Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)` key, dropping the percentage
-  and then shortening `One category` to `One` before the line would truncate;
-- fewer than two spare rows: no key.
-
-Only after the key is gone may the legend hide a category row or start
-scrolling, and the `Category:` heading with at least one legend row always
-survives. The dashboard description precedes this whole sequence: it renders
-only while the map, the complete legend, and the full key all fit, and collapses
-before the key degrades.
-
-When auto-compaction is enabled, the tail of the map shows the settings
-`reserveTokens` reserve as `⛝` cells after the free cells: tokens that content
-will never occupy because compaction triggers first. The buffer shrinks once
-estimated content grows into the reserve and disappears when auto-compaction is
-disabled or settings are unreadable. Read the reserve from pi's merged
-global/project settings at view-open time, honoring project trust. At Fit scale
-the reserve lies past the mapped range, so no `⛝` cells render while the
-`⛝ Auto-Compact Buffer` legend row remains.
-
-### Map scale
-
-The map has two scales, toggled by `z`:
-
-- `Window` maps the full context window, matching pi-reported fullness;
-- `Fit` maps a smaller range so that low occupancy stays legible.
-
-Scale changes the map's denominator only. The map is always anchored at token 0
-and never pans, so no content can fall outside it, and cell classification,
-segment order, and the `■`/`◧` thresholds are unchanged.
-
-Fit scale is the estimated occupied total plus 15% headroom, rounded up to a
-two-significant-digit boundary, floored at 10k tokens and capped at the context
-window. The headroom keeps a visible band of `⛶` free cells, so the map still
-reads as occupancy rather than as a pure composition chart.
-
-Render `Z Zoom` in the hint row directly before `Esc Close`. Hide the hint, the
-header label, and the binding together whenever the toggle cannot help:
-
-- in the narrow layout, where the map itself is hidden;
-- when the map is unavailable for lack of a context-window denominator;
-- when the Fit scale would reach the context window, leaving nothing to zoom.
-
-The view opens at Window and holds the chosen scale only until it closes.
-
-### Category legend
-
-The legend uses a configurable semantic theme color for each top-level
-category; the built-in defaults are distinct except for the intentionally
-shared System Prompt/System Tools color. A category override colors its map
-cells and legend marker, while labels and values retain the shared selector
-styles. Buffer and free-space overrides also color their map cells, legend
-markers, and Block Size key glyph. Category names have no trailing colons. Fill
-the gap before values with `dim` dot leaders; shorten or remove leaders before
-truncating labels or values. Token and percentage values align in separate
-columns. Both always denominate against the true context window regardless of
-map scale. Categories include:
-
-- System Prompt, System Tools, Custom Tools, and MCP Tools;
-- Memory (`AGENTS.md`) and Skills;
-- User Messages, Agent Text Messages, Agent Thinking Messages, and Agent Tool
-  Call Messages;
-- Tool Output and Extensions;
-- Compacted Data and Free Space.
-
-Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
-the smaller middle dot `·`. Keep aggregate breakdowns collapsed except
-Tool Output, whose per-tool results and bash executions appear directly and
-scroll independently. Map allocation always uses top-level totals. The trailing
-`⛝ Auto-Compact Buffer` (when enabled) and `⛶ Free Space` rows directly follow
-the last category. Free Space excludes the buffer so all rows still sum to the
-context window. Neither row has anything to preview: they trail the legend and
-scroll with it but are skipped by cursor navigation.
-
-When the legend overflows its viewport, show the dim `(current/total)` counter
-on the row directly below the last visible legend row, indented two spaces, and
-never beside the `Category:` heading. It counts every legend row, including the
-trailing buffer and free-space rows, and its left number is the last visible
-row, so scrolling to the end reaches the total. Height-only resizing must also
-reflow and clamp the viewport.
-
-### Usage preview
-
-Render the selected category as chronological entries. Each entry has a header
-like:
-
-```text
-[DD-MM-YYYY HH:MM:SS] [breadcrumb…] tokens
-```
-
-Use dim for datetime and tokens, bold `mdHeading` for the first breadcrumb cell
-that names the producing tool, message role, or skill, and muted styling for the
-rest. Snapshot-backed categories omit datetime and retain
-category order. Assistant messages split into constituent text, thinking, and
-tool-call entries; tool calls include the tool name. Add a `text i/n` cell only
-for multi-block text or thinking content.
-
-Agent Thinking Messages entries carry an invisible-reasoning cell after the
-visible estimate, with `T` as the visible-plus-invisible message total:
-`+ Encoded ≈N (≈T)` for a provider-reported share on a message with a captured
-signature, `+ Encoded ~N (~T)` for the signature-size proxy, and
-`+ Reasoning ≈N (≈T)` without a captured signature. `≈` marks a
-provider-reported count and `~` a rough proxy that must never be rendered as an
-upper bound; omit zero-size shares. Keep one wrapped dim explanation after the
-scrollable entries and before the hints; it opens with the schematic header
-pattern `[DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total)`, then
-defines `≈`, `~`, and `Encoded`. This explanation is view content rather than a
-dialog description — it decodes notation used by the entries above it — so it
-does not collapse on short terminals; the per-block cap shrinks around it. Never render, preview, or log raw signature
-bytes. [THINKING.md](THINKING.md) owns the underlying estimate.
-
-Treat each entry as one navigable block. Reserve a two-column gutter before its
-header and content. Mark every line of the selected block, including blank
-content lines, with an accent `┃`; leave the blank separator row between blocks
-unmarked. Unselected blocks retain the same two-column spacing with no gutter.
-When the stream overflows, show the selected block ordinal as a dim `(i/n)`
-counter.
-
-Up/Down and `k`/`j` move block by block. Keep the selected block fully visible
-with minimal scrolling when it fits. If it is taller than the viewport, expose
-its approached edge and scroll line by line within it before moving to the next
-block. PgUp/PgDn move by the viewport height and select the first fully visible
-block, falling back to the first intersecting block. Once paging reaches the
-first or last viewport, the next PgUp/PgDn selects the corresponding boundary
-block so paging alone can reach `(1/n)` and `(n/n)`. Home/End select the first or
-last block.
-
-Indent content by two spaces after the gutter and separate blocks with one blank
-row. A tool entry renders its labeled parts inside the block under the shared
-subheader rules; its entry header keeps the whole tool estimate. In User
-Messages only, replace complete attached
-`<skill name="…">…</skill>` expansions with pi-colored `[skill] name` badges;
-leave malformed wrappers visible. This is a preview-only transformation, and
-the full content still contributes to token estimates.
-
-Cap each block so two whole blocks stay visible: derive the cap from terminal
-height alone — never from the viewport, whose counter row depends on the capped
-stream — and clamp it between 4 and 10 wrapped content lines. When content is
-hidden, left-align a dim `… +N lines` marker with the block content. For the
-selected block only, append dim ` · ` and accent `Enter - View Content`. Do not
-repeat that action in the footer hint row. Fully visible blocks show no Enter
-action, and Enter is a no-op for them.
-
-Enter on a capped block opens a separate fullscreen level containing the
-category header, one blank separator row, the selected entry header, and its
-complete uncapped content. That level uses line and page scrolling with
-`↑↓/jk Scroll · PgUp/PgDn Page · Esc Back`, and Escape returns to the same block
-and viewport. A category without entries instead shows
-`No content captured for this category.` without a gutter; Enter is a no-op and
-the hint row offers `Esc Back` alone.
-Unknown usage after compaction retains an explicit preview state.
-
-## Injections view
-
-`/context injections` opens **Context Injections**. Its header is:
-
-```text
-Context Injections · [INITIAL]
-```
-
-`INITIAL` uses the active `mdHeading` treatment. Runtime inspection is
-roadmap-only, so no Runtime label, switching key, or Runtime status is rendered
-until that step lands. If the combined header does not fit, put the title and
-label on separate lines with one empty row before and after the label.
-
-Present Initial contributions in this order:
-
-- `pi`
-  - Base or Custom Prompt
-  - Built-in Tools (N), with one child per active built-in tool
-  - Skills (K), with one content-only child per skill
-  - context files, abbreviating home paths with `~`
-  - appended prompt content
-- each extension/tool source
-  - one child per active tool
-  - injected messages identified by `customType` where available
-- `extensions (aggregate)` for unattributable chained prompt additions
-
-Within the `pi` group, keep the fixed semantic order above and sort remaining
-prompt additions by size. Children break down parent contributions and do not
-increase totals. Measurements and previews exclude transport wrappers,
-section-introduction scaffolding, and the dynamic date/working-directory
-footer.
-
-Use dim `├─`, `└─`, and `│` connectors to show source, item, and constituent
-hierarchy. Align every token estimate to one shared column capped near the tree
-on wide terminals, leaving unused space to the right. Fill label/value gaps with
-dim dot leaders. As width shrinks, shorten or remove leaders before truncating
-labels or token values, and retain tree connectors where space permits.
-
-Place one empty row before `TOTAL`. It is the last row in the scrollable Initial
-list, counts only the frozen Initial snapshot, and is not selectable. Cursor
-navigation, the selectable-row counter, and Enter preview skip it.
-
-The list description survives scrolling, since an Initial list long enough to
-overflow every terminal would otherwise hide it permanently. It renders while at
-least 26 list rows stay visible, or while a shorter list stays visible in full,
-and collapses whole below that floor. The `(current/total)` counter never
-collapses it by itself.
-
-When capture is degraded, wrap the precise reason below the header and show a
-`[Degraded: …]` indicator beside the description. Keep the fallback hierarchy
-usable.
-
-### Injection preview
-
-Enter on an injection item opens its sanitized raw text. Show the item title,
-source, and estimated tokens in the header; wrap content to available width and
-support arrow and page scrolling. Escape returns to the same selected row. Raw
-text must never appear in row descriptions.
-
-A tool item renders its labeled parts under the shared subheader rules, in
-place of one undivided block of raw text. An item with children — Built-in
-Tools, Skills — renders one part per child under the same rules, so children
-stay separated by a blank line instead of running together. The whole preview
-is full content, so marked JSON expands here, in an aggregate part as much as
-in a tool's own definition.
-
 ## Responsive rendering
 
 Every rendered line must fit the supplied width. Fullscreen output must respect
-both terminal width and height, including borders, wrapped notices,
-descriptions, hints, counters, and blank rows. Cache keys must include all
-layout-affecting dimensions and theme state. State changed from within a view,
-such as the Usage map scale, must invalidate cached output instead.
+terminal width and height, including borders, wrapped notices, descriptions,
+hints, counters, and blank rows. Cache keys must include all layout-affecting
+dimensions and theme state; state changed from within a view, such as the Usage
+map scale, must invalidate cached output instead.
 
-Test at 60, 80, and 120 columns, narrow fallbacks, short heights, height-only
-resizing, overflow navigation, preview return position, and theme invalidation.
-Cover description collapse and its restoration when the terminal grows, and
-prove no height ever renders a partial description.
-Cover both map scales, the header label's line-splitting fallback, the
-conditions that hide the zoom binding, and every map-key degradation.
+UI cases `pnpm check` must cover, beyond the general matrix in
+[AGENTS.md](../AGENTS.md):
+
+- 60, 80, and 120 columns, the narrow fallback, and height-only resizing;
+- description collapse and restoration, with no height rendering a partial one;
+- both map scales, the header label's line-splitting fallback, the conditions
+  hiding the zoom binding, and every map-key degradation;
+- overflow navigation, preview return position, and theme invalidation.

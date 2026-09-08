@@ -13,18 +13,19 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 1
 
 
 ## Constants
 
 
 # The demo replays one recorded session, so its id and model are pinned
-PI_COMMAND='pi -e . --session 01a0529a-687b-74a7-9076-11919f491954'
+PI_COMMAND='pi -e . --session 01a07844-4448-77ed-805f-b2d4af9cd00a'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/@eko24ive/pi-ask'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
+PI_COMMAND+=' --no-skills'
 
 
 ## Configuration
@@ -52,7 +53,7 @@ Start
 
 # Bring pi up off camera, so the GIF opens on an idle TUI
 Run "$PI_COMMAND"
-Wait 'Session compacted 2 times'
+Wait '• Release v0.2.0' # wait for session name to appear
 
 Show
 Sleep 1
@@ -72,7 +73,7 @@ Wait 'Context Injections'
 Sleep 2
 
 # Walk the items
-Down 21 0.07
+Down 19 0.07
 Sleep 1
 
 # Preview the selected item, then close

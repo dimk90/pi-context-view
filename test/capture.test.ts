@@ -4,11 +4,13 @@ import { test } from "node:test";
 import type {
 	BuildSystemPromptOptions,
 	ContextEvent,
+	SlashCommandInfo,
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
 import {
 	captureActiveTools,
+	collectPromptSources,
 	CompactionState,
 	copyPromptOptions,
 	InitialCaptureState,
@@ -110,6 +112,26 @@ test("captureActiveTools keeps pi's active-tool order and drops repeated names",
 	assert.deepEqual(tools.map((entry) => entry.name), ["search", "read"]);
 });
 
+test("collectPromptSources rosters the names of extension tools and commands", () => {
+	const command = (name: string, source: string): SlashCommandInfo => ({
+		name,
+		source: "extension",
+		sourceInfo: { path: `/tmp/${name}.ts`, source, scope: "temporary", origin: "top-level" },
+	});
+	const sources = collectPromptSources(
+		[tool("read", "builtin"), tool("search", "npm:web"), tool("fetch", "npm:web")],
+		[command("ask", "npm:ask"), command("/web", "npm:web")],
+	);
+
+	// One roster entry per extension file, and commands keep the slash prompts use.
+	assert.deepEqual(sources.map((source) => [source.source, source.names]), [
+		["npm:web", ["search"]],
+		["npm:web", ["fetch"]],
+		["npm:ask", ["/ask"]],
+		["npm:web", ["/web"]],
+	]);
+});
+
 test("copyPromptOptions owns decomposition metadata and keeps only visible skills", () => {
 	const contextFile = { path: "./AGENTS.md", content: "rules" };
 	const visibleSkill = skill("visible", false);
@@ -160,7 +182,7 @@ test("measureInjectedMessages attributes custom and context-only messages withou
 });
 
 test("mergeContextOnlyMessages carries only provider-context mutations into Usage snapshots", () => {
-	const source = { id: "aggregate:extensions", label: "extensions (aggregate)", native: false };
+	const source = { id: "aggregate:extensions", label: "unattributed", native: false };
 	const contextMessage = {
 		id: "context-message",
 		phase: "initial",
@@ -223,7 +245,7 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 		capturedAt,
 	}));
 	assert.ok(first !== undefined);
-	assert.equal(first.groups[0]?.items[0]?.label, "Custom Prompt (--system-prompt)");
+	assert.equal(first.groups[0]?.items[0]?.label, "System Prompt");
 	assert.equal(first.groups[1]?.items[0]?.text, "captured");
 
 	if (message.role === "custom") message.content = "changed";

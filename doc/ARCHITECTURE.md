@@ -1,6 +1,6 @@
 # Capture and usage architecture
 
-Canonical contract for how pi-context-view captures hidden context, estimates current usage, and keeps raw data isolated. The roadmap lives in [PLAN.md](PLAN.md), and the rendering contract lives in [UI.md](UI.md).
+Canonical contract for how pi-context-view captures hidden context, estimates current usage, and keeps raw data isolated. The roadmap lives in [PLAN.md](PLAN.md), and the rendering contract lives in [UI.md](UI.md) with its per-view pages under `doc/ui/`.
 
 ## Module boundaries
 
@@ -83,11 +83,45 @@ Follow [THINKING.md](THINKING.md) for reasoning counts, opaque signatures, model
 Keep semantics in typed model fields rather than display labels:
 
 - derive tool ownership from `ToolInfo.sourceInfo`;
-- carve a tool's prompt lines only from the blocks pi renders them into, and
-  give each rendered guideline bullet to the first tool that declares it in
-  pi's active-tool order, so a bullet several tools share is measured once and
-  pi's own bullets stay in the base prompt;
-- represent chained prompt edits as one unattributable extension aggregate;
+- split pi's own system prompt into the parts it assembles — the preamble, the
+  blocks it renders under `Available tools:`, `Guidelines:`, and
+  `Pi documentation`, any `--append-system-prompt` text, and the
+  working-directory footer pi sends with every request — as parts that
+  concatenate back to the item text and share out its estimate;
+- carve a tool's complete prompt bullets only from the blocks pi renders them
+  into, never a prefix of a longer bullet, and give each rendered guideline
+  bullet to the first tool that declares it in pi's active-tool order, so a
+  bullet several tools share is measured once and pi's own bullets stay in the
+  base prompt;
+- retain each carved extension prompt line's original position, tool-source
+  provenance, and owning tool name as a typed, owned preview reference on the
+  System Prompt section and standalone child it was carved from — `Available Tools` snippets and
+  `Guidelines` bullets alike; references restore prompt order for inspection but
+  never enter the base item's counted text, character count, or token shares. The
+  owning tool still carries and counts those sections. Only actually rendered,
+  exactly matched lines get references, and a line pi never rendered gets none
+  unless a prompt replacement dropped its whole block;
+- keep the blocks a `--system-prompt` replacement drops — `Available Tools`,
+  `Guidelines`, and `Documentation` — as marked, uncounted parts of System
+  Prompt instead of omitting them, so the model records what the replacement
+  gave up. A dropped part holds no pi-authored text, only the extension lines pi
+  would have rendered into it as references; each tool likewise keeps its own
+  dropped snippet and guideline sections. Every dropped part and section reads 0
+  tokens and stays out of its item's counted text, character count, and token
+  shares, so no item claims tokens pi never sent;
+- attribute the text appended after pi's footer per blank-line block, bounded by
+  the prompt this extension observed in its own `before_agent_start` handler, so
+  no block spans extensions loaded before and after it. Name a block only when
+  exactly one loaded package specifier or extension path from
+  `getAllTools()`/`getCommands()` provenance occurs in it, and mark every such
+  name a guess: pi records no author for chained prompt edits. Qualify such a
+  name with a tool or slash command of that same extension only when exactly one
+  of its registered names occurs in the block as a complete token — a name in a
+  path segment, a command without its slash, and a name under three characters
+  are no mention — and treat the qualifier as display-only. Everything else
+  stays one unattributable item. Additions are counted by the owner they were
+  attributed to and never by pi's own prompt, which carries them as a
+  reference-only `Extension Additions` part;
 - treat `customType` as a message type, not necessarily a package identity;
 - detect non-custom context-only injections by diffing against the session branch;
 - treat children as a breakdown of their parent, never additional tokens in totals;
@@ -99,7 +133,7 @@ Keep semantics in typed model fields rather than display labels:
   parameter schemas, tool-call arguments, non-string message content — with a
   span on the item, section, or entry instead of detecting JSON in preview text;
   the compact provider-bound form always backs the estimate, and expansion stays
-  a rendering concern owned by [UI.md](UI.md).
+  a rendering concern owned by [ui/previews.md](ui/previews.md#marked-json).
 
 ## Configuration
 
@@ -109,10 +143,11 @@ Every user-configurable value follows one contract, whatever it configures:
 - never auto-create the file and never write missing defaults into it; only an explicit user action may create or modify it;
 - load lazily at view-open time, never in the extension factory, which also runs in invocations that never start a session; cache per runtime and re-read on mtime change;
 - an absent file and omitted keys silently use defaults; an unreadable or unparseable file, unknown key, unrecognized color, or out-of-range value falls back to the applicable default and warns once per file revision, never failing a view;
+- renaming a key keeps its previous name as a silently accepted alias, so a rename never drops an override an existing file already carries; the current name wins when a file carries both;
 - `/context config` is the explicit create-only action: it writes every default through one atomic `O_EXCL` create, never overwrites or modifies an existing path, and stays available in every run mode because it needs no UI — only the views are gated on `ctx.mode === "tui"`;
 - later actions that update an existing file must be debounced and merge over a fresh read so concurrent edits and unknown keys survive.
 
-Configuration holds preferences only; the privacy contract below forbids storing captured prompt or message content there. [PLAN.md](PLAN.md) tracks which values are configurable, and [UI.md](UI.md) owns the rendering rules for configurable colors and map geometry.
+Configuration holds preferences only; the privacy contract below forbids storing captured prompt or message content there. [PLAN.md](PLAN.md) tracks which values are configurable, and [UI.md](UI.md#color-and-casing) owns the rendering rules for configurable colors, and [ui/usage.md](ui/usage.md#context-map) those for map geometry.
 
 ## Privacy
 
@@ -134,4 +169,4 @@ Lifecycle or accounting changes must preserve all of these:
 - parent and child contributions are never double-counted;
 - every rendered line respects width, and views reflow with width and height.
 
-For lifecycle smoke tests, load `test/fixtures/marker.ts` before and after this extension and use an `after_provider_response` sentinel for provider-call detection. Follow [UI.md](UI.md) for the rendering matrix.
+For lifecycle smoke tests, load `test/fixtures/marker.ts` before and after this extension and use an `after_provider_response` sentinel for provider-call detection. Follow [UI.md](UI.md#responsive-rendering) for the rendering matrix.

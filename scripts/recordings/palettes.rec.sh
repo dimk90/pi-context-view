@@ -13,14 +13,14 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.4.2) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 1
 
 
 ## Constants
 
 
 # The demo replays one recorded session, so its id and model are pinned
-PI_COMMAND='pi -e . --session 01a0529a-687b-74a7-9076-11919f491954'
+PI_COMMAND='pi -e . --session 01a07844-4448-77ed-805f-b2d4af9cd00a'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
@@ -29,11 +29,6 @@ PI_COMMAND+=' --tui-mode regular'
 PALETTES=('terrain' 'rainbow')
 # Demonstration time for each palette
 HOLD_SECONDS=2
-
-# Closing the view needs the raw byte a plain terminal sends: once a recorder
-# client has attached, tmux encodes the named Escape key for pi's extended-keys
-# mode, and the view never sees the press
-ESCAPE_KEY=$'\e'
 
 REAL_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
@@ -124,8 +119,8 @@ SetLastFrameDuration "$HOLD_SECONDS"
 # The GIF is committed to the repository, so shrink it losslessly
 SetOptimize 'on'
 
-# Configure clean up chain for the case of sudden failure
-trap '_svhs_cleanup; remove_agent_mirror' EXIT
+# Keep s-vhs teardown intact and remove the mirror even if recording fails
+Finally 'remove_agent_mirror'
 
 # Create temporary dir with custom config for pi-context-view
 mirror_agent_dir || exit 1
@@ -139,28 +134,33 @@ Start
 
 # Bring pi and the first palette up off camera, so the GIF opens on the panel
 Run "$PI_COMMAND"
-Wait 'Session compacted 2 times'
+Wait '• Release v0.2.0' # wait for session name to appear
 
 # Record default palette first
 Run '/context'
 Wait 'Context Usage'
+Key 'z'         # turn zoom mode on
+Wait ' · Zoom ' # wait for zoom to apply
 
 Show
 Sleep "$HOLD_SECONDS"
 Hide
-Type "$ESCAPE_KEY"
+Escape
 
 # Record custom palettes from doc/palettes
 for palette in "${PALETTES[@]}"; do
     apply_palette "$palette" || return 1
 
+    Wait '• Release v0.2.0' # wait for session name to appear
     Run '/context'
     Wait 'Context Usage'
+    Key 'z'         # turn zoom mode on
+    Wait ' · Zoom ' # wait for zoom to apply
 
     Show
     Sleep "$HOLD_SECONDS"
     Hide
-    Type "$ESCAPE_KEY"
+    Escape
 done
 
 Render

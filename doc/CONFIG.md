@@ -11,15 +11,15 @@ The config file created with `/context config` will contain:
 ```json
 {
   "systemPromptColor": "mdHeading",
-  "systemToolsColor": "mdHeading",
+  "instructionFilesColor": "mdCodeBlock",
+  "skillsColor": "customMessageLabel",
+  "builtInToolsColor": "mdHeading",
   "customToolsColor": "accent",
   "mcpToolsColor": "mdLink",
-  "memoryColor": "mdCodeBlock",
-  "skillsColor": "customMessageLabel",
   "userMessagesColor": "syntaxString",
-  "agentTextMessagesColor": "syntaxFunction",
-  "agentThinkingMessagesColor": "thinkingXhigh",
-  "agentToolCallMessagesColor": "syntaxKeyword",
+  "assistantMessagesColor": "syntaxFunction",
+  "assistantThinkingColor": "thinkingXhigh",
+  "toolCallsColor": "syntaxKeyword",
   "toolOutputColor": "toolOutput",
   "extensionsColor": "syntaxType",
   "compactedDataColor": "thinkingHigh",
@@ -34,6 +34,13 @@ The config file created with `/context config` will contain:
 
 > [!TIP]
 > Reopen `/context` to apply config changes. No need for pi `/reload`.
+
+> [!NOTE]
+> Several keys were renamed in `v0.5.1`: `systemToolsColor` to
+> `builtInToolsColor`, `memoryColor` to `instructionFilesColor`,
+> `agentTextMessagesColor` to `assistantMessagesColor`,
+> `agentThinkingMessagesColor` to `assistantThinkingColor`,
+> `agentToolCallMessagesColor` to `toolCallsColor`.
 
 
 ## Category Colors

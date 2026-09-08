@@ -1,5 +1,21 @@
 # Changelog
 
+## `[v0.5.1]` - 08.09.2026
+
+### Changed
+* `[context]` Align category ordering and naming with Pi terminology - [#2](https://github.com/dimk90/pi-context-view/issues/2).
+* `[injections]` Show prompt additions as the `Extension Additions` part of `System Prompt`, counted by their owner.
+* `[injections]` Align item naming with the category names in the injections view.
+* `[injections]` Add sub-items for `System Prompt`: `Preamble`, `Available Tools`, `Guidelines`, etc - [#2](https://github.com/dimk90/pi-context-view/issues/2)..
+* `[injections]` Show injected stuff by extensions in `System Prompt`, highlighted and marked `<- <extension>:<tool>`.
+* `[injections]` Attribute system-prompt additions to the injecting extension, marked `(guess)`.
+* `[injections]` Mark the prompt parts a `--system-prompt` replacement drops as `Dropped` at 0 tokens.
+* `[usage]` Open single-entry categories directly as uncapped, scrollable content.
+
+### Fixed
+* `[context]` Count tokens for `Current working directory`.
+
+
 ## `[v0.5.0]` - 30.08.2026
 
 ### New
