@@ -65,6 +65,14 @@ and preview subheaders alike. It marks a state rather than a usage category, so
 it is never configurable, and its 0-token entries never color map cells. A row
 too narrow for the whole marker drops it instead of truncating it.
 
+Recovered `Available Tools` and `Guidelines` blocks outside pi's normal order
+carry a fixed `warning` ` · Moved` marker after the estimate, in hierarchy rows,
+preview subheaders, and the standalone part preview's metadata. A narrow row or
+standalone header omits the whole marker when it will not fit. It describes
+position, not ownership or a dropped contribution: these parts count normally,
+and extension tool lines keep their own attribution. Like `Dropped`, it is not
+configurable and does not change category/map colors.
+
 A user-configurable color names either a pi theme color key, which tracks the
 active theme, or a literal `#rgb`/`#rrggbb` value, which pins the element across
 themes. Literals render through pi's own theme conversion, so they down-convert

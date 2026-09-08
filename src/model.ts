@@ -60,6 +60,12 @@ export interface InjectionSource {
 	readonly native: boolean;
 }
 
+/** Half-open `[start, end)` character range within captured text. */
+export interface TextSpan {
+	readonly start: number;
+	readonly end: number;
+}
+
 /**
  * Character range of a JSON document embedded in preview text, known from how
  * the text was built rather than from inspecting it. Full-content previews
@@ -106,6 +112,11 @@ export interface InjectionSection {
 	 * sent its text, so it carries no counted characters and always reads 0 tokens.
 	 */
 	readonly dropped?: boolean;
+	/**
+	 * True when an extension moved this part out of the region pi renders it
+	 * into. Pi still sends the text, so it counts exactly as an unmoved part.
+	 */
+	readonly moved?: boolean;
 	/** Serialized JSON inside `text`, e.g. a tool's parameter schema. */
 	readonly jsonSpan?: JsonSpan;
 	/** Preview-only extension prompt lines; their owning tools count them instead. */
@@ -132,6 +143,8 @@ export interface InjectionItem {
 	readonly sections?: readonly InjectionSection[];
 	/** True when a `--system-prompt` replacement suppressed this item; it reads 0 tokens. */
 	readonly dropped?: boolean;
+	/** True when an extension moved this part out of the region pi renders it into. */
+	readonly moved?: boolean;
 	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
 	readonly injectedReferences?: readonly InjectedReference[];
 	/** True when a message exists only in the transformed provider context, not the session branch. */

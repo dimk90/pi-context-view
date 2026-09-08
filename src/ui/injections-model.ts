@@ -24,6 +24,8 @@ export type InjectionRow =
 		readonly parentContinues?: boolean;
 		/** Whether a `--system-prompt` replacement dropped this contribution. */
 		readonly dropped?: boolean;
+		/** Whether an extension moved this part out of the region pi renders it into. */
+		readonly moved?: boolean;
 		/** Stable preview target id from the snapshot. */
 		readonly itemId: string;
 	}
@@ -71,6 +73,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 				depth: 1,
 				isLast: isLastItem,
 				dropped: item.dropped,
+				moved: item.moved,
 				itemId: item.id,
 			});
 			const children = item.children ?? [];
@@ -83,6 +86,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 					isLast: childIndex === children.length - 1,
 					parentContinues: !isLastItem,
 					dropped: child.dropped,
+					moved: child.moved,
 					itemId: child.id,
 				});
 			});

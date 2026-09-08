@@ -30,7 +30,12 @@ Present Initial contributions in this order:
     [`Dropped` marker](../UI.md#color-and-casing) after its estimate, so the
     tree shows what the replacement gave up. `Extension Additions` holds no
     counted text of its own: it always reads 0 tokens and exists to present the
-    additions its owners count.
+    additions its owners count. Structurally recovered `Available Tools` and
+    `Guidelines` blocks remain System Prompt children, at their actual prompt
+    position with a [`Moved` marker](../UI.md#color-and-casing). For example,
+    blocks relocated past the footer follow `Current Dir`, not `Preamble`.
+    `Extension Additions` still consolidates all other additions at the end;
+    recovered block text is excluded from those owners' counts.
   - `Instruction Files (M)`, with one child per context file, abbreviating home
     paths with `~`
   - Skills (K), with one content-only child per skill

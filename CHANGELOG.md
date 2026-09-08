@@ -1,5 +1,12 @@
 # Changelog
 
+
+## `[v0.5.2]` - 08.09.2026
+
+### Fixed
+* `[injections]` Recover and mark relocated Available Tools and Guidelines blocks.
+
+
 ## `[v0.5.1]` - 08.09.2026
 
 ### Changed

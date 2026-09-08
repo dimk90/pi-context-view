@@ -32,7 +32,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { droppedMarker, injectedDescriptionLines, previewBodyLines } from "./section-preview.ts";
+import { droppedMarker, injectedDescriptionLines, movedMarker, previewBodyLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 /**
@@ -277,8 +277,10 @@ export class InjectionsView {
 		const lines: string[] = [border, ""];
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(item.label)));
 		const source = normalizeInlineText(item.source.label);
-		const meta = theme.fg("muted", `${source} · ${item.tokens.toLocaleString("en-US")} tokens `);
-		lines.push(this.spread(title, meta, width));
+		const meta = theme.fg("muted", `${source} · ${item.tokens.toLocaleString("en-US")} tokens`);
+		const marker = item.moved === true ? movedMarker(theme) : "";
+		const fitsMarker = visibleWidth(title) + visibleWidth(meta) + visibleWidth(marker) + 2 <= width;
+		lines.push(this.spread(title, `${meta}${fitsMarker ? marker : ""} `, width));
 		lines.push("");
 
 		const start = this.previewScroller.offset;
@@ -412,8 +414,10 @@ export class InjectionsView {
 		lineWidth: number,
 		width: number,
 	): string {
-		if (row.kind !== "item" || row.dropped !== true) return "";
-		const marker = droppedMarker(this.theme);
+		if (row.kind !== "item") return "";
+		const marker = row.dropped === true
+			? droppedMarker(this.theme)
+			: row.moved === true ? movedMarker(this.theme) : "";
 		return lineWidth + visibleWidth(marker) <= width ? marker : "";
 	}
 

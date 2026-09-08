@@ -152,6 +152,36 @@ test("splitPromptAdditions never lets one run span the handler boundary", () => 
 	);
 });
 
+test("recovered block exclusions preserve handler boundaries and keep source evidence separate", () => {
+	const before = "\n\nRead npm:pi-web docs.";
+	const moved = "\nAvailable tools:\n- web_search: Search";
+	const after = "\nStill unowned.";
+	const prompt = FOOTER + before + moved + after;
+	const start = FOOTER.length + before.length;
+	const end = start + moved.length;
+	for (const boundary of [FOOTER.length, start, start + 5, end, prompt.length]) {
+		const runs = splitPromptAdditions(prompt, FOOTER.length, {
+			sources: [WEB],
+			promptAtHandler: prompt.slice(0, boundary),
+			excluded: [{ start, end }],
+		});
+		assert.equal(runs.map((run) => run.text).join(""), before + after);
+		assert.deepEqual(runs.map((run) => run.source.label), [WEB.source, "unattributed"]);
+	}
+});
+
+test("splitPromptAdditions excludes several recovered blocks without inventing whitespace owners", () => {
+	const first = "\nAvailable tools:\n- read: Read files";
+	const second = "\nGuidelines:\n- Use read";
+	const prompt = FOOTER + first + "\n\n" + second;
+	assert.deepEqual(splitPromptAdditions(prompt, FOOTER.length, {
+		excluded: [
+			{ start: FOOTER.length, end: FOOTER.length + first.length },
+			{ start: prompt.indexOf(second), end: prompt.length },
+		],
+	}), []);
+});
+
 test("splitPromptAdditions keeps separators and trailing whitespace inside runs", () => {
 	assert.deepEqual(
 		split("\n\n\nSpaced out.\n \n@eko24ive/pi-ask rules.\n\n  \n", [ASK]),
