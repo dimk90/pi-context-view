@@ -37,7 +37,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { injectedDescriptionLines, previewBodyLines } from "./section-preview.ts";
+import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import {
 	buildUsageMap,
@@ -878,7 +878,7 @@ export class UsageView {
 		const fixedLineCount = showEntryHeader ? BLOCK_FIXED_LINE_COUNT : PREVIEW_FIXED_LINE_COUNT;
 		const descriptionLines = row.rootId === "assistant-thinking" && this.openBlockIndex === undefined
 			? this.thinkingDescriptionLines(width, row)
-			: injectedDescriptionLines(theme, [entry], {
+			: previewLegendLines(theme, [entry], {
 				width,
 				availableRows: terminalRows - fixedLineCount,
 				contentLineCount: body.length,
@@ -1071,19 +1071,17 @@ export class UsageView {
 		return cells.join(" ");
 	}
 
-	/** Attribution collapses around uncapped content geometry; reasoning notation keeps its existing fixed footer. */
+	/** The legend collapses around uncapped content geometry; reasoning notation keeps its existing fixed footer. */
 	private previewDescriptionLines(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
-		if (row.rootId === "system-prompt") {
-			// Count entry headers and separator rows before applying the footer-dependent cap
-			const contentLineCount = this.previewContent(width, row)
-				.reduce((total, lines) => total + lines.length + 2, -1);
-			return injectedDescriptionLines(this.theme, this.previewEntries(row), {
-				width,
-				availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
-				contentLineCount: Math.max(1, contentLineCount),
-			});
-		}
-		return this.thinkingDescriptionLines(width, row);
+		if (row.rootId === "assistant-thinking") return this.thinkingDescriptionLines(width, row);
+		// Count entry headers and separator rows before applying the legend-dependent cap
+		const contentLineCount = this.previewContent(width, row)
+			.reduce((total, lines) => total + lines.length + 2, -1);
+		return previewLegendLines(this.theme, this.previewEntries(row), {
+			width,
+			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
+			contentLineCount: Math.max(1, contentLineCount),
+		});
 	}
 
 	/** Keep reasoning notation visible when the category opens as blocks or direct full content. */

@@ -1,6 +1,12 @@
 # Changelog
 
 
+## `[Unreleased]`
+
+### Changed
+* `[ui]` Explain `Highlighted`, `(guess)`, `Dropped`, and `Moved` as color-keyed description bullets.
+
+
 ## `[v0.5.2]` - 08.09.2026
 
 ### Fixed

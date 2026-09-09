@@ -214,8 +214,9 @@ When the selected category contains exactly one preview entry, including across
 its children, Enter opens that entry's full, uncapped content directly. This
 applies to every category, including System Prompt and individual Tool Output
 rows, regardless of content length. Keep the category summary and entry identity
-header, labeled parts, expanded marked JSON, skill badges, and applicable
-attribution or reasoning explanation. Token estimates remain unchanged.
+header, labeled parts, expanded marked JSON, skill badges, and the applicable
+[marker legend](previews.md#marker-legend) or reasoning explanation. Token
+estimates remain unchanged.
 
 There is no selection gutter, block cap, hidden-line marker, or second Enter
 level. Use the full-content scrolling keys and hints below, with a line-progress

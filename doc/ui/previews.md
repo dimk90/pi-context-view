@@ -24,8 +24,8 @@ A recovered block out of pi's normal order keeps its ordinary token share and
 adds the [`Moved` marker](../UI.md#color-and-casing) after it. This applies in
 both views, including the direct System Prompt Usage preview and standalone
 Injections part metadata. Its extension lines still render with their known
-owning-tool references; movement alone neither guesses a rewriting extension's
-identity nor triggers the attribution footer.
+owning-tool references; movement alone never guesses a rewriting extension's
+identity, and its [legend bullet](#marker-legend) explains position only.
 
 Why `syntaxKeyword`: parts nest under item and entry headings that already carry
 `mdHeading`.
@@ -72,55 +72,54 @@ applying colors, preserve styling through wrapping, and include annotations in
 preview scrolling and cap line counts. Never show raw lines in the overview list
 or dashboard.
 
-## Attribution footer
+## Marker legend
 
-Restored lines appear in the System Prompt preview of both views, including the
-direct single-entry Usage preview, and in the standalone `Available Tools` and
-`Guidelines` children in Injections. Multi-entry Usage streams and their full
-content levels retain the same attribution treatment. Each of those previews
-shows one dim description at the bottom, outside the scrollable content and
-block-selection gutter, between blank rows immediately above the hints:
+Every frame explains the marks it shows, as one dash bullet per mark. A preview
+places its bullets at the bottom, outside the scrollable content and
+block-selection gutter, between blank rows immediately above the hints; the
+Injections list appends them to its own description sentence. Bullets always
+render in this order, each opening with the keyword in the fixed color that mark
+uses, followed by dim text:
 
-> Highlighted parts are injected by extensions into pi’s system prompt. They are
-> excluded from the System Prompt token count and included in the injecting
-> extension’s count.
+> - **Highlighted** parts are injected by extensions into pi’s system prompt.
+>   They are excluded from the System Prompt token count and included in the
+>   injecting extension’s count.
+> - **(guess)** sources are inferred from the injected text itself.
+> - **Dropped** parts were replaced by a custom system prompt and are counted
+>   nowhere.
+> - **Moved** blocks sit outside the region pi renders them into and count
+>   normally.
 
-When every highlighted part in that preview was dropped, the accounting sentence
-is replaced rather than extended, because nothing counts those lines:
+Each sentence is fixed and states its own accounting, so the `Dropped` bullet
+reads as the exception to the `Highlighted` one wherever a preview shows both.
+The `(guess)` bullet covers a guessed `:<tool>` qualifier as well, which is
+inferred the same way and never gets a marker of its own.
 
-> Highlighted parts are injected by extensions into pi’s system prompt. A custom
-> system prompt replaced them, so they are counted neither by the System Prompt
-> nor by the injecting extension.
+A bullet renders only where its mark is visible on that frame:
 
-A preview mixing dropped parts with parts pi still sends — the System Prompt
-item preview under a replacement, whose `Extension Additions` survived it — keeps
-the original sentence and adds:
+- `Highlighted` and `(guess)` follow injected-reference metadata, so native-only
+  System Prompt and part previews, sibling parts without references, and
+  owning-tool previews show neither. Restored lines appear in the System Prompt
+  preview of both views, including the direct single-entry Usage preview, in the
+  standalone `Available Tools` and `Guidelines` children in Injections, and in
+  multi-entry Usage streams and their full content levels.
+- `Dropped` and `Moved` follow the part states a frame renders: preview
+  subheaders and item metadata in any category, and Injections hierarchy rows.
+  They follow the captured state, not each row's fit, so a row too narrow for
+  its own marker keeps the bullet that explains it.
 
-> Parts marked Dropped were replaced by a custom system prompt and are counted
-> nowhere.
-
-When any restored line in that preview names a guessed owner, the footer gains
-one more sentence:
-
-> Sources marked (guess) are inferred from the injected text itself.
-
-It covers a guessed `:<tool>` qualifier as well, which is inferred the same way
-and never gets a marker of its own.
-
-Wrap it without truncation and keep it pinned while scrolling, even when the
-highlighted text is offscreen or hidden by a block cap. It renders only for
-content carrying injected-reference metadata: native-only System Prompt and part
-previews, sibling parts without references, and owning-tool previews have none.
 The Usage category stream inspects all entries; full content, opened directly or
 from a block, inspects only its open entry.
 
-It collapses whole, including its preceding blank row, below the floor in
-[Descriptions](../UI.md#descriptions), allowing for the overflow counter, and
-returns on height-only resize. It never contributes to scroll counters or
-`… +N lines` counts, though its reserved rows affect the viewport and block cap.
-For a Usage stream, decide collapse from the uncapped content plus entry headers
-and separators, before deriving the footer-dependent block cap — otherwise the
-layout decision is circular.
+Wrap bullets onto hanging-indented continuation lines without truncation and
+keep them pinned while scrolling, even when the marked content is offscreen or
+hidden by a block cap. The block collapses whole, including its preceding blank
+row, below the floor in [Descriptions](../UI.md#descriptions), allowing for the
+overflow counter, and returns on height-only resize. It never contributes to
+scroll counters or `… +N lines` counts, though its reserved rows affect the
+viewport and block cap. For a Usage stream, decide collapse from the uncapped
+content plus entry headers and separators, before deriving the legend-dependent
+block cap — otherwise the layout decision is circular.
 
 ## Repeated headings
 
