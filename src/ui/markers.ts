@@ -9,7 +9,7 @@ import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { BODY_INDENT, fitLine } from "./layout.ts";
 
-/** Separator introducing a state marker after the estimate it explains. */
+/** Dim separator introducing a state marker after the estimate it explains. */
 const MARKER_SEPARATOR = " · ";
 
 /** Markers a frame can show, in the fixed order their legend bullets render. */
@@ -86,9 +86,9 @@ export function markerLegendLines(
 		.flatMap((marker) => bulletLines(theme, MARKER_LEGENDS[marker], width));
 }
 
-/** Separator and keyword in the one fixed color its legend bullet also opens with. */
+/** Dim separator plus the keyword in the one fixed color its legend bullet also opens with. */
 function stateMarker(theme: Theme, legend: MarkerLegend): string {
-	return theme.fg(legend.color, `${MARKER_SEPARATOR}${legend.keyword}`);
+	return `${theme.fg("dim", MARKER_SEPARATOR)}${theme.fg(legend.color, legend.keyword)}`;
 }
 
 /** One bullet: dim marker, keyword in the color it explains, dim sentence, hanging indent. */

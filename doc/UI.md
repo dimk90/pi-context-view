@@ -61,10 +61,14 @@ colors. Use pi's injected keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and theme invalidation.
 
 Content a `--system-prompt` replacement dropped carries a fixed `toolDiffRemoved`
-` · Dropped` marker directly after the estimate it explains, in hierarchy rows
+`Dropped` marker directly after the estimate it explains, in hierarchy rows
 and preview subheaders alike. It marks a state rather than a usage category, so
 it is never configurable, and its 0-token entries never color map cells. A row
 too narrow for the whole marker drops it instead of truncating it.
+
+Every marker keyword hangs off a `dim` ` · ` separator: like the ` · ` joining
+hint pairs and header labels, the separator is punctuation and never takes the
+color of the text around it. Only the keyword carries the marker's fixed color.
 
 Every frame showing a marker also explains it, through the
 [marker legend](ui/previews.md#marker-legend) in its description block. A legend
@@ -73,7 +77,7 @@ so `Highlighted` uses `syntaxNumber`, `(guess)` `dim`, `Dropped`
 `toolDiffRemoved`, and `Moved` `warning`.
 
 Recovered `Available Tools` and `Guidelines` blocks outside pi's normal order
-carry a fixed `warning` ` · Moved` marker after the estimate, in hierarchy rows,
+carry a fixed `warning` `Moved` marker after the estimate, in hierarchy rows,
 preview subheaders, and the standalone part preview's metadata. A narrow row or
 standalone header omits the whole marker when it will not fit. It describes
 position, not ownership or a dropped contribution: these parts count normally,

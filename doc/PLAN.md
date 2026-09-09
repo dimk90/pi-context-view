@@ -18,5 +18,8 @@
   - [x] Use corresponding color for "Highlighted", "Dropped", "Moved"...
   - [x] Show description bullets for "Highlighted"/"Dropped"/"Moved"/... in all views where these marks can be visible.
 
-- [ ] The separator "·" should be not colorful:
+- [x] The separator "·" should be not colorful:
   - dim or muted.
+  - Done: state markers now render a dim ` · ` and keep the fixed color on the
+    keyword alone (`Dropped`, `Moved`). Every other `·` already renders dim or
+    inside muted metadata.

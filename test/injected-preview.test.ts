@@ -124,6 +124,11 @@ function assertLegend(lines: readonly string[], theme: Theme, markers: readonly 
 	assert.equal(rendered[start - 1], "");
 }
 
+/** Styled state marker: a dim separator, then the keyword in the one fixed color that marker uses. */
+function styledMarker(theme: Theme, marker: ContextMarker): string {
+	return `${theme.fg("dim", " · ")}${theme.fg(LEGEND[marker].color, LEGEND[marker].keyword)}`;
+}
+
 /** The hierarchy row naming a label, apart from the legend bullets that explain its marker. */
 function rowLine(lines: readonly string[], label: string): string {
 	return plain(lines).split("\n").find((line) => line.includes(label)) ?? "";
@@ -458,7 +463,7 @@ test("a replaced prompt marks its dropped blocks in the tree and in previews", (
 		assert.match(plain(list).replace(/\.{2,}/g, "\u2026"), new RegExp(`${label} \u2026 0 · Dropped`));
 	}
 	const row = list.find((line) => plain([line]).includes("Documentation"));
-	assert.ok(row?.includes(theme.fg("toolDiffRemoved", " · Dropped")), "one fixed color marks the state");
+	assert.ok(row?.includes(styledMarker(theme, "dropped")), "a dim separator carries the keyword's fixed color");
 	// The list explains the marker its rows carry, below its own description sentence.
 	assertLegendBullets(list, theme, ["dropped"]);
 	// A marker that no longer fits is dropped whole rather than truncated, while its bullet stays.
@@ -535,7 +540,7 @@ test("a relocated block stays a counted System Prompt part, marked where it now 
 		["Current Dir \u2026 9", "Available Tools \u2026 9 · Moved", "Guidelines \u2026 11 · Moved"],
 	);
 	const row = list.find((line) => plain([line]).includes("Guidelines"));
-	assert.ok(row?.includes(theme.fg("warning", " · Moved")), "one fixed color marks the state");
+	assert.ok(row?.includes(styledMarker(theme, "moved")), "a dim separator carries the keyword's fixed color");
 	assertLegendBullets(list, theme, ["moved"]);
 	// A marker that no longer fits is dropped whole rather than truncated, while its bullet stays.
 	const narrow = view.render(32);
@@ -571,11 +576,11 @@ test("Usage preserves moved parts, their estimates, and their marker across them
 	const preview = view.render(120);
 	assert.match(plain(preview), /Available Tools · 9 tokens · Moved/);
 	assert.match(plain(preview), /Guidelines · 11 tokens · Moved/);
-	assert.ok(preview.some((line) => line.includes(theme.fg("warning", " · Moved"))));
+	assert.ok(preview.some((line) => line.includes(styledMarker(theme, "moved"))));
 	const originalFg = theme.fg.bind(theme);
 	theme.fg = (color, text) => originalFg(color === "warning" ? "success" : color, text);
 	view.invalidate();
-	assert.ok(view.render(120).some((line) => line.includes(theme.fg("warning", " · Moved"))));
+	assert.ok(view.render(120).some((line) => line.includes(styledMarker(theme, "moved"))));
 	view.handleInput("\u001b");
 	assert.deepEqual(view.render(120), dashboard);
 });
