@@ -10,14 +10,13 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 
 ## Sources of truth
 
-| Path | Read before |
-| --- | --- |
-| `doc/ARCHITECTURE.md` | Changing lifecycle capture, silent probes, attribution, usage accounting, the semantic model, configuration semantics, or privacy behavior. |
-| `doc/UI.md` | Changing the shared frame, colors, casing, descriptions, interaction, responsive behavior, or release media. Per-view rules live in `doc/ui/usage.md`, `doc/ui/injections.md`, and `doc/ui/previews.md`. |
-| `doc/THINKING.md` | Changing reasoning-token accounting, signature handling, or thinking-preview notation. |
-| `doc/PLAN.md` | Adding commands, configuration, runtime inspection, or other roadmap work. |
-| `doc/HISTORY.md` | Reusing the removed CLI lifecycle or investigating older capture and transport approaches. |
-| `doc/RELEASE.md` | Changing versions, tagging, publishing, or preparing a release. |
+| Path                  | Read before                                                                                                                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doc/ARCHITECTURE.md` | Changing lifecycle capture, silent probes, attribution, usage accounting, the semantic model, configuration semantics, or privacy behavior.                                                              |
+| `doc/UI.md`           | Changing the shared frame, colors, casing, descriptions, interaction, responsive behavior, or release media. Per-view rules live in `doc/ui/usage.md`, `doc/ui/injections.md`, and `doc/ui/previews.md`. |
+| `doc/THINKING.md`     | Changing reasoning-token accounting, signature handling, or thinking-preview notation.                                                                                                                   |
+| `doc/PLAN.md`         | Adding commands, configuration, runtime inspection, or other roadmap work.                                                                                                                               |
+| `doc/RELEASE.md`      | Changing versions, tagging, publishing, or preparing a release.                                                                                                                                          |
 
 ## Repository rules
 

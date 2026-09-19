@@ -138,7 +138,7 @@ message-envelope bookkeeping. Captured bash executions show pi's provider-facing
 text, including failure, cancellation, and truncation notices; a full-output
 path appears only when pi includes it in a truncation notice. These previews are
 plain text, not marked JSON, even when a summary itself looks like JSON. Both
-Injections and Usage's frozen context-only entries use this captured form.
+Injections and Usage's frozen request-only entries use this captured form.
 
 ## Marked JSON
 
