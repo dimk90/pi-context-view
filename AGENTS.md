@@ -34,5 +34,5 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 pnpm check
 ```
 
-- **Lifecycle changes.** Load `test/fixtures/marker.ts` in both extension orders and use an `after_provider_response` sentinel to prove a probe makes no provider request.
+- **Lifecycle changes.** Load `test/fixtures/marker.ts` and `test/fixtures/input-transform.ts` in both extension orders and use an `after_provider_response` sentinel to prove a probe makes no provider request.
 - **TUI changes.** Follow the `pi-extension` skill for real-PTY and provider smoke tests, and exercise the dimensions and interactions required by `doc/UI.md`.

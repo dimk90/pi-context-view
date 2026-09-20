@@ -25,6 +25,7 @@ import {
 	type InjectionSource,
 	type JsonSpan,
 } from "./model.ts";
+import { createProbeToken, type ProbeToken } from "./probe-token.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
 
 /** Session custom-entry type persisting probe message identities across extension runtimes. */
@@ -62,9 +63,11 @@ export type ProbeOutcome =
 	| { readonly status: "captured" }
 	| { readonly status: "failed"; readonly reason: string };
 
-/** A probe start request; concurrent callers share `completion`. */
+/** A probe start request; concurrent callers share `token` and `completion`. */
 export interface ProbeAttempt {
 	readonly started: boolean;
+	/** Correlation token to send the synthetic prompt under. */
+	readonly token: ProbeToken;
 	readonly completion: Promise<ProbeOutcome>;
 }
 
@@ -82,15 +85,12 @@ interface CapturePreparation {
 	readonly promptAtHandler?: string;
 }
 
-/** Lifecycle of the single probe attempt, including ownership retained after its completion times out. */
-type ProbePhase =
-	| "idle"
-	| "waiting"
-	| "waiting-after-timeout"
-	| "running"
-	| "running-after-timeout"
-	| "failed"
-	| "settled";
+/**
+ * Lifecycle of the single probe attempt. Ownership outlives the attempt's own
+ * completion, so a probe run arriving after a timeout or after an unattributed
+ * run is still claimed, aborted, and sanitized.
+ */
+type ProbePhase = "idle" | "waiting" | "running" | "settled";
 
 /**
  * Capture-once state machine. `prepare()` refreshes the structured options on
@@ -177,21 +177,21 @@ export class CompactionState {
 }
 
 /**
- * State for one on-demand silent probe. It owns the timeout and exact synthetic
- * message identities, but leaves pi API calls and UI restoration to index.ts.
+ * State for one on-demand silent probe. It owns the correlation token, the
+ * timeout, and the exact synthetic message identities, but leaves pi API calls
+ * and UI restoration to index.ts.
  */
 export class SilentProbeState {
 	private phase: ProbePhase = "idle";
-	private inputObserved = false;
 	private readonly identities = new Map<string, SyntheticMessageIdentity>();
-	private completion: Promise<ProbeOutcome> | undefined;
+	private attempt: ProbeAttempt | undefined;
 	private resolveCompletion: ((outcome: ProbeOutcome) => void) | undefined;
 	private outcome: ProbeOutcome | undefined;
 	private timeout: NodeJS.Timeout | undefined;
 
 	/** True while the probe owns the in-flight agent run (including after a timeout). */
 	public get isCurrentRun(): boolean {
-		return this.phase === "running" || this.phase === "running-after-timeout";
+		return this.phase === "running";
 	}
 
 	/** Defensive copies of the recorded probe message identities. */
@@ -216,36 +216,44 @@ export class SilentProbeState {
 	 * return the original attempt's completion with `started: false`.
 	 */
 	public start(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): ProbeAttempt {
-		if (this.completion !== undefined) {
-			return { started: false, completion: this.completion };
+		if (this.attempt !== undefined) {
+			return { ...this.attempt, started: false };
 		}
 
 		this.phase = "waiting";
-		this.completion = new Promise<ProbeOutcome>((resolve) => {
+		const completion = new Promise<ProbeOutcome>((resolve) => {
 			this.resolveCompletion = resolve;
 		});
 		this.timeout = setTimeout(() => {
-			if (this.phase === "waiting") {
-				this.phase = "waiting-after-timeout";
-			} else if (this.phase === "running") {
-				this.phase = "running-after-timeout";
-			}
 			this.resolve({ status: "failed", reason: "Silent probe timed out." });
 		}, timeoutMs);
-		return { started: true, completion: this.completion };
+		this.attempt = { started: true, token: createProbeToken(), completion };
+		return this.attempt;
 	}
 
-	/** Mark the exact extension-originated empty input that starts the probe. */
-	public observeInput(source: InputSource, text: string): void {
-		const awaitingInput = this.phase === "waiting" || this.phase === "waiting-after-timeout";
-		if (awaitingInput && source === "extension" && text === "") this.inputObserved = true;
+	/**
+	 * Whether this input event is the probe's own synthetic prompt. Recognition
+	 * is causal rather than textual: the token is visible only inside the async
+	 * context of this extension's own `sendUserMessage()` call.
+	 */
+	public isProbeInput(source: InputSource, token: ProbeToken | undefined): boolean {
+		return this.phase === "waiting" && source === "extension" && this.ownsToken(token);
 	}
 
-	/** Associate the next matching lifecycle with the probe, not a real turn. */
-	public beginRun(prompt: string): boolean {
-		const ownsPendingInput = this.phase === "waiting" || this.phase === "waiting-after-timeout";
-		if (!ownsPendingInput || !this.inputObserved || prompt !== "") return false;
-		this.phase = this.phase === "waiting-after-timeout" ? "running-after-timeout" : "running";
+	/**
+	 * Claim the run this probe started, identified by the token it carries. A run
+	 * without the token is not provably ours, so it fails the attempt instead of
+	 * activating the abort guard: it may belong to the user or to another
+	 * extension and must run untouched. Ownership stays open afterwards so a
+	 * delayed probe run is still claimed.
+	 */
+	public beginRun(token: ProbeToken | undefined): boolean {
+		if (this.phase !== "waiting") return false;
+		if (!this.ownsToken(token)) {
+			this.fail("Another agent run started before the silent probe was recognized.");
+			return false;
+		}
+		this.phase = "running";
 		return true;
 	}
 
@@ -257,20 +265,17 @@ export class SilentProbeState {
 	}
 
 	/**
-	 * Replace only a recorded probe abort with an empty successful message so pi
-	 * does not render an abort transcript row. Pi 0.84 reports an abort during
-	 * stream setup as an error instead of the legacy aborted stop reason.
+	 * Replace a recorded probe message with an artifact-free version, or return
+	 * undefined to keep pi's own. Filtering keeps probe messages out of later
+	 * model contexts; blanking keeps them out of the transcript.
 	 */
-	public sanitizeAssistant(
+	public sanitizeMessage(
 		message: ContextEvent["messages"][number],
 	): ContextEvent["messages"][number] | undefined {
-		if (!this.isCurrentRun || message.role !== "assistant") return undefined;
-		const isProbeAbort = message.stopReason === "aborted"
-			|| (message.stopReason === "error" && message.errorMessage === SETUP_ABORT_ERROR_MESSAGE);
-		if (!isProbeAbort) return undefined;
-		const identity = { role: "assistant", timestamp: message.timestamp } satisfies SyntheticMessageIdentity;
-		if (!this.identities.has(identityKey(identity))) return undefined;
-		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };
+		if (!this.isCurrentRun) return undefined;
+		if (message.role === "user") return this.blankProbePrompt(message);
+		if (message.role === "assistant") return this.blankProbeAbort(message);
+		return undefined;
 	}
 
 	/** Remove only messages whose exact role+timestamp identity belongs to the probe. */
@@ -286,21 +291,56 @@ export class SilentProbeState {
 	public settle(captured: boolean): boolean {
 		if (!this.isCurrentRun) return false;
 		this.phase = "settled";
-		if (this.outcome === undefined) {
-			this.resolve(
-				captured
-					? { status: "captured" }
-					: { status: "failed", reason: "Silent probe settled without a context snapshot." },
-			);
-		}
+		this.resolve(
+			captured
+				? { status: "captured" }
+				: { status: "failed", reason: "Silent probe settled without a context snapshot." },
+		);
 		return true;
 	}
 
-	/** End a pending attempt during shutdown or a synchronous startup failure. */
+	/**
+	 * End a pending attempt during shutdown or a synchronous startup failure.
+	 * Ownership is untouched: only the attempt's own completion is resolved.
+	 */
 	public fail(reason: string): void {
-		if (this.completion === undefined || this.phase === "failed" || this.phase === "settled") return;
-		this.phase = "failed";
-		if (this.outcome === undefined) this.resolve({ status: "failed", reason });
+		if (this.attempt === undefined) return;
+		this.resolve({ status: "failed", reason });
+	}
+
+	/**
+	 * Empty the synthetic prompt so no stored message keeps text another
+	 * extension's input transform added to it.
+	 */
+	private blankProbePrompt(
+		message: Extract<ContextEvent["messages"][number], { role: "user" }>,
+	): ContextEvent["messages"][number] | undefined {
+		if (message.content.length === 0 || !this.ownsMessage(message)) return undefined;
+		return { ...message, content: [] };
+	}
+
+	/**
+	 * Replace a recorded probe abort with an empty successful message so pi does
+	 * not render an abort transcript row. Pi 0.84 reports an abort during stream
+	 * setup as an error instead of the legacy aborted stop reason.
+	 */
+	private blankProbeAbort(
+		message: Extract<ContextEvent["messages"][number], { role: "assistant" }>,
+	): ContextEvent["messages"][number] | undefined {
+		const isProbeAbort = message.stopReason === "aborted"
+			|| (message.stopReason === "error" && message.errorMessage === SETUP_ABORT_ERROR_MESSAGE);
+		if (!isProbeAbort || !this.ownsMessage(message)) return undefined;
+		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };
+	}
+
+	/** Whether this exact role and timestamp was recorded for the probe. */
+	private ownsMessage(message: { role: "user" | "assistant"; timestamp: number }): boolean {
+		return this.identities.has(identityKey({ role: message.role, timestamp: message.timestamp }));
+	}
+
+	/** Whether `token` identifies the current attempt. */
+	private ownsToken(token: ProbeToken | undefined): boolean {
+		return token !== undefined && token === this.attempt?.token;
 	}
 
 	/** Settle the completion promise exactly once and clear the timeout. */

@@ -31,6 +31,7 @@ import {
 	PROBE_IDENTITIES_CUSTOM_TYPE,
 	SilentProbeState,
 } from "./capture.ts";
+import { readProbeToken } from "./probe-token.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
 import { showUsageView } from "./ui/usage-view.ts";
 import { computeUsage, toReportedUsage } from "./usage.ts";
@@ -77,11 +78,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("input", (event) => {
-		probe.observeInput(event.source, event.text);
+		// Reset text earlier input transforms added to our own synthetic prompt:
+		// the probe carries no instructions, and its run is identified by token.
+		if (event.text === "" || !probe.isProbeInput(event.source, readProbeToken())) return undefined;
+		return { action: "transform", text: "" } as const;
 	});
 
 	pi.on("before_agent_start", (event) => {
-		probe.beginRun(event.prompt);
+		probe.beginRun(readProbeToken());
 		// The chained prompt here already carries additions from extensions loaded
 		// earlier; anything the context event adds came from extensions after us.
 		capture.prepare(event.systemPromptOptions, event.systemPrompt);
@@ -96,7 +100,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_end", (event) => {
-		const message = probe.sanitizeAssistant(event.message);
+		const message = probe.sanitizeMessage(event.message);
 		return message === undefined ? undefined : { message };
 	});
 

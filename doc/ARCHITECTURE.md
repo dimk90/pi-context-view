@@ -173,7 +173,8 @@ of starting another run.
 
 Initial is captured once per extension runtime. The capture has two parts: the
 prompt with its active tools, and the injected messages. They use different
-events and different rules, so the two sections below follow this flow.
+events and different rules, so the first two sections below follow this flow.
+The last section states what the captured result covers.
 
 ```text
 Real turn or explicit silent probe
@@ -235,11 +236,10 @@ The capture is therefore split across two events:
   point `ctx.getSystemPrompt()` and pi's active tools already include those
   changes, whatever the extension load order.
 
-Two limits follow from this timing. Message changes made by `context` handlers
-that run after this extension are not visible, and neither are provider-payload
-rewrites. Also, Initial describes one specific run: an injection that did not
-run for it is absent, so the snapshot must never be overwritten with a later
-turn's content, which would mix data from different runs.
+Initial describes one specific run: an injection that did not run for it is
+absent, so the snapshot must never be overwritten with a later turn's content,
+which would mix data from different runs. The other limits of this timing are
+listed in [Capture Coverage and Load Order](#capture-coverage-and-load-order).
 
 ### Message Comparison and Stored Data
 
@@ -281,6 +281,35 @@ Build these comparison inputs only for the event that freezes Initial.
 Rebuilding the session baseline costs time proportional to the conversation
 length, so later `context` events must skip that work and only filter known
 probe messages.
+
+### Capture Coverage and Load Order
+
+**Goal:** state what a capture can and cannot contain, so a missing injection
+reads as a known limit instead of a bug.
+
+Coverage follows from the two capture events above. It is the same for a real
+turn and for a silent probe: the probe decides when a capture happens, not what
+it sees.
+
+- **Prompt and active tools: every extension, whatever the load order.** They
+  are read in the first `context` event, after every `before_agent_start`
+  handler has run, through `ctx.getSystemPrompt()` and pi's active-tool API.
+  Both report pi's current state rather than one handler's result, so an
+  extension loaded after this one is still included.
+
+- **Messages injected in `before_agent_start`: every extension.** They are
+  already part of the message list that the `context` chain receives.
+
+- **Message changes by `context` handlers: only extensions loaded before this
+  one.** Pi runs that chain in extension load order and passes each handler's
+  result to the next, so this extension freezes the list as it stands at its
+  own position. Later additions, replacements, removals, and reordering are
+  absent.
+
+- **Provider-payload rewrites: no extension, whatever the load order.**
+  `before_provider_request` handlers and provider transports run after the
+  capture point, so an effective prompt they rewrite there never reaches
+  Initial or Usage.
 
 ## Usage and Attribution
 
@@ -377,9 +406,10 @@ Without running a turn, this extension cannot observe:
 
 Reading session history or calling `convertToLlm()` does not run those handlers.
 The silent probe starts the lifecycle so capture can see them, then aborts
-before a provider request. It still cannot reveal later `context` handlers or
-provider-payload changes. An empty-input probe also cannot reveal contributions
-that run only for a particular real prompt.
+before a provider request. It widens nothing beyond
+[Capture Coverage and Load Order](#capture-coverage-and-load-order), and an
+empty-input probe also cannot reveal contributions that run only for a
+particular real prompt.
 
 If Initial already exists, no probe is needed. Both views currently resolve
 Initial, so either view can request the one probe. Never probe automatically
@@ -393,15 +423,18 @@ Allow at most one attempt per extension runtime. Concurrent callers share it.
 /context
   Wait for idle
   If compaction is active, return a partial fallback without probing
-  Otherwise hide the working row and call sendUserMessage("")
+  Otherwise hide the working row and call sendUserMessage("") inside
+  this attempt's probe-token scope
   |
   v
 input
-  Mark the exact extension-originated empty input
+  Empty the probe prompt again if an earlier transform added text to it
   |
   v
 before_agent_start
-  Associate this run with the probe, prepare Initial
+  Claim this run if it carries the token, otherwise fail the attempt
+  and leave the run alone
+  Prepare Initial
   |
   v
 turn_start
@@ -413,7 +446,7 @@ context
   |
   v
 message_end
-  Sanitize only the recorded probe assistant's abort result
+  Blank the synthetic prompt and the recorded abort result
   |
   v
 agent_settled
@@ -424,10 +457,68 @@ Use `sendUserMessage("")`. `pi.sendMessage(..., { triggerTurn: true })` skips
 `before_agent_start`. Abort at `turn_start`, not `before_provider_request`,
 because some transports skip the latter.
 
-“Silent” means no provider request and no visible probe transcript row. It does
-**not** mean no side effects: other extensions see the lifecycle, and probe
+“Silent” means no provider request and no transcript text of the probe's own.
+This depends on correct run recognition: the
+[nested-send limitation](#known-limitation-nested-sends) can break that guarantee.
+It does **not** mean no side effects: other extensions see the lifecycle, and probe
 entries remain in pi's session tree. This is why the probe is explicit and
 limited to one attempt, rather than a way to refresh Usage repeatedly.
+
+### Identifying the Probe Run
+
+The probe has to know which agent run is its own. Prompt text cannot answer
+that question: any other extension can rewrite the text in an `input` transform
+before pi reports it. Emptying the prompt in this extension's own `input`
+handler does not settle it either, because that only undoes transforms from
+extensions loaded before this one.
+
+Use the call's async context to correlate the run. Each attempt gets its own
+token, and the command sends the synthetic prompt inside an `AsyncLocalStorage`
+scope holding that token. Pi emits `input` and `before_agent_start` from inside
+that same call, so both handlers can read the token even after an input
+transform changes the prompt. One run may claim a token and after that, no later
+run can. This assumes no nested send claims the token first: async context is
+not a unique per-prompt identity.
+
+Treat every run without the token as someone else's. Fail the attempt and show
+the fallback, but let that run continue: it may be the user's prompt or another
+extension's message, so never abort or rewrite it.
+
+Keep watching for the probe run after the attempt ends. The attempt can end
+early, on timeout or because a foreign run failed it, while the probe's own run
+is still on its way. That run still carries the token, so it is still claimed,
+aborted, and sanitized.
+
+The token stays in this process. Never persist, render, or log it.
+
+### Known Limitation: Nested Sends
+
+`AsyncLocalStorage` propagates the token to async work started inside its scope,
+including another extension's nested `pi.sendUserMessage()` call. It does not
+identify only the original synthetic prompt, and descendant work can retain
+the token after the outer `sendUserMessage()` call returns.
+
+For example, another extension's async `input` handler can send a separate
+message and wait briefly before returning:
+
+1. The nested send inherits the probe token. While the probe is waiting, its
+   input handler can erase the nested message's text.
+2. The nested run reaches `before_agent_start` first and claims the token. It
+   is aborted, and its messages are blanked and recorded as probe identities.
+3. If that run settles before the original input handler returns, the probe
+   state becomes `settled`.
+4. The original synthetic prompt then reaches `before_agent_start`, but cannot
+   claim the already-used token. Its abort guard stays inactive, so it can
+   make a provider request and remain in later context as an ordinary message.
+
+The token approach is more robust against text transforms than the previous
+empty-input checks, which lost recognition when another extension added text
+([issue #5](https://github.com/dimk90/pi-context-view/issues/5)). It also avoids
+claiming unrelated empty inputs outside the token scope. It is **not fail-safe**,
+however: nested sends can be mistaken for the probe, including non-empty sends
+that the old checks would have left alone. A timeout or fallback does not fix
+that ownership mistake or guarantee that the original probe is aborted.
+
 
 ### Keeping Probe Messages Out of Real Context
 
@@ -436,7 +527,16 @@ Never identify them by empty content: genuine empty messages and genuine aborts
 must remain visible.
 
 Filter the recorded identities from every later model context and Usage
-calculation. Sanitize only the recorded probe assistant's abort result.
+calculation. Blank both recorded probe messages in `message_end`: the synthetic
+prompt, which may carry text an input transform added, and the assistant abort
+result. Filtering keeps probe messages out of model contexts; blanking keeps
+them out of stored messages.
+
+Blanking cleans agent state, later model contexts, and the saved session, but
+not the current screen: pi renders a user row when the message starts and does
+not repaint it for a `message_end` replacement. Text another extension's input
+transform added to the probe prompt therefore stays visible for that run and
+disappears on reload or resume. Nothing of that text is sent or stored.
 
 Persist only role-and-timestamp identities in `pi-context-view:probe-identities`
 custom entries on `agent_settled` and `session_shutdown`. Restore all prior
@@ -672,6 +772,7 @@ Persisted probe records contain only role and timestamp identities.
 | `src/command.ts`          | Parse commands; resolve Initial through capture, probe, or fallback.               |
 | `src/config.ts`           | Load, validate, cache, and explicitly create configuration.                        |
 | `src/capture.ts`          | Manage Initial, probes, compaction state, probe identities, and injected messages. |
+| `src/probe-token.ts`      | Carry the probe token through the async context of this extension's own send.      |
 | `src/measure.ts`          | Split and estimate prompt/tool contributions without pi API access.                |
 | `src/prompt-blocks.ts`    | Find native and moved prompt blocks using markers and tool metadata.               |
 | `src/prompt-additions.ts` | Identify prompt additions and make source-attribution guesses.                     |
@@ -686,10 +787,15 @@ measurement, and rendering in focused modules that can be tested independently.
 
 ## Required Invariants
 
-Lifecycle or accounting changes must preserve these rules:
+Lifecycle or accounting changes must preserve these rules. The current
+[nested-send limitation](#known-limitation-nested-sends) is a known violation of
+probe request isolation and message ownership, not a relaxation of those goals.
 
 - Normal turns are unchanged when inspection is not invoked.
-- Probes make no provider request and leave no visible transcript artifact.
+- Probes make no provider request, and their messages are blanked in agent
+  state, in every later model context, and in the saved session.
+- Only a run carrying the probe token is aborted or rewritten. Every other run
+  proceeds untouched, because it may belong to the user or another extension.
 - Active compaction uses the fallback without consuming the probe attempt.
 - Genuine messages and genuine aborts remain visible.
 - Synthetic probe entries never reach later model contexts or Usage, including
@@ -700,6 +806,7 @@ Lifecycle or accounting changes must preserve these rules:
 - Parent and child contributions are never double-counted.
 - Every rendered line respects width, and views reflow with width and height.
 
-For lifecycle smoke tests, load `test/fixtures/marker.ts` before and after this
-extension. Use an `after_provider_response` sentinel to detect provider calls.
+For lifecycle smoke tests, load `test/fixtures/marker.ts` and
+`test/fixtures/input-transform.ts` before and after this extension. Use an
+`after_provider_response` sentinel to detect provider calls.
 Follow [UI.md](UI.md#responsive-rendering) for the rendering test matrix.

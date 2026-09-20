@@ -15,6 +15,7 @@
 ### Fixed
 * `[text]` Avoid quadratic scanning of unterminated terminal strings while sanitizing previews ([#8](https://github.com/dimk90/pi-context-view/pull/8) by [@MDGChamomile](https://github.com/MDGChamomile)).
 * `[capture]` Strip opaque thinking and tool-call signatures from captured assistant previews ([#7](https://github.com/dimk90/pi-context-view/pull/7) by [@MDGChamomile](https://github.com/MDGChamomile)).
+* `[capture]` Identify the silent probe by token so an input transform cannot trigger a real turn ([#5](https://github.com/dimk90/pi-context-view/issues/5) by [@MDGChamomile](https://github.com/MDGChamomile)).
 * `[capture]` Omit text-block signatures, including Gemini reasoning envelopes, from previews.
 
 

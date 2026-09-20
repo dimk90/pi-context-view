@@ -465,8 +465,9 @@ test("SilentProbeState sanitizes and filters only exact probe identities", async
 	const concurrentAttempt = state.start();
 	assert.equal(concurrentAttempt.started, false);
 	assert.strictEqual(concurrentAttempt.completion, attempt.completion);
-	state.observeInput("extension", "");
-	assert.equal(state.beginRun(""), true);
+	assert.strictEqual(concurrentAttempt.token, attempt.token);
+	assert.equal(state.isProbeInput("extension", attempt.token), true);
+	assert.equal(state.beginRun(attempt.token), true);
 
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	const realUser = { role: "user", content: [], timestamp: 11 } satisfies ContextEvent["messages"][number];
@@ -474,7 +475,9 @@ test("SilentProbeState sanitizes and filters only exact probe identities", async
 
 	state.recordMessage(probeUser);
 	state.recordMessage(probeAssistant);
-	const sanitized = state.sanitizeAssistant(probeAssistant);
+	// An already empty prompt needs no replacement.
+	assert.equal(state.sanitizeMessage(probeUser), undefined);
+	const sanitized = state.sanitizeMessage(probeAssistant);
 	assert.equal(sanitized?.role, "assistant");
 	if (sanitized?.role === "assistant") {
 		assert.equal(sanitized.stopReason, "stop");
@@ -489,14 +492,64 @@ test("SilentProbeState sanitizes and filters only exact probe identities", async
 	assert.equal(state.settle(true), true);
 	assert.deepEqual(await attempt.completion, { status: "captured" });
 	assert.equal(state.start().started, false);
-	assert.equal(state.sanitizeAssistant(probeAssistant), undefined);
+	assert.equal(state.sanitizeMessage(probeAssistant), undefined);
+});
+
+test("SilentProbeState claims its run by token when an input transform rewrites the prompt", () => {
+	const state = new SilentProbeState();
+	const attempt = state.start(1_000);
+
+	// Another extension prepends instructions to the synthetic empty prompt.
+	const transformed = "Additional instructions\n";
+	assert.equal(state.isProbeInput("extension", attempt.token), true);
+	assert.equal(state.beginRun(attempt.token), true, "rewritten text must not hide the probe run");
+
+	const probePrompt = { role: "user", content: transformed, timestamp: 30 } satisfies ContextEvent["messages"][number];
+	state.recordMessage(probePrompt);
+
+	// Blanked for the transcript, filtered out of every later model context.
+	assert.deepEqual(state.sanitizeMessage(probePrompt), { role: "user", content: [], timestamp: 30 });
+	assert.deepEqual(state.filterMessages([probePrompt]), []);
+	state.settle(true);
+});
+
+test("SilentProbeState leaves an unattributed run untouched and fails the attempt", async () => {
+	const state = new SilentProbeState();
+	const attempt = state.start(1_000);
+
+	// A run without the token may belong to the user or to another extension.
+	assert.equal(state.beginRun(undefined), false);
+	assert.equal(state.isCurrentRun, false, "an unattributed run must not arm the abort guard");
+	assert.deepEqual(await attempt.completion, {
+		status: "failed",
+		reason: "Another agent run started before the silent probe was recognized.",
+	});
+
+	// A delayed probe run is still claimed, so it is aborted and sanitized.
+	assert.equal(state.beginRun(attempt.token), true);
+	assert.equal(state.isCurrentRun, true);
+	assert.equal(state.settle(false), true);
+});
+
+test("SilentProbeState recognizes probe input only for its own token and source", () => {
+	const state = new SilentProbeState();
+	assert.equal(state.isProbeInput("extension", "any-token"), false, "no attempt is pending");
+
+	const attempt = state.start(1_000);
+	assert.equal(state.isProbeInput("extension", undefined), false);
+	assert.equal(state.isProbeInput("extension", `${attempt.token}-other`), false);
+	assert.equal(state.isProbeInput("interactive", attempt.token), false);
+	assert.equal(state.isProbeInput("rpc", attempt.token), false);
+
+	assert.equal(state.beginRun(attempt.token), true);
+	assert.equal(state.isProbeInput("extension", attempt.token), false, "the token is single-use");
+	state.settle(true);
 });
 
 test("SilentProbeState sanitizes pi 0.84 setup abort errors only for a recorded probe assistant", () => {
 	const state = new SilentProbeState();
-	state.start(1_000);
-	state.observeInput("extension", "");
-	assert.equal(state.beginRun(""), true);
+	const attempt = state.start(1_000);
+	assert.equal(state.beginRun(attempt.token), true);
 
 	const setupAbort = assistantMessage("error", 20, "This operation was aborted");
 	const providerError = assistantMessage("error", 21, "Authentication failed");
@@ -505,24 +558,23 @@ test("SilentProbeState sanitizes pi 0.84 setup abort errors only for a recorded 
 	state.recordMessage(setupAbort);
 	state.recordMessage(providerError);
 
-	const sanitized = state.sanitizeAssistant(setupAbort);
+	const sanitized = state.sanitizeMessage(setupAbort);
 	assert.equal(sanitized?.role, "assistant");
 	if (sanitized?.role === "assistant") {
 		assert.equal(sanitized.stopReason, "stop");
 		assert.equal(sanitized.errorMessage, undefined);
 		assert.deepEqual(sanitized.content, []);
 	}
-	assert.equal(state.sanitizeAssistant(providerError), undefined);
-	assert.equal(state.sanitizeAssistant(unrecordedSetupAbort), undefined);
-	assert.equal(state.sanitizeAssistant(unrecordedLegacyAbort), undefined);
+	assert.equal(state.sanitizeMessage(providerError), undefined);
+	assert.equal(state.sanitizeMessage(unrecordedSetupAbort), undefined);
+	assert.equal(state.sanitizeMessage(unrecordedLegacyAbort), undefined);
 	state.settle(true);
 });
 
 test("SilentProbeState filters restored identities without consuming the probe attempt", () => {
 	const previousRuntime = new SilentProbeState();
-	previousRuntime.start(1_000);
-	previousRuntime.observeInput("extension", "");
-	assert.equal(previousRuntime.beginRun(""), true);
+	const previousAttempt = previousRuntime.start(1_000);
+	assert.equal(previousRuntime.beginRun(previousAttempt.token), true);
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	previousRuntime.recordMessage(probeUser);
 	previousRuntime.settle(true);
@@ -568,8 +620,7 @@ test("parsePersistedIdentities accepts only exact role/timestamp records", () =>
 test("SilentProbeState keeps a timed-out running probe abortable until settlement", async () => {
 	const state = new SilentProbeState();
 	const attempt = state.start(1);
-	state.observeInput("extension", "");
-	assert.equal(state.beginRun(""), true);
+	assert.equal(state.beginRun(attempt.token), true);
 
 	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
 	assert.equal(state.isCurrentRun, true);
@@ -584,10 +635,9 @@ test("SilentProbeState retains a delayed synthetic turn after a pre-run timeout"
 	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
 	assert.equal(state.isCurrentRun, false);
 
-	state.observeInput("extension", "");
-	assert.equal(state.beginRun("real prompt"), false);
+	assert.equal(state.beginRun(undefined), false);
 	assert.equal(state.isCurrentRun, false);
-	assert.equal(state.beginRun(""), true);
+	assert.equal(state.beginRun(attempt.token), true);
 	assert.equal(state.isCurrentRun, true);
 	assert.equal(state.settle(false), true);
 });

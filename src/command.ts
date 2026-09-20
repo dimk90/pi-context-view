@@ -13,6 +13,7 @@ import {
 } from "./capture.ts";
 import type { ConfigCreationResult } from "./config.ts";
 import type { InitialSnapshot } from "./model.ts";
+import { runWithProbeToken } from "./probe-token.ts";
 import { normalizePreviewText } from "./text.ts";
 
 const COMMAND_USAGE = "Usage: /context [usage|injections|config]";
@@ -93,7 +94,10 @@ export async function resolveInitialCapture(
 	if (attempt.started) {
 		context.ui.setWorkingVisible(false);
 		try {
-			pi.sendUserMessage("");
+			// Pi emits `input` and `before_agent_start` from inside this call, so the
+			// token reaches both handlers and identifies the run even when another
+			// extension's input transform rewrites the prompt text.
+			runWithProbeToken(attempt.token, () => pi.sendUserMessage(""));
 		} catch (error) {
 			probe.fail(error instanceof Error ? error.message : String(error));
 		}
