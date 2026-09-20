@@ -1,7 +1,7 @@
 # Changelog
 
 
-## `[v0.6.0]` - Unreleased
+## `[v0.6.0]` - 20.09.2026
 
 ### New
 * `[config]` Add `mapCols` and `mapRows` to size the `Context Usage` map.
