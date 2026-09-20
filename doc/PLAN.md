@@ -27,9 +27,10 @@
   - [x] Pass `context.model` to `getCompactionReserveTokens()` in `src/index.ts` so the Usage map honors `compaction.modelOverrides`.
   - [x] Test model-specific reserves, fallback values, model switching, and disabled auto-compaction.
 
-- [ ] **Pi 0.86: verify cache-warming accounting**:
-  - Verification task, not a confirmed defect: warming usage/cost entries are not model context, and `buildSessionContext()` already excludes them.
-  - Add regression coverage proving warming records do not increase context-category totals or appear in message previews.
+- [x] **Pi 0.86: verify cache-warming accounting**:
+  - Verified no defect: warming usage/cost entries are not model context, and `buildSessionContext()` already excludes them.
+  - Regression tests cover nonzero warming records before, between, and after messages, plus warming-only sessions, resume, and branch navigation.
+  - Context-category totals and message previews stay unchanged for legacy and transcript-backed Usage.
 
 - [ ] Refuse to show usage during compaction:
   - Current behavior: "If compaction is active, return a partial fallback without probing".

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildSessionContext, SessionManager, type ToolInfo } from "@earendil-works/pi-coding-agent";
+import {
+	buildSessionContext,
+	type ContextEvent,
+	SessionManager,
+	type ToolInfo,
+} from "@earendil-works/pi-coding-agent";
 
 import { buildUsageSnapshot, InitialCaptureState, measureInjectedMessages } from "../src/capture.ts";
 import { buildSnapshot } from "../src/model.ts";
@@ -39,6 +44,14 @@ function usageFor(messages: Parameters<typeof buildUsageSnapshot>[0]["messages"]
 /** Flatten every preview without logging or persisting captured text. */
 function previewText(usage: ReturnType<typeof usageFor>): string {
 	return usage.categories.flatMap(collectPreviewEntries).map((entry) => entry.text).join("\n");
+}
+
+/** Record synthetic warming charges through pi's real session API, without a provider call or disk writes. */
+function appendCacheWarm(session: SessionManager) {
+	return session.appendUsage("cache_warm", "anthropic", "warming-model", {
+		input: 1_000, output: 0, cacheRead: 50_000, cacheWrite: 10_000, totalTokens: 61_000,
+		cost: { input: 0.003, output: 0, cacheRead: 0.015, cacheWrite: 0.0375, total: 0.0555 },
+	}, "CACHE_WARM_NOTE_MUST_NOT_APPEAR");
 }
 
 test("system replay appends content, patches sections, and applies tool removals before additions", () => {
@@ -134,6 +147,63 @@ test("Usage follows restored branches and compaction checkpoints without old sys
 	}
 	assert.match(previewText(compactedUsage), /Synthetic compacted summary/);
 	assert.doesNotMatch(previewText(compactedUsage), /Old rules|Branch rules/);
+});
+
+for (const transcriptBacked of [false, true]) {
+	test(`cache warming does not change ${transcriptBacked ? "transcript-backed" : "legacy"} Usage totals or previews`, () => {
+		const session = SessionManager.inMemory("/fixture");
+		const messages = [
+			...(transcriptBacked ? [INITIAL, PATCH] : []),
+			{ role: "user", content: "Real user text", timestamp: 10 },
+			{ role: "custom", customType: "marker", content: "Real injected text", display: false, timestamp: 11 },
+		] satisfies ContextEvent["messages"];
+		const expected = usageFor(messages);
+		const firstWarm = appendCacheWarm(session);
+		for (const message of messages) {
+			session.appendMessage(message);
+			appendCacheWarm(session);
+		}
+
+		// Entry-based rendering still sees billed work, including the final leaf; model context must not.
+		const entries = session.getEntries();
+		assert.equal(entries.filter((entry) => entry.type === "usage").length, messages.length + 1);
+		assert.equal(session.getLeafEntry()?.type, "usage");
+		assert.ok(session.buildContextEntries().some((entry) => entry.type === "usage"));
+		const context = buildSessionContext(entries, session.getLeafId()).messages;
+		assert.deepEqual(context, messages);
+		const usage = usageFor(context);
+		assert.ok(usage.estimatedTokens > 0);
+		assert.equal(usage.estimatedTokens, expected.estimatedTokens);
+		assert.deepEqual(usage.categories, expected.categories);
+		assert.deepEqual(usage.categories.flatMap(collectPreviewEntries), expected.categories.flatMap(collectPreviewEntries));
+		assert.match(previewText(usage), /Real user text/);
+		assert.match(previewText(usage), /Real injected text/);
+		assert.doesNotMatch(previewText(usage), /cache_warm|warming-model|CACHE_WARM_NOTE/);
+
+		// Restore the entry tree as on resume, then navigate to the warming-only branch prefix.
+		const header = session.getHeader();
+		assert.ok(header);
+		const restored = SessionManager.inMemory("/fixture", undefined, [header, ...entries]);
+		const resumed = buildSessionContext(restored.getEntries(), restored.getLeafId()).messages;
+		assert.deepEqual(resumed, messages);
+		assert.deepEqual(usageFor(resumed).categories, expected.categories);
+		restored.branch(firstWarm.id);
+		assert.deepEqual(buildSessionContext(restored.getEntries(), restored.getLeafId()).messages, []);
+	});
+}
+
+test("warming-only sessions add no message categories or previews to Usage", () => {
+	const session = SessionManager.inMemory("/fixture");
+	appendCacheWarm(session);
+	appendCacheWarm(session);
+	const messages = buildSessionContext(session.getEntries(), session.getLeafId()).messages;
+	assert.deepEqual(messages, []);
+	const usage = usageFor(messages);
+	const expected = usageFor([]);
+	assert.equal(usage.estimatedTokens, expected.estimatedTokens);
+	assert.deepEqual(usage.categories, expected.categories);
+	assert.deepEqual(usage.categories.flatMap(collectPreviewEntries), expected.categories.flatMap(collectPreviewEntries));
+	assert.doesNotMatch(previewText(usage), /cache_warm|warming-model|CACHE_WARM_NOTE/);
 });
 
 test("captured system previews include section content and omit opaque text signatures", () => {
