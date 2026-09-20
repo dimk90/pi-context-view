@@ -17,7 +17,7 @@ import {
 	copyPromptOptions,
 	InitialCaptureState,
 	measureInjectedMessages,
-	mergeContextOnlyMessages,
+	mergeRequestOnlyMessages,
 	parsePersistedIdentities,
 	SilentProbeState,
 } from "../src/capture.ts";
@@ -153,10 +153,10 @@ test("copyPromptOptions owns decomposition metadata and keeps only visible skill
 	]);
 });
 
-test("measureInjectedMessages attributes custom and context-only messages without session history", () => {
+test("measureInjectedMessages attributes custom and request-only messages without session history", () => {
 	const ordinaryUser = { role: "user", content: "ordinary", timestamp: 1 } satisfies ContextEvent["messages"][number];
 	const sessionCustom = customMessage("marker", "session", 2);
-	const contextCustom = customMessage("marker", "context only", 3);
+	const requestCustom = customMessage("marker", "request only", 3);
 	const injectedUser = { role: "user", content: "injected", timestamp: 4 } satisfies ContextEvent["messages"][number];
 	const blockUser = {
 		role: "user",
@@ -164,7 +164,7 @@ test("measureInjectedMessages attributes custom and context-only messages withou
 		timestamp: 5,
 	} satisfies ContextEvent["messages"][number];
 	const items = measureInjectedMessages(
-		[ordinaryUser, sessionCustom, contextCustom, injectedUser, blockUser],
+		[ordinaryUser, sessionCustom, requestCustom, injectedUser, blockUser],
 		[ordinaryUser, sessionCustom],
 	);
 
@@ -173,8 +173,8 @@ test("measureInjectedMessages attributes custom and context-only messages withou
 		["message:marker:0", "message:marker:1", "message:context:user:0", "message:context:user:1"],
 	);
 	assert.equal(items[0]?.source.id, "message-type:marker");
-	assert.equal(items[0]?.contextOnly, undefined);
-	assert.equal(items[1]?.contextOnly, true);
+	assert.equal(items[0]?.requestOnly, undefined);
+	assert.equal(items[1]?.requestOnly, true);
 	assert.equal(items[2]?.source.id, "aggregate:extensions");
 	assert.equal(items[2]?.text, "injected");
 	// String content is text; serialized block content is marked JSON for full-content previews.
@@ -218,7 +218,7 @@ test("Initial capture omits opaque signatures from injected and transformed assi
 		assert.ok(snapshot);
 		const item = snapshot.groups.flatMap((group) => group.items).find((item) => item.kind === "message");
 		assert.ok(item);
-		assert.equal(item.contextOnly, true);
+		assert.equal(item.requestOnly, true);
 		assert.equal(item.tokens, expectedTokens);
 		assert.equal(item.chars, item.text.length);
 		assert.deepEqual(item.jsonSpan, { start: 0, end: item.text.length });
@@ -297,7 +297,7 @@ test("captured summary previews omit envelope metadata without changing the cont
 		assert.equal(item.jsonSpan, undefined);
 		assert.equal(item.chars, item.text.length);
 		assert.equal(item.tokens, estimateTokens(messages[index]));
-		assert.equal(item.contextOnly, true);
+		assert.equal(item.requestOnly, true);
 	}
 	assert.deepEqual(messages, original);
 	assert.deepEqual(measureInjectedMessages(messages, original), []);
@@ -336,10 +336,10 @@ test("captured bash previews use provider-facing text instead of message metadat
 	assert.deepEqual(measureInjectedMessages(messages, original), []);
 });
 
-test("mergeContextOnlyMessages carries only provider-context mutations into Usage snapshots", () => {
+test("mergeRequestOnlyMessages carries only request-only mutations into Usage snapshots", () => {
 	const source = { id: "aggregate:extensions", label: "unattributed", native: false };
-	const contextMessage = {
-		id: "context-message",
+	const requestMessage = {
+		id: "request-message",
 		phase: "initial",
 		kind: "message",
 		source,
@@ -347,14 +347,14 @@ test("mergeContextOnlyMessages carries only provider-context mutations into Usag
 		chars: 8,
 		tokens: 2,
 		text: "injected",
-		contextOnly: true,
+		requestOnly: true,
 	} satisfies InjectionItem;
-	const sessionMessage = { ...contextMessage, id: "session-message", contextOnly: undefined };
+	const sessionMessage = { ...requestMessage, id: "session-message", requestOnly: undefined };
 	const current = buildSnapshot([], "synthetic-probe", new Date("2026-07-10T12:00:00Z"));
-	const initial = buildSnapshot([contextMessage, sessionMessage], "real-turn", new Date());
+	const initial = buildSnapshot([requestMessage, sessionMessage], "real-turn", new Date());
 
-	const merged = mergeContextOnlyMessages(current, initial);
-	assert.deepEqual(merged.groups.flatMap((group) => group.items).map((entry) => entry.id), ["context-message"]);
+	const merged = mergeRequestOnlyMessages(current, initial);
+	assert.deepEqual(merged.groups.flatMap((group) => group.items).map((entry) => entry.id), ["request-message"]);
 	assert.equal(merged.capturedAt.toISOString(), "2026-07-10T12:00:00.000Z");
 });
 

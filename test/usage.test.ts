@@ -213,25 +213,25 @@ test("computeUsage produces exactly the top-level categories that carry a config
 	assert.deepEqual(usage.categories.map((entry) => entry.id).sort(), configuredIds);
 });
 
-test("computeUsage includes frozen context-only messages without recounting session-backed injections", () => {
+test("computeUsage includes frozen request-only messages without recounting session-backed injections", () => {
 	const initial = snapshot();
-	const contextOnly = {
-		...item("context-user", "message", 8, false),
+	const requestOnly = {
+		...item("request-user", "message", 8, false),
 		source: { id: "aggregate:extensions", label: "unattributed", native: false },
 		label: "user message",
-		text: "context-only content",
-		contextOnly: true,
+		text: "request-only content",
+		requestOnly: true,
 	} satisfies InjectionItem;
-	const contextGroup = {
-		source: contextOnly.source,
-		items: [contextOnly],
-		totalTokens: contextOnly.tokens,
+	const requestGroup = {
+		source: requestOnly.source,
+		items: [requestOnly],
+		totalTokens: requestOnly.tokens,
 	};
 	const usage = computeUsage({
 		snapshot: {
 			...initial,
-			groups: [...initial.groups, contextGroup],
-			totalTokens: initial.totalTokens + contextOnly.tokens,
+			groups: [...initial.groups, requestGroup],
+			totalTokens: initial.totalTokens + requestOnly.tokens,
 		},
 		messages: [],
 	});
@@ -239,7 +239,7 @@ test("computeUsage includes frozen context-only messages without recounting sess
 	const extensions = category(usage.categories, "extensions");
 	assert.equal(extensions.tokens, 17);
 	assert.deepEqual(extensions.children?.map((entry) => entry.label), ["npm:test", "unattributed"]);
-	assert.ok(collectPreviewEntries(extensions).some((entry) => entry.text === "context-only content"));
+	assert.ok(collectPreviewEntries(extensions).some((entry) => entry.text === "request-only content"));
 });
 
 test("computeUsage carries measured tool parts into tool preview entries", () => {

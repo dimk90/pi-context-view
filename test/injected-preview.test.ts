@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { type ContextEvent, Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { measureInjectedMessages, mergeContextOnlyMessages } from "../src/capture.ts";
+import { measureInjectedMessages, mergeRequestOnlyMessages } from "../src/capture.ts";
 import { DEFAULT_CATEGORY_COLORS, DEFAULT_MAP_SIZE, THEME_COLOR_NAMES } from "../src/config.ts";
 import { analyzeSystemPrompt } from "../src/measure.ts";
 import { buildSnapshot, type InitialSnapshot } from "../src/model.ts";
@@ -159,7 +159,7 @@ test("captured summaries and bash text reach both previews without envelope meta
 		const injections = new InjectionsView(theme, { snapshot }, () => {}, () => height);
 		injections.handleInput("j"); // Select the message below its source group
 		const usage = new UsageView(theme, {
-			usage: computeUsage({ snapshot: mergeContextOnlyMessages(current, snapshot), messages: [] }),
+			usage: computeUsage({ snapshot: mergeRequestOnlyMessages(current, snapshot), messages: [] }),
 			categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE,
 		}, () => {}, () => height);
 		for (const view of [injections, usage]) {

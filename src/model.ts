@@ -147,8 +147,8 @@ export interface InjectionItem {
 	readonly moved?: boolean;
 	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
 	readonly injectedReferences?: readonly InjectedReference[];
-	/** True when a message exists only in the transformed provider context, not the session branch. */
-	readonly contextOnly?: boolean;
+	/** True when a message exists only in the outgoing request, not the session branch. */
+	readonly requestOnly?: boolean;
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
 	readonly children?: readonly InjectionItem[];
 }

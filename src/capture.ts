@@ -382,18 +382,18 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot
 	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
 }
 
-/** Add frozen context-only messages to a current prompt/tool snapshot for Usage. */
-export function mergeContextOnlyMessages(
+/** Add frozen request-only messages to a current prompt/tool snapshot for Usage. */
+export function mergeRequestOnlyMessages(
 	snapshot: InitialSnapshot,
 	initial: InitialSnapshot,
 ): InitialSnapshot {
-	const contextOnly = initial.groups.flatMap((group) =>
-		group.items.filter((item) => item.kind === "message" && item.contextOnly === true)
+	const requestOnly = initial.groups.flatMap((group) =>
+		group.items.filter((item) => item.kind === "message" && item.requestOnly === true)
 	);
-	if (contextOnly.length === 0) return snapshot;
+	if (requestOnly.length === 0) return snapshot;
 	const items = [
 		...snapshot.groups.flatMap((group) => group.items),
-		...contextOnly,
+		...requestOnly,
 	];
 	return buildSnapshot(items, snapshot.origin, snapshot.capturedAt);
 }
@@ -499,8 +499,8 @@ export function measureInjectedMessages(
 	const occurrences = new Map<string, number>();
 	const items: InjectionItem[] = [];
 	for (const message of messages) {
-		const contextOnly = !consumeMessageSignature(baseline, message);
-		if (message.role !== "custom" && !contextOnly) continue;
+		const requestOnly = !consumeMessageSignature(baseline, message);
+		if (message.role !== "custom" && !requestOnly) continue;
 
 		const identity = message.role === "custom" ? message.customType : message.role;
 		const occurrence = occurrences.get(identity) ?? 0;
@@ -518,7 +518,7 @@ export function measureInjectedMessages(
 			tokens: estimateTokens(message),
 			text,
 			jsonSpan,
-			contextOnly: contextOnly || undefined,
+			requestOnly: requestOnly || undefined,
 		});
 	}
 	return items;
@@ -534,7 +534,7 @@ function messageSignatureCounts(messages: ContextEvent["messages"]): Map<string,
 	return counts;
 }
 
-/** Consume one matching baseline occurrence, returning false for a context-only message. */
+/** Consume one matching baseline occurrence, returning false for a request-only message. */
 function consumeMessageSignature(
 	counts: Map<string, number>,
 	message: ContextEvent["messages"][number],

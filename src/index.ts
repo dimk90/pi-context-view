@@ -26,7 +26,7 @@ import {
 	collectPromptSources,
 	CompactionState,
 	InitialCaptureState,
-	mergeContextOnlyMessages,
+	mergeRequestOnlyMessages,
 	parsePersistedIdentities,
 	PROBE_IDENTITIES_CUSTOM_TYPE,
 	SilentProbeState,
@@ -174,7 +174,7 @@ export default function (pi: ExtensionAPI) {
 			});
 			await showUsageView(ctx, {
 				usage: computeUsage({
-					snapshot: mergeContextOnlyMessages(current, initial.snapshot),
+					snapshot: mergeRequestOnlyMessages(current, initial.snapshot),
 					// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
 					messages: probe.filterMessages(
 						buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
