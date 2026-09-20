@@ -4,6 +4,8 @@
  * never parse labels to recover source, kind, or parent/child relationships.
  */
 
+import type { SystemMessage } from "./transcript.ts";
+
 export const PI_SOURCE_ID = "pi";
 export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
 
@@ -149,6 +151,8 @@ export interface InjectionItem {
 	readonly injectedReferences?: readonly InjectedReference[];
 	/** True when a message exists only in the outgoing request, not the session branch. */
 	readonly requestOnly?: boolean;
+	/** Sanitized replay inputs for a captured system patch; index preserves request order across grouping. */
+	readonly systemMessage?: { readonly message: SystemMessage; readonly index: number };
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
 	readonly children?: readonly InjectionItem[];
 }
@@ -283,6 +287,7 @@ function copyItem(item: InjectionItem): InjectionItem {
 	return {
 		...item,
 		source: { ...item.source },
+		systemMessage: item.systemMessage === undefined ? undefined : structuredClone(item.systemMessage),
 		jsonSpan: copyJsonSpan(item.jsonSpan),
 		injectedReferences: copyInjectedReferences(item.injectedReferences),
 		sections: item.sections?.map((section) => ({

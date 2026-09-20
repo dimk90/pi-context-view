@@ -22,11 +22,10 @@ import {
 	resolveInitialCapture,
 } from "./command.ts";
 import {
-	buildNativeSnapshot,
+	buildUsageSnapshot,
 	collectPromptSources,
 	CompactionState,
 	InitialCaptureState,
-	mergeRequestOnlyMessages,
 	parsePersistedIdentities,
 	PROBE_IDENTITIES_CUSTOM_TYPE,
 	SilentProbeState,
@@ -165,7 +164,13 @@ export default function (pi: ExtensionAPI) {
 			}
 			// Loaded only for the Usage view, the sole consumer of configured colors.
 			const loadedConfig = configStore.load();
-			const current = buildNativeSnapshot({
+			// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
+			const messages = probe.filterMessages(
+				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
+			);
+			const current = buildUsageSnapshot({
+				messages,
+				initial: initial.snapshot,
 				systemPrompt: ctx.getSystemPrompt(),
 				options: ctx.getSystemPromptOptions(),
 				allTools: pi.getAllTools(),
@@ -174,11 +179,8 @@ export default function (pi: ExtensionAPI) {
 			});
 			await showUsageView(ctx, {
 				usage: computeUsage({
-					snapshot: mergeRequestOnlyMessages(current, initial.snapshot),
-					// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
-					messages: probe.filterMessages(
-						buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
-					),
+					snapshot: current,
+					messages,
 					reported: toReportedUsage(ctx.getContextUsage()),
 					modelLabel: ctx.model?.id,
 					autoCompactReserveTokens: readAutoCompactReserveTokens(ctx),

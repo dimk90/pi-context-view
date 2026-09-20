@@ -1,5 +1,5 @@
 /**
- * Pure context-usage classification: combine the frozen Initial snapshot's
+ * Pure context-usage classification: combine the current branch's measured
  * prompt/tool decomposition with the live session messages into estimated
  * category totals. No pi API access — unit-testable.
  */
@@ -32,8 +32,9 @@ export interface UsageInputs {
 
 /**
  * Estimate the current/next-request context composition. Prompt and tool
- * categories come from the frozen Initial snapshot; message categories are
- * classified from the live session context. Empty categories are dropped and
+ * categories come from the caller's current-state snapshot; message categories are
+ * classified from the live session context. System messages have already been
+ * replayed into that snapshot and must not count again. Empty categories are dropped and
  * every aggregate equals the exact sum of its children.
  */
 export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
@@ -147,7 +148,7 @@ function isMcpTool(item: InjectionItem): boolean {
 /** Collect frozen messages that existed only in the captured outgoing request. */
 function requestOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
 	return snapshot.groups.flatMap((group) =>
-		group.items.filter((item) => item.kind === "message" && item.requestOnly === true)
+		group.items.filter((item) => item.kind === "message" && item.requestOnly === true && item.systemMessage === undefined)
 	);
 }
 
@@ -176,6 +177,9 @@ function classifyMessages(
 	}
 	for (const message of messages) {
 		switch (message.role) {
+			case "system":
+				// Sections and tool deltas already contribute through the replayed snapshot.
+				break;
 			case "user":
 				user.push({
 					timestamp: message.timestamp,

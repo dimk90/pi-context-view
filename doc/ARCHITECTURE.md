@@ -6,10 +6,10 @@ extension can read, and how that data reaches the two views.
 
 ## Views and Data Sources
 
-| View       | What it shows                                                                      | When its data changes                                          |
-| ---------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Injections | The captured system prompt, tools, and injected messages.                          | Never after Initial is captured.                               |
-| Usage      | Current prompt, tools, and session messages, plus Initial's request-only messages. | Rebuilt when the view opens; the Initial messages stay frozen. |
+| View       | What it shows                                                                           | When its data changes                                     |
+| ---------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Injections | The captured system prompt, tools, and injected messages.                               | Never after Initial is captured.                          |
+| Usage      | Replayed branch prompt/tools and session messages, plus Initial's request-only changes. | Rebuilt when the view opens; Initial changes stay frozen. |
 
 **Initial** is a frozen snapshot of the system prompt, active tools, and injected messages at the first
 capture after this extension loads. There are two ways to capture it:
@@ -38,7 +38,7 @@ Usage is therefore not independent of Initial today. See the
 
 ## How Pi Prepares a Request
 
-The following flow was checked against pi `0.85.1`. The notes on the right show
+The following flow was checked against pi `0.86.1`. The notes on the right show
 which parts `pi-context-view` uses or skips.
 
 ```text
@@ -50,7 +50,9 @@ Current agent history
   |
   v
 before_agent_start handlers                     OBSERVE: copy prompt options
-  Inject messages, change the system prompt
+  Inject messages, change structured prompt options
+  |
+  + Persist system-section patches and tool changes
   |
   v
 context handlers, in extension load order       OBSERVE: freeze Initial once
@@ -102,11 +104,12 @@ session branch later cannot recover those request-only changes.
   **Goal:** count current session messages in Usage and identify request-only
   messages by comparing this list with the captured `context` event.
 
-- `ctx.getSystemPrompt()` reads the effective agent prompt. It can include
-  `before_agent_start` edits and can still hold them after a turn. It does not
-  expose later provider-payload rewrites.
-  **Goal:** capture the prompt text for Initial and estimate the current prompt
-  when Usage opens.
+- `ctx.getSystemPrompt()` reads Pi's effective prompt during a run, including
+  `before_agent_start` edits. Pi clears per-run options on settlement, so an
+  idle read is not the prompt used by the last request. It does not expose later
+  provider-payload rewrites.
+  **Goal:** preserve Initial's effective-prompt capture, provide a Usage fallback
+  only when the branch has no system messages.
 
 - `ctx.getSystemPromptOptions()` reads the base prompt construction options in
   a command handler. The corresponding event field is
@@ -117,8 +120,11 @@ session branch later cannot recover those request-only changes.
 - `pi.getActiveTools()` and `pi.getAllTools()` supply the active tool names,
   definitions, and source information. `pi.getCommands()` supplies additional
   extension source information for prompt attribution.
-  **Goal:** estimate active tools and group them by source, use tool and command
-  source information to guess which extension added prompt text.
+  **Goal:** estimate Initial's active tools and provide Usage's legacy fallback.
+  For transcript-backed Usage, recorded declarations supply definitions and the
+  active set; current registration metadata supplies provenance and guideline
+  attribution only. Unregistered recorded tools stay visible as unattributed.
+  Tool and command source information also supports prompt-addition guesses.
 
 - `convertToLlm()` supplies the text pi sends for bash and summary messages.
   It does not run extension handlers or build the final provider payload.
@@ -210,9 +216,9 @@ Later context events
   Filter known probe messages, do not replace Initial
 ```
 
-Usage therefore combines two sources: the request-only messages frozen in
-Initial, and the current system prompt, active tools, and session-branch
-messages read when the view opens. See
+Usage therefore combines two sources: the request-only changes frozen in
+Initial, and the session-branch messages read when the view opens. On Pi 0.86,
+those messages also carry the recorded prompt and tool state. See
 [Usage and Attribution](#usage-and-attribution) for that flow.
 
 ### Capturing the Final Prompt and Tools
@@ -268,9 +274,11 @@ the current branch, after removing known probe messages from both lists:
   only in the request, so no other source can show them. Custom messages are
   marked the same way when they do not match.
 
-- **Skip matched ordinary session messages.** Usage reads them from the current
-  session branch instead, which keeps them up to date and avoids counting them
-  twice.
+- **Skip matched ordinary session messages, including system messages.** Usage
+  reads them from the current session branch instead, which keeps them up to
+  date and avoids counting them twice. Captured request-only system messages
+  retain sanitized replay inputs and their original request order, so Usage
+  can apply section and tool patches instead of counting their preview again.
 
 Store copies of everything retained: prompt parts, tools, message previews,
 sources, and children. Copies keep the frozen snapshot correct even when pi or
@@ -328,21 +336,25 @@ new transformed request on each open.
          +-----------------------+---------------------------+
          |                       |                           |
          v                       v                           v
-Current prompt + tools     Initial snapshot          Current session branch
+Live prompt/tool fallback   Initial snapshot          Current session branch
          |                       |                           |
-         v                       v                           v
-buildNativeSnapshot()     requestOnly items          buildSessionContext()
+         |                       v                           v
+         |                requestOnly items          buildSessionContext()
          |                 (still frozen)                    |
          |                       |                           v
-         +-----------+-----------+                  Filter probe messages
-                     |                                       |
-                     v                                       |
-        mergeRequestOnlyMessages()                           |
-                     |                                       |
-                     +----------------+----------------------+
-                                      |
-                                      v
-                                computeUsage()
+         |                       |                  Filter probe messages
+         |                       |                           |
+         +-----------------------+---------------------------+
+                                 |
+                                 v
+                       buildUsageSnapshot()
+                  Replay system sections and tool deltas
+                  (live fallback only without system state)
+                  Merge non-system request-only messages
+                                 |
+                                 v
+                           computeUsage()
+                  Skip already-replayed system messages
                                       |
                                       v
                           Category estimates + previews
@@ -355,14 +367,38 @@ buildNativeSnapshot()     requestOnly items          buildSessionContext()
                   model, auto-compaction reserve, display config
 ```
 
-Despite its name, `buildNativeSnapshot()` reads the effective prompt supplied
-by the caller: that prompt can already contain extension edits. It does not
-rerun those extensions.
+**Usage counts the replayed current state once, not the history of changes.**
+`buildUsageSnapshot()` replays the branch's system messages in order: plain
+`content` appends, `sections` replaces values by name (`null` removes one), and
+`toolsRemoved` applies before `toolsAdded`. Replacing a tool uses its recorded
+name, description, and schema, not today's registered definition. Removed tools
+and superseded sections no longer contribute. An explicitly empty system state
+is still authoritative; it must not revive the live prompt or active tools.
 
-Session-backed custom messages count from the current branch, not again from
-Initial. Only Initial items marked `requestOnly` are merged into the fresh
-prompt/tool snapshot. `computeUsage()` classifies those items along with the
-current session messages.
+`buildSessionContext()` already selects the current branch and applies compaction.
+Its compaction checkpoint replaces earlier system messages, including system
+messages in the retained range. The same replay therefore works after resume,
+branch navigation, and compaction without a separate mutable state cache.
+
+Only a legacy or empty branch with no system messages uses `buildNativeSnapshot()`
+and the caller's live prompt/tools. Neither path reruns extension handlers.
+Generated instruction-file and skill records are read from the recorded prompt,
+not today's loader metadata. Custom XML sections remain named System Prompt
+parts even after `cwd`; their tag does not establish extension ownership.
+
+Frozen request-only system patches apply after the branch state in their captured
+request order. They are not also merged as counted message previews. Other
+request-only messages retain the existing merge. Session-backed custom messages
+count from the current branch, not again from Initial. `computeUsage()` skips
+system messages because the prompt/tool snapshot already accounts for them.
+
+This is a provider-independent semantic estimate, not a wire-size estimate.
+Some providers keep earlier section versions or tool declarations in the cached
+transcript; others collapse them. Usage deliberately does not count that history,
+patch framing, or provider-specific serialization. Forced `systemPrompt` /
+`forceSystemPrompt` text can differ from recorded structured sections; handling
+that projection is deferred to the separate [PLAN.md](PLAN.md) item. Initial
+continues to read the effective prompt rather than replacing it with replay.
 
 The UI receives `ctx.getContextUsage()` separately. Its reported total is not
 used to force category estimates to match. Map rendering rules belong to
@@ -592,12 +628,32 @@ change the result.
 
 ### Prompt Parts and Moved Blocks
 
-Split pi's own system prompt into the parts it builds: the preamble,
-`Available tools:`, `Guidelines:`, `Pi documentation`, appended prompt text,
-and the working-directory footer. The counted parts must concatenate back to
-the item's text and share its token estimate.
+Pi 0.86 wraps independently replaceable sections in XML. Map `tools`, `rules`,
+`docs`, `addendum`, and `cwd` to Available Tools, Guidelines, Documentation,
+Appended Prompt, and Current Dir. Keep the unwrapped preamble separately.
+Read `project_context` instruction records and `skills` records as their existing
+aggregates. Overridden content that is not those generated records stays visible
+as a System Prompt part; never substitute stale loader content.
 
-Find block headers independently and preserve their actual order. An extension
+Custom `systemPromptOptions.sections` use their literal tag names as part labels;
+overrides of known names retain existing labels. Sections can follow `cwd`, so
+that section is not the end of structured content. Ignore nested tags and fenced
+examples when locating top-level sections. The first occurrence of a tag owns
+the part; later duplicates are unwrapped additions, not a second counted part.
+Unwrapped text between or after sections uses the existing addition attribution.
+
+Count and preview section bodies without the outer XML transport wrappers.
+The tool sections retain leading bullet newlines for exact line attribution.
+The counted parts concatenate back to the item's text and share its estimate.
+Native tool surfaces use consecutive bullets and keep actual section order;
+relocated `tools` and `rules` retain the Moved marker and tool references.
+A custom prefix may restore individual native sections, so only absent ones
+are marked Dropped.
+
+The legacy Pi 0.80–0.85 parser remains available for unwrapped prompts and old
+captures. It recognizes `Available tools:`, `Guidelines:`, `Pi documentation`,
+appended text, and the working-directory footer.
+Find legacy block headers independently and preserve their actual order. An extension
 can move or rewrite a block, not just append text. The footer is therefore not
 an absolute boundary for Available Tools or Guidelines.
 
@@ -658,7 +714,8 @@ or token shares. Do not count text pi never sent.
 
 ### Extension Prompt Additions
 
-For text after pi's footer and outside recovered blocks:
+For unwrapped gaps between/after XML sections, or legacy text after pi's footer
+and outside recovered blocks:
 
 - Split at blank lines and ignore whitespace-only gaps. Keep gaps on opposite
   sides of a recovered block separate, so unrelated source evidence cannot mix.
@@ -735,6 +792,11 @@ later model request.
 
 Capture message content, not the whole message object:
 
+- System previews contain plain `content` followed by non-deleted section text,
+  even when `content` is empty. Omit text-block signatures. Request-only system
+  replay data contains only content, section patches, tool declarations/removals,
+  and ordering metadata; it stays process-local and is never persisted by this
+  extension. Deleted sections have no preview text or text-token contribution.
 - Branch and compaction previews contain only `summary`.
 - Bash previews use pi's `convertToLlm` text, including failure/cancellation
   notices and truncated-output file references.
@@ -766,21 +828,22 @@ Persisted probe records contain only role and timestamp identities.
 
 ## Module Boundaries
 
-| Path                      | Responsibility                                                                     |
-| ------------------------- | ---------------------------------------------------------------------------------- |
-| `src/index.ts`            | Register events and commands; assemble view inputs.                                |
-| `src/command.ts`          | Parse commands; resolve Initial through capture, probe, or fallback.               |
-| `src/config.ts`           | Load, validate, cache, and explicitly create configuration.                        |
-| `src/capture.ts`          | Manage Initial, probes, compaction state, probe identities, and injected messages. |
-| `src/probe-token.ts`      | Carry the probe token through the async context of this extension's own send.      |
-| `src/measure.ts`          | Split and estimate prompt/tool contributions without pi API access.                |
-| `src/prompt-blocks.ts`    | Find native and moved prompt blocks using markers and tool metadata.               |
-| `src/prompt-additions.ts` | Identify prompt additions and make source-attribution guesses.                     |
-| `src/usage.ts`            | Classify messages; build usage totals and previews.                                |
-| `src/model.ts`            | Define types, ownership, hierarchy, and grouping.                                  |
-| `src/text.ts`             | Sanitize dynamic text before terminal display.                                     |
-| `src/ui/`                 | Handle navigation, layout, previews, and fullscreen rendering.                     |
-| `test/fixtures/marker.ts` | Test capture visibility and extension load order.                                  |
+| Path                      | Responsibility                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/index.ts`            | Register events and commands; assemble view inputs.                                           |
+| `src/command.ts`          | Parse commands; resolve Initial through capture, probe, or fallback.                          |
+| `src/config.ts`           | Load, validate, cache, and explicitly create configuration.                                   |
+| `src/capture.ts`          | Manage Initial, probes, compaction state, probe identities, and injected messages.            |
+| `src/probe-token.ts`      | Carry the probe token through the async context of this extension's own send.                 |
+| `src/measure.ts`          | Split and estimate prompt/tool contributions without pi API access.                           |
+| `src/prompt-blocks.ts`    | Locate XML sections and legacy/moved tool surfaces, excluding nested/fenced examples.         |
+| `src/transcript.ts`       | Replay system content, section patches, and tool declarations without provider serialization. |
+| `src/prompt-additions.ts` | Identify prompt additions and make source-attribution guesses.                                |
+| `src/usage.ts`            | Classify messages; build usage totals and previews.                                           |
+| `src/model.ts`            | Define types, ownership, hierarchy, and grouping.                                             |
+| `src/text.ts`             | Sanitize dynamic text before terminal display.                                                |
+| `src/ui/`                 | Handle navigation, layout, previews, and fullscreen rendering.                                |
+| `test/fixtures/marker.ts` | Test capture visibility and extension load order.                                             |
 
 Keep pi event and command wiring in `src/index.ts`. Keep state machines,
 measurement, and rendering in focused modules that can be tested independently.
@@ -804,6 +867,8 @@ probe request isolation and message ownership, not a relaxation of those goals.
   the fallback does not freeze it.
 - Raw content appears only after Enter and is never logged or newly persisted.
 - Parent and child contributions are never double-counted.
+- Usage counts the replayed branch prompt/tool state once, never again as system
+  messages or historical patches. Explicit removals cannot revive live defaults.
 - Every rendered line respects width, and views reflow with width and height.
 
 For lifecycle smoke tests, load `test/fixtures/marker.ts` and

@@ -268,12 +268,12 @@ test("analyzeSystemPrompt breaks the System Prompt into the parts pi assembles i
 		base?.sections?.map((section) => section.tokens),
 	);
 	// The blocks pi renders keep the lines it puts there, footer included.
-	assert.match(findItem(items, "base-prompt:available-tools")?.text ?? "", /^\nAvailable tools:\n- read: Read files/);
-	assert.match(findItem(items, "base-prompt:guidelines")?.text ?? "", /^\nGuidelines:\n- /);
-	assert.match(findItem(items, "base-prompt:documentation")?.text ?? "", /^\nPi documentation /);
+	assert.match(findItem(items, "base-prompt:available-tools")?.text ?? "", /^\n- read: Read files/);
+	assert.match(findItem(items, "base-prompt:guidelines")?.text ?? "", /^\n- /);
+	assert.match(findItem(items, "base-prompt:documentation")?.text ?? "", /^Pi documentation /);
 	assert.equal(findItem(items, "base-prompt:appended")?.text, append);
-	assert.equal(findItem(items, "base-prompt:current-dir")?.text, `\nCurrent working directory: ${CWD}`);
-	assert.doesNotMatch(findItem(items, "base-prompt:preamble")?.text ?? "", /Available tools:|Guidelines:/);
+	assert.equal(findItem(items, "base-prompt:current-dir")?.text, CWD);
+	assert.doesNotMatch(base?.text ?? "", /<\/?(?:tools|rules|docs|addendum|cwd)>/);
 });
 
 test("analyzeSystemPrompt gives guessed prompt additions to their extension and the rest to unattributed", () => {
@@ -446,8 +446,8 @@ test("Available Tools references restore extension snippets without changing cou
 	for (const reference of [...references].reverse()) {
 		restored = restored.slice(0, reference.offset) + reference.text + restored.slice(reference.offset);
 	}
-	const start = prompt.indexOf("\nAvailable tools:\n");
-	assert.equal(restored, prompt.slice(start, prompt.indexOf("\nGuidelines:\n", start)));
+	const start = prompt.indexOf("<tools>\n") + "<tools>".length;
+	assert.equal(restored, prompt.slice(start, prompt.indexOf("\n</tools>", start)));
 	// The carved snippet keeps its tokens on the owning tool, never in both places.
 	assert.equal(findItem(items, "tool:npm:web:search")?.sections?.[0]?.text, "\n- search: Search the web");
 	assert.equal(base.tokens, textTokens(base.text));
@@ -486,8 +486,8 @@ test("guideline references restore prompt order without changing counted text or
 	for (const reference of [...references].reverse()) {
 		restored = restored.slice(0, reference.offset) + reference.text + restored.slice(reference.offset);
 	}
-	const start = prompt.indexOf("\nGuidelines:\n");
-	assert.equal(restored, prompt.slice(start, prompt.indexOf("\nPi documentation", start)));
+	const start = prompt.indexOf("<rules>\n") + "<rules>".length;
+	assert.equal(restored, prompt.slice(start, prompt.indexOf("\n</rules>", start)));
 	assert.doesNotMatch(guidelines.text, /Cite sources|Use fetch/);
 	assert.match(guidelines.text, /Use read/);
 	assert.equal(base.tokens, textTokens(base.text));
@@ -807,7 +807,7 @@ function buildRelocationPrompt(): string {
 test("analyzeSystemPrompt recovers the prompt blocks an extension relocated past the footer", () => {
 	const addition = "EXTENSION INSTRUCTION";
 	const systemPrompt = relocateToolSurface(buildRelocationPrompt())
-		.replace(/\n\nAvailable tools:/, `\n\n${addition}\n\nAvailable tools:`);
+		.replace(/\n\n<tools>/, `\n\n${addition}\n\n<tools>`);
 
 	const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, RELOCATION_TOOLS);
 	const basePrompt = findItem(items, "base-prompt");
@@ -987,7 +987,7 @@ test("analyzeSystemPrompt finds the footer in real buildSystemPrompt output", ()
 	const items = analyzeSystemPrompt(systemPrompt + extensionAddition, options);
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.ok(base !== undefined);
-	assert.equal(findItem(items, "base-prompt:current-dir")?.text, `\nCurrent working directory: ${CWD}`);
+	assert.equal(findItem(items, "base-prompt:current-dir")?.text, CWD);
 	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
 	assert.equal(findItem(items, "base-prompt:appended")?.text, append);
 	assert.equal(items.find((entry) => entry.id === "prompt-addition:unattributed")?.text, extensionAddition);

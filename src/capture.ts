@@ -15,7 +15,8 @@ import {
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
-import { analyzeSystemPrompt, type PromptOptionsSlice, type ToolSlice } from "./measure.ts";
+import { analyzeSystemPrompt, type PromptOptionsSlice, textTokens, type ToolSlice } from "./measure.ts";
+import { copySystemMessage, replaySystemMessages, systemMessageText } from "./transcript.ts";
 import {
 	AGGREGATE_SOURCE,
 	buildSnapshot,
@@ -382,13 +383,54 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot
 	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
 }
 
-/** Add frozen request-only messages to a current prompt/tool snapshot for Usage. */
+/** Inputs for Usage's branch-local prompt/tool estimate and frozen request-only patches. */
+export interface UsageSnapshotInput extends NativeSnapshotInput {
+	messages: ContextEvent["messages"];
+	initial: InitialSnapshot;
+}
+
+/**
+ * Use replayed transcript state instead of today's loader prompt/tools when available.
+ * Request-only system patches remain frozen like other Initial injections; they are
+ * applied once here and never counted again as ordinary messages.
+ */
+export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
+	const patches = input.initial.groups.flatMap((group) => group.items)
+		.filter((item) => item.requestOnly === true && item.systemMessage !== undefined)
+		.flatMap((item) => item.systemMessage === undefined ? [] : [item.systemMessage])
+		.sort((a, b) => a.index - b.index).map((entry) => entry.message);
+	const state = replaySystemMessages([...input.messages, ...patches]);
+	if (state === undefined) return mergeRequestOnlyMessages(buildNativeSnapshot(input), input.initial);
+	const registered = new Map(input.allTools.map((tool) => [tool.name, tool]));
+	const tools: ToolSlice[] = state.tools.map((tool) => {
+		const metadata = registered.get(tool.name);
+		const snippetLine = state.sections.tools?.split("\n").find((line) => line.startsWith(`- ${tool.name}: `));
+		return {
+			name: tool.name,
+			description: tool.description,
+			parametersJson: JSON.stringify(tool.parameters),
+			snippet: snippetLine?.slice(`- ${tool.name}: `.length),
+			guidelines: normalizeGuidelines(metadata?.promptGuidelines),
+			source: metadata?.sourceInfo.source ?? "unattributed",
+		};
+	});
+	const options = copyPromptOptions(input.options);
+	const items = analyzeSystemPrompt(systemMessageText(state), {
+		...options,
+		// Current loader overrides are not evidence of what this branch recorded.
+		customPrompt: undefined, appendSystemPrompt: undefined, sections: undefined,
+	}, tools, { sources: input.promptSources });
+	const snapshot = buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
+	return mergeRequestOnlyMessages(snapshot, input.initial);
+}
+
+/** Add frozen non-system request-only messages to a current prompt/tool snapshot for Usage. */
 export function mergeRequestOnlyMessages(
 	snapshot: InitialSnapshot,
 	initial: InitialSnapshot,
 ): InitialSnapshot {
 	const requestOnly = initial.groups.flatMap((group) =>
-		group.items.filter((item) => item.kind === "message" && item.requestOnly === true)
+		group.items.filter((item) => item.kind === "message" && item.requestOnly === true && item.systemMessage === undefined)
 	);
 	if (requestOnly.length === 0) return snapshot;
 	const items = [
@@ -405,6 +447,7 @@ export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOpti
 		homeDir: process.env.HOME,
 		customPrompt: options.customPrompt,
 		appendSystemPrompt: options.appendSystemPrompt,
+		sections: options.sections === undefined ? undefined : { ...options.sections },
 		contextFilePaths: options.contextFiles?.map((file) => file.path),
 		skills: options.skills
 			?.filter((skill) => !skill.disableModelInvocation)
@@ -498,7 +541,7 @@ export function measureInjectedMessages(
 	const baseline = messageSignatureCounts(baselineMessages);
 	const occurrences = new Map<string, number>();
 	const items: InjectionItem[] = [];
-	for (const message of messages) {
+	for (const [index, message] of messages.entries()) {
 		const requestOnly = !consumeMessageSignature(baseline, message);
 		if (message.role !== "custom" && !requestOnly) continue;
 
@@ -515,10 +558,11 @@ export function measureInjectedMessages(
 			source: message.role === "custom" ? messageSource(message.customType) : AGGREGATE_SOURCE,
 			label: message.role === "custom" ? "message" : `${message.role} message`,
 			chars: text.length,
-			tokens: estimateTokens(message),
+			tokens: message.role === "system" ? textTokens(systemMessageText(message)) : estimateTokens(message),
 			text,
 			jsonSpan,
 			requestOnly: requestOnly || undefined,
+			systemMessage: message.role === "system" ? { message: copySystemMessage(message), index } : undefined,
 		});
 	}
 	return items;
@@ -555,6 +599,7 @@ interface MessagePreview {
 
 /** Extract content-only previews without raw image payloads or opaque assistant signatures. */
 function messagePreview(message: ContextEvent["messages"][number]): MessagePreview {
+	if (message.role === "system") return { text: systemMessageText(message) };
 	if (message.role === "branchSummary" || message.role === "compactionSummary") {
 		return { text: message.summary };
 	}

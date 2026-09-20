@@ -8,13 +8,13 @@
   - [x] Update Wait/WaitLine to new regex format.
   - [x] Move recording to the same folder with rendered results.
 
-- [ ] **Pi 0.86: transcript-backed system prompt and tool changes**:
-  - Update `src/prompt-blocks.ts` and `src/measure.ts` for XML-wrapped prompt sections: `tools`, `rules`, `docs`, `addendum`, `skills`, and `cwd`.
-  - Handle custom `systemPromptOptions.sections`; do not assume all text after the old footer is an extension addition.
-  - Account for `system` messages, section patches, and tool additions/removals in Usage without double-counting separately measured prompt/tool content.
-  - Include section-backed content in captured system-message previews, even when `content` is empty.
-  - Update the normalized `systemPromptOptions` fixture in `test/index-context.test.ts`, the 14 failing measurement tests, and the relocation fixture.
-  - Cover resume, branch navigation, and compaction checkpoints; update `doc/ARCHITECTURE.md` and affected UI docs.
+- [x] **Pi 0.86: transcript-backed system prompt and tool changes**:
+  - [x] Update `src/prompt-blocks.ts` and `src/measure.ts` for XML-wrapped prompt sections: `tools`, `rules`, `docs`, `addendum`, `skills`, and `cwd`.
+  - [x] Handle custom `systemPromptOptions.sections`; do not assume all text after the old footer is an extension addition.
+  - [x] Account for `system` messages, section patches, and tool additions/removals in Usage without double-counting separately measured prompt/tool content.
+  - [x] Include section-backed content in captured system-message previews, even when `content` is empty.
+  - [x] Update the normalized `systemPromptOptions` fixture in `test/index-context.test.ts`, the 14 failing measurement tests, and the relocation fixture.
+  - [x] Cover resume, branch navigation, and compaction checkpoints; update `doc/ARCHITECTURE.md` and affected UI docs.
 
 - [ ] **Pi 0.86: forced system-prompt handling**:
   - Review Initial capture and Usage inputs for `before_agent_start` results returning `systemPrompt` or setting `forceSystemPrompt`.

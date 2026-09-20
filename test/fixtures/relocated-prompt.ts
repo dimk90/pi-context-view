@@ -7,13 +7,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
  * Only synthetic text or process-local prompts should be passed to this helper.
  */
 export function relocateToolSurface(prompt: string): string {
-	const surfaceStart = prompt.indexOf("\nAvailable tools:\n");
-	const surfaceEnd = prompt.indexOf("\nPi documentation");
+	const surfaceStart = prompt.indexOf("\n<tools>\n");
+	const surfaceEnd = prompt.indexOf("\n<docs>\n");
 	if (surfaceStart === -1 || surfaceEnd <= surfaceStart) return prompt;
 	const surface = prompt.slice(surfaceStart + 1, surfaceEnd)
-		.split("\n\n")
-		.filter((block) => !block.startsWith("In addition to the tools above"))
-		.join("\n\n")
+		.replace(/\n\nIn addition to the tools above[^\n]*/, "")
 		.trimEnd();
 	return `${prompt.slice(0, surfaceStart)}${prompt.slice(surfaceEnd)}\n\n${surface}`;
 }
