@@ -16,12 +16,12 @@
   - [x] Update the normalized `systemPromptOptions` fixture in `test/index-context.test.ts`, the 14 failing measurement tests, and the relocation fixture.
   - [x] Cover resume, branch navigation, and compaction checkpoints; update `doc/ARCHITECTURE.md` and affected UI docs.
 
-- [ ] **Pi 0.86: forced system-prompt handling**:
-  - Review Initial capture and Usage inputs for `before_agent_start` results returning `systemPrompt` or setting `forceSystemPrompt`.
-  - Pi projects forced text onto the request after `context` handlers; the transcript retains structured sections instead.
-  - Preserve Initial's effective-prompt read and do not treat the idle base prompt as the prompt used by the last request: Pi clears per-run options on settlement.
-  - Test structured and forced prompt changes in both extension orders, including a silent probe with an `after_provider_response` sentinel.
-  - Update the documented capture coverage and Usage semantics.
+- [x] **Pi 0.86: forced system-prompt handling**:
+  - [x] Review Initial capture and Usage inputs for `before_agent_start` results returning `systemPrompt` or setting `forceSystemPrompt`.
+  - [x] Pi projects forced text onto the request after `context` handlers; the transcript retains structured sections instead.
+  - [x] Preserve Initial's effective-prompt read and do not treat the idle base prompt as the prompt used by the last request: Pi clears per-run options on settlement.
+  - [x] Test structured and forced prompt changes in both extension orders, including a silent probe with an `after_provider_response` sentinel.
+  - [x] Update the documented capture coverage and Usage semantics.
 
 - [ ] **Pi 0.86: per-model compaction budgets**:
   - Pass `context.model` to `getCompactionReserveTokens()` in `src/index.ts` so the Usage map honors `compaction.modelOverrides`.

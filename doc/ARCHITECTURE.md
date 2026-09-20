@@ -105,8 +105,9 @@ session branch later cannot recover those request-only changes.
   messages by comparing this list with the captured `context` event.
 
 - `ctx.getSystemPrompt()` reads Pi's effective prompt during a run, including
-  `before_agent_start` edits. Pi clears per-run options on settlement, so an
-  idle read is not the prompt used by the last request. It does not expose later
+  `before_agent_start` edits and a forced prompt, which Pi renders instead of
+  the structured sections. Pi clears per-run options on settlement, so an idle
+  read is not the prompt used by the last request. It does not expose later
   provider-payload rewrites.
   **Goal:** preserve Initial's effective-prompt capture, provide a Usage fallback
   only when the branch has no system messages.
@@ -314,6 +315,15 @@ it sees.
   own position. Later additions, replacements, removals, and reordering are
   absent.
 
+- **Forced prompts: every extension, whatever the load order.** A
+  `before_agent_start` handler returning `systemPrompt` sets
+  `systemPromptOptions.forceSystemPrompt`, and `ctx.getSystemPrompt()` then
+  renders that exact text instead of the structured sections. Initial measures
+  the forced text as the prompt, so recorded sections the run did not send are
+  neither counted nor attributed. Pi projects the forced text onto the request
+  after the `context` handlers and keeps recording the structured sections, so
+  only Initial sees it: Usage reads the transcript instead.
+
 - **Provider-payload rewrites: no extension, whatever the load order.**
   `before_provider_request` handlers and provider transports run after the
   capture point, so an effective prompt they rewrite there never reaches
@@ -395,10 +405,13 @@ system messages because the prompt/tool snapshot already accounts for them.
 This is a provider-independent semantic estimate, not a wire-size estimate.
 Some providers keep earlier section versions or tool declarations in the cached
 transcript; others collapse them. Usage deliberately does not count that history,
-patch framing, or provider-specific serialization. Forced `systemPrompt` /
-`forceSystemPrompt` text can differ from recorded structured sections; handling
-that projection is deferred to the separate [PLAN.md](PLAN.md) item. Initial
-continues to read the effective prompt rather than replacing it with replay.
+patch framing, or provider-specific serialization. A forced prompt is likewise
+out of scope for Usage: Pi never records that text, and the per-run options are
+cleared on settlement, so both the replayed transcript and the idle live
+fallback describe the structured prompt, not the forced projection of the last
+request. Initial's frozen forced prompt is not merged back in, because it
+describes one past run. Initial continues to read the effective prompt rather
+than replacing it with replay.
 
 The UI receives `ctx.getContextUsage()` separately. Its reported total is not
 used to force category estimates to match. Map rendering rules belong to
@@ -843,7 +856,7 @@ Persisted probe records contain only role and timestamp identities.
 | `src/model.ts`            | Define types, ownership, hierarchy, and grouping.                                             |
 | `src/text.ts`             | Sanitize dynamic text before terminal display.                                                |
 | `src/ui/`                 | Handle navigation, layout, previews, and fullscreen rendering.                                |
-| `test/fixtures/marker.ts` | Test capture visibility and extension load order.                                             |
+| `test/fixtures/`          | Test capture visibility, forced prompts, and extension load order.                            |
 
 Keep pi event and command wiring in `src/index.ts`. Keep state machines,
 measurement, and rendering in focused modules that can be tested independently.
@@ -871,7 +884,8 @@ probe request isolation and message ownership, not a relaxation of those goals.
   messages or historical patches. Explicit removals cannot revive live defaults.
 - Every rendered line respects width, and views reflow with width and height.
 
-For lifecycle smoke tests, load `test/fixtures/marker.ts` and
-`test/fixtures/input-transform.ts` before and after this extension. Use an
+For lifecycle smoke tests, load `test/fixtures/marker.ts`,
+`test/fixtures/forced-prompt.ts`, and `test/fixtures/input-transform.ts` before
+and after this extension. Use an
 `after_provider_response` sentinel to detect provider calls.
 Follow [UI.md](UI.md#responsive-rendering) for the rendering test matrix.
