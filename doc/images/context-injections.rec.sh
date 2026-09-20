@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# s-vhs recording of the usage view: open /context, walk the legend,
-# and preview one category.
+# s-vhs recording of the injections view: open /context injections,
+# walk the items, and preview one of them.
 #
-# Produces doc/images/context-usage.gif
+# Produces context-injections.gif next to this script.
 #
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -13,7 +13,7 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.6.0) && wait "$!" || exit 1
 
 
 ## Constants
@@ -22,8 +22,11 @@ source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 
 # The demo replays one recorded session, so its id and model are pinned
 PI_COMMAND='pi -e . --session 01a07844-4448-77ed-805f-b2d4af9cd00a'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
+PI_COMMAND+=' -e ~/.pi/agent/npm/node_modules/@eko24ive/pi-ask'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
+PI_COMMAND+=' --no-skills'
+PI_COMMAND+=' --offline'
 
 
 ## Configuration
@@ -31,7 +34,8 @@ PI_COMMAND+=' --tui-mode regular'
 
 Require 'pi'
 
-SetOutput "$REPO_ROOT/doc/images/context-usage.gif"
+# The recording lives next to the GIF it produces
+SetOutput "$SCRIPT_DIR/context-injections.gif"
 
 SetCols 80
 SetRows 34
@@ -51,30 +55,32 @@ Start
 
 # Bring pi up off camera, so the GIF opens on an idle TUI
 Run "$PI_COMMAND"
-Wait '• Release v0.2.0' # wait for session name to appear
+Wait '• Release v0\.2\.0' # wait for session name to appear
 
 Show
-
 Sleep 1
 
-# Open the usage view
+# Open the injections view:
+# - the first Enter takes the completion;
+# - the second one submits the command;
 Type '/context'
+Sleep 0.5
+Type ' '
+Sleep 0.5
+Type 'injections'
 Sleep 1
-Enter
-Wait 'Context Usage'
+Enter 2
+
+Wait 'Context Injections'
 Sleep 2
 
-# Walk a few legend categories
-Down 7 0.2
+# Walk the items
+Down 19 0.07
 Sleep 1
-Enter
-Wait 'Tool Calls'
-Sleep 2
 
-# Preview the selected category, scroll through it, then close
-Down 3 0.5
-Sleep 1
-Up 1
+# Preview the selected item, then close
+Enter
+Wait 'ask_user'
 Sleep 3
 
 Escape

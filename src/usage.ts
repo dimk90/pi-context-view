@@ -1,5 +1,5 @@
 /**
- * Pure context-usage classification: combine the frozen Initial snapshot's
+ * Pure context-usage classification: combine the current branch's measured
  * prompt/tool decomposition with the live session messages into estimated
  * category totals. No pi API access — unit-testable.
  */
@@ -32,15 +32,16 @@ export interface UsageInputs {
 
 /**
  * Estimate the current/next-request context composition. Prompt and tool
- * categories come from the frozen Initial snapshot; message categories are
- * classified from the live session context. Empty categories are dropped and
+ * categories come from the caller's current-state snapshot; message categories are
+ * classified from the live session context. System messages have already been
+ * replayed into that snapshot and must not count again. Empty categories are dropped and
  * every aggregate equals the exact sum of its children.
  */
 export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
 	const prompt = classifyPromptCategories(inputs.snapshot);
 	const categories = [
 		...prompt.categories,
-		...classifyMessages(inputs.messages, contextOnlyMessages(inputs.snapshot), prompt.promptAdditions),
+		...classifyMessages(inputs.messages, requestOnlyMessages(inputs.snapshot), prompt.promptAdditions),
 	].filter((category) => category.tokens > 0);
 	return {
 		computedAt: inputs.computedAt ?? new Date(),
@@ -144,17 +145,17 @@ function isMcpTool(item: InjectionItem): boolean {
 	return /(^|[^a-z])mcp([^a-z]|$)/i.test(`${item.source.id} ${item.source.label}`);
 }
 
-/** Collect frozen messages that existed only in the transformed provider context. */
-function contextOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
+/** Collect frozen messages that existed only in the captured outgoing request. */
+function requestOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
 	return snapshot.groups.flatMap((group) =>
-		group.items.filter((item) => item.kind === "message" && item.contextOnly === true)
+		group.items.filter((item) => item.kind === "message" && item.requestOnly === true && item.systemMessage === undefined)
 	);
 }
 
-/** Classify live session messages and frozen context-only injections with preview entries. */
+/** Classify live session messages and frozen request-only injections with preview entries. */
 function classifyMessages(
 	messages: ContextEvent["messages"],
-	contextOnly: readonly InjectionItem[],
+	requestOnly: readonly InjectionItem[],
 	promptAdditions: readonly UsageCategory[],
 ): UsageCategory[] {
 	const user: UsagePreviewEntry[] = [];
@@ -166,7 +167,7 @@ function classifyMessages(
 	const toolResults = new Map<string, UsagePreviewEntry[]>();
 	const customMessages = new Map<string, UsagePreviewEntry[]>();
 
-	for (const item of contextOnly) {
+	for (const item of requestOnly) {
 		appendEntry(customMessages, item.source.label, {
 			breadcrumb: [item.label],
 			tokens: item.tokens,
@@ -176,6 +177,9 @@ function classifyMessages(
 	}
 	for (const message of messages) {
 		switch (message.role) {
+			case "system":
+				// Sections and tool deltas already contribute through the replayed snapshot.
+				break;
 			case "user":
 				user.push({
 					timestamp: message.timestamp,

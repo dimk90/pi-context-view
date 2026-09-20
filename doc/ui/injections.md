@@ -24,11 +24,14 @@ Present Initial contributions in this order:
     with one child per part pi assembles it from, in prompt order: `Preamble`,
     `Available Tools`, `Guidelines`, `Documentation`, `Appended Prompt`
     (`--append-system-prompt` text), `Current Dir`, and `Extension Additions`.
-    Parts pi rendered no text into are absent. A replaced prompt keeps its whole
+    A custom XML section keeps its own tag as the child label, at its actual
+    position, including after `Current Dir`. Parts pi rendered no text into are
+    absent. A replaced prompt keeps its whole
     body as the `Preamble` part and still lists `Available Tools`, `Guidelines`,
     and `Documentation`, each at 0 tokens with the
     [`Dropped` marker](../UI.md#color-and-casing) after its estimate, so the
-    tree shows what the replacement gave up. `Extension Additions` holds no
+    tree shows what the replacement gave up; a section the replacement kept is
+    an ordinary part instead. `Extension Additions` holds no
     counted text of its own: it always reads 0 tokens and exists to present the
     additions its owners count. Structurally recovered `Available Tools` and
     `Guidelines` blocks remain System Prompt children, at their actual prompt
@@ -68,7 +71,9 @@ The list description survives scrolling, per the floor in
 [Descriptions](../UI.md#descriptions); the `(current/total)` counter never
 collapses it by itself. When capture is degraded, wrap the precise reason below
 the header and show a `[Degraded: …]` indicator beside the description, keeping
-the fallback hierarchy usable.
+the fallback hierarchy usable. Below both, the description block ends with one
+[legend bullet](previews.md#marker-legend) per marker the rows carry — `Dropped`,
+`Moved`, or neither — and collapses with the rest of the block.
 
 ## Injection preview
 

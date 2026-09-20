@@ -3,7 +3,7 @@
 # s-vhs recording of one Context Usage panel repainted by each example category
 # palette in turn: default, terrain, rainbow, two seconds each.
 #
-# Produces doc/images/palettes.gif
+# Produces palettes.gif next to this script.
 #
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -13,7 +13,7 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.6.0) && wait "$!" || exit 1
 
 
 ## Constants
@@ -24,6 +24,7 @@ PI_COMMAND='pi -e . --session 01a07844-4448-77ed-805f-b2d4af9cd00a'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
+PI_COMMAND+=' --offline'
 
 # Palette names from doc/palettes to record in addition to default palette
 PALETTES=('terrain' 'rainbow')
@@ -103,7 +104,8 @@ apply_palette() {
 
 Require 'pi'
 
-SetOutput "$REPO_ROOT/doc/images/palettes.gif"
+# The recording lives next to the GIF it produces
+SetOutput "$SCRIPT_DIR/palettes.gif"
 
 # Sized for pi.dev: 1546 x 967 px with this font, matching the 1.6 aspect ratio suitable for pi.dev.
 # Rows stay at the palette panels' 25, which holds the whole usage view.
@@ -134,7 +136,7 @@ Start
 
 # Bring pi and the first palette up off camera, so the GIF opens on the panel
 Run "$PI_COMMAND"
-Wait '• Release v0.2.0' # wait for session name to appear
+Wait '• Release v0\.2\.0' # wait for session name to appear
 
 # Record default palette first
 Run '/context'
@@ -151,7 +153,7 @@ Escape
 for palette in "${PALETTES[@]}"; do
     apply_palette "$palette" || return 1
 
-    Wait '• Release v0.2.0' # wait for session name to appear
+    Wait '• Release v0\.2\.0' # wait for session name to appear
     Run '/context'
     Wait 'Context Usage'
     Key 'z'         # turn zoom mode on

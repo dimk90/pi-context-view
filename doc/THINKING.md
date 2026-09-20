@@ -15,6 +15,12 @@ state, previews, or logs. Its character count supplies only a rough fallback
 proxy, which is excluded
 from category totals.
 
+Pi also uses `textSignature` on assistant text blocks for provider metadata:
+Gemini can store an opaque reasoning envelope there, while other providers
+may store message identifiers. Omit this field from captured previews too,
+without changing the provider-bound message or similarly named tool arguments.
+Preview redaction does not add `textSignature` to the signature-size proxy below.
+
 ## Counting architecture
 
 The estimator accounts for thinking once per assistant message. It computes:

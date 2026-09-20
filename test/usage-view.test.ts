@@ -8,7 +8,9 @@ import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
 	type CategoryColors,
 	DEFAULT_CATEGORY_COLORS,
+	DEFAULT_MAP_SIZE,
 	FREE_SPACE_CATEGORY_ID,
+	type MapSize,
 } from "../src/config.ts";
 import type { ContextUsageSnapshot } from "../src/model.ts";
 import { formatPercent, formatTokens, UsageView, type UsageViewInput } from "../src/ui/usage-view.ts";
@@ -119,19 +121,29 @@ function stripSgr(text: string): string {
 	return text.replace(/\u001b\[[\d;]*m/g, "");
 }
 
-/** Build a view over the built-in colors unless a test overrides them. */
+/** Build a view over the built-in colors and map size unless a test overrides them. */
 function createView(
 	theme: Theme,
-	input: Omit<UsageViewInput, "categoryColors"> & { readonly categoryColors?: CategoryColors },
+	input: Omit<UsageViewInput, "categoryColors" | "mapSize"> & {
+		readonly categoryColors?: CategoryColors;
+		readonly mapSize?: MapSize;
+	},
 	done: (result: undefined) => void,
 	getTerminalRows?: () => number,
 	wheelScrollLines?: number,
 ): UsageView {
 	const colors = input.categoryColors ?? DEFAULT_CATEGORY_COLORS;
-	return new UsageView(theme, { ...input, categoryColors: colors }, done, getTerminalRows, wheelScrollLines);
+	const mapSize = input.mapSize ?? DEFAULT_MAP_SIZE;
+	return new UsageView(
+		theme,
+		{ ...input, categoryColors: colors, mapSize },
+		done,
+		getTerminalRows,
+		wheelScrollLines,
+	);
 }
 
-test("UsageView renders the 14x14 map and matching category legend with semantic colors", () => {
+test("UsageView renders the 16x16 map and matching category legend with semantic colors", () => {
 	// Tall enough for the whole legend to sit beside the map without scrolling.
 	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 33);
 	const lines = view.render(80);
@@ -142,20 +154,21 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.match(lines[2] ?? "", /\u001b\[38;2;1;2;3m.*Context Usage/);
 	assert.match(lines[2] ?? "", /\u001b\[38;2;7;8;9mclaude-opus-4-8/);
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
-	assert.match(plain[4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){13}\s+Category:$/);
+	assert.match(plain[4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){15}\s+Category:$/);
 	// The key trails the more important legend, separated by one empty detail row.
 	const mapKeyIndex = plain.findIndex((line) => line.includes("Map:"));
 	assert.equal(mapKeyIndex, 22);
 	assert.match(plain[mapKeyIndex - 2] ?? "", /⛶ Free Space/);
-	assert.match(plain[mapKeyIndex - 1] ?? "", /^\s*$/);
-	assert.match(plain[mapKeyIndex] ?? "", /^\s+Map:$/);
-	assert.match(plain[mapKeyIndex + 1] ?? "", /^\s+■ - Single category block$/);
-	assert.match(plain[mapKeyIndex + 2] ?? "", /^\s+◧ - Shared block, largest category shown$/);
-	assert.match(plain[mapKeyIndex + 3] ?? "", /^\s+⛶ - Block Size: 5\.1k \(0\.5%\)$/);
+	// The default map ends above the key, leaving its separator row empty.
+	assert.equal(plain[mapKeyIndex - 1]?.trim(), "");
+	assert.match(plain[mapKeyIndex] ?? "", /\s+Map:$/);
+	assert.match(plain[mapKeyIndex + 1] ?? "", /\s+■ - Single category block$/);
+	assert.match(plain[mapKeyIndex + 2] ?? "", /\s+◧ - Shared block, largest category shown$/);
+	assert.match(plain[mapKeyIndex + 3] ?? "", /\s+⛶ - Block Size: 3\.9k \(0\.4%\)$/);
 	assert.doesNotMatch(plain[mapKeyIndex] ?? "", /Compacted|Free/);
 	// The block size stays muted at Window scale; only the Fit toggle highlights it.
-	assert.match(lines[mapKeyIndex + 3] ?? "", /\u001b\[38;2;7;8;9m5\.1k \(0\.5%\)/);
-	assert.equal(plain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){13}/.test(line)).length, 14);
+	assert.match(lines[mapKeyIndex + 3] ?? "", /\u001b\[38;2;7;8;9m3\.9k \(0\.4%\)/);
+	assert.equal(plain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){15}/.test(line)).length, 16);
 	assert.ok(plain.some((line) => /■ System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
 	assert.ok(plain.some((line) => /■ Tool Output \.{2,}\s+5k\s+0\.5%/.test(line)));
 	assert.ok(plain.some((line) => /⛶ Free Space \.{2,}\s+956\.2k\s+96%/.test(line)));
@@ -227,6 +240,36 @@ test("UsageView renders the 14x14 map and matching category legend with semantic
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
+test("UsageView renders a configured map size and clamps it to the viewport", () => {
+	const mapSize = { columns: 20, rows: 24 };
+	const view = createView(createTheme(), { usage: usage(), mapSize }, () => {}, () => 60);
+	const plain = view.render(100).map(stripSgr);
+
+	assert.equal(plain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){19}/.test(line)).length, 24);
+	// Block Size follows the configured geometry: 1M over 480 cells.
+	assert.ok(plain.some((line) => line.endsWith("⛶ - Block Size: 2.1k (0.2%)")));
+
+	// A short terminal rebuilds the map with fewer rows instead of cropping its tail.
+	const short = createView(createTheme(), { usage: usage(), mapSize }, () => {}, () => 20);
+	const shortPlain = short.render(100).map(stripSgr);
+	assert.equal(shortPlain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){19}/.test(line)).length, 12);
+
+	// A narrow terminal drops columns, leaving the legend its minimum width.
+	const wide = createView(
+		createTheme(),
+		{ usage: usage(), mapSize: { columns: 40, rows: 10 } },
+		() => {},
+		() => 40,
+	);
+	const widePlain = wide.render(60).map(stripSgr);
+	const mapLines = widePlain.filter((line) => /^  [■◧▦⛶]{24}\s/.test(line));
+	assert.equal(mapLines.length, 10);
+	assert.ok(
+		widePlain.some((line) => /→ ■ System Prompt \.* 3\.7k\s+0\.4%$/.test(line)),
+		"the legend keeps whole labels and both value columns",
+	);
+});
+
 test("UsageView applies configured colors to category, buffer, and free-space markers", () => {
 	const categoryColors = new Map(DEFAULT_CATEGORY_COLORS);
 	categoryColors.set("system-prompt", "success");
@@ -250,10 +293,11 @@ test("UsageView applies configured colors to category, buffer, and free-space ma
 	assert.match(lines[outputLine] ?? "", /\u001b\[38;2;128;255;1m■/);
 	assert.match(lines[bufferLine] ?? "", /\u001b\[38;2;19;20;21m⛝/);
 	assert.match(lines[freeLine] ?? "", /\u001b\[38;2;58;59;60m⛶/);
-	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;55;56;57m■/.test(line)));
-	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;128;255;1m[■◧]/.test(line)));
-	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;19;20;21m⛝/.test(line)));
-	assert.ok(lines.slice(4, 18).some((line) => /\u001b\[38;2;58;59;60m⛶/.test(line)));
+	const mapLines = lines.slice(4, 4 + DEFAULT_MAP_SIZE.rows);
+	assert.ok(mapLines.some((line) => /\u001b\[38;2;55;56;57m■/.test(line)));
+	assert.ok(mapLines.some((line) => /\u001b\[38;2;128;255;1m[■◧]/.test(line)));
+	assert.ok(mapLines.some((line) => /\u001b\[38;2;19;20;21m⛝/.test(line)));
+	assert.ok(mapLines.some((line) => /\u001b\[38;2;58;59;60m⛶/.test(line)));
 });
 
 test("UsageView renders sanitized notices above the dashboard and caps the block", () => {
@@ -282,7 +326,7 @@ test("UsageView renders sanitized notices above the dashboard and caps the block
 	assert.match(lines[4] ?? "", /\u001b\[38;2;19;20;21m/);
 	assert.doesNotMatch(lines[5] ?? "", /\u001b\[31m/);
 	assert.ok(!plain.some((line) => line.includes("skillsColor")));
-	assert.ok(plain.some((line) => /^  [■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
+	assert.ok(plain.some((line) => /^  [■◧▦⛶]( [■◧▦⛶]){15}/.test(line)));
 });
 
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
@@ -290,8 +334,8 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	const view = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
 	const windowFrame = view.render(80);
 	const windowPlain = windowFrame.map(stripSgr);
-	const windowMap = windowPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
-	const windowCells = windowMap.flatMap((line) => line.slice(2, 2 + 14 * 2 - 1).split(" "));
+	const windowMap = windowPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
+	const windowCells = windowMap.flatMap((line) => line.slice(2, 2 + 16 * 2 - 1).split(" "));
 
 	assert.ok(!windowPlain.some((line) => line.includes("Zoom 1M")));
 	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · Esc Close")));
@@ -300,8 +344,8 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	view.handleInput("z");
 	const fitFrame = view.render(80);
 	const fitPlain = fitFrame.map(stripSgr);
-	const fitMap = fitPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
-	const fitCells = fitMap.flatMap((line) => line.slice(2, 2 + 14 * 2 - 1).split(" "));
+	const fitMap = fitPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
+	const fitCells = fitMap.flatMap((line) => line.slice(2, 2 + 16 * 2 - 1).split(" "));
 
 	assert.notDeepEqual(fitFrame, windowFrame, "the scale toggle invalidates the same-width render cache");
 	assert.match(
@@ -314,10 +358,10 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 		"Fit makes estimated occupancy legible",
 	);
 	// Only the token value follows the scale: the share of the mapped range is one cell of the grid.
-	assert.ok(fitPlain.some((line) => line.endsWith("⛶ - Block Size: 260 (0.5%)")), "Fit shrinks the block size");
+	assert.ok(fitPlain.some((line) => line.endsWith("⛶ - Block Size: 199 (0.4%)")), "Fit shrinks the block size");
 	assert.match(
 		fitFrame.find((line) => stripSgr(line).includes("Block Size")) ?? "",
-		/\u001b\[38;2;22;23;24m260 \(0\.5%\)/,
+		/\u001b\[38;2;22;23;24m199 \(0\.4%\)/,
 		"Fit highlights the block size like the header zoom label",
 	);
 	assert.ok(fitPlain.some((line) => /⛝ Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/.test(line)));
@@ -352,21 +396,21 @@ test("UsageView collapses the description, then the map key, before the legend l
 	const view = createView(createTheme(), { usage: usage() }, () => {}, () => rows);
 	const full = view.render(80).map(stripSgr);
 	assert.ok(full.some((line) => line.includes("Estimated context for the next model request")));
-	assert.ok(full.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
+	assert.ok(full.some((line) => line.endsWith("⛶ - Block Size: 3.9k (0.4%)")));
 
 	// One row short of the complete frame, the description goes whole and the key stays intact.
 	rows = 32;
 	const descriptionless = view.render(80).map(stripSgr);
 	assert.ok(!descriptionless.some((line) => line.includes("Estimated context")));
-	assert.ok(descriptionless.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
+	assert.ok(descriptionless.some((line) => line.endsWith("⛶ - Block Size: 3.9k (0.4%)")));
 	const hintsIndex = descriptionless.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.equal(hintsIndex, descriptionless.length - 3, "the hints keep their place below one blank row");
 	assert.equal(descriptionless[hintsIndex - 1], "", "the description takes its separating blank row with it");
 
 	rows = 29;
-	const compact = view.render(80).map(stripSgr);
+	const compact = view.render(84).map(stripSgr);
 	assert.ok(compact.some((line) =>
-		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)")
+		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 3.9k (0.4%)")
 	));
 	assert.ok(!compact.some((line) => line.includes("Block Size")));
 	assert.ok(compact.some((line) => line.includes("⛶ Free Space")), "the whole legend still fits");
@@ -377,12 +421,12 @@ test("UsageView collapses the description, then the map key, before the legend l
 	);
 
 	// The key drops the percentage before shortening its occupancy description.
-	const withoutPercent = view.render(72).map(stripSgr);
+	const withoutPercent = view.render(80).map(stripSgr);
 	assert.ok(withoutPercent.some((line) =>
-		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 5.1k")
+		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 3.9k")
 	));
 	const narrow = view.render(52).map(stripSgr);
-	assert.ok(narrow.some((line) => line.endsWith("Map: ■ One · ◧ Mixed · ⛶ 5.1k")));
+	assert.ok(narrow.some((line) => line.endsWith("Map: ■ One · ◧ Mixed · ⛶ 3.9k")));
 
 	rows = 26;
 	const keyless = view.render(80).map(stripSgr);
@@ -493,11 +537,11 @@ test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space
 	assert.match(plain[bufferIndex - 1] ?? "", /Compacted Data/);
 
 	// The map's tail cells use the buffer glyph after the free cells.
-	const mapRows = plain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){13}/.test(line));
-	const mapCells = mapRows.flatMap((line) => line.slice(2, 2 + 14 * 2 - 1).split(" "));
-	assert.equal(mapCells.length, 196);
+	const mapRows = plain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
+	const mapCells = mapRows.flatMap((line) => line.slice(2, 2 + 16 * 2 - 1).split(" "));
+	assert.equal(mapCells.length, 256);
 	const lastBuffer = mapCells.lastIndexOf("⛝");
-	assert.ok(lastBuffer === 195, "buffer cells sit at the very end of the map");
+	assert.ok(lastBuffer === 255, "buffer cells sit at the very end of the map");
 	const firstBuffer = mapCells.indexOf("⛝");
 	assert.ok(mapCells.slice(firstBuffer).every((cell) => cell === "⛝"), "buffer cells are contiguous");
 	assert.equal(mapCells[firstBuffer - 1], "⛶", "free cells precede the buffer");
@@ -676,7 +720,7 @@ test("UsageView opens a category block stream and skips full previews for comple
 	assert.equal(plain[searchHeader + 2], "");
 	assert.equal(plain[readHeader + 1], "    read result content line");
 	assert.equal(plain[readHeader + 2], "    second line");
-	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){13}/.test(line)));
+	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){15}/.test(line)));
 	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(hintIndex > 0);
 	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Navigate · PgUp\/PgDn Page · Esc Back/);
@@ -1713,9 +1757,9 @@ test("UsageView respects width and height changes", () => {
 		}
 	}
 	const compactMap = view.render(60).map(stripSgr);
-	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{14}\s+Category:$/.test(line)));
-	assert.ok(compactMap.some((line) => /^\s+Map:$/.test(line)));
-	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size: 5.1k (0.5%)")));
+	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{16}\s+Category:$/.test(line)));
+	assert.ok(compactMap.some((line) => /\s+Map:$/.test(line)));
+	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size: 3.9k (0.4%)")));
 	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
 	const categoryOnly = view.render(40).map(stripSgr);
 	assert.equal(categoryOnly[2], "Context Usage");
@@ -1725,7 +1769,7 @@ test("UsageView respects width and height changes", () => {
 	assert.ok(categoryOnly.some((line) => line.startsWith("→ ■ System")));
 	assert.ok(!categoryOnly.some((line) => line.includes("claude-opus-4-8")));
 	assert.ok(!categoryOnly.some((line) => line.includes("Map:")));
-	assert.ok(!categoryOnly.some((line) => /[■◧▦⛶]{14}/.test(line)));
+	assert.ok(!categoryOnly.some((line) => /[■◧▦⛶]{16}/.test(line)));
 
 	const tall = view.render(40);
 	assert.equal(tall.length, 36);

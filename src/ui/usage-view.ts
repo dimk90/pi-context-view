@@ -12,6 +12,7 @@ import {
 	type CategoryColor,
 	type CategoryColors,
 	FREE_SPACE_CATEGORY_ID,
+	type MapSize,
 	resolveCategoryColor,
 } from "../config.ts";
 import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../model.ts";
@@ -37,16 +38,9 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { injectedDescriptionLines, previewBodyLines } from "./section-preview.ts";
+import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
-import {
-	buildUsageMap,
-	calculateFitMapScale,
-	DEFAULT_MAP_COLUMNS,
-	DEFAULT_MAP_ROWS,
-	type UsageMap,
-	type UsageMapCell,
-} from "./usage-map.ts";
+import { buildUsageMap, calculateFitMapScale, type UsageMap, type UsageMapCell } from "./usage-map.ts";
 import { BlockNavigator, layoutPreviewBlocks, type PreviewLayout } from "./usage-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
@@ -78,6 +72,12 @@ const MAP_SIDE_BY_SIDE_MIN_WIDTH = 52;
 const SPACED_MAP_MIN_WIDTH = 72;
 const MAP_COLUMN_GAP = 2;
 const SPACED_MAP_COLUMN_GAP = 3;
+/**
+ * Columns the legend keeps beside the map, so a wide configured map never
+ * squeezes its labels out. The default geometry fits beside it at every width
+ * that renders a map at all.
+ */
+const MIN_DETAIL_WIDTH = 32;
 const FULL_CELL = "■";
 const PARTIAL_CELL = "◧";
 const COMPACTED_CELL = "▦";
@@ -100,6 +100,8 @@ export interface UsageViewInput {
 	readonly notices?: readonly string[];
 	/** Category colors resolved from user overrides, or `DEFAULT_CATEGORY_COLORS`. */
 	readonly categoryColors: CategoryColors;
+	/** Map geometry requested by configuration; the viewport clamps it per frame. */
+	readonly mapSize: MapSize;
 }
 
 /** View-local denominator selected for the context map. */
@@ -308,8 +310,8 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const prefix = [border, "", ...this.headerLines(width), "", ...this.noticeLines(width)];
-		const map = this.dashboardMap();
 		const availableRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT);
+		const map = this.dashboardMap(width, availableRows);
 		const descriptionLines = this.dashboardDescriptionLines(width, availableRows, map);
 		const dashboardRows = Math.max(1, availableRows - descriptionBlockRows(descriptionLines));
 		const dashboard = this.dashboardLines(width, dashboardRows, map).slice(0, dashboardRows);
@@ -436,10 +438,19 @@ export class UsageView {
 		return Math.max(map.rows, detailRows + MAP_KEY_DETAILED_SPARE_ROWS);
 	}
 
-	/** Map for the active scale, or undefined without a usable context window. */
-	private dashboardMap(): UsageMap | undefined {
+	/**
+	 * Map for the active scale at the largest configured geometry this frame can
+	 * render, or undefined without a usable context window or map width. Clamping
+	 * rebuilds the proportions instead of cropping cells, so a map too large for
+	 * the viewport still maps the whole scale.
+	 */
+	private dashboardMap(width: number, availableRows: number): UsageMap | undefined {
+		const requested = this.input.mapSize;
+		const columns = Math.min(requested.columns, maxMapColumns(width));
+		const rows = Math.min(requested.rows, availableRows);
+		if (columns < 1 || rows < 1) return undefined;
 		const scaleTokens = this.mapScale === "fit" ? this.fitMapScale : undefined;
-		return buildUsageMap(this.usage, DEFAULT_MAP_COLUMNS, DEFAULT_MAP_ROWS, scaleTokens);
+		return buildUsageMap(this.usage, columns, rows, scaleTokens);
 	}
 
 	/** Render the map and legend side by side, or only details when width/window data is insufficient. */
@@ -878,7 +889,7 @@ export class UsageView {
 		const fixedLineCount = showEntryHeader ? BLOCK_FIXED_LINE_COUNT : PREVIEW_FIXED_LINE_COUNT;
 		const descriptionLines = row.rootId === "assistant-thinking" && this.openBlockIndex === undefined
 			? this.thinkingDescriptionLines(width, row)
-			: injectedDescriptionLines(theme, [entry], {
+			: previewLegendLines(theme, [entry], {
 				width,
 				availableRows: terminalRows - fixedLineCount,
 				contentLineCount: body.length,
@@ -1071,19 +1082,17 @@ export class UsageView {
 		return cells.join(" ");
 	}
 
-	/** Attribution collapses around uncapped content geometry; reasoning notation keeps its existing fixed footer. */
+	/** The legend collapses around uncapped content geometry; reasoning notation keeps its existing fixed footer. */
 	private previewDescriptionLines(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
-		if (row.rootId === "system-prompt") {
-			// Count entry headers and separator rows before applying the footer-dependent cap
-			const contentLineCount = this.previewContent(width, row)
-				.reduce((total, lines) => total + lines.length + 2, -1);
-			return injectedDescriptionLines(this.theme, this.previewEntries(row), {
-				width,
-				availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
-				contentLineCount: Math.max(1, contentLineCount),
-			});
-		}
-		return this.thinkingDescriptionLines(width, row);
+		if (row.rootId === "assistant-thinking") return this.thinkingDescriptionLines(width, row);
+		// Count entry headers and separator rows before applying the legend-dependent cap
+		const contentLineCount = this.previewContent(width, row)
+			.reduce((total, lines) => total + lines.length + 2, -1);
+		return previewLegendLines(this.theme, this.previewEntries(row), {
+			width,
+			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
+			contentLineCount: Math.max(1, contentLineCount),
+		});
 	}
 
 	/** Keep reasoning notation visible when the category opens as blocks or direct full content. */
@@ -1159,6 +1168,20 @@ function buildCategoryLegendRows(categories: readonly UsageCategory[]): Category
 		}
 	}
 	return rows;
+}
+
+/**
+ * Map cells one frame can place beside the legend, using the same spacing tier
+ * the map renders with and reserving the legend's minimum width. Zero below the
+ * side-by-side width, where no map renders at all.
+ */
+function maxMapColumns(width: number): number {
+	if (width < MAP_SIDE_BY_SIDE_MIN_WIDTH) return 0;
+	const spaced = width >= SPACED_MAP_MIN_WIDTH;
+	const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
+	// Spaced cells cost two columns each, except the last one, which has no trailing space.
+	const available = width - BODY_INDENT.length - gap - MIN_DETAIL_WIDTH + (spaced ? 1 : 0);
+	return Math.max(0, Math.floor(available / (spaced ? 2 : 1)));
 }
 
 /**

@@ -59,13 +59,24 @@ They render here rather than through a notification, which the overlay hides.
 
 ## Context map
 
-The overview pairs a proportional map, `DEFAULT_MAP_COLUMNS` ×
-`DEFAULT_MAP_ROWS` (14×14) cells by default, with an interactive category
-legend. Map geometry is an input rather than a constant: derive the key, Block
-Size, and every layout decision from the live geometry, and clamp a requested
-size to what the viewport can render, so
-[Responsive rendering](../UI.md#responsive-rendering) always wins over a
-requested size.
+The overview pairs a proportional map of `DEFAULT_MAP_SIZE` (16 × 16) cells by
+default with an interactive category legend. Map geometry is an
+input rather than a constant: derive the key, Block Size, and every layout
+decision from the live geometry, and clamp a requested size to what the viewport
+can render, so [Responsive rendering](../UI.md#responsive-rendering) always wins
+over a requested size.
+
+The configured `mapCols` and `mapRows` ([configuration
+contract](../ARCHITECTURE.md#configuration)) request a size; each frame renders
+the largest geometry that still fits:
+
+- columns shrink until the legend keeps `MIN_DETAIL_WIDTH` (32) columns beside
+  the map, counting the map indent and the spacing-tier column gap;
+- rows shrink to the dashboard rows the terminal height leaves.
+
+Clamping rebuilds the map at the smaller geometry instead of cropping cells, so
+the visible map always maps the whole scale, and Block Size always describes the
+rendered grid. The default size never clamps at any width that renders a map.
 
 Cells use themed `■` for full occupancy, `◧` for partial occupancy, `▦` for
 compacted data, `⛝` for the auto-compact buffer, and `⛶` for free space. Each
@@ -81,7 +92,7 @@ scroll counter, separated by one empty detail row:
 Map:
   ■ - Single category block
   ◧ - Shared block, largest category shown
-  ⛶ - Block Size: 5.1k (0.5%)
+  ⛶ - Block Size: 3.9k (0.4%)
 ```
 
 Compacted, buffer, and free glyphs need no key row, because their category rows
@@ -98,7 +109,7 @@ detail column minus the `Category:` heading and every legend row:
 
 - `MAP_KEY_DETAILED_SPARE_ROWS` (5) or more spare rows: the full key;
 - `MAP_KEY_COMPACT_SPARE_ROWS` (2) to 4: the single-line
-  `Map: ■ One category · ◧ Mixed · ⛶ 5.1k (0.5%)` key, dropping the percentage
+  `Map: ■ One category · ◧ Mixed · ⛶ 3.9k (0.4%)` key, dropping the percentage
   and then shortening `One category` to `One` before the line would truncate;
 - fewer than 2: no key.
 
@@ -111,7 +122,10 @@ When auto-compaction is enabled, the tail of the map shows the settings
 never occupy because compaction triggers first. The buffer shrinks once
 estimated content grows into the reserve, and disappears when auto-compaction is
 disabled or settings are unreadable. Read the reserve from pi's merged
-global/project settings at view-open time, honoring project trust. At Fit scale
+global/project settings at view-open time, honoring project trust and the
+current model: `compaction.modelOverrides["<provider>/<id>"].reserveTokens`
+wins over `compaction.reserveTokens`, which wins over pi's default. A model
+switch changes the buffer on the next open. At Fit scale
 the reserve lies past the mapped range, so no `⛝` cells render while the
 `⛝ Auto-Compact Buffer` legend row remains.
 
@@ -214,8 +228,9 @@ When the selected category contains exactly one preview entry, including across
 its children, Enter opens that entry's full, uncapped content directly. This
 applies to every category, including System Prompt and individual Tool Output
 rows, regardless of content length. Keep the category summary and entry identity
-header, labeled parts, expanded marked JSON, skill badges, and applicable
-attribution or reasoning explanation. Token estimates remain unchanged.
+header, labeled parts, expanded marked JSON, skill badges, and the applicable
+[marker legend](previews.md#marker-legend) or reasoning explanation. Token
+estimates remain unchanged.
 
 There is no selection gutter, block cap, hidden-line marker, or second Enter
 level. Use the full-content scrolling keys and hints below, with a line-progress

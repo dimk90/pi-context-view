@@ -52,12 +52,15 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 		["compactedDataColor", "thinkingHigh"],
 		["autoCompactBufferColor", "dim"],
 		["freeSpaceColor", "dim"],
+		["mapCols", 16],
+		["mapRows", 16],
 	]);
 	assert.deepEqual(readdirSync(dirname(filePath)), ["pi-context-view.json"]);
 
 	const loaded = loadConfigFile(filePath);
 	assert.deepEqual(loaded.warnings, []);
 	assert.deepEqual(loaded.config.categoryColors, DEFAULT_CONFIG.categoryColors);
+	assert.deepEqual(loaded.config.mapSize, DEFAULT_CONFIG.mapSize);
 
 	// Repeating the command hits the write's EEXIST, the only branch that may report "exists".
 	assert.deepEqual(createDefaultConfigFile(filePath), { type: "exists", filePath });
@@ -202,6 +205,36 @@ test("loadConfigFile ignores invalid entries without discarding valid siblings",
 	assert.ok(result.warnings.some((warning) => warning.includes("instructionFilesColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("userMessagesColor")));
 	assert.ok(result.warnings.some((warning) => warning.includes("unknownColor")));
+});
+
+test("loadConfigFile applies map size overrides", (context) => {
+	const filePath = createConfigPath(context);
+	writeFileSync(filePath, JSON.stringify({ mapCols: 24, mapRows: 8 }));
+
+	const result = loadConfigFile(filePath);
+
+	assert.deepEqual(result.warnings, []);
+	assert.deepEqual(result.config.mapSize, { columns: 24, rows: 8 });
+});
+
+test("loadConfigFile keeps the default for an unusable map size and warns once", (context) => {
+	const filePath = createConfigPath(context);
+	const cases: Array<readonly [string, unknown]> = [
+		["below the minimum", 1],
+		["above the maximum", 65],
+		["fractional", 12.5],
+		["a numeric string", "12"],
+	];
+
+	for (const [reason, value] of cases) {
+		writeFileSync(filePath, JSON.stringify({ mapCols: value, mapRows: 12 }));
+		const result = loadConfigFile(filePath);
+
+		assert.deepEqual(result.config.mapSize, { columns: DEFAULT_CONFIG.mapSize.columns, rows: 12 }, reason);
+		assert.deepEqual(result.warnings, [
+			'Ignoring invalid size for "mapCols"; expected an integer between 4 and 64.',
+		], reason);
+	}
 });
 
 /** Every renamed config key with the current name and the category both color. */

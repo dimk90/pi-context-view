@@ -1,13 +1,11 @@
 /**
- * Pure proportional-cell model for the Usage view's 14×14 context map. The
- * map uses estimated category totals against the selected Window/Fit scale.
- * Pi's separately reported occupied tokens may differ because of tokenizer,
- * serialization, caching, and last-response timing.
+ * Pure proportional-cell model for the Usage view's context map. Geometry is
+ * an input: the caller clamps the configured cell counts to what the viewport
+ * can render. The map uses estimated category totals against the selected
+ * Window/Fit scale. Pi's separately reported occupied tokens may differ
+ * because of tokenizer, serialization, caching, and last-response timing.
  */
 import type { ContextUsageSnapshot } from "../model.ts";
-
-export const DEFAULT_MAP_COLUMNS = 14;
-export const DEFAULT_MAP_ROWS = 14;
 
 const FIT_SCALE_PERCENT = 115;
 const PERCENT_DENOMINATOR = 100;
@@ -56,8 +54,8 @@ export function calculateFitMapScale(usage: ContextUsageSnapshot): number | unde
  */
 export function buildUsageMap(
 	usage: ContextUsageSnapshot,
-	columns = DEFAULT_MAP_COLUMNS,
-	rows = DEFAULT_MAP_ROWS,
+	columns: number,
+	rows: number,
 	scaleTokens?: number,
 ): UsageMap | undefined {
 	const contextWindow = usage.reported?.contextWindow;

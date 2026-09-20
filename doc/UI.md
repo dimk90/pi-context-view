@@ -12,7 +12,7 @@ touches:
 | Document | Covers |
 | --- | --- |
 | This file | Frame, color, casing, descriptions, interaction, responsive rendering |
-| [ui/previews.md](ui/previews.md) | Labeled parts, restored extension lines, attribution footer, repeated headings, marked JSON |
+| [ui/previews.md](ui/previews.md) | Labeled parts, restored extension lines, marker legend, repeated headings, marked JSON |
 | [ui/usage.md](ui/usage.md) | Context Usage: header, notices, map, map scale, legend, category preview |
 | [ui/injections.md](ui/injections.md) | Context Injections: contribution tree, injection preview |
 
@@ -27,7 +27,8 @@ is authoritative.
 | Usage rendering and interaction | `src/ui/usage-view.ts` |
 | Usage entry and block model | `src/ui/usage-preview.ts` |
 | Injections tree model / rendering | `src/ui/injections-model.ts`, `src/ui/injections-view.ts` |
-| Labeled parts, attribution footer | `src/ui/section-preview.ts` |
+| Labeled parts, preview legend | `src/ui/section-preview.ts` |
+| State markers and legend bullets | `src/ui/markers.ts` |
 | Marked JSON, skill badges, wheel | `src/ui/json-preview.ts`, `src/ui/skill-preview.ts`, `src/ui/wheel.ts` |
 
 ## Style rules
@@ -60,13 +61,23 @@ colors. Use pi's injected keybindings, `matchesKey`, ANSI-aware width helpers,
 render caching, and theme invalidation.
 
 Content a `--system-prompt` replacement dropped carries a fixed `toolDiffRemoved`
-` · Dropped` marker directly after the estimate it explains, in hierarchy rows
+`Dropped` marker directly after the estimate it explains, in hierarchy rows
 and preview subheaders alike. It marks a state rather than a usage category, so
 it is never configurable, and its 0-token entries never color map cells. A row
 too narrow for the whole marker drops it instead of truncating it.
 
+Every marker keyword hangs off a `dim` ` · ` separator: like the ` · ` joining
+hint pairs and header labels, the separator is punctuation and never takes the
+color of the text around it. Only the keyword carries the marker's fixed color.
+
+Every frame showing a marker also explains it, through the
+[marker legend](ui/previews.md#marker-legend) in its description block. A legend
+bullet opens with the keyword in the same fixed color as the marker it explains,
+so `Highlighted` uses `syntaxNumber`, `(guess)` `dim`, `Dropped`
+`toolDiffRemoved`, and `Moved` `warning`.
+
 Recovered `Available Tools` and `Guidelines` blocks outside pi's normal order
-carry a fixed `warning` ` · Moved` marker after the estimate, in hierarchy rows,
+carry a fixed `warning` `Moved` marker after the estimate, in hierarchy rows,
 preview subheaders, and the standalone part preview's metadata. A narrow row or
 standalone header omits the whole marker when it will not fit. It describes
 position, not ownership or a dropped contribution: these parts count normally,
@@ -98,7 +109,7 @@ partial and never ellipsized.
 | --- | --- |
 | Usage dashboard | Map, complete legend, and full key all fit |
 | Injections list | `LIST_DESCRIPTION_MIN_ROWS` (26) rows visible, or a shorter list in full |
-| Attribution footer | `DESCRIPTION_MIN_CONTENT_ROWS` (22) content rows visible, or a shorter preview in full |
+| Preview marker legend | `DESCRIPTION_MIN_CONTENT_ROWS` (22) content rows visible, or a shorter preview in full |
 
 Hints, borders, capture warnings, and configuration notices are not descriptions
 and never collapse. The Injections `[Degraded: …]` indicator belongs to its
@@ -156,4 +167,5 @@ UI cases `pnpm check` must cover, beyond the general matrix in
 - description collapse and restoration, with no height rendering a partial one;
 - both map scales, the header label's line-splitting fallback, the conditions
   hiding the zoom binding, and every map-key degradation;
+- a configured map size larger than the width and the height can render;
 - overflow navigation, preview return position, and theme invalidation.

@@ -32,7 +32,8 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { droppedMarker, injectedDescriptionLines, movedMarker, previewBodyLines } from "./section-preview.ts";
+import { type ContextMarker, droppedMarker, markerLegendLines, movedMarker } from "./markers.ts";
+import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 /**
@@ -264,7 +265,7 @@ export class InjectionsView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const wrapped = this.getPreviewLines(width, item);
-		const descriptionLines = injectedDescriptionLines(theme, [item], {
+		const descriptionLines = previewLegendLines(theme, [item], {
 			width,
 			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
 			contentLineCount: wrapped.length,
@@ -489,7 +490,10 @@ export class InjectionsView {
 		return viewport.visibleCount >= floor ? lines : [];
 	}
 
-	/** Wrapped dialog description, including the degraded-capture indicator when needed. */
+	/**
+	 * Wrapped dialog description: the list sentence, the degraded-capture
+	 * indicator when needed, and one legend bullet per marker the rows show.
+	 */
 	private descriptionLines(width: number): string[] {
 		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "dim", width);
 		if (this.input.degradedReason !== undefined) {
@@ -500,7 +504,17 @@ export class InjectionsView {
 				width,
 			));
 		}
+		lines.push(...markerLegendLines(this.theme, this.rowMarkers(), width));
 		return lines;
+	}
+
+	/** Markers the hierarchy rows carry, whatever the current width leaves room to render. */
+	private rowMarkers(): ContextMarker[] {
+		const items = this.rows.filter((row) => row.kind === "item");
+		const markers: ContextMarker[] = [];
+		if (items.some((row) => row.dropped === true)) markers.push("dropped");
+		if (items.some((row) => row.moved === true)) markers.push("moved");
+		return markers;
 	}
 
 	private spread(left: string, right: string, width: number): string {

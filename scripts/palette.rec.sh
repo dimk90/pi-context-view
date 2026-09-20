@@ -2,15 +2,16 @@
 #
 # s-vhs recording of one Context Usage panel, painted with one category palette.
 #
-# Usage: ./palette-panel.rec.sh <default|terrain|rainbow>
+# Usage: ./scripts/palette.rec.sh <default|terrain|rainbow>
 #
 # Produces doc/images/palettes/<palette>.gif.
 #
-# palettes.sh runs this once per palette and composites into doc/images/color-palettes.png.
+# palettes-panel.sh runs this once per palette and composites into
+# doc/images/palettes.png.
 #
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
+REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 
 # pi is started as `pi -e .`, so the recorded shell has to sit in the repo root
 cd "$REPO_ROOT" || exit 1
@@ -23,7 +24,7 @@ if [[ ! $PALETTE =~ ^(default|terrain|rainbow)$ ]]; then
 fi
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.5.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.6.0) && wait "$!" || exit 1
 
 
 ## Constants
@@ -34,8 +35,9 @@ PI_COMMAND='pi -e . --session 01a07844-4448-77ed-805f-b2d4af9cd00a'
 PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
+PI_COMMAND+=' --offline'
 
-PANEL_DIR="doc/images/palettes"
+PANEL_DIR="$REPO_ROOT/doc/images/palettes"
 REAL_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 
@@ -127,7 +129,7 @@ Start
 
 # Bring pi up off camera, so the panel is an idle TUI
 Run "$PI_COMMAND"
-Wait '• Release v0.2.0' # wait for session name to appear
+Wait '• Release v0\.2\.0' # wait for session name to appear
 
 # Open the usage view and hold it: the still is the last frame
 Run '/context'

@@ -84,6 +84,27 @@ const CONFIG_KEY_CATEGORIES: ReadonlyMap<string, string> = new Map(
 	Object.entries(CATEGORY_COLOR_SPECS).map(([categoryId, spec]) => [spec.key, categoryId]),
 );
 
+/** Cell counts a configured map dimension may request; the viewport clamps further at render time. */
+const MINIMUM_MAP_CELLS = 4;
+const MAXIMUM_MAP_CELLS = 64;
+
+/**
+ * Both configurable map dimensions: the geometry field, the flat config key
+ * overriding it, and the built-in default a created override file reproduces.
+ */
+const MAP_SIZE_SPECS = {
+	columns: { key: "mapCols", cells: 16 },
+	rows: { key: "mapRows", cells: 16 },
+} as const satisfies Record<string, { readonly key: string; readonly cells: number }>;
+
+/** Geometry field of one configurable map dimension. */
+type MapSizeField = keyof typeof MAP_SIZE_SPECS;
+
+/** Config keys mapped to the map dimension they size. */
+const CONFIG_KEY_MAP_FIELDS: ReadonlyMap<string, MapSizeField> = new Map(
+	Object.entries(MAP_SIZE_SPECS).map(([field, spec]) => [spec.key, field as MapSizeField]),
+);
+
 /**
  * Renamed keys still honored, mapped to their current name, so a rename never
  * silently drops an override an existing file already carries. The value type
@@ -113,9 +134,16 @@ export type CategoryColor = ThemeColor | HexColor;
 /** Resolved color of each configurable usage category, keyed by category id. */
 export type CategoryColors = ReadonlyMap<string, CategoryColor>;
 
+/** Requested context-map geometry in cells, before the viewport clamps it. */
+export interface MapSize {
+	readonly columns: number;
+	readonly rows: number;
+}
+
 /** All user-configurable state of one runtime. */
 export interface ContextViewConfig {
 	readonly categoryColors: CategoryColors;
+	readonly mapSize: MapSize;
 }
 
 /** Configuration for one view open, with the problems that degraded it to defaults. */
@@ -136,8 +164,17 @@ export const DEFAULT_CATEGORY_COLORS: CategoryColors = new Map(
 	Object.entries(CATEGORY_COLOR_SPECS).map(([categoryId, spec]) => [categoryId, spec.color] as const),
 );
 
+/** Built-in map geometry, used whenever the file omits or misconfigures a dimension. */
+export const DEFAULT_MAP_SIZE: MapSize = {
+	columns: MAP_SIZE_SPECS.columns.cells,
+	rows: MAP_SIZE_SPECS.rows.cells,
+};
+
 /** Configuration used when no override file exists. */
-export const DEFAULT_CONFIG: ContextViewConfig = { categoryColors: DEFAULT_CATEGORY_COLORS };
+export const DEFAULT_CONFIG: ContextViewConfig = {
+	categoryColors: DEFAULT_CATEGORY_COLORS,
+	mapSize: DEFAULT_MAP_SIZE,
+};
 
 /** Absolute path of the global override file. */
 export function getConfigFilePath(): string {
@@ -232,9 +269,10 @@ export function isHexColor(color: CategoryColor): color is HexColor {
 
 /** Serialize every built-in default as an editable, flat override file. */
 function serializeDefaultConfig(): string {
-	const defaults = Object.fromEntries(
-		Object.values(CATEGORY_COLOR_SPECS).map((spec) => [spec.key, spec.color]),
-	);
+	const defaults: Record<string, CategoryColor | number> = {
+		...Object.fromEntries(Object.values(CATEGORY_COLOR_SPECS).map((spec) => [spec.key, spec.color])),
+		...Object.fromEntries(Object.values(MAP_SIZE_SPECS).map((spec) => [spec.key, spec.cells])),
+	};
 	return `${JSON.stringify(defaults, undefined, 2)}\n`;
 }
 
@@ -244,24 +282,50 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 		return degraded(`${CONFIG_FILE_NAME} must contain a JSON object.`);
 	}
 	const colors = new Map(DEFAULT_CATEGORY_COLORS);
+	const mapSize: Record<MapSizeField, number> = { ...DEFAULT_MAP_SIZE };
 	const warnings: string[] = [];
 	for (const [key, value] of Object.entries(raw)) {
 		const currentKey = RENAMED_CONFIG_KEYS.get(key);
 		// The current name always wins, so a file carrying both names loads order-independently.
 		if (currentKey !== undefined && currentKey in raw) continue;
-		const categoryId = CONFIG_KEY_CATEGORIES.get(currentKey ?? key);
-		if (categoryId === undefined) {
-			warnings.push(`Ignoring unknown ${CONFIG_FILE_NAME} key "${key}".`);
-			continue;
-		}
+		const warning = applyOverride(currentKey ?? key, key, value, colors, mapSize);
+		if (warning !== undefined) warnings.push(warning);
+	}
+	return { config: { categoryColors: colors, mapSize }, warnings };
+}
+
+/**
+ * Apply one entry onto the mutable defaults, returning the reason it was
+ * ignored. Reports name `configuredKey`, the name the file carries, which an
+ * accepted alias makes differ from the `resolvedKey` the entry configures.
+ */
+function applyOverride(
+	resolvedKey: string,
+	configuredKey: string,
+	value: unknown,
+	colors: Map<string, CategoryColor>,
+	mapSize: Record<MapSizeField, number>,
+): string | undefined {
+	const categoryId = CONFIG_KEY_CATEGORIES.get(resolvedKey);
+	if (categoryId !== undefined) {
 		const color = parseColor(value);
 		if (color === undefined) {
-			warnings.push(`Ignoring invalid color for "${key}"; expected a theme color name or a hex value.`);
-			continue;
+			return `Ignoring invalid color for "${configuredKey}"; expected a theme color name or a hex value.`;
 		}
 		colors.set(categoryId, color);
+		return undefined;
 	}
-	return { config: { categoryColors: colors }, warnings };
+	const field = CONFIG_KEY_MAP_FIELDS.get(resolvedKey);
+	if (field !== undefined) {
+		const cells = parseMapDimension(value);
+		if (cells === undefined) {
+			return `Ignoring invalid size for "${configuredKey}"; ` +
+				`expected an integer between ${MINIMUM_MAP_CELLS} and ${MAXIMUM_MAP_CELLS}.`;
+		}
+		mapSize[field] = cells;
+		return undefined;
+	}
+	return `Ignoring unknown ${CONFIG_FILE_NAME} key "${configuredKey}".`;
 }
 
 /** Whole-file failure: built-in defaults plus one explanatory warning. */
@@ -274,6 +338,13 @@ function parseColor(value: unknown): CategoryColor | undefined {
 	if (typeof value !== "string") return undefined;
 	if (isThemeColor(value)) return value;
 	return parseHexColor(value);
+}
+
+/** Accept only whole in-range cell counts; the viewport still clamps what it cannot render. */
+function parseMapDimension(value: unknown): number | undefined {
+	if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
+	if (value < MINIMUM_MAP_CELLS || value > MAXIMUM_MAP_CELLS) return undefined;
+	return value;
 }
 
 /** Accept only theme color keys the active theme is guaranteed to define. */

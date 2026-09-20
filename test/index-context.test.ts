@@ -10,6 +10,10 @@ import type {
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 
+// Deep import bypasses the package barrel, which does not re-export the option normalizer.
+import {
+	normalizeBuildSystemPromptOptions,
+} from "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import { PROBE_IDENTITIES_CUSTOM_TYPE } from "../src/capture.ts";
 import registerExtension from "../src/index.ts";
 
@@ -75,7 +79,8 @@ test("context handler skips the session baseline rebuild after the Initial snaps
 	// Rehydrate the persisted probe identity, then prepare the first real run.
 	start({ type: "session_start", reason: "resume" }, ctx);
 	agentStart(
-		{ type: "before_agent_start", prompt: "hello", systemPrompt: "system prompt", systemPromptOptions: { cwd: "/tmp" } },
+		{ type: "before_agent_start", prompt: "hello", systemPrompt: "system prompt",
+			systemPromptOptions: normalizeBuildSystemPromptOptions({ cwd: "/tmp" }) },
 		ctx,
 	);
 	assert.equal(sessionReads, 1);

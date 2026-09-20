@@ -1,27 +1,29 @@
 #!/bin/bash
 #
-# Re-record every committed demo asset: the s-vhs recordings under
-# scripts/recordings and the palette panel composite.
+# Re-record every committed demo asset: the s-vhs recordings under doc/images
+# and the palette and map-size panel composites.
 #
 # Each target pins its own session, size and palette, so this script only runs
 # them in a fixed order, keeps going after a failure, and reports what broke.
 #
-# Produces doc/images/*.gif and doc/images/palettes.png
+# Produces doc/images/*.gif, doc/images/palettes.png, and doc/images/map-sizes.png
 #
 
 set -uo pipefail
 
-_RECORD_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-readonly _RECORD_SCRIPT_DIR
+_RECORD_REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+readonly _RECORD_REPO_ROOT
 
-# recordings/palette.rec.sh is left out on purpose: it records a single panel
-# for one palette, and palettes-panel.sh already drives it once per palette
+# Single-panel recorders (scripts/palette.rec.sh and scripts/map-size.rec.sh)
+# are left out: their respective composite scripts already drive every variant
 readonly _RECORD_TARGETS=(
-    'recordings/context-usage.rec.sh'
-    'recordings/context-injections.rec.sh'
-    'recordings/zoom.rec.sh'
-    'recordings/palettes.rec.sh'
-    'palettes-panel.sh'
+    'doc/images/context-usage.rec.sh'
+    'doc/images/context-injections.rec.sh'
+    'doc/images/zoom.rec.sh'
+    'doc/images/palettes.rec.sh'
+    'doc/images/map-sizes.rec.sh'
+    'scripts/palettes-panel.sh'
+    'scripts/map-sizes-panel.sh'
 )
 
 
@@ -54,19 +56,19 @@ main() {
 
 _record_run_target() {
     #
-    # Run one target from the scripts directory, with its own output in view.
+    # Run one target from the repository root, with its own output in view.
     #
     # A missing or non-executable target fails like any other one, so a broken
     # path does not stop the remaining recordings.
     #
     # Parameters:
-    #   $1 - target - target path relative to the scripts directory.
+    #   $1 - target - target path relative to the repository root.
     #
     # Example:
-    #   _record_run_target 'recordings/zoom.rec.sh' || return 1
+    #   _record_run_target 'doc/images/zoom.rec.sh' || return 1
     #
     local target="$1"
-    local path="$_RECORD_SCRIPT_DIR/$target"
+    local path="$_RECORD_REPO_ROOT/$target"
 
     printf '\n::: Recording %s\n' "$target"
     [[ -x $path ]] || {
@@ -86,7 +88,7 @@ _record_report() {
     #   $@ - failed - target paths that exited nonzero, none on a clean run.
     #
     # Example:
-    #   _record_report 'recordings/zoom.rec.sh'
+    #   _record_report 'doc/images/zoom.rec.sh'
     #
     local failed=("$@")
     local target

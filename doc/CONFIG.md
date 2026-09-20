@@ -24,7 +24,10 @@ The config file created with `/context config` will contain:
   "extensionsColor": "syntaxType",
   "compactedDataColor": "thinkingHigh",
   "autoCompactBufferColor": "dim",
-  "freeSpaceColor": "dim"
+  "freeSpaceColor": "dim",
+
+  "mapCols": 16,
+  "mapRows": 16
 }
 ```
 
@@ -62,3 +65,16 @@ A value is either a Pi theme color name or a literal hex color:
 > [!NOTE]
 > `autoCompactBufferColor` and `freeSpaceColor` also color the `⛝`
 > and `⛶` glyphs in the Block Size key.
+
+
+## Map Size
+
+`mapCols` and `mapRows` set how many cells the `Context Usage` map is wide and
+tall. Both accept a whole number between `4` and `64`; anything else is ignored
+with a warning shown above the map.
+
+The map is a request, not a guarantee: every frame renders the largest
+configured size that still fits, dropping columns before the legend becomes
+narrower than 32 columns and rows before the map outgrows the terminal height.
+A clamped map is rebuilt at the smaller size, so it still maps the whole context
+window.

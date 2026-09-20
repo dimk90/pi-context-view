@@ -65,30 +65,35 @@ pi install npm:pi-context-view
 
 ## Customization
 
-At the moment, only the `Context Usage` map colors are customizable.
+Currently, you can customize only the colors and dimensions of the `Context Usage` map.
 
-A config populated with the current defaults is a good starting point for
-customization. Create it with:
+To get started, create a configuration file populated with the current defaults:
 
 ```text
 /context config
 ```
 > This creates `~/.pi/agent/extensions/pi-context-view.json`.
 
-See [doc/CONFIG](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md)
+See the [configuration reference](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md)
 for each parameter's meaning and default value.
 
 ### Category Colors
 
-You can configure the `Context Usage` map colors to better match your theme, or set
-them to theme-independent hex values. Here are examples of custom
+You can use theme color names to match your current theme or hex values for
+colors that stay the same across themes. Here are examples of custom
 [terrain](https://github.com/dimk90/pi-context-view/blob/master/doc/palettes/terrain.json) and
 [rainbow](https://github.com/dimk90/pi-context-view/blob/master/doc/palettes/rainbow.json) palettes:
 
 ![Terrain and rainbow palettes](https://media.githubusercontent.com/media/dimk90/pi-context-view/e9f75e538ada31af0c1ba3517bad0a13f06050e6/doc/images/palettes.png)
 
-See [PI-THEME-COLORS](https://github.com/dimk90/pi-context-view/blob/develop/doc/PI-THEME-COLORS.md) 
+See the [theme color reference](https://github.com/dimk90/pi-context-view/blob/develop/doc/PI-THEME-COLORS.md)
 for color names that follow the current theme.
+
+### Map Size
+
+You can configure the number of rows and columns in the `Context Usage` map:
+
+![Map size demo](https://media.githubusercontent.com/media/dimk90/pi-context-view/2bc280f758d88fc0ac6396e921c7e697c9016086/doc/images/map-sizes.png)
 
 
 ## Context Footprint

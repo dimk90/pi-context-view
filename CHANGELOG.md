@@ -1,6 +1,26 @@
 # Changelog
 
 
+## `[v0.6.0]` - 20.09.2026
+
+### New
+* `[config]` Add `mapCols` and `mapRows` to size the `Context Usage` map.
+
+### Changed
+* `[context]` Measure Pi 0.86 XML prompt sections, keeping custom sections as System Prompt parts.
+* `[usage]` Size the auto-compact buffer from the current model's `compaction.modelOverrides` reserve.
+* `[usage]` Set the default context map to 16x16 cells.
+* `[ui]` Explain `Highlighted`, `(guess)`, `Dropped`, and `Moved` as color-keyed description bullets.
+* `[capture]` Report injected image sizes in previews instead of their base64 payloads.
+* `[capture]` Show summary and bash content in previews instead of whole-message metadata.
+
+### Fixed
+* `[text]` Avoid quadratic scanning of unterminated terminal strings while sanitizing previews ([#8](https://github.com/dimk90/pi-context-view/pull/8) by [@MDGChamomile](https://github.com/MDGChamomile)).
+* `[capture]` Strip opaque thinking and tool-call signatures from captured assistant previews ([#7](https://github.com/dimk90/pi-context-view/pull/7) by [@MDGChamomile](https://github.com/MDGChamomile)).
+* `[capture]` Identify the silent probe by token so an input transform cannot trigger a real turn ([#5](https://github.com/dimk90/pi-context-view/issues/5) by [@MDGChamomile](https://github.com/MDGChamomile)).
+* `[capture]` Omit text-block signatures, including Gemini reasoning envelopes, from previews.
+
+
 ## `[v0.5.2]` - 08.09.2026
 
 ### Fixed

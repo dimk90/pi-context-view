@@ -4,12 +4,7 @@
  * Passively captures the first real turn, or runs one on-demand silent probe
  * when a context view is opened before any real turn.
  */
-import {
-	buildSessionContext,
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { ConfigStore, createDefaultConfigFile } from "./config.ts";
 import {
@@ -22,15 +17,16 @@ import {
 	resolveInitialCapture,
 } from "./command.ts";
 import {
-	buildNativeSnapshot,
+	buildUsageSnapshot,
 	collectPromptSources,
 	CompactionState,
 	InitialCaptureState,
-	mergeContextOnlyMessages,
 	parsePersistedIdentities,
 	PROBE_IDENTITIES_CUSTOM_TYPE,
 	SilentProbeState,
 } from "./capture.ts";
+import { readProbeToken } from "./probe-token.ts";
+import { readAutoCompactReserveTokens } from "./settings.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
 import { showUsageView } from "./ui/usage-view.ts";
 import { computeUsage, toReportedUsage } from "./usage.ts";
@@ -77,11 +73,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("input", (event) => {
-		probe.observeInput(event.source, event.text);
+		// Reset text earlier input transforms added to our own synthetic prompt:
+		// the probe carries no instructions, and its run is identified by token.
+		if (event.text === "" || !probe.isProbeInput(event.source, readProbeToken())) return undefined;
+		return { action: "transform", text: "" } as const;
 	});
 
 	pi.on("before_agent_start", (event) => {
-		probe.beginRun(event.prompt);
+		probe.beginRun(readProbeToken());
 		// The chained prompt here already carries additions from extensions loaded
 		// earlier; anything the context event adds came from extensions after us.
 		capture.prepare(event.systemPromptOptions, event.systemPrompt);
@@ -96,7 +95,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_end", (event) => {
-		const message = probe.sanitizeAssistant(event.message);
+		const message = probe.sanitizeMessage(event.message);
 		return message === undefined ? undefined : { message };
 	});
 
@@ -161,7 +160,13 @@ export default function (pi: ExtensionAPI) {
 			}
 			// Loaded only for the Usage view, the sole consumer of configured colors.
 			const loadedConfig = configStore.load();
-			const current = buildNativeSnapshot({
+			// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
+			const messages = probe.filterMessages(
+				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
+			);
+			const current = buildUsageSnapshot({
+				messages,
+				initial: initial.snapshot,
 				systemPrompt: ctx.getSystemPrompt(),
 				options: ctx.getSystemPromptOptions(),
 				allTools: pi.getAllTools(),
@@ -170,11 +175,8 @@ export default function (pi: ExtensionAPI) {
 			});
 			await showUsageView(ctx, {
 				usage: computeUsage({
-					snapshot: mergeContextOnlyMessages(current, initial.snapshot),
-					// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
-					messages: probe.filterMessages(
-						buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
-					),
+					snapshot: current,
+					messages,
 					reported: toReportedUsage(ctx.getContextUsage()),
 					modelLabel: ctx.model?.id,
 					autoCompactReserveTokens: readAutoCompactReserveTokens(ctx),
@@ -183,25 +185,8 @@ export default function (pi: ExtensionAPI) {
 				// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
 				notices: loadedConfig.warnings,
 				categoryColors: loadedConfig.config.categoryColors,
+				mapSize: loadedConfig.config.mapSize,
 			});
 		},
 	});
-}
-
-/**
- * Read the auto-compaction reserve from the same merged settings files pi
- * uses, or undefined when auto-compaction is disabled. Read at view-open time
- * because `reserveTokens` has no runtime setter but `enabled` can change.
- */
-function readAutoCompactReserveTokens(context: ExtensionCommandContext): number | undefined {
-	try {
-		const settings = SettingsManager.create(context.cwd, undefined, {
-			projectTrusted: context.isProjectTrusted(),
-		});
-		if (!settings.getCompactionEnabled()) return undefined;
-		return settings.getCompactionReserveTokens();
-	} catch {
-		// Unreadable settings degrade to a map without the buffer, not a failed view.
-		return undefined;
-	}
 }

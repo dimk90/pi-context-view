@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { CompactionState, InitialCaptureState, SilentProbeState } from "../src/capture.ts";
+import { readProbeToken } from "../src/probe-token.ts";
 import {
 	CONTEXT_COMMAND_DESCRIPTION,
 	getContextArgumentCompletions,
@@ -100,6 +101,39 @@ test("reportConfigCreation reports every create outcome with its own severity", 
 		{ message: `Configuration already exists; left unchanged: ${filePath}`, type: "warning" },
 		{ message: `Cannot create configuration at ${filePath}: EACCES: denied`, type: "error" },
 	]);
+});
+
+test("resolveInitialCapture sends the synthetic prompt inside the probe token scope", async () => {
+	const capture = new InitialCaptureState();
+	const probe = new SilentProbeState();
+	const compaction = new CompactionState();
+	let sentContent: string | undefined;
+	let tokenDuringSend: string | undefined;
+	const pi = {
+		getActiveTools: () => [],
+		getAllTools: () => [],
+		sendUserMessage: (content: string) => {
+			sentContent = content;
+			tokenDuringSend = readProbeToken();
+			// No agent lifecycle follows in this harness; end the attempt at once.
+			probe.fail("No agent run in this harness.");
+		},
+	} as unknown as ExtensionAPI;
+	const context = {
+		model: { provider: "anthropic", id: "test-model" },
+		modelRegistry: { hasConfiguredAuth: () => true },
+		ui: { setWorkingVisible: () => undefined },
+		getSystemPrompt: () => "base prompt",
+		getSystemPromptOptions: () => ({ cwd: "/tmp" }),
+		waitForIdle: async () => undefined,
+	} as unknown as ExtensionCommandContext;
+
+	const result = await resolveInitialCapture(pi, capture, probe, compaction, context);
+
+	assert.equal(sentContent, "", "the probe prompt carries no instructions of its own");
+	assert.equal(probe.isProbeInput("extension", tokenDuringSend), true, "the send must carry this attempt's token");
+	assert.equal(readProbeToken(), undefined, "the token must not outlive the send");
+	assert.equal(result.degradedReason, "No agent run in this harness. Extension additions were not observed.");
 });
 
 test("resolveInitialCapture skips the probe when compaction starts while waiting for idle", async () => {
