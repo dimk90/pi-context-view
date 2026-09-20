@@ -8,8 +8,7 @@
 
 ### Changed
 * `[context]` Measure Pi 0.86 XML prompt sections, keeping custom sections as System Prompt parts.
-* `[injections]` Count appended copies of rendered prompt blocks as `duplicated prompt blocks`.
-* `[usage]` Count the branch's replayed prompt sections and tool declarations once.
+* `[usage]` Size the auto-compact buffer from the current model's `compaction.modelOverrides` reserve.
 * `[usage]` Set the default context map to 16x16 cells.
 * `[ui]` Explain `Highlighted`, `(guess)`, `Dropped`, and `Moved` as color-keyed description bullets.
 * `[capture]` Report injected image sizes in previews instead of their base64 payloads.

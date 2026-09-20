@@ -846,6 +846,7 @@ Persisted probe records contain only role and timestamp identities.
 | `src/index.ts`            | Register events and commands; assemble view inputs.                                           |
 | `src/command.ts`          | Parse commands; resolve Initial through capture, probe, or fallback.                          |
 | `src/config.ts`           | Load, validate, cache, and explicitly create configuration.                                   |
+| `src/settings.ts`         | Read pi's own settings: the auto-compaction reserve for the current model.                    |
 | `src/capture.ts`          | Manage Initial, probes, compaction state, probe identities, and injected messages.            |
 | `src/probe-token.ts`      | Carry the probe token through the async context of this extension's own send.                 |
 | `src/measure.ts`          | Split and estimate prompt/tool contributions without pi API access.                           |

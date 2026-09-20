@@ -4,12 +4,7 @@
  * Passively captures the first real turn, or runs one on-demand silent probe
  * when a context view is opened before any real turn.
  */
-import {
-	buildSessionContext,
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { ConfigStore, createDefaultConfigFile } from "./config.ts";
 import {
@@ -31,6 +26,7 @@ import {
 	SilentProbeState,
 } from "./capture.ts";
 import { readProbeToken } from "./probe-token.ts";
+import { readAutoCompactReserveTokens } from "./settings.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
 import { showUsageView } from "./ui/usage-view.ts";
 import { computeUsage, toReportedUsage } from "./usage.ts";
@@ -193,22 +189,4 @@ export default function (pi: ExtensionAPI) {
 			});
 		},
 	});
-}
-
-/**
- * Read the auto-compaction reserve from the same merged settings files pi
- * uses, or undefined when auto-compaction is disabled. Read at view-open time
- * because `reserveTokens` has no runtime setter but `enabled` can change.
- */
-function readAutoCompactReserveTokens(context: ExtensionCommandContext): number | undefined {
-	try {
-		const settings = SettingsManager.create(context.cwd, undefined, {
-			projectTrusted: context.isProjectTrusted(),
-		});
-		if (!settings.getCompactionEnabled()) return undefined;
-		return settings.getCompactionReserveTokens();
-	} catch {
-		// Unreadable settings degrade to a map without the buffer, not a failed view.
-		return undefined;
-	}
 }

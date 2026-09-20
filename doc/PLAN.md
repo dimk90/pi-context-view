@@ -23,9 +23,9 @@
   - [x] Test structured and forced prompt changes in both extension orders, including a silent probe with an `after_provider_response` sentinel.
   - [x] Update the documented capture coverage and Usage semantics.
 
-- [ ] **Pi 0.86: per-model compaction budgets**:
-  - Pass `context.model` to `getCompactionReserveTokens()` in `src/index.ts` so the Usage map honors `compaction.modelOverrides`.
-  - Test model-specific reserves, fallback values, model switching, and disabled auto-compaction.
+- [x] **Pi 0.86: per-model compaction budgets**:
+  - [x] Pass `context.model` to `getCompactionReserveTokens()` in `src/index.ts` so the Usage map honors `compaction.modelOverrides`.
+  - [x] Test model-specific reserves, fallback values, model switching, and disabled auto-compaction.
 
 - [ ] **Pi 0.86: verify cache-warming accounting**:
   - Verification task, not a confirmed defect: warming usage/cost entries are not model context, and `buildSessionContext()` already excludes them.
