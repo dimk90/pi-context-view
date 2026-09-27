@@ -546,30 +546,32 @@ test("SilentProbeState recognizes probe input only for its own token and source"
 	state.settle(true);
 });
 
-test("SilentProbeState sanitizes pi 0.84 setup abort errors only for a recorded probe assistant", () => {
-	const state = new SilentProbeState();
-	const attempt = state.start(1_000);
-	assert.equal(state.beginRun(attempt.token), true);
+for (const errorMessage of ["This operation was aborted", "The operation was aborted."]) {
+	test(`SilentProbeState sanitizes ${JSON.stringify(errorMessage)} only for a recorded probe assistant`, () => {
+		const state = new SilentProbeState();
+		const attempt = state.start(1_000);
+		assert.equal(state.beginRun(attempt.token), true);
 
-	const setupAbort = assistantMessage("error", 20, "This operation was aborted");
-	const providerError = assistantMessage("error", 21, "Authentication failed");
-	const unrecordedSetupAbort = assistantMessage("error", 22, "This operation was aborted");
-	const unrecordedLegacyAbort = assistantMessage("aborted", 23);
-	state.recordMessage(setupAbort);
-	state.recordMessage(providerError);
+		const setupAbort = assistantMessage("error", 20, errorMessage);
+		const providerError = assistantMessage("error", 21, "Authentication failed");
+		const unrecordedSetupAbort = assistantMessage("error", 22, errorMessage);
+		const unrecordedLegacyAbort = assistantMessage("aborted", 23);
+		state.recordMessage(setupAbort);
+		state.recordMessage(providerError);
 
-	const sanitized = state.sanitizeMessage(setupAbort);
-	assert.equal(sanitized?.role, "assistant");
-	if (sanitized?.role === "assistant") {
-		assert.equal(sanitized.stopReason, "stop");
-		assert.equal(sanitized.errorMessage, undefined);
-		assert.deepEqual(sanitized.content, []);
-	}
-	assert.equal(state.sanitizeMessage(providerError), undefined);
-	assert.equal(state.sanitizeMessage(unrecordedSetupAbort), undefined);
-	assert.equal(state.sanitizeMessage(unrecordedLegacyAbort), undefined);
-	state.settle(true);
-});
+		const sanitized = state.sanitizeMessage(setupAbort);
+		assert.equal(sanitized?.role, "assistant");
+		if (sanitized?.role === "assistant") {
+			assert.equal(sanitized.stopReason, "stop");
+			assert.equal(sanitized.errorMessage, undefined);
+			assert.deepEqual(sanitized.content, []);
+		}
+		assert.equal(state.sanitizeMessage(providerError), undefined);
+		assert.equal(state.sanitizeMessage(unrecordedSetupAbort), undefined);
+		assert.equal(state.sanitizeMessage(unrecordedLegacyAbort), undefined);
+		state.settle(true);
+	});
+}
 
 test("SilentProbeState filters restored identities without consuming the probe attempt", () => {
 	const previousRuntime = new SilentProbeState();
