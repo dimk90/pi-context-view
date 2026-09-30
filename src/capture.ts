@@ -33,7 +33,10 @@ import type { PromptSourceSlice } from "./prompt-additions.ts";
 export const PROBE_IDENTITIES_CUSTOM_TYPE = "pi-context-view:probe-identities";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
-const SETUP_ABORT_ERROR_MESSAGE = "This operation was aborted";
+const SETUP_ABORT_ERROR_MESSAGES = new Set([
+	"This operation was aborted",
+	"The operation was aborted.",
+]);
 
 /** Everything available when the first context event finalizes a snapshot. */
 export interface CaptureFinalization {
@@ -329,7 +332,9 @@ export class SilentProbeState {
 		message: Extract<ContextEvent["messages"][number], { role: "assistant" }>,
 	): ContextEvent["messages"][number] | undefined {
 		const isProbeAbort = message.stopReason === "aborted"
-			|| (message.stopReason === "error" && message.errorMessage === SETUP_ABORT_ERROR_MESSAGE);
+			|| (message.stopReason === "error"
+				&& message.errorMessage !== undefined
+				&& SETUP_ABORT_ERROR_MESSAGES.has(message.errorMessage));
 		if (!isProbeAbort || !this.ownsMessage(message)) return undefined;
 		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };
 	}

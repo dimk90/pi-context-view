@@ -581,6 +581,8 @@ prompt, which may carry text an input transform added, and the assistant abort
 result. Filtering keeps probe messages out of model contexts; blanking keeps
 them out of stored messages.
 
+Setup cancellations can arrive with an `error` stop reason instead of `aborted`. Blank them only for recorded probe assistants with the exact message `This operation was aborted` or `The operation was aborted.`. Other errors and unrecorded cancellations remain unchanged.
+
 Blanking cleans agent state, later model contexts, and the saved session, but
 not the current screen: pi renders a user row when the message starts and does
 not repaint it for a `message_end` replacement. Text another extension's input
