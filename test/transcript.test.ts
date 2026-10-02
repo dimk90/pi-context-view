@@ -28,6 +28,7 @@ const PATCH: SystemMessage = {
 const CURRENT_TOOL: ToolInfo = {
 	...SECOND_TOOL, description: "CURRENT definition must not replace the recorded one",
 	parameters: {} as ToolInfo["parameters"],
+	exposure: "direct",
 	sourceInfo: { source: "npm:search", path: "/search.ts", scope: "temporary", origin: "top-level" },
 };
 

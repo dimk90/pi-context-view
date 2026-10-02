@@ -17,6 +17,7 @@ const SEARCH: ToolInfo = {
 	description: "Search",
 	parameters: {} as ToolInfo["parameters"],
 	promptGuidelines: ["Cite sources"],
+	exposure: "direct",
 	sourceInfo: { path: "/search.ts", source: "npm:web", scope: "temporary", origin: "top-level" },
 };
 

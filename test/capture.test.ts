@@ -55,6 +55,7 @@ function tool(name: string, source: string): ToolInfo {
 		description: `${name} description`,
 		parameters: {} as ToolInfo["parameters"],
 		promptGuidelines: [`Use ${name}`],
+		exposure: "direct",
 		sourceInfo: {
 			path: `/tmp/${name}.ts`,
 			source,
