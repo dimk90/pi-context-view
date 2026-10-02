@@ -581,7 +581,19 @@ prompt, which may carry text an input transform added, and the assistant abort
 result. Filtering keeps probe messages out of model contexts; blanking keeps
 them out of stored messages.
 
-Setup cancellations can arrive with an `error` stop reason instead of `aborted`. Blank them only for recorded probe assistants with the exact message `This operation was aborted` or `The operation was aborted.`. Other errors and unrecorded cancellations remain unchanged.
+Pi 0.84 and newer report an abort during stream setup, such as the probe's
+`turn_start` abort, with an `error` stop reason instead of `aborted`. Its error
+message is the `AbortError` text of the JavaScript runtime that runs pi:
+
+| Runtime                    | Error message                |
+| -------------------------- | ---------------------------- |
+| Node.js                    | `This operation was aborted` |
+| Bun (standalone pi binary) | `The operation was aborted.` |
+
+Blank such an error only for a recorded probe assistant with one of these exact
+messages. Provider errors and cancellations of runs the probe does not own
+remain visible. A runtime with other wording leaves the error row visible: add
+its exact message instead of matching abort text loosely.
 
 Blanking cleans agent state, later model contexts, and the saved session, but
 not the current screen: pi renders a user row when the message starts and does
