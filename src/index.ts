@@ -30,6 +30,8 @@ import { readAutoCompactReserveTokens } from "./settings.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
 import { showUsageView } from "./ui/usage-view.ts";
 import { computeUsage, toReportedUsage } from "./usage.ts";
+import { providerMessagesToAgentMessages } from "./provider-payload.ts";
+import fs from "node:fs";
 
 export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
@@ -99,10 +101,13 @@ export default function (pi: ExtensionAPI) {
 		return message === undefined ? undefined : { message };
 	});
 
+	// Phase 1 (`context`): filter probe identities for downstream Phase 1 handlers
+	// AND freeze the snapshot here so silent-probe turns (which are aborted in
+	// `turn_start` and therefore never reach `before_provider_request`) still
+	// produce a usable snapshot. For real turns, the `before_provider_request`
+	// handler below overwrites this snapshot with full Phase-1+2+3 data.
 	pi.on("context", (event, ctx) => {
 		const messages = probe.filterMessages(event.messages);
-		// Lazy: this event fires once per LLM request, but only the freezing call
-		// reads these inputs, and the baseline rebuild alone is O(session).
 		capture.finalize(() => ({
 			systemPrompt: ctx.getSystemPrompt(),
 			messages,
@@ -115,6 +120,40 @@ export default function (pi: ExtensionAPI) {
 			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
 		}));
 		return messages === event.messages ? undefined : { messages };
+	});
+
+	// Phase 3 (`before_provider_request`): the FINAL hook before the LLM call.
+	// It runs after every `context` and `context_with_system` handler, so the
+	// payload's `messages` carries every injection this turn produced. The trade-
+	// off vs Phase-2 freezing: provider-format conversion is lossy (customType is
+	// lost, custom becomes anonymous user-message), but pcv no longer needs to be
+	// registered last in any chain. See `provider-payload.ts` for the converter.
+	pi.on("before_provider_request", (event, ctx) => {
+		// before_provider_request is the LAST event pi fires before sending to
+		// the LLM. Its payload IS the provider-format request body — every
+		// provider (anthropic/openai/mistral/google/bedrock/pi-messages) calls
+		// `options?.onPayload?.(params, model)` where `params` is the built
+		// request, so `event.payload` is `{ model, messages, system, tools, ... }`
+		// directly — there is no extra `.payload` layer.
+		const payload = event.payload as { messages?: unknown; system?: unknown } | undefined;
+		const providerMessages = Array.isArray(payload?.messages)
+			? (payload.messages as Parameters<typeof providerMessagesToAgentMessages>[0])
+			: [];
+		const agentMessages = providerMessagesToAgentMessages(providerMessages);
+		const chainMessages = probe.filterMessages(agentMessages);
+		capture.finalize(() => ({
+			systemPrompt: typeof payload?.system === "string"
+				? payload.system
+				: ctx.getSystemPrompt(),
+			messages: chainMessages,
+			baselineMessages: probe.filterMessages(
+				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
+			),
+			allTools: pi.getAllTools(),
+			activeToolNames: pi.getActiveTools(),
+			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
+			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
+		}));
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {

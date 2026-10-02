@@ -90,52 +90,121 @@ interface CapturePreparation {
 }
 
 /**
- * Lifecycle of the single probe attempt. Ownership outlives the attempt's own
- * completion, so a probe run arriving after a timeout or after an unattributed
- * run is still claimed, aborted, and sanitized.
- */
-type ProbePhase = "idle" | "waiting" | "running" | "settled";
+	 * Lifecycle of the single probe attempt. Ownership outlives the attempt's own
+	 * completion, so a probe run arriving after a timeout or after an unattributed
+	 * run is still claimed, aborted, and sanitized.
+	 */
+	type ProbePhase = "idle" | "waiting" | "running" | "settled";
 
+	/**
+	 * Capture-and-refresh state machine. `prepare()` refreshes the structured
+	 * options on every run; `finalize()` rebuilds the snapshot from the latest
+	 * `prepare()` inputs and the current message list on every call so that
+	 * `/context injections` reflects whatever Phase-2 extensions have appended
+	 * since the first turn (e.g. pi-ide's editor-context, which only appears
+	 * after the IDE websocket handshake completes).
+	 */
 /**
- * Capture-once state machine. `prepare()` refreshes the structured options on
- * every run until `finalize()` succeeds; subsequent finalizations return the
- * original snapshot unchanged.
+ * Merge messages from Phase-1 (pi-internal, `customType` preserved) with the
+ * current chain output (provider-format for Phase-3 freezes, where custom→user
+ * loses attribution). Each Phase-3-only message that has no identical-content
+ * counterpart in Phase-1's snapshot is appended in order so attribution stays
+ * intact for everything Phase-1 saw.
  */
+function mergePreservingCustomTypes(
+	phase1: ContextEvent["messages"] | undefined,
+	current: ContextEvent["messages"],
+): ContextEvent["messages"] {
+	if (phase1 === undefined) return current;
+	const phase1Texts = new Set(phase1.map(messageTextContent).filter((t) => t.length > 0));
+	const out: ContextEvent["messages"] = phase1.slice();
+	for (const message of current) {
+		const text = messageTextContent(message);
+		if (text.length === 0 || !phase1Texts.has(text)) out.push(message);
+		else if (!out.includes(message)) {
+			// Same text but already represented (e.g. Phase-3's convertToLlm-folded
+			// version of a `custom` message Phase-1 still carries with full type).
+			// Skip the redundant duplicate so `/context injections` doesn't repeat it.
+		}
+	}
+	return out;
+}
+
+/** Text-only key for cross-format dedup (custom, user string, user array, assistant). */
+function messageTextContent(message: ContextEvent["messages"][number]): string {
+	const m = message as { role?: string; customType?: string; content?: unknown };
+	if (typeof m.content === "string") return m.content;
+	if (Array.isArray(m.content)) {
+		const texts: string[] = [];
+		for (const block of m.content) {
+			if (block && typeof block === "object" && (block as { type?: string }).type === "text"
+				&& typeof (block as { text?: unknown }).text === "string") {
+				texts.push((block as { text: string }).text);
+			}
+		}
+		return texts.join("\n");
+	}
+	return "";
+}
+
 export class InitialCaptureState {
 	private pendingPreparation: CapturePreparation | undefined;
 	private initialSnapshot: InitialSnapshot | undefined;
+	/**
+	 * Snapshot of messages captured at the Phase-1 (`context`) freeze point. The
+	 * Phase-3 (`before_provider_request`) payload is provider-format and loses
+	 * `customType` after `convertToLlm`, so Phase 1's messages (which keep
+	 * `customType`) are merged in at every finalize so the snapshot keeps
+	 * attribution for `custom` injections from earlier in the chain.
+	 */
+	private phase1Messages: ContextEvent["messages"] | undefined;
 
 	/** The frozen Initial snapshot, or undefined until `finalize()` succeeds. */
 	public get snapshot(): InitialSnapshot | undefined {
 		return this.initialSnapshot;
 	}
 
-	/**
-	 * Own the structured prompt inputs from `before_agent_start`; no-op once
-	 * frozen. `promptAtHandler` is the chained prompt as this extension observed
-	 * it, which separates additions made before this extension loaded from those
-	 * made after it.
+/**
+	 * Own the structured prompt inputs from `before_agent_start`. Refreshes on
+	 * every call so `finalize()` always uses the latest options from the most
+	 * recent agent run. `promptAtHandler` is the chained prompt as this
+	 * extension observed it, which separates additions made before this
+	 * extension loaded from those made after it.
 	 */
 	public prepare(options: BuildSystemPromptOptions, promptAtHandler?: string): void {
-		if (this.initialSnapshot !== undefined) return;
 		this.pendingPreparation = {
 			promptOptions: copyPromptOptions(options),
 			toolSnippets: options.toolSnippets === undefined ? undefined : { ...options.toolSnippets },
 			promptAtHandler,
 		};
+		// Each capture cycle starts fresh so a Phase-1 freeze that fails to
+		// happen (or a test that calls finalize() with empty messages) does not
+		// leave stale `phase1Messages` bleeding into later rebuilds.
+		this.phase1Messages = undefined;
 	}
 
-	/**
-	 * Freeze the Initial snapshot from the first context event. Returns the
-	 * existing snapshot on repeat calls, or undefined when `prepare()` never ran.
-	 * `buildInput` runs only on the call that freezes, so callers may collect
-	 * expensive inputs there without paying for them once per later event.
+/**
+	 * Rebuild the snapshot from the latest `prepare()` inputs and the current
+	 * message list. Returns undefined when `prepare()` never ran. Subsequent
+	 * calls refresh the stored snapshot so callers reading `capture.snapshot`
+	 * after any Phase-2 event see the latest Phase-2 messages (including
+	 * extension-injected custom messages like pi-ide.editor-context).
+	 *
+	 * `buildInput` runs on every call, so callers may collect expensive inputs
+	 * there and pay only when a refresh is actually requested.
 	 */
 	public finalize(buildInput: () => CaptureFinalization): InitialSnapshot | undefined {
-		if (this.initialSnapshot !== undefined) return this.initialSnapshot;
 		if (this.pendingPreparation === undefined) return undefined;
 
 		const input = buildInput();
+		// Stash Phase-1's pi-internal messages (with `customType` preserved) before
+		// measuring; subsequent Phase-3 freezes keep this snapshot intact and merge
+		// in any provider-format additions so attribution never collapses to
+		// anonymous user-message.
+		if (this.phase1Messages === undefined) {
+			this.phase1Messages = input.messages;
+		}
+		const messages = mergePreservingCustomTypes(this.phase1Messages, input.messages);
 		const preparation = this.pendingPreparation;
 		const tools = captureActiveTools(input.allTools, input.activeToolNames, {
 			toolSnippets: preparation.toolSnippets,
@@ -145,10 +214,9 @@ export class InitialCaptureState {
 				sources: input.promptSources,
 				promptAtHandler: preparation.promptAtHandler,
 			}),
-			...measureInjectedMessages(input.messages, input.baselineMessages),
+			...measureInjectedMessages(messages, input.baselineMessages),
 		];
 		this.initialSnapshot = buildSnapshot(items, input.origin, input.capturedAt ?? new Date());
-		this.pendingPreparation = undefined;
 		return this.initialSnapshot;
 	}
 }

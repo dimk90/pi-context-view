@@ -381,7 +381,7 @@ test("InitialCaptureState owns prepared options before later handlers can mutate
 	assert.match(search?.text ?? "", /Original snippet/);
 });
 
-test("InitialCaptureState refreshes pending options and freezes the first snapshot", () => {
+test("InitialCaptureState refreshes pending options and rebuilds the snapshot on each finalize", () => {
 	const state = new InitialCaptureState();
 	const firstOptions: BuildSystemPromptOptions = { cwd: "/tmp" };
 	const finalOptions: BuildSystemPromptOptions = { cwd: "/tmp", customPrompt: "CUSTOM" };
@@ -415,9 +415,28 @@ test("InitialCaptureState refreshes pending options and freezes the first snapsh
 		origin: "synthetic-probe",
 	}));
 
-	assert.strictEqual(second, first);
-	assert.equal(second.groups[1]?.items[0]?.text, "captured");
-	assert.equal(second.capturedAt.toISOString(), "2026-07-10T12:00:00.000Z");
+	// The snapshot is rebuilt, not frozen: the second call returns a new object
+	// reflecting the latest prepare() options and the current buildInput().
+	// Second finalize passes messages=[] so the rebuilt snapshot has no message
+	// injection group; System Prompt still reflects "DIFFERENT" via prepare().
+	assert.ok(second !== undefined, "second finalize must produce a snapshot");
+	assert.notStrictEqual(second, first);
+	assert.equal(second.groups[0]?.items[0]?.label, "System Prompt");
+	assert.equal(
+		second.groups.flatMap((g) => g.items).find((i) => i.kind === "message"),
+		undefined,
+		"second snapshot has no message injections because buildInput() passed messages=[]",
+	);
+	assert.notEqual(
+		second.capturedAt.toISOString(),
+		"2026-07-10T12:00:00.000Z",
+		"second capturedAt falls back to new Date() because buildInput omitted it",
+	);
+	assert.equal(
+		first.capturedAt.toISOString(),
+		"2026-07-10T12:00:00.000Z",
+		"first capturedAt comes from buildInput",
+	);
 });
 
 test("InitialCaptureState does not finalize before prepare", () => {
