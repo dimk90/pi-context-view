@@ -8,7 +8,7 @@ Detect additions, modifications and deletions that extensions make to conversati
 
 The baseline is Pi's canonical session projection. Persistent contributions are already in that baseline and cancel out of the diff. They include stored custom messages, `context_edit` entries, compaction and branch summaries, boundary entries, recorded prompt/tool changes, and finalized message or tool-result replacements.
 
-Built-in extensions follow the same rules as third-party extensions. The forced system prompt and hidden tool declarations are also in scope: Pi applies these request-only changes on an extension's behalf. Pi's model-specific representation changes are normalized away.
+Built-in extensions follow the same rules as third-party extensions. The forced system prompt and hidden tool declarations are also in scope: Pi applies these request-only changes on an extension's behalf. Pi's model-specific representation changes are normalized away. Usage also uses the payload's tool declarations so that it does not count hidden tools (D9).
 
 | Request-only change                                                 | Capture                                     | Attribution                             |
 | ------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------- |
@@ -104,9 +104,8 @@ Release pending data on settlement and shutdown. Missing dispatch/model metadata
 
 #### Pi's own adjustments
 
-Normalize these differences before reporting extension edits:
+Pi changes the request after the capture. None of these changes are **edited after monitor** findings. Hidden declarations and the forced prompt projection are request-only changes that Pi makes on an extension's behalf; report them through D7 and D3. Normalize the other changes without reporting them:
 
-- Hidden declarations (D7) and forced prompt projection (D3).
 - `convertToLlm()`: custom messages become user messages; bash executions and summaries get wrapper text; bash executions excluded from context are dropped. Image blocking replaces images with `Image reading is disabled.`
 - Models without image input receive `(image omitted: model does not support images)` or the tool-result variant.
 - Cross-model assistant replay can turn thinking into text, drop empty or redacted thinking, remove signatures and rewrite tool-call IDs.
@@ -161,9 +160,23 @@ Pi calls `prepareLoadout()` when active tools change. Its outputs have different
 
 Pi does not expose the hidden set or which tools define `prepareLoadout()`. `pi.getAllTools()` supplies exposure and namespace. When captured declarations are absent from the payload, active `model-only` tools are attribution candidates, not confirmed sources. Both built-in `codemode` and `tool_search` have that exposure, but only `codemode` defines `prepareLoadout()`, so `tool_search` is a false candidate. Added or rewritten declarations are not loadout effects.
 
+The two views treat hidden declarations differently. The Injections view reports them as a request-only change, with the candidates above. Usage treats them as a normalized Pi adjustment: hidden tools drop out without a finding (D9).
+
 ### D8. Built-ins follow the same capture rules
 
-Built-ins load as `builtin:<name>` at the positions in D1. Codemode, tool search, MCP and llama.cpp register no `context`, `context_with_system` or `before_provider_request` handlers. MCP writes its `mcp_servers` prompt section through `systemPromptOptions`, so it belongs to the baseline; llama.cpp registers a provider. Codemode's hidden declarations are handled through D7. No special capture path is needed.
+Built-ins load as `builtin:<name>` at the positions in D1. Codemode, tool search, MCP and llama.cpp register no `context`, `context_with_system` or `before_provider_request` handlers. MCP writes its `mcp_servers` prompt section through `systemPromptOptions`, so it belongs to the baseline; llama.cpp registers a provider. Codemode's hidden declarations are handled through D7 and D9. No special capture path is needed.
+
+### D9. Usage counts declared tools
+
+Usage replays tool declarations from the session projection. Hidden tools stay active, so the replay still declares them, and replay alone counts tools that the model never receives. Usage therefore filters replayed tools by the latest payload:
+
+- **Source.** Take the tool-declaration channel of the latest paired payload (D4); warm refreshes do not count. Remove `__pi_deferred_placeholder__`. The tool-declaration channel must be complete; the message channel does not matter.
+- **Filter.** Count a replayed tool only if the payload declares its name. Other replayed tools drop out of Usage: they are neither listed nor counted. Payload declarations missing from the replay are not Usage tools; D3 and D4 report them.
+- **Definitions.** Count the replayed name, description and schema, not the payload text. Usage stays a provider-independent estimate.
+- **Freshness.** Use the payload only while the current replayed tool names equal those of its paired capture's baseline (D2). An active-tool change, branch navigation or resume that changes the set makes the payload unusable until the next request.
+- **Fallback.** Without a usable payload, count every replayed tool without a marker, as Usage does today. This covers the time before the first request, a changed tool set, warm refreshes only and an incomplete tool-declaration channel.
+
+Retain only the two name sets for Usage and release the payload clone as D4 describes. Keep the name sets process-local like other captured data.
 
 ## Components
 
@@ -177,6 +190,7 @@ Built-ins load as `builtin:<name>` at the positions in D1. Codemode, tool search
 | PayloadParser     | Deferred                                                                    | Extract message and tool-declaration channels                                        |
 | PayloadGuard      | Deferred                                                                    | Normalize Pi adjustments and report unexplained differences or incomplete comparison |
 | LoadoutAttributor | Deferred                                                                    | Explain missing declarations with active `model-only` candidates                     |
+| DeclaredTools     | Deferred, after PayloadGuard                                                | Keep the latest declared and baseline tool names for Usage (D9)                      |
 | DispatchConfirmer | Assistant `message_start`, `provider_stream_event`, assistant `message_end` | Record identity once per paired request; check extractor compatibility under B       |
 | Reporter          | Deferred                                                                    | Render findings independently of capture                                             |
 
@@ -220,6 +234,7 @@ export default function contextMonitor(pi: ExtensionAPI) {
   let unpaired: Capture | undefined; // latest capture still waiting for its payload
   let warmDecisionSinceCapture = false;
   let awaitingDispatch: PendingPayload | undefined;
+  let latestDeclaredTools: DeclaredTools | undefined; // read by Usage (D9)
 
   pi.on("context_with_system", (event, ctx) => {
     const baseline = ctx.sessionManager.buildSessionProjection().messages;
@@ -279,10 +294,16 @@ export default function contextMonitor(pi: ExtensionAPI) {
       const model = dispatch && ctx.modelRegistry.find(dispatch.provider, dispatch.model);
       const format = dispatch && chooseFormat(pending.payload, dispatch);
       if (!model || !format) {
+        latestDeclaredTools = undefined; // Usage falls back to replay
         reportIncompleteGuard(ctx, pending.capture.id);
         return;
       }
       const parsed = parsePayload(pending.payload, format);
+      // keep tool names only, never the payload
+      latestDeclaredTools = {
+        declared: declaredToolNames(parsed),
+        baseline: replayedToolNames(pending.capture.baseline),
+      };
       const expected = applyPiSteps(pending.capture, model);
       const findings = explainByLoadout(compare(parsed, expected), pi.getAllTools());
       reportLateEdits(ctx, pending.capture.id, findings, dispatch);
@@ -291,7 +312,7 @@ export default function contextMonitor(pi: ExtensionAPI) {
 }
 ```
 
-The omitted helpers implement the components above. `Dispatch` holds provider, API and model. `chooseFormat` returns no format for unsupported payloads. `reportIncompleteGuard` distinguishes an unavailable comparison from a successful comparison with no edits. `applyPiSteps` leaves hidden declarations in the expected channel for `explainByLoadout` to handle.
+The omitted helpers implement the components above. `Dispatch` holds provider, API and model. `chooseFormat` returns no format for unsupported payloads. `reportIncompleteGuard` distinguishes an unavailable comparison from a successful comparison with no edits. `applyPiSteps` leaves hidden declarations in the expected channel for `explainByLoadout` to handle. `declaredToolNames` removes the deferred placeholder.
 
 Under B or the hybrid, schedule extraction after the payload clone instead of waiting for dispatch; retain the comparison data needed for confirmation and normalization.
 
@@ -299,21 +320,22 @@ Under B or the hybrid, schedule extraction after the payload clone instead of wa
 
 Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_DIR` and RPC mode. The server should support OpenAI Completions and Anthropic streaming, tool calls, delayed stream events and controlled failures. Include a text-only model.
 
-| Check                     | Required cases                                                                                                                                                                                                                                |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core calibration          | Load only the monitor with `pi --no-extensions -e ./src/index.ts`. Both diffs must be empty for first and later prompts, tool follow-ups, resume with another model, and compaction. Add `-e builtin:llama.cpp` only if the model needs it.   |
-| Handler ordering          | Load each fixture before and after the monitor. Exercise every resource position in D1 with project trust resolved.                                                                                                                           |
-| Structured edits          | Add, modify and delete conversation messages; patch system sections; mutate messages in place; change active tools on a later prompt.                                                                                                         |
-| Late edits                | Rewrite the payload before and after the monitor and confirm the stated visibility limits.                                                                                                                                                    |
-| Forced prompt             | Return `systemPrompt` from `before_agent_start`; verify the capture and guard apply it regardless of load order.                                                                                                                              |
-| Built-ins                 | Load codemode with an active `codemode` tool in both normal and `"codemode": { "mode": "only" }` settings; load tool-search and MCP with a minimal direct-tool server. Separate recorded prompt/description changes from hidden declarations. |
-| Routing and normalization | Alternate physical providers; route image input to a text-only model; cover every adjustment in D4.                                                                                                                                           |
-| Retries                   | Fail once with agent retries enabled, then with `"retry": { "enabled": false, "provider": { "maxRetries": 2 } }`. Verify capture pairing.                                                                                                     |
-| Cache warming             | Set model `"promptCache": { "short": 12 }`, `"cacheWarming": "idle"`, and return `{ action: "warm" }` from the decision fixture. Check successful and failed refreshes are skipped.                                                           |
-| Dispatch timing           | Delay stream events after HTTP headers; accept whichever identity-bearing event arrives first. Later events must not repeat findings. Include failures before streaming.                                                                      |
-| Incomplete comparison     | Missing model metadata and unsupported or ambiguous payloads must not appear as empty diffs.                                                                                                                                                  |
-| Shape extraction          | For B or the hybrid, share extractors only for equivalent representations. Do not accept an image placeholder as Pi's adjustment without model evidence.                                                                                      |
-| Cleanup and privacy       | Release pending data on settlement/shutdown; keep raw content out of logs, session entries and notifications.                                                                                                                                 |
+| Check                     | Required cases                                                                                                                                                                                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core calibration          | Load only the monitor with `pi --no-extensions -e ./src/index.ts`. Both diffs must be empty for first and later prompts, tool follow-ups, resume with another model, and compaction. Add `-e builtin:llama.cpp` only if the model needs it.                                         |
+| Handler ordering          | Load each fixture before and after the monitor. Exercise every resource position in D1 with project trust resolved.                                                                                                                                                                 |
+| Structured edits          | Add, modify and delete conversation messages; patch system sections; mutate messages in place; change active tools on a later prompt.                                                                                                                                               |
+| Late edits                | Rewrite the payload before and after the monitor and confirm the stated visibility limits.                                                                                                                                                                                          |
+| Forced prompt             | Return `systemPrompt` from `before_agent_start`; verify the capture and guard apply it regardless of load order.                                                                                                                                                                    |
+| Built-ins                 | Load codemode with an active `codemode` tool in both normal and `"codemode": { "mode": "only" }` settings; load tool-search and MCP with a minimal direct-tool server. Separate recorded prompt/description changes from hidden declarations.                                       |
+| Usage tools               | With codemode `"mode": "only"`, Usage counts only `codemode` after a request and every replayed tool before it. Change active tools and reopen Usage before and after the next request. An incomplete tool-declaration channel falls back to replay. The placeholder never appears. |
+| Routing and normalization | Alternate physical providers; route image input to a text-only model; cover every adjustment in D4.                                                                                                                                                                                 |
+| Retries                   | Fail once with agent retries enabled, then with `"retry": { "enabled": false, "provider": { "maxRetries": 2 } }`. Verify capture pairing.                                                                                                                                           |
+| Cache warming             | Set model `"promptCache": { "short": 12 }`, `"cacheWarming": "idle"`, and return `{ action: "warm" }` from the decision fixture. Check successful and failed refreshes are skipped.                                                                                                 |
+| Dispatch timing           | Delay stream events after HTTP headers; accept whichever identity-bearing event arrives first. Later events must not repeat findings. Include failures before streaming.                                                                                                            |
+| Incomplete comparison     | Missing model metadata and unsupported or ambiguous payloads must not appear as empty diffs.                                                                                                                                                                                        |
+| Shape extraction          | For B or the hybrid, share extractors only for equivalent representations. Do not accept an image placeholder as Pi's adjustment without model evidence.                                                                                                                            |
+| Cleanup and privacy       | Release pending data on settlement/shutdown; keep raw content out of logs, session entries and notifications.                                                                                                                                                                       |
 
 On Pi upgrades, recheck event shapes, handler order, provider adjustments and whether dispatch metadata is now exposed directly.
 
