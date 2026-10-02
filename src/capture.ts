@@ -34,8 +34,8 @@ export const PROBE_IDENTITIES_CUSTOM_TYPE = "pi-context-view:probe-identities";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
 const SETUP_ABORT_ERROR_MESSAGES = new Set([
-	"This operation was aborted",
-	"The operation was aborted.",
+	"This operation was aborted", // Node.js
+	"The operation was aborted.", // Bun
 ]);
 
 /** Everything available when the first context event finalizes a snapshot. */
