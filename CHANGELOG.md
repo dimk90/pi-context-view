@@ -1,6 +1,12 @@
 # Changelog
 
 
+## Unreleased
+
+### Fixed
+* `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).
+
+
 ## `[v0.6.0]` - 20.09.2026
 
 ### New
