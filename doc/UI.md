@@ -76,7 +76,7 @@ bullet opens with the keyword in the same fixed color as the marker it explains,
 so `Highlighted` uses `syntaxNumber`, `(guess)` `dim`, `Dropped`
 `toolDiffRemoved`, and `Moved` `warning`.
 
-Recovered `Available Tools` and `Guidelines` blocks outside pi's normal order
+Moved `Available Tools` and `Guidelines` sections outside pi's normal order
 carry a fixed `warning` `Moved` marker after the estimate, in hierarchy rows,
 preview subheaders, and the standalone part preview's metadata. A narrow row or
 standalone header omits the whole marker when it will not fit. It describes

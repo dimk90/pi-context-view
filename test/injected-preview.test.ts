@@ -62,9 +62,9 @@ function createTheme(): Theme {
 /** Measured prompt with short attributed lines and enough native lines to exercise caps. */
 function createSnapshot(nativeLineCount = 16, withSnippet = false): InitialSnapshot {
 	const nativeLines = Array.from({ length: nativeLineCount }, (_, index) => `- Native rule ${index}`).join("\n");
-	const toolsBlock = withSnippet ? `\nAvailable tools:\n- ${SNIPPET_LINE}\n- read: Read files\n` : "";
-	const prompt = `Preamble\n${toolsBlock}\nGuidelines:\n- ${GUIDELINE}\n${nativeLines}`;
-	const items = analyzeSystemPrompt(prompt, { cwd: "/fixture" }, [{
+	const toolsBlock = withSnippet ? `\n\n<tools>\n- ${SNIPPET_LINE}\n- read: Read files\n</tools>` : "";
+	const prompt = `Preamble${toolsBlock}\n\n<rules>\n- ${GUIDELINE}\n${nativeLines}\n</rules>`;
+	const items = analyzeSystemPrompt(prompt, {}, [{
 		name: "search", description: "Search", parametersJson: "{}",
 		snippet: withSnippet ? SNIPPET : undefined,
 		guidelines: [GUIDELINE], source: SOURCE,
@@ -291,9 +291,9 @@ test("Usage opens System Prompt sections directly and retains attribution withou
 test("prompt additions render as guessed attributions with their own caveat", () => {
 	const theme = createTheme();
 	const addition = "\n\nAsk before editing: npm:web docs.";
-	const prompt = `Preamble\n\nGuidelines:\n- Native rule\nCurrent working directory: /fixture${addition}`;
+	const prompt = `Preamble\n\n<rules>\n- Native rule\n</rules>\n\n<cwd>\n/fixture\n</cwd>${addition}`;
 	const snapshot = buildSnapshot(
-		analyzeSystemPrompt(prompt, { cwd: "/fixture" }, [], {
+		analyzeSystemPrompt(prompt, {}, [], {
 			sources: [{ source: "npm:web", path: "/pkgs/web/index.ts" }],
 		}),
 		"real-turn",
@@ -330,9 +330,9 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 test("a guessed addition names the extension tool its text mentions", () => {
 	const theme = createTheme();
 	const addition = "\n\nCall web_search before answering; npm:web docs explain why.";
-	const prompt = `Preamble\n\nGuidelines:\n- Native rule\nCurrent working directory: /fixture${addition}`;
+	const prompt = `Preamble\n\n<rules>\n- Native rule\n</rules>\n\n<cwd>\n/fixture\n</cwd>${addition}`;
 	const snapshot = buildSnapshot(
-		analyzeSystemPrompt(prompt, { cwd: "/fixture" }, [], {
+		analyzeSystemPrompt(prompt, {}, [], {
 			sources: [{ source: "npm:web", path: "/pkgs/web/index.ts", names: ["web_search", "/web"] }],
 		}),
 		"real-turn",
@@ -492,8 +492,8 @@ test("the marker legend gives short content every row and never truncates on tin
 /** Snapshot of a --system-prompt replacement: every pi block dropped, one addition still sent. */
 function createReplacedSnapshot(): InitialSnapshot {
 	const addition = "\n\nAsk before editing: npm:web docs.";
-	const prompt = `Custom reviewer prompt.\nCurrent working directory: /fixture${addition}`;
-	const items = analyzeSystemPrompt(prompt, { cwd: "/fixture", customPrompt: "Custom reviewer prompt." }, [{
+	const prompt = `Custom reviewer prompt.\n\n<cwd>\n/fixture\n</cwd>${addition}`;
+	const items = analyzeSystemPrompt(prompt, { customPrompt: "Custom reviewer prompt." }, [{
 		name: "search", description: "Search", parametersJson: "{}",
 		snippet: SNIPPET, guidelines: [GUIDELINE], source: SOURCE,
 	}], { sources: [{ source: SOURCE, path: "/pkgs/web/index.ts" }] });
@@ -543,25 +543,31 @@ test("a replaced prompt marks its dropped blocks in the tree and in previews", (
 	}
 });
 
-/** Snapshot of a prompt whose tool-surface blocks an extension moved past pi's footer. */
+/** Snapshot of a prompt whose tool-surface sections an extension moved past pi's cwd section. */
 function createRelocatedSnapshot(): InitialSnapshot {
 	const prompt = [
 		"Preamble line.",
 		"",
+		"<docs>",
 		"Pi documentation (read only when the user asks about pi itself):",
 		"- Main documentation: /docs/README.md",
+		"</docs>",
 		"",
-		"Current working directory: /fixture",
+		"<cwd>",
+		"/fixture",
+		"</cwd>",
 		"",
-		"Available tools:",
+		"<tools>",
 		`- ${SNIPPET_LINE}`,
 		"- read: Read files",
+		"</tools>",
 		"",
-		"Guidelines:",
+		"<rules>",
 		`- ${GUIDELINE}`,
 		"- Be concise in your responses",
+		"</rules>",
 	].join("\n");
-	const items = analyzeSystemPrompt(prompt, { cwd: "/fixture" }, [
+	const items = analyzeSystemPrompt(prompt, {}, [
 		{
 			name: "search", description: "Search", parametersJson: "{}",
 			snippet: SNIPPET, guidelines: [GUIDELINE], source: SOURCE,
@@ -580,12 +586,12 @@ test("a relocated block stays a counted System Prompt part, marked where it now 
 	const view = new InjectionsView(theme, { snapshot: createRelocatedSnapshot() }, () => {}, () => height);
 	const list = view.render(120);
 
-	// Both blocks follow the footer, keep their estimates, and name their new position.
+	// Both sections follow cwd, keep their estimates, and name their new position.
 	const rows = plain(list).replace(/\.{2,}/g, "\u2026").split("\n");
 	assert.deepEqual(
 		rows.filter((row) => /Current Dir|Available Tools|Guidelines/.test(row))
 			.map((row) => row.replace(/^[\s│├└─]+/, "")),
-		["Current Dir \u2026 9", "Available Tools \u2026 9 · Moved", "Guidelines \u2026 11 · Moved"],
+		["Current Dir \u2026 2", "Available Tools \u2026 5 · Moved", "Guidelines \u2026 8 · Moved"],
 	);
 	const row = list.find((line) => plain([line]).includes("Guidelines"));
 	assert.ok(row?.includes(styledMarker(theme, "moved")), "a dim separator carries the keyword's fixed color");
@@ -599,14 +605,14 @@ test("a relocated block stays a counted System Prompt part, marked where it now 
 	view.handleInput("j"); // System Prompt
 	view.handleInput("\r");
 	const parent = plain(view.render(120));
-	assert.match(parent.replace(/\s+/g, " "), /Available Tools · 9 tokens · Moved/);
-	assert.match(parent.replace(/\s+/g, " "), /Guidelines · 11 tokens · Moved/);
+	assert.match(parent.replace(/\s+/g, " "), /Available Tools · 5 tokens · Moved/);
+	assert.match(parent.replace(/\s+/g, " "), /Guidelines · 8 tokens · Moved/);
 	assert.ok(parent.includes(`- ${SNIPPET_LINE}${ARROW}${SOURCE}:${TOOL}`));
 
 	view.handleInput("\u001b");
 	for (let step = 0; step < 4; step++) view.handleInput("j"); // Available Tools
 	view.handleInput("\r");
-	assert.match(plain(view.render(120)), /Available Tools\s+pi · 9 tokens · Moved/);
+	assert.match(plain(view.render(120)), /Available Tools\s+pi · 5 tokens · Moved/);
 	assert.ok(plain(view.render(120)).includes(`- ${SNIPPET_LINE}${ARROW}${SOURCE}:${TOOL}`));
 
 	for (const width of [30, 60, 80, 120]) {
@@ -627,8 +633,8 @@ test("Usage preserves moved parts, their estimates, and their marker across them
 	assert.doesNotMatch(plain(dashboard), /Read files|Moved/);
 	view.handleInput("\r");
 	const preview = view.render(120);
-	assert.match(plain(preview), /Available Tools · 9 tokens · Moved/);
-	assert.match(plain(preview), /Guidelines · 11 tokens · Moved/);
+	assert.match(plain(preview), /Available Tools · 5 tokens · Moved/);
+	assert.match(plain(preview), /Guidelines · 8 tokens · Moved/);
 	assertLegend(preview, theme, ["highlighted", "moved"]);
 	assert.ok(preview.some((line) => line.includes(styledMarker(theme, "moved"))));
 	const originalFg = theme.fg.bind(theme);
@@ -695,7 +701,7 @@ test("Usage explains markers in categories beyond the System Prompt, at both pre
 
 test("native-only System Prompt and sibling previews do not claim extension injection", () => {
 	const snapshot = buildSnapshot(analyzeSystemPrompt(
-		"Preamble\n\nGuidelines:\n- Native rule -> npm:web", { cwd: "/fixture" }, [],
+		"Preamble\n\n<rules>\n- Native rule -> npm:web\n</rules>", {}, [],
 	), "real-turn", new Date());
 	const theme = createTheme();
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);

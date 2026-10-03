@@ -13,6 +13,7 @@ import {
 } from "./capture.ts";
 import type { ConfigCreationResult } from "./config.ts";
 import type { InitialSnapshot } from "./model.ts";
+import { MIN_PI_VERSION } from "./pi-version.ts";
 import { runWithProbeToken } from "./probe-token.ts";
 import { readGlobalCacheWarmingMode, readLiveSettings } from "./settings.ts";
 import { normalizePreviewText } from "./text.ts";
@@ -137,6 +138,14 @@ export function reportCommandMessage(
 /** Refuse a view outside TUI mode, naming the form the user typed. */
 export function reportTuiOnly(context: ExtensionCommandContext, view: ContextView): void {
 	reportCommandMessage(context, `/context ${view} is available in TUI mode only.`, "warning");
+}
+
+/** Refuse a view on a Pi version whose lifecycle this extension does not capture. */
+export function reportUnsupportedPi(context: ExtensionCommandContext, version: string): void {
+	reportCommandMessage(context,
+		`/context views require Pi ${MIN_PI_VERSION} or newer; this is Pi ${version}. Nothing was captured.`,
+		"error",
+	);
 }
 
 /** Report the outcome of the explicit create-only configuration command. */

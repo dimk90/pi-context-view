@@ -43,7 +43,7 @@ which parts `pi-context-view` uses or skips.
 
 ```text
 Canonical session projection
-  Read through buildSessionContext()            USE: session branch baseline
+  Read through buildSessionProjection()         USE: session branch baseline
   (branch, compaction, context edits, custom messages)
   |
   + New user message and pending messages
@@ -98,10 +98,23 @@ Pi's `context` handler chain starts with a deep copy of the messages. Its result
 is used for that request, not written back into session history. Rebuilding the
 session branch later cannot recover those request-only changes.
 
+### Supported Pi Versions
+
+This extension requires Pi `1.0.0` or newer. It relies on `context_with_system`
+filtering, `turn_end` omission edits, and the probe's abort form described
+below. The Pi packages stay `"*"` peer dependencies, so an older Pi can still
+load the extension. The factory therefore compares pi's `VERSION` with
+`MIN_PI_VERSION` and, on an older Pi, registers no lifecycle handlers: nothing
+is captured, probed, or filtered. `/context usage` and `/context injections`
+then report the required and running versions as an error; `/context config`
+keeps working. A version without a numeric `major.minor.patch` core is treated
+as supported.
+
 ### Pi APIs Use
 
-- Use `buildSessionContext(entries, leafId).messages` to obtain the current
-  branch's conversation messages, with compaction applied. Do not estimate usage
+- Use `ctx.sessionManager.buildSessionProjection().messages` to obtain the
+  current branch's conversation messages, with compaction and context edits
+  applied. Do not estimate usage
   directly from `buildContextEntries()`: it also returns bookkeeping records
   such as model changes, bookmarks, and saved extension state. Pi does not send
   those records to the model, so they must not contribute to token estimates.
@@ -125,7 +138,7 @@ session branch later cannot recover those request-only changes.
 - `pi.getActiveTools()` and `pi.getAllTools()` supply the active tool names,
   definitions, and source information. `pi.getCommands()` supplies additional
   extension source information for prompt attribution.
-  **Goal:** estimate Initial's active tools and provide Usage's legacy fallback.
+  **Goal:** estimate Initial's active tools and provide Usage's live fallback.
   For transcript-backed Usage, recorded declarations supply definitions and the
   active set; current registration metadata supplies provenance and guideline
   attribution only. Unregistered recorded tools stay visible as unattributed.
@@ -226,8 +239,8 @@ Every context_with_system event
 ```
 
 Usage therefore combines two sources: the request-only changes frozen in
-Initial, and the session-branch messages read when the view opens. On Pi 0.86,
-those messages also carry the recorded prompt and tool state. See
+Initial, and the session-branch messages read when the view opens. Those
+messages also carry the recorded prompt and tool state. See
 [Usage and Attribution](#usage-and-attribution) for that flow.
 
 ### Capturing the Final Prompt and Tools
@@ -266,7 +279,7 @@ and keep them stable for later inspection.
 
 The request message list contains the whole conversation, so storing it would
 duplicate visible history and make the snapshot large. To separate injected
-content, compare the `context` event messages with `buildSessionContext()` for
+content, compare the `context` event messages with `buildSessionProjection()` for
 the current branch, after removing known probe messages from both lists:
 
 - **Match complete messages by their serialized JSON.** An exact comparison
@@ -329,7 +342,8 @@ it sees.
   `systemPromptOptions.forceSystemPrompt`, and `ctx.getSystemPrompt()` then
   renders that exact text instead of the structured sections. Initial measures
   the forced text as the prompt, so recorded sections the run did not send are
-  neither counted nor attributed. Pi projects the forced text onto the request
+  neither counted nor attributed; without XML sections it is
+  [one undivided part](#prompt-parts-and-moved-blocks). Pi projects the forced text onto the request
   after the `context` handlers and keeps recording the structured sections, so
   only Initial sees it: Usage reads the transcript instead.
 
@@ -361,7 +375,7 @@ new transformed request on each open.
 Live prompt/tool fallback   Initial snapshot          Current session branch
          |                       |                           |
          |                       v                           v
-         |                requestOnly items          buildSessionContext()
+         |                requestOnly items         buildSessionProjection()
          |                 (still frozen)                    |
          |                       |                           v
          |                       |                  Filter probe messages
@@ -397,13 +411,14 @@ name, description, and schema, not today's registered definition. Removed tools
 and superseded sections no longer contribute. An explicitly empty system state
 is still authoritative; it must not revive the live prompt or active tools.
 
-`buildSessionContext()` already selects the current branch and applies compaction.
+`buildSessionProjection()` already selects the current branch and applies compaction.
 Its compaction checkpoint replaces earlier system messages, including system
 messages in the retained range. The same replay therefore works after resume,
 branch navigation, and compaction without a separate mutable state cache.
 
-Only a legacy or empty branch with no system messages uses `buildNativeSnapshot()`
-and the caller's live prompt/tools. Neither path reruns extension handlers.
+Only a branch with no recorded system message yet, such as a new session
+before its first prompt, uses `buildNativeSnapshot()` and the caller's live
+prompt/tools. Neither path reruns extension handlers.
 Generated instruction-file and skill records are read from the recorded prompt,
 not today's loader metadata. Custom XML sections remain named System Prompt
 parts even after `cwd`; their tag does not establish extension ownership.
@@ -634,8 +649,8 @@ positions and cached prefixes. `context` handlers and earlier
 `context_with_system` handlers can still see blank probe entries that have not
 been omitted from the projection.
 
-Pi 0.84 and newer report an abort during stream setup, such as the probe's
-`turn_start` abort, with an `error` stop reason instead of `aborted`. Its error
+Pi reports the probe's `turn_start` abort with an `error` stop reason:
+authentication rejects the already-aborted signal before streaming. Its error
 message is the `AbortError` text of the JavaScript runtime that runs pi:
 
 | Runtime                    | Error message                |
@@ -644,8 +659,8 @@ message is the `AbortError` text of the JavaScript runtime that runs pi:
 | Bun (standalone pi binary) | `The operation was aborted.` |
 
 Blank such an error only for a recorded probe assistant with one of these exact
-messages. Provider errors and cancellations of runs the probe does not own
-remain visible. A runtime with other wording leaves the error row visible: add
+messages. Any other stop reason, including `aborted`, provider errors, and
+cancellations of runs the probe does not own remain visible. A runtime with other wording leaves the error row visible: add
 its exact message instead of matching abort text loosely.
 
 Blanking cleans agent state, later model contexts, and the saved session, but
@@ -729,7 +744,7 @@ change the result.
 
 ### Prompt Parts and Moved Blocks
 
-Pi 0.86 wraps independently replaceable sections in XML. Map `tools`, `rules`,
+Pi wraps independently replaceable sections in XML. Map `tools`, `rules`,
 `docs`, `addendum`, and `cwd` to Available Tools, Guidelines, Documentation,
 Appended Prompt, and Current Dir. Keep the unwrapped preamble separately.
 Read `project_context` instruction records and `skills` records as their existing
@@ -751,43 +766,24 @@ relocated `tools` and `rules` retain the Moved marker and tool references.
 A custom prefix may restore individual native sections, so only absent ones
 are marked Dropped.
 
-The legacy Pi 0.80–0.85 parser remains available for unwrapped prompts and old
-captures. It recognizes `Available tools:`, `Guidelines:`, `Pi documentation`,
-appended text, and the working-directory footer.
-Find legacy block headers independently and preserve their actual order. An extension
-can move or rewrite a block, not just append text. The footer is therefore not
-an absolute boundary for Available Tools or Guidelines.
+A section after one pi normally renders later gets typed `moved` metadata.
+This records position only: it does not prove who moved it or that its text is
+unchanged. Moved native text still counts under System Prompt, and extension
+tool lines keep their usual tool ownership. Never invent missing or withheld
+tool lines.
 
-Outside their normal region before Documentation, accept a block only when:
-
-1. Its header starts a line and is followed immediately by consecutive bullets.
-2. Available Tools has at least one exact active-tool `name: snippet` match,
-   or Guidelines has an active-tool or universal pi guideline match.
-3. The block ends at the first non-bullet line. Include pi's exact optional
-   custom-tools filler with Available Tools.
-
-Never invent missing or withheld tool lines. Ignore header examples inside
-separately identified instruction files, skills, appended instructions, and
-Markdown fences.
-
-A match before the footer takes priority over later copies. Several candidates
-after the footer are ambiguous and stay prompt additions. A block after a
-normally later block or after the footer gets typed `moved` metadata. This
-records position only: it does not prove who moved it or that its text is
-unchanged.
-
-Moved native text still counts under System Prompt. Extension tool lines keep
-their usual tool ownership. Keep all recovered blocks in actual prompt order,
-including relative to Appended Prompt and Current Dir. A newly added tool list
-is not a moved block if a custom prompt prevented pi from rendering that block
-in the first place.
+Pi always renders a `cwd` section, so only a forced prompt can have no sections.
+Measure such a prompt as one undivided System Prompt part. Text shaped like
+pi's own blocks is not evidence of them there: it has no Moved, Dropped, or
+Extension Additions parts, and its tools keep only their definitions. A forced
+prompt that contains sections is measured like any other sectioned prompt.
 
 ### Tool Ownership and Preview References
 
 Use `ToolInfo.sourceInfo` for tool ownership.
 
-Separate a tool's complete prompt bullets only from the selected blocks,
-including recovered moved blocks. Never match unrelated text or only a prefix
+Separate a tool's complete prompt bullets only from the first `tools` and
+`rules` sections, including moved ones. Never match unrelated text or only a prefix
 of a longer bullet. Give each shared guideline bullet to the first tool that
 declares it in pi's active-tool order, so it counts once. Pi's own bullets stay
 in the base prompt.
@@ -815,11 +811,10 @@ or token shares. Do not count text pi never sent.
 
 ### Extension Prompt Additions
 
-For unwrapped gaps between/after XML sections, or legacy text after pi's footer
-and outside recovered blocks:
+For unwrapped gaps between or after XML sections:
 
 - Split at blank lines and ignore whitespace-only gaps. Keep gaps on opposite
-  sides of a recovered block separate, so unrelated source evidence cannot mix.
+  sides of a section separate, so unrelated source evidence cannot mix.
 - Also split at the boundary of the prompt seen by this extension's own
   `before_agent_start` handler. A block must not combine additions from
   extensions loaded before and after this one.
@@ -938,8 +933,9 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/settings.ts`         | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
 | `src/capture.ts`          | Manage Initial, probes, compaction state, probe identities, and injected messages.            |
 | `src/probe-token.ts`      | Carry the probe token through the async context of this extension's own send.                 |
+| `src/pi-version.ts`       | Check the running Pi version against the oldest supported release.                            |
 | `src/measure.ts`          | Split and estimate prompt/tool contributions without pi API access.                           |
-| `src/prompt-blocks.ts`    | Locate XML sections and legacy/moved tool surfaces, excluding nested/fenced examples.         |
+| `src/prompt-blocks.ts`    | Locate XML sections and moved tool surfaces, excluding nested/fenced examples.                |
 | `src/transcript.ts`       | Replay system content, section patches, and tool declarations without provider serialization. |
 | `src/prompt-additions.ts` | Identify prompt additions and make source-attribution guesses.                                |
 | `src/usage.ts`            | Classify messages; build usage totals and previews.                                           |
@@ -958,6 +954,7 @@ Lifecycle or accounting changes must preserve these rules. The current
 probe request isolation and message ownership, not a relaxation of those goals.
 
 - Normal turns are unchanged when inspection is not invoked.
+- On a Pi version older than `MIN_PI_VERSION`, no lifecycle handler is registered.
 - Probes make no provider request, and their messages are blanked in agent
   state, in every later model context, and in the saved session.
 - Only a run carrying the probe token is aborted or rewritten. Every other run

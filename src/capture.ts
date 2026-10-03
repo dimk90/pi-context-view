@@ -35,6 +35,7 @@ import type { PromptSourceSlice } from "./prompt-additions.ts";
 export const PROBE_IDENTITIES_CUSTOM_TYPE = "pi-context-view:probe-identities";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+/** `AbortError` text of the JavaScript runtime that runs pi, for the probe's `turn_start` abort. */
 const SETUP_ABORT_ERROR_MESSAGES = new Set([
 	"This operation was aborted", // Node.js
 	"The operation was aborted.", // Bun
@@ -164,7 +165,7 @@ export class CompactionState {
 		return this.currentSignal !== undefined && !this.currentSignal.aborted;
 	}
 
-	/** Track the current compaction until success, abort, or agent settlement. */
+	/** Track the current compaction until Pi reports its end or its signal aborts. */
 	public begin(signal: AbortSignal): void {
 		if (signal.aborted) {
 			this.currentSignal = undefined;
@@ -347,16 +348,15 @@ export class SilentProbeState {
 
 	/**
 	 * Replace a recorded probe abort with an empty successful message so pi does
-	 * not render an abort transcript row. Pi 0.84 reports an abort during stream
-	 * setup as an error instead of the legacy aborted stop reason.
+	 * not render an abort transcript row. Pi reports the `turn_start` abort,
+	 * which authentication rejects before streaming, as an error.
 	 */
 	private blankProbeAbort(
 		message: Extract<ContextEvent["messages"][number], { role: "assistant" }>,
 	): ContextEvent["messages"][number] | undefined {
-		const isProbeAbort = message.stopReason === "aborted"
-			|| (message.stopReason === "error"
-				&& message.errorMessage !== undefined
-				&& SETUP_ABORT_ERROR_MESSAGES.has(message.errorMessage));
+		const isProbeAbort = message.stopReason === "error"
+			&& message.errorMessage !== undefined
+			&& SETUP_ABORT_ERROR_MESSAGES.has(message.errorMessage);
 		if (!isProbeAbort || !this.ownsMessage(message)) return undefined;
 		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };
 	}
@@ -445,7 +445,7 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 	const items = analyzeSystemPrompt(systemMessageText(state), {
 		...options,
 		// Current loader overrides are not evidence of what this branch recorded.
-		customPrompt: undefined, appendSystemPrompt: undefined, sections: undefined,
+		customPrompt: undefined, sections: undefined,
 	}, tools, { sources: input.promptSources });
 	const snapshot = buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
 	return mergeRequestOnlyMessages(snapshot, input.initial);
@@ -470,19 +470,9 @@ export function mergeRequestOnlyMessages(
 /** Copy the prompt-options slice used by measurement, without shared nested references. */
 export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOptionsSlice {
 	return {
-		cwd: options.cwd,
 		homeDir: process.env.HOME,
 		customPrompt: options.customPrompt,
-		appendSystemPrompt: options.appendSystemPrompt,
 		sections: options.sections === undefined ? undefined : { ...options.sections },
-		contextFilePaths: options.contextFiles?.map((file) => file.path),
-		skills: options.skills
-			?.filter((skill) => !skill.disableModelInvocation)
-			.map((skill) => ({
-				name: skill.name,
-				description: skill.description,
-				filePath: skill.filePath,
-			})),
 	};
 }
 

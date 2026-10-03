@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-	buildSessionContext,
+	buildSessionProjection,
 	type ContextEvent,
 	SessionManager,
 	type ToolInfo,
@@ -99,7 +99,7 @@ test("Usage counts replayed sections and declarations once instead of live state
 	]).estimatedTokens);
 });
 
-test("Usage distinguishes legacy fallback from explicit removal of all prompt content and tools", () => {
+test("Usage distinguishes the live fallback from explicit removal of all prompt content and tools", () => {
 	assert.match(previewText(usageFor([])), /LIVE PROMPT/);
 	const removed: SystemMessage = {
 		role: "system", content: "", timestamp: 3,
@@ -121,25 +121,25 @@ test("Usage follows restored branches and compaction checkpoints without old sys
 	const root = session.appendMessage(INITIAL);
 	const user = session.appendMessage({ role: "user", content: "Retained user text", timestamp: 4 });
 	const updated = session.appendMessage(PATCH);
-	const beforeCompaction = usageFor(session.buildSessionContext().messages);
+	const beforeCompaction = usageFor(session.buildSessionProjection().messages);
 	assert.match(previewText(beforeCompaction), /New rules/);
 
 	const header = session.getHeader();
 	assert.ok(header);
 	const restored = SessionManager.inMemory("/fixture", undefined, [header, ...session.getEntries()]);
-	assert.equal(usageFor(restored.buildSessionContext().messages).estimatedTokens, beforeCompaction.estimatedTokens);
-	assert.equal(usageFor(buildSessionContext(restored.getEntries(), root).messages).estimatedTokens,
+	assert.equal(usageFor(restored.buildSessionProjection().messages).estimatedTokens, beforeCompaction.estimatedTokens);
+	assert.equal(usageFor(buildSessionProjection(restored.getEntries(), root).messages).estimatedTokens,
 		usageFor([INITIAL]).estimatedTokens);
 
 	restored.branch(root);
-	assert.doesNotMatch(previewText(usageFor(restored.buildSessionContext().messages)), /New rules|search definition/);
+	assert.doesNotMatch(previewText(usageFor(restored.buildSessionProjection().messages)), /New rules|search definition/);
 	restored.appendMessage({
 		role: "system", content: "", sections: { rules: "<rules>\nBranch rules\n</rules>" }, timestamp: 5,
 	});
-	assert.match(previewText(usageFor(restored.buildSessionContext().messages)), /Branch rules/);
+	assert.match(previewText(usageFor(restored.buildSessionProjection().messages)), /Branch rules/);
 	restored.branch(updated);
 	restored.appendCompaction("Synthetic compacted summary", user, 10_000);
-	const compacted = restored.buildSessionContext().messages;
+	const compacted = restored.buildSessionProjection().messages;
 	assert.equal(compacted.filter((message) => message.role === "system").length, 1);
 	const compactedUsage = usageFor(compacted);
 	for (const id of ["system-prompt", "custom-tools"]) {
@@ -151,7 +151,7 @@ test("Usage follows restored branches and compaction checkpoints without old sys
 });
 
 for (const transcriptBacked of [false, true]) {
-	test(`cache warming does not change ${transcriptBacked ? "transcript-backed" : "legacy"} Usage totals or previews`, () => {
+	test(`cache warming does not change ${transcriptBacked ? "transcript-backed" : "live-fallback"} Usage totals or previews`, () => {
 		const session = SessionManager.inMemory("/fixture");
 		const messages = [
 			...(transcriptBacked ? [INITIAL, PATCH] : []),
@@ -170,7 +170,7 @@ for (const transcriptBacked of [false, true]) {
 		assert.equal(entries.filter((entry) => entry.type === "usage").length, messages.length + 1);
 		assert.equal(session.getLeafEntry()?.type, "usage");
 		assert.ok(session.buildContextEntries().some((entry) => entry.type === "usage"));
-		const context = buildSessionContext(entries, session.getLeafId()).messages;
+		const context = buildSessionProjection(entries, session.getLeafId()).messages;
 		assert.deepEqual(context, messages);
 		const usage = usageFor(context);
 		assert.ok(usage.estimatedTokens > 0);
@@ -185,11 +185,11 @@ for (const transcriptBacked of [false, true]) {
 		const header = session.getHeader();
 		assert.ok(header);
 		const restored = SessionManager.inMemory("/fixture", undefined, [header, ...entries]);
-		const resumed = buildSessionContext(restored.getEntries(), restored.getLeafId()).messages;
+		const resumed = buildSessionProjection(restored.getEntries(), restored.getLeafId()).messages;
 		assert.deepEqual(resumed, messages);
 		assert.deepEqual(usageFor(resumed).categories, expected.categories);
 		restored.branch(firstWarm.id);
-		assert.deepEqual(buildSessionContext(restored.getEntries(), restored.getLeafId()).messages, []);
+		assert.deepEqual(buildSessionProjection(restored.getEntries(), restored.getLeafId()).messages, []);
 	});
 }
 
@@ -197,7 +197,7 @@ test("warming-only sessions add no message categories or previews to Usage", () 
 	const session = SessionManager.inMemory("/fixture");
 	appendCacheWarm(session);
 	appendCacheWarm(session);
-	const messages = buildSessionContext(session.getEntries(), session.getLeafId()).messages;
+	const messages = buildSessionProjection(session.getEntries(), session.getLeafId()).messages;
 	assert.deepEqual(messages, []);
 	const usage = usageFor(messages);
 	const expected = usageFor([]);

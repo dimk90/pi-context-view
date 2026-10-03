@@ -12,6 +12,7 @@ import {
 	reportCommandMessage,
 	reportConfigCreation,
 	reportTuiOnly,
+	reportUnsupportedPi,
 	resolveInitialCapture,
 } from "../src/command.ts";
 
@@ -85,6 +86,17 @@ test("reportTuiOnly names the refused view instead of the whole command", () => 
 		{ message: "/context usage is available in TUI mode only.", type: "warning" },
 		{ message: "/context injections is available in TUI mode only.", type: "warning" },
 	]);
+});
+
+test("reportUnsupportedPi names the required and the running Pi version", () => {
+	const { context, notified } = createNotifyingContext();
+
+	reportUnsupportedPi(context, "0.86.1");
+
+	assert.deepEqual(notified, [{
+		message: "/context views require Pi 1.0.0 or newer; this is Pi 0.86.1. Nothing was captured.",
+		type: "error",
+	}]);
 });
 
 test("reportConfigCreation reports every create outcome with its own severity", () => {

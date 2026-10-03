@@ -33,28 +33,30 @@ Present Initial contributions in this order:
     tree shows what the replacement gave up; a section the replacement kept is
     an ordinary part instead. `Extension Additions` holds no
     counted text of its own: it always reads 0 tokens and exists to present the
-    additions its owners count. Structurally recovered `Available Tools` and
-    `Guidelines` blocks remain System Prompt children, at their actual prompt
-    position with a [`Moved` marker](../UI.md#color-and-casing). For example,
-    blocks relocated past the footer follow `Current Dir`, not `Preamble`.
-    `Extension Additions` still consolidates all other additions at the end;
-    recovered block text is excluded from those owners' counts.
+    additions its owners count. Moved `Available Tools` and `Guidelines`
+    sections remain System Prompt children, at their actual prompt position
+    with a [`Moved` marker](../UI.md#color-and-casing). For example, sections
+    relocated past `cwd` follow `Current Dir`, not `Preamble`.
+    `Extension Additions` still consolidates all unwrapped additions at the end.
+    A forced prompt without XML sections has no children: System Prompt is one
+    undivided part holding the whole forced text, with no `Dropped`, `Moved`,
+    or `Extension Additions` parts, and each tool shows only its `Definition`.
   - `Instruction Files (M)`, with one child per context file, abbreviating home
     paths with `~`
   - Skills (K), with one content-only child per skill
   - Built-in Tools (N), with one child per active built-in tool
 - each extension/tool source
   - one child per active tool
-  - `system prompt additions` when text appended after pi's footer was
+  - `system prompt additions` when unwrapped text around pi's sections was
     attributed to that source
   - injected messages identified by `customType` where available
 - `unattributed` for prompt additions no signal could attribute
 
 Within the `pi` group, keep the fixed semantic order above and sort remaining
 prompt additions by size. Children break down parent contributions and do not
-increase totals. Measurements and previews exclude transport wrappers and
-section-introduction scaffolding; pi sends its working-directory footer with
-every request, so it is measured as the `Current Dir` part instead.
+increase totals. Measurements and previews exclude XML transport wrappers and
+section-introduction scaffolding; pi sends its `cwd` section with every
+request, so it is measured as the `Current Dir` part.
 
 Use dim `├─`, `└─`, and `│` connectors for source, item, and constituent
 hierarchy. Align every token estimate to one shared column capped near the tree

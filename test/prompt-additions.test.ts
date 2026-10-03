@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { type PromptSourceSlice, splitPromptAdditions } from "../src/prompt-additions.ts";
 
-const FOOTER = "Current working directory: /tmp/project";
+const CWD_SECTION = "<cwd>\n/tmp/project\n</cwd>";
 const ASK: PromptSourceSlice = {
 	source: "npm:@eko24ive/pi-ask",
 	path: "/home/tester/.pi/agent/npm/node_modules/@eko24ive/pi-ask/dist/index.js",
@@ -18,16 +18,16 @@ const WEB: PromptSourceSlice = {
 };
 const BUILTIN: PromptSourceSlice = { source: "builtin", path: "<builtin:read>" };
 
-/** Split the region a prompt appends after pi's footer. */
+/** Split the unwrapped region a prompt appends after pi's cwd section. */
 function split(
 	addition: string,
 	sources: readonly PromptSourceSlice[] = [],
 	promptAtHandler?: string,
 ): Array<[string, string, string | undefined]> {
-	const prompt = `${FOOTER}${addition}`;
-	const runs = splitPromptAdditions(prompt, FOOTER.length, {
+	const prompt = `${CWD_SECTION}${addition}`;
+	const runs = splitPromptAdditions(prompt, CWD_SECTION.length, {
 		sources,
-		promptAtHandler: promptAtHandler === undefined ? undefined : `${FOOTER}${promptAtHandler}`,
+		promptAtHandler: promptAtHandler === undefined ? undefined : `${CWD_SECTION}${promptAtHandler}`,
 	});
 	// Runs must reconstruct the region exactly; no measured text is invented or lost.
 	assert.equal(runs.map((run) => run.text).join(""), addition);
@@ -39,7 +39,7 @@ function owners(
 	addition: string,
 	sources: readonly PromptSourceSlice[],
 ): Array<[string, string, string | undefined]> {
-	const runs = splitPromptAdditions(`${FOOTER}${addition}`, FOOTER.length, { sources });
+	const runs = splitPromptAdditions(`${CWD_SECTION}${addition}`, CWD_SECTION.length, { sources });
 	return runs.map((run) => [run.text, run.source.label, run.tool]);
 }
 
@@ -152,15 +152,15 @@ test("splitPromptAdditions never lets one run span the handler boundary", () => 
 	);
 });
 
-test("recovered block exclusions preserve handler boundaries and keep source evidence separate", () => {
+test("section exclusions preserve handler boundaries and keep source evidence separate", () => {
 	const before = "\n\nRead npm:pi-web docs.";
-	const moved = "\nAvailable tools:\n- web_search: Search";
+	const moved = "\n<tools>\n- web_search: Search\n</tools>";
 	const after = "\nStill unowned.";
-	const prompt = FOOTER + before + moved + after;
-	const start = FOOTER.length + before.length;
+	const prompt = CWD_SECTION + before + moved + after;
+	const start = CWD_SECTION.length + before.length;
 	const end = start + moved.length;
-	for (const boundary of [FOOTER.length, start, start + 5, end, prompt.length]) {
-		const runs = splitPromptAdditions(prompt, FOOTER.length, {
+	for (const boundary of [CWD_SECTION.length, start, start + 5, end, prompt.length]) {
+		const runs = splitPromptAdditions(prompt, CWD_SECTION.length, {
 			sources: [WEB],
 			promptAtHandler: prompt.slice(0, boundary),
 			excluded: [{ start, end }],
@@ -170,13 +170,13 @@ test("recovered block exclusions preserve handler boundaries and keep source evi
 	}
 });
 
-test("splitPromptAdditions excludes several recovered blocks without inventing whitespace owners", () => {
-	const first = "\nAvailable tools:\n- read: Read files";
-	const second = "\nGuidelines:\n- Use read";
-	const prompt = FOOTER + first + "\n\n" + second;
-	assert.deepEqual(splitPromptAdditions(prompt, FOOTER.length, {
+test("splitPromptAdditions excludes several sections without inventing whitespace owners", () => {
+	const first = "\n<tools>\n- read: Read files\n</tools>";
+	const second = "\n<rules>\n- Use read\n</rules>";
+	const prompt = CWD_SECTION + first + "\n\n" + second;
+	assert.deepEqual(splitPromptAdditions(prompt, CWD_SECTION.length, {
 		excluded: [
-			{ start: FOOTER.length, end: FOOTER.length + first.length },
+			{ start: CWD_SECTION.length, end: CWD_SECTION.length + first.length },
 			{ start: prompt.indexOf(second), end: prompt.length },
 		],
 	}), []);

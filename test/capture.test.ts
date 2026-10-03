@@ -28,26 +28,6 @@ function customMessage(customType: string, content: string, timestamp: number): 
 	return { role: "custom", customType, content, display: false, timestamp };
 }
 
-/** Skill fixture with explicit model-visibility state. */
-function skill(
-	name: string,
-	disableModelInvocation: boolean,
-): NonNullable<BuildSystemPromptOptions["skills"]>[number] {
-	return {
-		name,
-		description: `${name} description`,
-		filePath: `/tmp/${name}/SKILL.md`,
-		baseDir: `/tmp/${name}`,
-		disableModelInvocation,
-		sourceInfo: {
-			path: `/tmp/${name}/SKILL.md`,
-			source: "temporary",
-			scope: "temporary",
-			origin: "top-level",
-		},
-	};
-}
-
 /** ToolInfo fixture with the given provenance source and one guideline. */
 function tool(name: string, source: string): ToolInfo {
 	return {
@@ -135,23 +115,15 @@ test("collectPromptSources rosters the names of extension tools and commands", (
 	]);
 });
 
-test("copyPromptOptions owns decomposition metadata and keeps only visible skills", () => {
-	const contextFile = { path: "./AGENTS.md", content: "rules" };
-	const visibleSkill = skill("visible", false);
-	const options: BuildSystemPromptOptions = {
-		cwd: "/tmp",
-		contextFiles: [contextFile],
-		skills: [visibleSkill, skill("hidden", true)],
-	};
+test("copyPromptOptions owns the custom prompt and section overrides", () => {
+	const sections = { review: "Original rule" };
+	const options: BuildSystemPromptOptions = { cwd: "/tmp", customPrompt: "CUSTOM", sections };
 
 	const copied = copyPromptOptions(options);
-	contextFile.path = "./changed.md";
-	visibleSkill.description = "changed";
+	sections.review = "Changed rule";
 
-	assert.deepEqual(copied.contextFilePaths, ["./AGENTS.md"]);
-	assert.deepEqual(copied.skills, [
-		{ name: "visible", description: "visible description", filePath: "/tmp/visible/SKILL.md" },
-	]);
+	assert.equal(copied.customPrompt, "CUSTOM");
+	assert.deepEqual(copied.sections, { review: "Original rule" });
 });
 
 test("measureInjectedMessages attributes custom and request-only messages without session history", () => {
@@ -369,7 +341,7 @@ test("InitialCaptureState owns prepared options before later handlers can mutate
 	if (options.toolSnippets !== undefined) options.toolSnippets.search = "Changed snippet";
 
 	const snapshot = state.finalize(() => ({
-		systemPrompt: "Base\n\nAvailable tools:\n- search: Original snippet\n",
+		systemPrompt: "Base\n\n<tools>\n- search: Original snippet\n</tools>\n\n<cwd>\n/tmp\n</cwd>",
 		messages: [],
 		baselineMessages: [],
 		allTools: [tool("search", "npm:web")],
@@ -472,7 +444,7 @@ test("SilentProbeState sanitizes and filters only exact probe identities", async
 
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	const realUser = { role: "user", content: [], timestamp: 11 } satisfies ContextEvent["messages"][number];
-	const probeAssistant = assistantMessage("aborted", 12);
+	const probeAssistant = assistantMessage("error", 12, "This operation was aborted");
 
 	state.recordMessage(probeUser);
 	state.recordMessage(probeAssistant);
@@ -617,9 +589,11 @@ for (const errorMessage of ["This operation was aborted", "The operation was abo
 		const setupAbort = assistantMessage("error", 20, errorMessage);
 		const providerError = assistantMessage("error", 21, "Authentication failed");
 		const unrecordedSetupAbort = assistantMessage("error", 22, errorMessage);
-		const unrecordedLegacyAbort = assistantMessage("aborted", 23);
+		// Pi reports the probe's abort only as an error, so another stop reason is not the probe's
+		const abortedStop = assistantMessage("aborted", 23, errorMessage);
 		state.recordMessage(setupAbort);
 		state.recordMessage(providerError);
+		state.recordMessage(abortedStop);
 
 		const sanitized = state.sanitizeMessage(setupAbort);
 		assert.equal(sanitized?.role, "assistant");
@@ -630,7 +604,7 @@ for (const errorMessage of ["This operation was aborted", "The operation was abo
 		}
 		assert.equal(state.sanitizeMessage(providerError), undefined);
 		assert.equal(state.sanitizeMessage(unrecordedSetupAbort), undefined);
-		assert.equal(state.sanitizeMessage(unrecordedLegacyAbort), undefined);
+		assert.equal(state.sanitizeMessage(abortedStop), undefined);
 		state.settle(true);
 	});
 }

@@ -2,9 +2,11 @@
  * pi-context-view - inspect what occupies the model context.
  *
  * Passively captures the first real turn, or runs one on-demand silent probe
- * when a context view is opened before any real turn.
+ * when a context view is opened before any real turn. On a Pi version older
+ * than the supported one, it registers no lifecycle handlers and captures
+ * nothing; only `/context config` keeps working.
  */
-import { buildSessionContext, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, VERSION } from "@earendil-works/pi-coding-agent";
 
 import { ConfigStore, createDefaultConfigFile } from "./config.ts";
 import {
@@ -14,6 +16,7 @@ import {
 	reportCommandMessage,
 	reportConfigCreation,
 	reportTuiOnly,
+	reportUnsupportedPi,
 	resolveInitialCapture,
 } from "./command.ts";
 import {
@@ -25,6 +28,7 @@ import {
 	PROBE_IDENTITIES_CUSTOM_TYPE,
 	SilentProbeState,
 } from "./capture.ts";
+import { isSupportedPiVersion } from "./pi-version.ts";
 import { readProbeToken } from "./probe-token.ts";
 import { readAutoCompactReserveTokens } from "./settings.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
@@ -36,6 +40,7 @@ export default function (pi: ExtensionAPI) {
 	const probe = new SilentProbeState();
 	const compaction = new CompactionState();
 	const configStore = new ConfigStore();
+	const supported = isSupportedPiVersion(VERSION);
 	let persistedIdentityCount = 0;
 
 	/** Persist identities (role and timestamp only, never content) not yet written this runtime. */
@@ -45,6 +50,68 @@ export default function (pi: ExtensionAPI) {
 		pi.appendEntry(PROBE_IDENTITIES_CUSTOM_TYPE, { messages: identities });
 		persistedIdentityCount = identities.length;
 	}
+
+	pi.registerCommand("context", {
+		description: CONTEXT_COMMAND_DESCRIPTION,
+		getArgumentCompletions: getContextArgumentCompletions,
+		handler: async (args, ctx) => {
+			const command = parseContextCommand(args);
+			if (command.type === "invalid") {
+				reportCommandMessage(ctx, command.message, "error");
+				return;
+			}
+			// Creating the file needs no UI, so it stays available in every run mode.
+			if (command.type === "config") {
+				reportConfigCreation(ctx, createDefaultConfigFile());
+				return;
+			}
+			if (!supported) {
+				reportUnsupportedPi(ctx, VERSION);
+				return;
+			}
+			if (ctx.mode !== "tui") {
+				reportTuiOnly(ctx, command.view);
+				return;
+			}
+			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
+			if (command.view === "injections") {
+				await showInjectionsView(ctx, {
+					snapshot: initial.snapshot,
+					degradedReason: initial.degradedReason,
+				});
+				return;
+			}
+			// Loaded only for the Usage view, the sole consumer of configured colors.
+			const loadedConfig = configStore.load();
+			const messages = probe.filterMessages(ctx.sessionManager.buildSessionProjection().messages);
+			const current = buildUsageSnapshot({
+				messages,
+				initial: initial.snapshot,
+				systemPrompt: ctx.getSystemPrompt(),
+				options: ctx.getSystemPromptOptions(),
+				allTools: pi.getAllTools(),
+				activeToolNames: pi.getActiveTools(),
+				promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
+			});
+			await showUsageView(ctx, {
+				usage: computeUsage({
+					snapshot: current,
+					messages,
+					reported: toReportedUsage(ctx.getContextUsage()),
+					modelLabel: ctx.model?.id,
+					autoCompactReserveTokens: readAutoCompactReserveTokens(pi, ctx.model),
+				}),
+				degradedReason: initial.degradedReason,
+				// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
+				notices: loadedConfig.warnings,
+				categoryColors: loadedConfig.config.categoryColors,
+				mapSize: loadedConfig.config.mapSize,
+			});
+		},
+	});
+
+	// Older Pi lacks events the capture and the probe rely on, so observe nothing there
+	if (!supported) return;
 
 	pi.on("session_start", (_event, ctx) => {
 		compaction.finish();
@@ -105,9 +172,7 @@ export default function (pi: ExtensionAPI) {
 		capture.finalize(() => ({
 			systemPrompt: ctx.getSystemPrompt(),
 			messages: probe.filterMessages(event.messages),
-			baselineMessages: probe.filterMessages(
-				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
-			),
+			baselineMessages: probe.filterMessages(ctx.sessionManager.buildSessionProjection().messages),
 			allTools: pi.getAllTools(),
 			activeToolNames: pi.getActiveTools(),
 			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
@@ -140,63 +205,5 @@ export default function (pi: ExtensionAPI) {
 		// session; write their identities so the next runtime keeps filtering them.
 		persistProbeIdentities();
 		probe.fail("Session ended before the silent probe completed.");
-	});
-
-	pi.registerCommand("context", {
-		description: CONTEXT_COMMAND_DESCRIPTION,
-		getArgumentCompletions: getContextArgumentCompletions,
-		handler: async (args, ctx) => {
-			const command = parseContextCommand(args);
-			if (command.type === "invalid") {
-				reportCommandMessage(ctx, command.message, "error");
-				return;
-			}
-			// Creating the file needs no UI, so it stays available in every run mode.
-			if (command.type === "config") {
-				reportConfigCreation(ctx, createDefaultConfigFile());
-				return;
-			}
-			if (ctx.mode !== "tui") {
-				reportTuiOnly(ctx, command.view);
-				return;
-			}
-			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
-			if (command.view === "injections") {
-				await showInjectionsView(ctx, {
-					snapshot: initial.snapshot,
-					degradedReason: initial.degradedReason,
-				});
-				return;
-			}
-			// Loaded only for the Usage view, the sole consumer of configured colors.
-			const loadedConfig = configStore.load();
-			// ReadonlySessionManager lacks buildSessionContext(); use pi's exported builder.
-			const messages = probe.filterMessages(
-				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
-			);
-			const current = buildUsageSnapshot({
-				messages,
-				initial: initial.snapshot,
-				systemPrompt: ctx.getSystemPrompt(),
-				options: ctx.getSystemPromptOptions(),
-				allTools: pi.getAllTools(),
-				activeToolNames: pi.getActiveTools(),
-				promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
-			});
-			await showUsageView(ctx, {
-				usage: computeUsage({
-					snapshot: current,
-					messages,
-					reported: toReportedUsage(ctx.getContextUsage()),
-					modelLabel: ctx.model?.id,
-					autoCompactReserveTokens: readAutoCompactReserveTokens(pi, ctx.model),
-				}),
-				degradedReason: initial.degradedReason,
-				// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
-				notices: loadedConfig.warnings,
-				categoryColors: loadedConfig.config.categoryColors,
-				mapSize: loadedConfig.config.mapSize,
-			});
-		},
 	});
 }

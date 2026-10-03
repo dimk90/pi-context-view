@@ -91,7 +91,7 @@ for (const position of ["before", "after"] as const) {
 		const provider = await startProvider(t);
 		const observed = { headers: 0, payloads: 0, responses: 0, contexts: 0, beforeSettle: 0, overlays: 0 };
 		const errors: string[] = [];
-		const stopReasons: string[] = [];
+		const stopReasons: Array<[string, string | undefined]> = [];
 		const visibility: boolean[] = [];
 		let draftedEarlierOmission = false;
 		const sentinel: ExtensionFactory = (pi) => {
@@ -101,7 +101,9 @@ for (const position of ["before", "after"] as const) {
 			pi.on("context_with_system", () => { observed.contexts++; });
 			pi.on("agent_before_settle", () => { observed.beforeSettle++; });
 			pi.on("message_end", (event) => {
-				if (event.message.role === "assistant") stopReasons.push(event.message.stopReason);
+				if (event.message.role === "assistant") {
+					stopReasons.push([event.message.stopReason, event.message.errorMessage]);
+				}
 			});
 			pi.on("turn_end", (event) => {
 				const entries: SessionBoundaryDraft[] = [
@@ -133,7 +135,9 @@ for (const position of ["before", "after"] as const) {
 		assert.deepEqual(errors, []);
 		assert.equal(observed.overlays, 1);
 		assert.equal(observed.contexts, 1, "structured capture still runs after turn_start abort");
-		assert.deepEqual(stopReasons, ["error"], "auth rejects the aborted signal before streaming");
+		// The only abort form the probe blanks: Node.js AbortError text, before streaming
+		assert.deepEqual(stopReasons, [["error", "This operation was aborted"]],
+			"auth rejects the aborted signal before streaming");
 		assert.equal(observed.headers, 0);
 		assert.equal(observed.payloads, 0);
 		assert.equal(observed.responses, 0, "after_provider_response sentinel stays silent");

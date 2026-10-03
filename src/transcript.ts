@@ -12,9 +12,10 @@ export interface SystemState {
 }
 
 /**
- * Replay Pi 0.86 semantics: content appends, sections patch by name (null deletes),
+ * Replay Pi's semantics: content appends, sections patch by name (null deletes),
  * removals precede additions, and replacing a name preserves its insertion order.
- * Undefined means a legacy/empty transcript, not an explicitly empty system state.
+ * Undefined means a branch with no recorded system message yet, such as a new
+ * session before its first prompt, not an explicitly empty system state.
  */
 export function replaySystemMessages(messages: readonly ContextEvent["messages"][number][]): SystemState | undefined {
 	const content: string[] = [];

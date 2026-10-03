@@ -1,4 +1,4 @@
-/** Pure, deliberately heuristic attribution of the text after pi's prompt footer. */
+/** Pure, deliberately heuristic attribution of the unwrapped text around pi's prompt sections. */
 import { AGGREGATE_SOURCE, extensionSource, type InjectionSource, type TextSpan } from "./model.ts";
 
 /** Public tool/command provenance only; no extension files are read to guess an owner. */
@@ -16,11 +16,11 @@ export interface PromptAdditionOptions {
 	readonly sources?: readonly PromptSourceSlice[];
 	/** Prompt seen at our latest before_agent_start handler; used only if still a prefix. */
 	readonly promptAtHandler?: string;
-	/** Ordered, non-overlapping ranges counted as recovered System Prompt blocks, not additions. */
+	/** Ordered, non-overlapping ranges counted as System Prompt sections, not additions. */
 	readonly excluded?: readonly TextSpan[];
 }
 
-/** One contiguous captured run outside recovered prompt blocks and whitespace-only gaps. */
+/** One contiguous captured run outside prompt sections and whitespace-only gaps. */
 export interface PromptAdditionRun {
 	readonly text: string;
 	readonly source: InjectionSource;
@@ -73,7 +73,7 @@ export function splitPromptAdditions(
 	}));
 }
 
-/** Keep gaps separate: removing a moved block must not join evidence from different additions. */
+/** Keep gaps separate: removing a section must not join evidence from different additions. */
 function additionRegions(prompt: string, start: number, end: number, excluded: readonly TextSpan[]): string[] {
 	const regions: string[] = [];
 	let cursor = start;
@@ -96,7 +96,7 @@ function splitBlocks(text: string): string[] {
 		blocks.push(text.slice(start, separator.index));
 		start = separator.index;
 	}
-	// Removing a relocated block can leave a separator behind; blank text has no author.
+	// Removing a section can leave a separator behind; blank text has no author.
 	if (text.slice(start).trim().length > 0) blocks.push(text.slice(start));
 	return blocks;
 }

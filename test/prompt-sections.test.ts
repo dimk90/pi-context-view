@@ -15,7 +15,7 @@ test("XML sections after cwd remain named System Prompt parts, not guessed exten
 	const sections = { review: "Read npm:web guidance.", constraints: "Keep it small." };
 	const prompt = buildSystemPrompt({ cwd: CWD, sections });
 	// Even a later handler's sections, missing from our prepared options, are recognized.
-	for (const options of [{ cwd: CWD }, { cwd: CWD, sections }]) {
+	for (const options of [{}, { sections }]) {
 		const items = analyzeSystemPrompt(prompt, options, [], { sources: [{ source: "npm:web", path: "/web.ts" }] });
 		assert.equal(items.some((item) => item.kind === "prompt-addition"), false);
 		const base = items[0];
@@ -31,7 +31,7 @@ test("custom overrides of every generated section retain their actual text", () 
 		addendum: "Changed addendum", project_context: "Replaced instructions", skills: "Replaced skills", cwd: "/remote",
 	};
 	const prompt = buildSystemPrompt({ cwd: CWD, appendSystemPrompt: "OLD ADDENDUM", sections });
-	const items = analyzeSystemPrompt(prompt, { cwd: CWD, appendSystemPrompt: "OLD ADDENDUM", sections }, [TOOL]);
+	const items = analyzeSystemPrompt(prompt, { sections }, [TOOL]);
 	const parts = items[0].children ?? [];
 	for (const text of Object.values(sections)) assert.ok(parts.some((part) => part.text.trim() === text));
 	assert.doesNotMatch(items[0].text, /OLD ADDENDUM|<\/?(?:tools|rules|skills|cwd)>/);
@@ -42,7 +42,7 @@ test("custom overrides of every generated section retain their actual text", () 
 test("a custom prefix can restore selected native XML sections without marking them dropped", () => {
 	const sections = { tools: "- search: Search the web", docs: "Restored docs" };
 	const prompt = buildSystemPrompt({ cwd: CWD, customPrompt: "Custom prefix", sections });
-	const items = analyzeSystemPrompt(prompt, { cwd: CWD, customPrompt: "Custom prefix", sections }, [TOOL]);
+	const items = analyzeSystemPrompt(prompt, { customPrompt: "Custom prefix", sections }, [TOOL]);
 	assert.deepEqual(items[0].children?.filter((part) => part.dropped).map((part) => part.label), ["Guidelines"]);
 	const tool = items.find((item) => item.kind === "tool");
 	assert.equal(tool?.sections?.find((part) => part.label === "Available Tools")?.dropped, undefined);
@@ -55,7 +55,7 @@ test("section discovery ignores nested and fenced examples, including unclosed f
 		"<addendum>\n<rules>\nNested example\n</rules>\n```\nUnclosed inner fence\n</addendum>\n\n" +
 		"<cwd>\n/fixture\n</cwd>\n\n<review>\nReal section\n</review>";
 	assert.deepEqual(findPromptSections(prompt).map((section) => section.name), ["addendum", "cwd", "review"]);
-	const parts = analyzeSystemPrompt(prompt, { cwd: CWD })[0].children ?? [];
+	const parts = analyzeSystemPrompt(prompt, {})[0].children ?? [];
 	assert.equal(parts.find((part) => part.label === "Appended Prompt")?.text,
 		"<rules>\nNested example\n</rules>\n```\nUnclosed inner fence");
 	assert.equal(parts.find((part) => part.label === "review")?.text, "Real section");
@@ -64,7 +64,7 @@ test("section discovery ignores nested and fenced examples, including unclosed f
 test("unwrapped gaps around custom sections remain additions without absorbing section text", () => {
 	const prompt = buildSystemPrompt({ cwd: CWD, sections: { review: "Structured rule" } })
 		.replace("<review>", "First addition\n\n<review>") + "\n\nLast addition";
-	const items = analyzeSystemPrompt(prompt, { cwd: CWD });
+	const items = analyzeSystemPrompt(prompt, {});
 	const addition = items.find((item) => item.kind === "prompt-addition");
 	assert.ok(addition?.text.includes("First addition"));
 	assert.ok(addition?.text.includes("Last addition"));
@@ -72,16 +72,16 @@ test("unwrapped gaps around custom sections remain additions without absorbing s
 });
 
 test("section-only state without cwd retains tag labels and trailing unwrapped text", () => {
-	const items = analyzeSystemPrompt("<review>\nOnly rule\n</review>\n\nExtra instruction", { cwd: CWD });
+	const items = analyzeSystemPrompt("<review>\nOnly rule\n</review>\n\nExtra instruction", {});
 	assert.equal(items[0].children?.find((part) => part.label === "review")?.text, "Only rule");
 	assert.equal(items.find((item) => item.kind === "prompt-addition")?.text, "\n\nExtra instruction");
 });
 
 test("a single custom section keeps its label and repeated tags remain additions", () => {
 	const prompt = "<review>\nFirst rule\n</review>";
-	const only = analyzeSystemPrompt(prompt, { cwd: CWD });
+	const only = analyzeSystemPrompt(prompt, {});
 	assert.equal(only[0].sections?.[0]?.label, "review");
-	const repeated = analyzeSystemPrompt(`${prompt}\n\n<review>\nSecond rule\n</review>`, { cwd: CWD });
+	const repeated = analyzeSystemPrompt(`${prompt}\n\n<review>\nSecond rule\n</review>`, {});
 	assert.equal(repeated[0].children?.filter((part) => part.label === "review").length, 1);
 	assert.match(repeated.find((item) => item.kind === "prompt-addition")?.text ?? "", /Second rule/);
 });
@@ -89,18 +89,18 @@ test("a single custom section keeps its label and repeated tags remain additions
 test("custom tool-surface prose and fenced examples are not carved as tool bullets", () => {
 	const sections = { tools: "Example:\n```\n- search: Search the web\n```", rules: "Example:\n- Cite sources" };
 	const prompt = buildSystemPrompt({ cwd: CWD, sections });
-	const items = analyzeSystemPrompt(prompt, { cwd: CWD, sections }, [TOOL]);
+	const items = analyzeSystemPrompt(prompt, { sections }, [TOOL]);
 	assert.deepEqual(items.find((item) => item.kind === "tool")?.sections?.map((part) => part.label), ["Definition"]);
 	assert.match(items[0].text, /Search the web/);
 });
 
-test("captured instruction files and skill records do not require current loader metadata", () => {
+test("instruction files and skill records are read from the captured prompt, not loader metadata", () => {
 	const prompt = "Preamble\n\n<project_context>\nProject-specific instructions and guidelines:\n\n" +
 		'<project_instructions path="/old/AGENTS.md">\nRecorded rules\n</project_instructions>\n</project_context>\n\n' +
 		"<skills>\nThe following skills provide specialized instructions\n<available_skills>\n<skill>\n" +
 		"<name>test</name>\n<description>Test &amp; verify &lt;code&gt;</description>\n" +
 		"<location>/old/SKILL.md</location>\n</skill>\n</available_skills>\n</skills>\n\n<cwd>\n/old\n</cwd>";
-	const items = analyzeSystemPrompt(prompt, { cwd: CWD, contextFilePaths: ["/new/AGENTS.md"], skills: [] });
+	const items = analyzeSystemPrompt(prompt, {});
 	assert.equal(items.find((item) => item.id === "context-files")?.children?.[0]?.text, "Recorded rules");
 	assert.equal(items.find((item) => item.id === "skills")?.children?.[0]?.text,
 		"test\nTest & verify <code>\n/old/SKILL.md");

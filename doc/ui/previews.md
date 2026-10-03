@@ -20,7 +20,7 @@ any part a `--system-prompt` replacement dropped, which keeps its subheader with
 the [`Dropped` marker](../UI.md#color-and-casing) after its estimate — even with
 an empty body, since the point is to show what the replacement gave up.
 
-A recovered block out of pi's normal order keeps its ordinary token share and
+A moved block out of pi's normal order keeps its ordinary token share and
 adds the [`Moved` marker](../UI.md#color-and-casing) after it. This applies in
 both views, including the direct System Prompt Usage preview and standalone
 Injections part metadata. Its extension lines still render with their known

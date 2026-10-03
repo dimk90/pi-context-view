@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type {
-	BeforeAgentStartEvent,
-	ContextEvent,
-	ContextWithSystemEvent,
-	ExtensionAPI,
-	ExtensionContext,
-	SessionEntry,
-	SessionStartEvent,
+import {
+	buildSessionProjection,
+	type BeforeAgentStartEvent,
+	type ContextEvent,
+	type ContextWithSystemEvent,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type SessionEntry,
+	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 
 // Deep import bypasses the package barrel, which does not re-export the option normalizer.
@@ -65,7 +66,10 @@ test("context handler skips the session baseline rebuild after the Initial snaps
 				sessionReads += 1;
 				return entries;
 			},
-			getLeafId: () => "2",
+			buildSessionProjection: () => {
+				sessionReads += 1;
+				return buildSessionProjection(entries, "2");
+			},
 		},
 	} as unknown as ExtensionContext;
 
