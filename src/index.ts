@@ -19,17 +19,12 @@ import {
 	reportUnsupportedPi,
 	resolveInitialCapture,
 } from "./command.ts";
-import {
-	buildUsageSnapshot,
-	collectPromptSources,
-	CompactionState,
-	InitialCaptureState,
-	parsePersistedIdentities,
-	PROBE_IDENTITIES_CUSTOM_TYPE,
-	SilentProbeState,
-} from "./capture.ts";
+import { buildUsageSnapshot, collectPromptSources, InitialCaptureState } from "./capture.ts";
+import { CompactionState, registerCompactionTracking } from "./compaction.ts";
 import { isSupportedPiVersion } from "./pi-version.ts";
-import { readProbeToken } from "./probe-token.ts";
+import { ProbeFilter, registerProbeFilter } from "./probe/filter.ts";
+import { registerSilentProbe, SilentProbe } from "./probe/silent-probe.ts";
+import { createProbeView } from "./probe/view.ts";
 import { readAutoCompactReserveTokens } from "./settings.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
 import { showUsageView } from "./ui/usage-view.ts";
@@ -37,19 +32,12 @@ import { computeUsage, toReportedUsage } from "./usage.ts";
 
 export default function (pi: ExtensionAPI) {
 	const capture = new InitialCaptureState();
-	const probe = new SilentProbeState();
+	const probeFilter = new ProbeFilter();
+	const probe = new SilentProbe(probeFilter);
+	const probeView = createProbeView(probeFilter, probe);
 	const compaction = new CompactionState();
 	const configStore = new ConfigStore();
 	const supported = isSupportedPiVersion(VERSION);
-	let persistedIdentityCount = 0;
-
-	/** Persist identities (role and timestamp only, never content) not yet written this runtime. */
-	function persistProbeIdentities(): void {
-		const identities = probe.syntheticMessages;
-		if (identities.length <= persistedIdentityCount) return;
-		pi.appendEntry(PROBE_IDENTITIES_CUSTOM_TYPE, { messages: identities });
-		persistedIdentityCount = identities.length;
-	}
 
 	pi.registerCommand("context", {
 		description: CONTEXT_COMMAND_DESCRIPTION,
@@ -84,7 +72,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			// Loaded only for the Usage view, the sole consumer of configured colors.
 			const loadedConfig = configStore.load();
-			const messages = probe.filterMessages(ctx.sessionManager.buildSessionProjection().messages);
+			const messages = probeView.filterMessages(ctx.sessionManager.buildSessionProjection().messages);
 			const current = buildUsageSnapshot({
 				messages,
 				initial: initial.snapshot,
@@ -114,57 +102,15 @@ export default function (pi: ExtensionAPI) {
 	// Older Pi lacks events the capture and the probe rely on, so observe nothing there
 	if (!supported) return;
 
-	pi.on("session_start", (_event, ctx) => {
-		compaction.finish();
-		// Rehydrate probe identities from all prior runtimes so persisted probe
-		// messages stay out of later model contexts and Usage after resume,
-		// reload, or fork. Restored identities are already persisted.
-		for (const entry of ctx.sessionManager.getEntries()) {
-			if (entry.type === "custom" && entry.customType === PROBE_IDENTITIES_CUSTOM_TYPE) {
-				probe.restoreIdentities(parsePersistedIdentities(entry.data));
-			}
-		}
-		persistedIdentityCount = probe.syntheticMessages.length;
-	});
-
-	pi.on("session_before_compact", (event) => {
-		compaction.begin(event.signal);
-	});
-
-	// Pi ends every observed compaction with exactly one of these two events.
-	pi.on("session_compact", () => {
-		compaction.finish();
-	});
-
-	pi.on("session_compact_failed", () => {
-		compaction.finish();
-	});
-
-	pi.on("input", (event) => {
-		// Reset text earlier input transforms added to our own synthetic prompt:
-		// the probe carries no instructions, and its run is identified by token.
-		if (event.text === "" || !probe.isProbeInput(event.source, readProbeToken())) return undefined;
-		return { action: "transform", text: "" } as const;
-	});
+	// Probe layer first: ProbeFilter's context_with_system handler must run before capture's
+	registerProbeFilter(pi, probeFilter);
+	registerSilentProbe(pi, probe, () => capture.snapshot !== undefined);
+	registerCompactionTracking(pi, compaction);
 
 	pi.on("before_agent_start", (event) => {
-		probe.beginRun(readProbeToken());
 		// The chained prompt here already carries additions from extensions loaded
 		// earlier; anything the context event adds came from extensions after us.
 		capture.prepare(event.systemPromptOptions, event.systemPrompt);
-	});
-
-	pi.on("turn_start", (_event, ctx) => {
-		if (probe.isCurrentRun) ctx.abort();
-	});
-
-	pi.on("message_start", (event) => {
-		probe.recordMessage(event.message);
-	});
-
-	pi.on("message_end", (event) => {
-		const message = probe.sanitizeMessage(event.message);
-		return message === undefined ? undefined : { message };
 	});
 
 	pi.on("context", (event, ctx) => {
@@ -172,39 +118,13 @@ export default function (pi: ExtensionAPI) {
 		// reads these inputs, and the baseline rebuild alone is O(session).
 		capture.finalize(() => ({
 			systemPrompt: ctx.getSystemPrompt(),
-			messages: probe.filterMessages(event.messages),
-			baselineMessages: probe.filterMessages(ctx.sessionManager.buildSessionProjection().messages),
+			// Initial's own comparison inputs; the request itself is filtered in context_with_system
+			messages: probeView.filterMessages(event.messages),
+			baselineMessages: probeView.filterMessages(ctx.sessionManager.buildSessionProjection().messages),
 			allTools: pi.getAllTools(),
 			activeToolNames: pi.getActiveTools(),
 			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
-			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
+			origin: probeView.isCurrentRun ? "synthetic-probe" : "real-turn",
 		}));
-	});
-
-	pi.on("context_with_system", (event) => {
-		// Filtering here preserves system-message positions and cached prefixes
-		const messages = probe.filterMessages(event.messages);
-		return messages === event.messages ? undefined : { messages };
-	});
-
-	pi.on("turn_end", (event) => {
-		if (!probe.isCurrentRun) return;
-		const entries = probe.createContextEdits(event.context.contextEntries);
-		return entries.length === 0 ? undefined : { entries: [...event.entries, ...entries] };
-	});
-
-	pi.on("agent_settled", (_event, ctx) => {
-		if (!probe.isCurrentRun) return;
-		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
-		probe.settle(capture.snapshot !== undefined);
-		persistProbeIdentities();
-	});
-
-	pi.on("session_shutdown", () => {
-		compaction.finish();
-		// A shutdown mid-probe can leave probe messages already persisted in the
-		// session; write their identities so the next runtime keeps filtering them.
-		persistProbeIdentities();
-		probe.fail("Session ended before the silent probe completed.");
 	});
 }

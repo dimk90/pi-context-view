@@ -3,8 +3,11 @@ import { afterEach, beforeEach, mock, test } from "node:test";
 
 import { type ExtensionAPI, type ExtensionCommandContext, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-import { CompactionState, InitialCaptureState, SilentProbeState } from "../src/capture.ts";
+import { InitialCaptureState } from "../src/capture.ts";
 import { resolveInitialCapture } from "../src/command.ts";
+import { CompactionState } from "../src/compaction.ts";
+import { ProbeFilter } from "../src/probe/filter.ts";
+import { SilentProbe } from "../src/probe/silent-probe.ts";
 
 /** Settings accepted by Pi's in-memory manager. */
 type Settings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
@@ -18,7 +21,7 @@ afterEach(() => mock.restoreAll());
 /** A safe idle command context; a send ends immediately instead of running an agent. */
 function createHarness(settings: Settings = {}) {
 	const capture = new InitialCaptureState();
-	const probe = new SilentProbeState();
+	const probe = new SilentProbe(new ProbeFilter());
 	const compaction = new CompactionState();
 	const sent: string[] = [];
 	const visibility: boolean[] = [];

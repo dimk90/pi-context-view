@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { estimateTokens, SessionManager } from "@earendil-works/pi-coding-agent";
+import { estimateTokens } from "@earendil-works/pi-coding-agent";
 
 import type {
 	BuildSystemPromptOptions,
@@ -13,13 +13,10 @@ import type {
 import {
 	captureActiveTools,
 	collectPromptSources,
-	CompactionState,
 	copyPromptOptions,
 	InitialCaptureState,
 	measureInjectedMessages,
 	mergeRequestOnlyMessages,
-	parsePersistedIdentities,
-	SilentProbeState,
 } from "../src/capture.ts";
 import { buildSnapshot, type InjectionItem } from "../src/model.ts";
 
@@ -45,7 +42,7 @@ function tool(name: string, source: string): ToolInfo {
 	};
 }
 
-/** Assistant fixture for probe stop-reason tests. */
+/** Assistant fixture with the given stop reason. */
 function assistantMessage(
 	stopReason: "aborted" | "error",
 	timestamp: number,
@@ -406,276 +403,4 @@ test("InitialCaptureState does not finalize before prepare", () => {
 		})),
 		undefined,
 	);
-});
-
-test("CompactionState follows the current lifecycle signal", () => {
-	const state = new CompactionState();
-	const first = new AbortController();
-	const second = new AbortController();
-
-	state.begin(first.signal);
-	assert.equal(state.isActive, true);
-	state.begin(second.signal);
-	first.abort();
-	assert.equal(state.isActive, true, "an obsolete signal cannot clear the current compaction");
-	second.abort();
-	assert.equal(state.isActive, false);
-
-	const completed = new AbortController();
-	state.begin(completed.signal);
-	state.finish();
-	assert.equal(state.isActive, false);
-
-	const alreadyAborted = new AbortController();
-	alreadyAborted.abort();
-	state.begin(alreadyAborted.signal);
-	assert.equal(state.isActive, false);
-});
-
-test("SilentProbeState sanitizes and filters only exact probe identities", async () => {
-	const state = new SilentProbeState();
-	const attempt = state.start(1_000);
-	const concurrentAttempt = state.start();
-	assert.equal(concurrentAttempt.started, false);
-	assert.strictEqual(concurrentAttempt.completion, attempt.completion);
-	assert.strictEqual(concurrentAttempt.token, attempt.token);
-	assert.equal(state.isProbeInput("extension", attempt.token), true);
-	assert.equal(state.beginRun(attempt.token), true);
-
-	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
-	const realUser = { role: "user", content: [], timestamp: 11 } satisfies ContextEvent["messages"][number];
-	const probeAssistant = assistantMessage("error", 12, "This operation was aborted");
-
-	state.recordMessage(probeUser);
-	state.recordMessage(probeAssistant);
-	// An already empty prompt needs no replacement.
-	assert.equal(state.sanitizeMessage(probeUser), undefined);
-	const sanitized = state.sanitizeMessage(probeAssistant);
-	assert.equal(sanitized?.role, "assistant");
-	if (sanitized?.role === "assistant") {
-		assert.equal(sanitized.stopReason, "stop");
-		assert.deepEqual(sanitized.content, []);
-	}
-	assert.deepEqual(state.filterMessages([probeUser, realUser, probeAssistant]), [realUser]);
-	assert.deepEqual(state.syntheticMessages, [
-		{ role: "user", timestamp: 10 },
-		{ role: "assistant", timestamp: 12 },
-	]);
-
-	assert.equal(state.settle(true), true);
-	assert.deepEqual(await attempt.completion, { status: "captured" });
-	assert.equal(state.start().started, false);
-	assert.equal(state.sanitizeMessage(probeAssistant), undefined);
-});
-
-test("SilentProbeState leaves unmatched message arrays unchanged", () => {
-	const state = new SilentProbeState();
-	const messages = [{ role: "user", content: [], timestamp: 11 }] satisfies ContextEvent["messages"];
-	assert.strictEqual(state.filterMessages(messages), messages);
-	state.restoreIdentities([{ role: "user", timestamp: 10 }]);
-	assert.strictEqual(state.filterMessages(messages), messages);
-});
-
-test("SilentProbeState omissions persist without the extension and retain branch-safe filtering", () => {
-	const state = new SilentProbeState();
-	const attempt = state.start(1_000);
-	state.beginRun(attempt.token);
-	const manager = SessionManager.inMemory("/tmp");
-	const genuineUser = { role: "user", content: [], timestamp: 1 } satisfies ContextEvent["messages"][number];
-	const genuineAbort = assistantMessage("aborted", 2);
-	const probeUser = { role: "user", content: [], timestamp: 3 } satisfies ContextEvent["messages"][number];
-	const probeAssistant = assistantMessage("error", 4, "This operation was aborted");
-	manager.appendMessage(genuineUser);
-	manager.appendMessage(genuineAbort);
-	state.recordMessage(probeUser);
-	state.recordMessage(probeAssistant);
-	const userId = manager.appendMessage(probeUser);
-	const sanitized = state.sanitizeMessage(probeAssistant);
-	assert.ok(sanitized?.role === "assistant");
-	const assistantId = manager.appendMessage(sanitized);
-	manager.appendCustomMessageEntry("other-extension", "keep", false);
-	const beforeEdits = manager.getLeafId();
-	assert.ok(beforeEdits);
-	const projectedEntries = () => manager.buildSessionProjection().entries;
-	const drafts = state.createContextEdits(projectedEntries());
-	assert.deepEqual(drafts, [
-		{ type: "context_edit", targetId: userId, replacement: null },
-		{ type: "context_edit", targetId: assistantId, replacement: null },
-	]);
-	for (const draft of drafts) manager.appendContextEdit(draft.targetId, draft.replacement);
-	assert.deepEqual(manager.buildSessionProjection().messages.slice(0, 2), [genuineUser, genuineAbort]);
-	assert.equal(manager.buildSessionProjection().messages.length, 3, "only the two probe messages are omitted");
-	assert.deepEqual(state.createContextEdits(projectedEntries()), [], "do not append duplicate omissions");
-	assert.equal(manager.getBranch().filter((entry) => entry.type === "message").length, 4, "raw history stays intact");
-	const header = manager.getHeader();
-	assert.ok(header);
-	const reloaded = SessionManager.inMemory("/tmp", undefined, [header, ...manager.getEntries()]);
-	assert.deepEqual(reloaded.buildSessionProjection().messages, manager.buildSessionProjection().messages);
-
-	manager.appendContextEdit(userId, { content: "replacement" });
-	const replacedEntries = projectedEntries();
-	assert.deepEqual(state.createContextEdits(replacedEntries), [
-		{ type: "context_edit", targetId: userId, replacement: null },
-	], "a later replacement restores a target until omitted again");
-	manager.appendCompaction("summary", null, 0);
-	assert.deepEqual(state.createContextEdits(projectedEntries()), [], "compacted-away probes need no omission");
-	state.settle(true);
-	assert.deepEqual(state.createContextEdits(replacedEntries), [], "foreign runs cannot append edits");
-
-	manager.branch(beforeEdits);
-	const restored = new SilentProbeState();
-	restored.restoreIdentities(state.syntheticMessages);
-	assert.equal(manager.buildSessionProjection().messages.length, 5);
-	assert.equal(restored.filterMessages(manager.buildSessionProjection().messages).length, 3);
-});
-
-test("SilentProbeState claims its run by token when an input transform rewrites the prompt", () => {
-	const state = new SilentProbeState();
-	const attempt = state.start(1_000);
-
-	// Another extension prepends instructions to the synthetic empty prompt.
-	const transformed = "Additional instructions\n";
-	assert.equal(state.isProbeInput("extension", attempt.token), true);
-	assert.equal(state.beginRun(attempt.token), true, "rewritten text must not hide the probe run");
-
-	const probePrompt = { role: "user", content: transformed, timestamp: 30 } satisfies ContextEvent["messages"][number];
-	state.recordMessage(probePrompt);
-
-	// Blanked for the transcript, filtered out of every later model context.
-	assert.deepEqual(state.sanitizeMessage(probePrompt), { role: "user", content: [], timestamp: 30 });
-	assert.deepEqual(state.filterMessages([probePrompt]), []);
-	state.settle(true);
-});
-
-test("SilentProbeState leaves an unattributed run untouched and fails the attempt", async () => {
-	const state = new SilentProbeState();
-	const attempt = state.start(1_000);
-
-	// A run without the token may belong to the user or to another extension.
-	assert.equal(state.beginRun(undefined), false);
-	assert.equal(state.isCurrentRun, false, "an unattributed run must not arm the abort guard");
-	assert.deepEqual(await attempt.completion, {
-		status: "failed",
-		reason: "Another agent run started before the silent probe was recognized.",
-	});
-
-	// A delayed probe run is still claimed, so it is aborted and sanitized.
-	assert.equal(state.beginRun(attempt.token), true);
-	assert.equal(state.isCurrentRun, true);
-	assert.equal(state.settle(false), true);
-});
-
-test("SilentProbeState recognizes probe input only for its own token and source", () => {
-	const state = new SilentProbeState();
-	assert.equal(state.isProbeInput("extension", "any-token"), false, "no attempt is pending");
-
-	const attempt = state.start(1_000);
-	assert.equal(state.isProbeInput("extension", undefined), false);
-	assert.equal(state.isProbeInput("extension", `${attempt.token}-other`), false);
-	assert.equal(state.isProbeInput("interactive", attempt.token), false);
-	assert.equal(state.isProbeInput("rpc", attempt.token), false);
-
-	assert.equal(state.beginRun(attempt.token), true);
-	assert.equal(state.isProbeInput("extension", attempt.token), false, "the token is single-use");
-	state.settle(true);
-});
-
-for (const errorMessage of ["This operation was aborted", "The operation was aborted."]) {
-	test(`SilentProbeState sanitizes ${JSON.stringify(errorMessage)} only for a recorded probe assistant`, () => {
-		const state = new SilentProbeState();
-		const attempt = state.start(1_000);
-		assert.equal(state.beginRun(attempt.token), true);
-
-		const setupAbort = assistantMessage("error", 20, errorMessage);
-		const providerError = assistantMessage("error", 21, "Authentication failed");
-		const unrecordedSetupAbort = assistantMessage("error", 22, errorMessage);
-		// Pi reports the probe's abort only as an error, so another stop reason is not the probe's
-		const abortedStop = assistantMessage("aborted", 23, errorMessage);
-		state.recordMessage(setupAbort);
-		state.recordMessage(providerError);
-		state.recordMessage(abortedStop);
-
-		const sanitized = state.sanitizeMessage(setupAbort);
-		assert.equal(sanitized?.role, "assistant");
-		if (sanitized?.role === "assistant") {
-			assert.equal(sanitized.stopReason, "stop");
-			assert.equal(sanitized.errorMessage, undefined);
-			assert.deepEqual(sanitized.content, []);
-		}
-		assert.equal(state.sanitizeMessage(providerError), undefined);
-		assert.equal(state.sanitizeMessage(unrecordedSetupAbort), undefined);
-		assert.equal(state.sanitizeMessage(abortedStop), undefined);
-		state.settle(true);
-	});
-}
-
-test("SilentProbeState filters restored identities without consuming the probe attempt", () => {
-	const previousRuntime = new SilentProbeState();
-	const previousAttempt = previousRuntime.start(1_000);
-	assert.equal(previousRuntime.beginRun(previousAttempt.token), true);
-	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
-	previousRuntime.recordMessage(probeUser);
-	previousRuntime.settle(true);
-
-	const state = new SilentProbeState();
-	state.restoreIdentities(previousRuntime.syntheticMessages);
-
-	const emptyRealUser = { role: "user", content: [], timestamp: 11 } satisfies ContextEvent["messages"][number];
-	assert.deepEqual(state.filterMessages([probeUser, emptyRealUser]), [emptyRealUser]);
-	assert.deepEqual(state.syntheticMessages, [{ role: "user", timestamp: 10 }]);
-
-	// Restoration must not consume this runtime's single probe attempt.
-	assert.equal(state.isCurrentRun, false);
-	const attempt = state.start(1_000);
-	assert.equal(attempt.started, true);
-	state.fail("cleanup");
-});
-
-test("parsePersistedIdentities accepts only exact role/timestamp records", () => {
-	assert.deepEqual(
-		parsePersistedIdentities({
-			messages: [
-				{ role: "user", timestamp: 10 },
-				{ role: "assistant", timestamp: 12 },
-				{ role: "custom", timestamp: 13 },
-				{ role: "user", timestamp: "10" },
-				{ role: "user" },
-				"garbage",
-				null,
-			],
-		}),
-		[
-			{ role: "user", timestamp: 10 },
-			{ role: "assistant", timestamp: 12 },
-		],
-	);
-	assert.deepEqual(parsePersistedIdentities(undefined), []);
-	assert.deepEqual(parsePersistedIdentities(null), []);
-	assert.deepEqual(parsePersistedIdentities({ messages: "not-an-array" }), []);
-	assert.deepEqual(parsePersistedIdentities([]), []);
-});
-
-test("SilentProbeState keeps a timed-out running probe abortable until settlement", async () => {
-	const state = new SilentProbeState();
-	const attempt = state.start(1);
-	assert.equal(state.beginRun(attempt.token), true);
-
-	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
-	assert.equal(state.isCurrentRun, true);
-	assert.equal(state.settle(false), true);
-	assert.equal(state.isCurrentRun, false);
-});
-
-test("SilentProbeState retains a delayed synthetic turn after a pre-run timeout", async () => {
-	const state = new SilentProbeState();
-	const attempt = state.start(1);
-
-	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
-	assert.equal(state.isCurrentRun, false);
-
-	assert.equal(state.beginRun(undefined), false);
-	assert.equal(state.isCurrentRun, false);
-	assert.equal(state.beginRun(attempt.token), true);
-	assert.equal(state.isCurrentRun, true);
-	assert.equal(state.settle(false), true);
 });

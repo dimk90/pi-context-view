@@ -926,27 +926,37 @@ Persisted probe records contain only role and timestamp identities, plus
 
 ## Module Boundaries
 
-| Path                      | Responsibility                                                                                |
-| ------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/index.ts`            | Register events and commands; assemble view inputs.                                           |
-| `src/command.ts`          | Parse commands; resolve Initial through capture, probe, or fallback.                          |
-| `src/config.ts`           | Load, validate, cache, and explicitly create configuration.                                   |
-| `src/settings.ts`         | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
-| `src/capture.ts`          | Manage Initial, probes, compaction state, probe identities, and injected messages.            |
-| `src/probe-token.ts`      | Carry the probe token through the async context of this extension's own send.                 |
-| `src/pi-version.ts`       | Check the running Pi version against the oldest supported release.                            |
-| `src/measure.ts`          | Split and estimate prompt/tool contributions without pi API access.                           |
-| `src/prompt-blocks.ts`    | Locate XML sections and moved tool surfaces, excluding nested/fenced examples.                |
-| `src/transcript.ts`       | Replay system content, section patches, and tool declarations without provider serialization. |
-| `src/prompt-additions.ts` | Identify prompt additions and make source-attribution guesses.                                |
-| `src/usage.ts`            | Classify messages; build usage totals and previews.                                           |
-| `src/model.ts`            | Define types, ownership, hierarchy, and grouping.                                             |
-| `src/text.ts`             | Sanitize dynamic text before terminal display.                                                |
-| `src/ui/`                 | Handle navigation, layout, previews, and fullscreen rendering.                                |
-| `test/fixtures/`          | Test capture visibility, forced prompts, and extension load order.                            |
+| Path                        | Responsibility                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/index.ts`              | Create the layers, register them in order, and register the command; assemble view inputs.    |
+| `src/command.ts`            | Parse commands; resolve Initial through capture, probe, or fallback.                          |
+| `src/config.ts`             | Load, validate, cache, and explicitly create configuration.                                   |
+| `src/settings.ts`           | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
+| `src/capture.ts`            | Manage Initial and measure injected messages.                                                 |
+| `src/compaction.ts`         | Track the compaction lifecycle for the probe preconditions.                                   |
+| `src/probe/filter.ts`       | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.     |
+| `src/probe/silent-probe.ts` | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.             |
+| `src/probe/view.ts`         | ProbeView: the run origin and probe-message filter that capture reads.                        |
+| `src/probe/token.ts`        | Carry the probe token through the async context of this extension's own send.                 |
+| `src/pi-version.ts`         | Check the running Pi version against the oldest supported release.                            |
+| `src/measure.ts`            | Split and estimate prompt/tool contributions without pi API access.                           |
+| `src/prompt-blocks.ts`      | Locate XML sections and moved tool surfaces, excluding nested/fenced examples.                |
+| `src/transcript.ts`         | Replay system content, section patches, and tool declarations without provider serialization. |
+| `src/prompt-additions.ts`   | Identify prompt additions and make source-attribution guesses.                                |
+| `src/usage.ts`              | Classify messages; build usage totals and previews.                                           |
+| `src/model.ts`              | Define types, ownership, hierarchy, and grouping.                                             |
+| `src/text.ts`               | Sanitize dynamic text before terminal display.                                                |
+| `src/ui/`                   | Handle navigation, layout, previews, and fullscreen rendering.                                |
+| `test/fixtures/`            | Test capture visibility, forced prompts, and extension load order.                            |
 
-Keep pi event and command wiring in `src/index.ts`. Keep state machines,
-measurement, and rendering in focused modules that can be tested independently.
+Each layer's module exports its state and a `register*()` function with its pi
+handlers; `src/index.ts` creates the layers and calls those functions. Only
+Initial capture still registers its `before_agent_start` and `context` handlers
+in `src/index.ts`. Register the probe layer first: ProbeFilter's
+`context_with_system` handler must run before any capture handler on that event.
+The probe layer imports no capture module; capture reads it only through
+ProbeView. Keep state machines, measurement, and rendering in focused modules
+that can be tested independently.
 
 ## Required Invariants
 

@@ -42,8 +42,9 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
     Decided: before Pi 1.0.0, register no lifecycle handlers; every `/context` form, including `config`, only reports the required version.
   - Add a `Changed` entry to `CHANGELOG.md` for the removed compatibility.
 
-- [ ] **Probe layer** (D10):
+- [x] **Probe layer** (D10):
   - Split `src/capture.ts` into ProbeFilter (identities, restore, `filterMessages`) and SilentProbe (token, claim, abort, blanking, persistence). Keep the SilentProbe lifecycle unchanged.
+    Decided: modules in `src/probe/` (`filter.ts`, `silent-probe.ts`, `view.ts`, and `token.ts`, moved from `src/probe-token.ts`), each layer with a `register*()` function called from `src/index.ts`; `CompactionState` moved to `src/compaction.ts`. SilentProbe gets a `hasCapture` callback instead of importing capture.
   - Preserve the existing `context_with_system` filter when extracting ProbeFilter; it returns nothing when no message matches. Keep the self-filter in the old Initial capture until it is removed.
   - Expose the `ProbeView` interface (`isCurrentRun`, `filterMessages`) for capture.
   - Preserve `turn_end` omission drafts and identity filtering for branches before those edits. Only unomitted blank probe entries remain visible to `context` and earlier `context_with_system` handlers.
@@ -69,6 +70,7 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
   - Preserve the implemented guards for compaction, reported pending messages, virtual selections, idle warming, excessive known context usage and unreadable settings.
   - Resolve with the first `synthetic-probe` snapshot published after the start whose guard has settled, or with the failure reason.
   - Keep the TUI mode guard in the command; ProbeTrigger itself has none.
+  - Remove the `hasCapture` callback of `registerSilentProbe()` and the `captured` probe outcome: ProbeTrigger reads the result from the store.
 
 - [ ] **Injections on snapshots** (full composition and changes):
   - Select `first()`; ask ProbeTrigger when the store is empty; keep today's degraded fallback.

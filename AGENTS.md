@@ -22,7 +22,7 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 
 - **Architecture contract.** Preserve the invariants in `doc/ARCHITECTURE.md`; update that document with any lifecycle, capture, attribution, or usage behavior change.
 - **Privacy gate.** Keep raw prompts and messages process-local and terminal-sanitized; expose them only after explicit Enter preview, and never log them, persist extra copies, include them in notifications, or inject them into later requests.
-- **Module boundaries.** Keep `src/index.ts` to pi event and command wiring; put independently testable state, measurement, and rendering behavior in focused modules under `src/` and `src/ui/`.
+- **Module boundaries.** Keep `src/index.ts` to wiring: create the layers, call their `register*()` functions in the required order, and register the command. Put independently testable state, measurement, and rendering behavior in focused modules under `src/`, `src/probe/`, and `src/ui/`.
 - **Command contract.** Keep parsing, completions, registration text, README usage, and command tests synchronized whenever the `/context` grammar or mode guard changes.
 - **Config contract.** Keep user-configurable state override-only: defaults in code, no auto-created or default-backfilled config file, invalid entries degrading to defaults. `doc/ARCHITECTURE.md` holds the full load and write contract.
 - **UI contract.** Treat `doc/UI.md` and `doc/ui/` as canonical; update the owning page and focused tests whenever the specified TUI behavior changes.

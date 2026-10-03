@@ -5,16 +5,13 @@
 import { type ExtensionAPI, type ExtensionCommandContext, shouldCompact } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
-import {
-	buildNativeSnapshot,
-	type CompactionState,
-	type InitialCaptureState,
-	type SilentProbeState,
-} from "./capture.ts";
+import { buildNativeSnapshot, type InitialCaptureState } from "./capture.ts";
+import type { CompactionState } from "./compaction.ts";
 import type { ConfigCreationResult } from "./config.ts";
 import type { InitialSnapshot } from "./model.ts";
 import { MIN_PI_VERSION } from "./pi-version.ts";
-import { runWithProbeToken } from "./probe-token.ts";
+import type { SilentProbe } from "./probe/silent-probe.ts";
+import { runWithProbeToken } from "./probe/token.ts";
 import { readGlobalCacheWarmingMode, readLiveSettings } from "./settings.ts";
 import { normalizePreviewText } from "./text.ts";
 
@@ -78,7 +75,7 @@ export function getContextArgumentCompletions(argumentPrefix: string): Autocompl
 export async function resolveInitialCapture(
 	pi: ExtensionAPI,
 	capture: InitialCaptureState,
-	probe: SilentProbeState,
+	probe: SilentProbe,
 	compaction: CompactionState,
 	context: ExtensionCommandContext,
 ): Promise<InitialCaptureResult> {

@@ -3,8 +3,7 @@ import { test } from "node:test";
 
 import { type ExtensionAPI, type ExtensionCommandContext, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-import { CompactionState, InitialCaptureState, SilentProbeState } from "../src/capture.ts";
-import { readProbeToken } from "../src/probe-token.ts";
+import { InitialCaptureState } from "../src/capture.ts";
 import {
 	CONTEXT_COMMAND_DESCRIPTION,
 	getContextArgumentCompletions,
@@ -15,6 +14,10 @@ import {
 	reportUnsupportedPi,
 	resolveInitialCapture,
 } from "../src/command.ts";
+import { CompactionState } from "../src/compaction.ts";
+import { ProbeFilter } from "../src/probe/filter.ts";
+import { SilentProbe } from "../src/probe/silent-probe.ts";
+import { readProbeToken } from "../src/probe/token.ts";
 
 /** Collect what a command reports through the TUI notification path. */
 function createNotifyingContext(): {
@@ -118,7 +121,7 @@ test("reportConfigCreation reports every create outcome with its own severity", 
 test("resolveInitialCapture sends the synthetic prompt inside the probe token scope", async (t) => {
 	t.mock.method(SettingsManager, "create", () => SettingsManager.inMemory());
 	const capture = new InitialCaptureState();
-	const probe = new SilentProbeState();
+	const probe = new SilentProbe(new ProbeFilter());
 	const compaction = new CompactionState();
 	let sentContent: string | undefined;
 	let tokenDuringSend: string | undefined;
@@ -154,7 +157,7 @@ test("resolveInitialCapture sends the synthetic prompt inside the probe token sc
 
 test("resolveInitialCapture skips the probe when compaction starts while waiting for idle", async () => {
 	const capture = new InitialCaptureState();
-	const probe = new SilentProbeState();
+	const probe = new SilentProbe(new ProbeFilter());
 	const compaction = new CompactionState();
 	const controller = new AbortController();
 	let sentUserMessages = 0;

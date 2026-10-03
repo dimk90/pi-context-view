@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import {
+	type AgentSession,
 	createAgentSession,
 	DefaultResourceLoader,
 	type ExtensionContext,
@@ -19,7 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import registerExtension from "../src/index.ts";
-import { PROBE_IDENTITIES_CUSTOM_TYPE } from "../src/capture.ts";
+import { PROBE_IDENTITIES_CUSTOM_TYPE } from "../src/probe/filter.ts";
 import forcedPrompt from "./fixtures/forced-prompt.ts";
 import inputTransform from "./fixtures/input-transform.ts";
 import marker from "./fixtures/marker.ts";
@@ -27,15 +28,22 @@ import marker from "./fixtures/marker.ts";
 /** Loopback-only provider that records requests and returns a deterministic assistant response. */
 async function startProvider(t: TestContext) {
 	let requests = 0;
-	const server = createServer((_request, response) => {
+	const bodies: Array<{ messages: Array<{ role: string }> }> = [];
+	const server = createServer((request, response) => {
+		// Count on arrival, so even a request that never completes is seen
 		requests++;
-		response.writeHead(200, { "Content-Type": "text/event-stream" });
-		response.end([
-			'data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":null}]}',
-			'data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}',
-			"data: [DONE]",
-			"",
-		].join("\n\n"));
+		const chunks: Buffer[] = [];
+		request.on("data", (chunk: Buffer) => chunks.push(chunk));
+		request.on("end", () => {
+			bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+			response.writeHead(200, { "Content-Type": "text/event-stream" });
+			response.end([
+				'data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":null}]}',
+				'data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}',
+				"data: [DONE]",
+				"",
+			].join("\n\n"));
+		});
 	});
 	server.listen(0, "127.0.0.1");
 	await once(server, "listening");
@@ -45,7 +53,7 @@ async function startProvider(t: TestContext) {
 	}));
 	const address = server.address();
 	assert.ok(address && typeof address !== "string");
-	return { baseUrl: `http://127.0.0.1:${address.port}/v1`, requests: () => requests };
+	return { baseUrl: `http://127.0.0.1:${address.port}/v1`, requests: () => requests, bodies };
 }
 
 /** Build an isolated Pi runtime with no real credentials, resources, or provider endpoints. */
@@ -94,7 +102,9 @@ for (const position of ["before", "after"] as const) {
 		const stopReasons: Array<[string, string | undefined]> = [];
 		const visibility: boolean[] = [];
 		let draftedEarlierOmission = false;
+		let contextMessages: string[] = [];
 		const sentinel: ExtensionFactory = (pi) => {
+			pi.on("context", (event) => { contextMessages = conversationRoles(event.messages); });
 			pi.on("before_provider_headers", () => { observed.headers++; });
 			pi.on("before_provider_request", () => { observed.payloads++; });
 			pi.on("after_provider_response", () => { observed.responses++; });
@@ -183,9 +193,73 @@ for (const position of ["before", "after"] as const) {
 		assert.equal(provider.requests(), 1);
 		assert.equal(observed.responses, 1);
 		assert.equal(session.getLastAssistantText(), "ok");
+		assert.deepEqual(contextMessages, ["user"], "omitted probe entries never reach a context handler");
 		assert.equal(session.sessionManager.getBranch().filter((entry) => entry.type === "context_edit").length, 2);
 		assert.equal(session.sessionManager.buildSessionProjection().messages.filter((message) =>
 			message.role === "user" || message.role === "assistant").length, 2);
 		assert.deepEqual(errors, []);
 	});
+}
+
+test("filtering unomitted probe entries keeps mid-conversation system messages in place", async (t) => {
+	const provider = await startProvider(t);
+	const seen = { context: [] as string[], beforeFilter: [] as string[], afterFilter: [] as string[] };
+	let addSection = false;
+	const earlier: ExtensionFactory = (pi) => {
+		pi.on("before_agent_start", (event) => {
+			// A prompt change between runs records a system message mid-conversation
+			if (addSection) event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, later: "later" };
+		});
+		pi.on("context", (event) => { seen.context = event.messages.map((message) => message.role); });
+		pi.on("context_with_system", (event) => { seen.beforeFilter = event.messages.map((message) => message.role); });
+	};
+	const later: ExtensionFactory = (pi) => {
+		pi.on("context_with_system", (event) => { seen.afterFilter = event.messages.map((message) => message.role); });
+	};
+	const session = await createRuntime(t, provider.baseUrl, [earlier, registerExtension, later]);
+	const errors = await bindTui(session);
+	await session.prompt("/context injections");
+
+	// Return to the probe's last entry, before its omissions, as in an old session or after an interrupted probe
+	const probeEntries = session.sessionManager.getBranch().filter((entry) => entry.type === "message"
+		&& (entry.message.role === "user" || entry.message.role === "assistant"));
+	const probeAssistant = probeEntries.at(-1);
+	assert.ok(probeAssistant);
+	await session.navigateTree(probeAssistant.id);
+	await session.prompt("first");
+	addSection = true;
+	await session.prompt("second");
+
+	assert.deepEqual(errors, []);
+	assert.equal(provider.requests(), 2);
+	assert.deepEqual(seen.context, ["user", "assistant", "user", "assistant", "user"],
+		"unomitted blank probe entries stay visible to context handlers");
+	assert.deepEqual(seen.beforeFilter, ["system", "user", "assistant", "user", "assistant", "system", "user"],
+		"and to earlier context_with_system handlers");
+	assert.deepEqual(seen.afterFilter, ["system", "user", "assistant", "system", "user"],
+		"later handlers see the probe entries removed and the later system message in place");
+	// Pi's conversion drops blank messages anyway; this checks the system message reaches the provider in place
+	assert.deepEqual(provider.bodies[1].messages.map((message) => message.role), seen.afterFilter);
+});
+
+/**
+ * Bind a session in TUI mode, where `/context` may probe; the view overlay
+ * closes at once. Returns the extension errors reported from then on.
+ */
+async function bindTui(session: AgentSession): Promise<string[]> {
+	const errors: string[] = [];
+	await session.bindExtensions({
+		mode: "tui",
+		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
+		uiContext: {
+			setWorkingVisible: () => undefined,
+			custom: async () => undefined,
+		} as unknown as ExtensionUIContext,
+	});
+	return errors;
+}
+
+/** Roles of the user and assistant messages, skipping custom and other session messages. */
+function conversationRoles(messages: ReadonlyArray<{ role: string }>): string[] {
+	return messages.map((message) => message.role).filter((role) => role === "user" || role === "assistant");
 }

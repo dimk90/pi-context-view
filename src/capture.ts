@@ -5,13 +5,10 @@
  */
 import {
 	type BuildSystemPromptOptions,
-	type ContextEditEntryDraft,
 	type ContextEvent,
 	convertToLlm,
 	estimateTokens,
 	formatSize,
-	type InputSource,
-	type ProjectedSessionEntry,
 	type SlashCommandInfo,
 	type SourceInfo,
 	type ToolInfo,
@@ -28,18 +25,7 @@ import {
 	type InjectionSource,
 	type JsonSpan,
 } from "./model.ts";
-import { createProbeToken, type ProbeToken } from "./probe-token.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
-
-/** Session custom-entry type persisting probe message identities across extension runtimes. */
-export const PROBE_IDENTITIES_CUSTOM_TYPE = "pi-context-view:probe-identities";
-
-const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
-/** `AbortError` text of the JavaScript runtime that runs pi, for the probe's `turn_start` abort. */
-const SETUP_ABORT_ERROR_MESSAGES = new Set([
-	"This operation was aborted", // Node.js
-	"The operation was aborted.", // Bun
-]);
 
 /** Everything available when the first context event finalizes a snapshot. */
 export interface CaptureFinalization {
@@ -65,25 +51,6 @@ export interface NativeSnapshotInput {
 	capturedAt?: Date;
 }
 
-/** Result of the one allowed silent-probe attempt. */
-export type ProbeOutcome =
-	| { readonly status: "captured" }
-	| { readonly status: "failed"; readonly reason: string };
-
-/** A probe start request; concurrent callers share `token` and `completion`. */
-export interface ProbeAttempt {
-	readonly started: boolean;
-	/** Correlation token to send the synthetic prompt under. */
-	readonly token: ProbeToken;
-	readonly completion: Promise<ProbeOutcome>;
-}
-
-/** Exact identity used to remove only synthetic probe messages. */
-export interface SyntheticMessageIdentity {
-	readonly role: "user" | "assistant";
-	readonly timestamp: number;
-}
-
 /** Owned structured inputs prepared before later extension handlers can mutate shared event data. */
 interface CapturePreparation {
 	readonly promptOptions: PromptOptionsSlice;
@@ -91,13 +58,6 @@ interface CapturePreparation {
 	/** Prompt as of this extension's own handler, bounding later extensions' additions. */
 	readonly promptAtHandler?: string;
 }
-
-/**
- * Lifecycle of the single probe attempt. Ownership outlives the attempt's own
- * completion, so a probe run arriving after a timeout or after an unattributed
- * run is still claimed, aborted, and sanitized.
- */
-type ProbePhase = "idle" | "waiting" | "running" | "settled";
 
 /**
  * Capture-once state machine. `prepare()` refreshes the structured options on
@@ -154,252 +114,6 @@ export class InitialCaptureState {
 		this.pendingPreparation = undefined;
 		return this.initialSnapshot;
 	}
-}
-
-/** Tracks the observable compaction lifecycle that makes a silent probe unsafe. */
-export class CompactionState {
-	private currentSignal: AbortSignal | undefined;
-
-	/** Whether a compaction observed through `session_before_compact` is still active. */
-	public get isActive(): boolean {
-		return this.currentSignal !== undefined && !this.currentSignal.aborted;
-	}
-
-	/** Track the current compaction until Pi reports its end or its signal aborts. */
-	public begin(signal: AbortSignal): void {
-		if (signal.aborted) {
-			this.currentSignal = undefined;
-			return;
-		}
-		this.currentSignal = signal;
-		signal.addEventListener("abort", () => {
-			if (this.currentSignal === signal) this.currentSignal = undefined;
-		}, { once: true });
-	}
-
-	/** Clear the current lifecycle after compaction can no longer reject prompts. */
-	public finish(): void {
-		this.currentSignal = undefined;
-	}
-}
-
-/**
- * State for one on-demand silent probe. It owns the correlation token, the
- * timeout, and the exact synthetic message identities, but leaves pi API calls
- * and UI restoration to index.ts.
- */
-export class SilentProbeState {
-	private phase: ProbePhase = "idle";
-	private readonly identities = new Map<string, SyntheticMessageIdentity>();
-	private attempt: ProbeAttempt | undefined;
-	private resolveCompletion: ((outcome: ProbeOutcome) => void) | undefined;
-	private outcome: ProbeOutcome | undefined;
-	private timeout: NodeJS.Timeout | undefined;
-
-	/** True while the probe owns the in-flight agent run (including after a timeout). */
-	public get isCurrentRun(): boolean {
-		return this.phase === "running";
-	}
-
-	/** Defensive copies of the recorded probe message identities. */
-	public get syntheticMessages(): readonly SyntheticMessageIdentity[] {
-		return [...this.identities.values()].map((identity) => ({ ...identity }));
-	}
-
-	/**
-	 * Merge probe identities persisted by an earlier extension runtime so prior
-	 * probe messages stay excluded after resume/reload/fork. Restoration only
-	 * seeds the identity map; it neither consumes this runtime's single probe
-	 * attempt nor associates any run with the probe.
-	 */
-	public restoreIdentities(identities: readonly SyntheticMessageIdentity[]): void {
-		for (const identity of identities) {
-			this.identities.set(identityKey(identity), { role: identity.role, timestamp: identity.timestamp });
-		}
-	}
-
-	/**
-	 * Begin the one allowed probe attempt with a failure timeout. Repeat calls
-	 * return the original attempt's completion with `started: false`.
-	 */
-	public start(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): ProbeAttempt {
-		if (this.attempt !== undefined) {
-			return { ...this.attempt, started: false };
-		}
-
-		this.phase = "waiting";
-		const completion = new Promise<ProbeOutcome>((resolve) => {
-			this.resolveCompletion = resolve;
-		});
-		this.timeout = setTimeout(() => {
-			this.resolve({ status: "failed", reason: "Silent probe timed out." });
-		}, timeoutMs);
-		this.attempt = { started: true, token: createProbeToken(), completion };
-		return this.attempt;
-	}
-
-	/**
-	 * Whether this input event is the probe's own synthetic prompt. Recognition
-	 * is causal rather than textual: the token is visible only inside the async
-	 * context of this extension's own `sendUserMessage()` call.
-	 */
-	public isProbeInput(source: InputSource, token: ProbeToken | undefined): boolean {
-		return this.phase === "waiting" && source === "extension" && this.ownsToken(token);
-	}
-
-	/**
-	 * Claim the run this probe started, identified by the token it carries. A run
-	 * without the token is not provably ours, so it fails the attempt instead of
-	 * activating the abort guard: it may belong to the user or to another
-	 * extension and must run untouched. Ownership stays open afterwards so a
-	 * delayed probe run is still claimed.
-	 */
-	public beginRun(token: ProbeToken | undefined): boolean {
-		if (this.phase !== "waiting") return false;
-		if (!this.ownsToken(token)) {
-			this.fail("Another agent run started before the silent probe was recognized.");
-			return false;
-		}
-		this.phase = "running";
-		return true;
-	}
-
-	/** Record probe user/assistant identities as their message events arrive. */
-	public recordMessage(message: ContextEvent["messages"][number]): void {
-		if (!this.isCurrentRun || (message.role !== "user" && message.role !== "assistant")) return;
-		const identity = { role: message.role, timestamp: message.timestamp } satisfies SyntheticMessageIdentity;
-		this.identities.set(identityKey(identity), identity);
-	}
-
-	/**
-	 * Replace a recorded probe message with an artifact-free version, or return
-	 * undefined to keep pi's own. Filtering keeps probe messages out of later
-	 * model contexts; blanking keeps them out of the transcript.
-	 */
-	public sanitizeMessage(
-		message: ContextEvent["messages"][number],
-	): ContextEvent["messages"][number] | undefined {
-		if (!this.isCurrentRun) return undefined;
-		if (message.role === "user") return this.blankProbePrompt(message);
-		if (message.role === "assistant") return this.blankProbeAbort(message);
-		return undefined;
-	}
-
-	/** Remove only messages whose exact role+timestamp identity belongs to the probe. */
-	public filterMessages(messages: ContextEvent["messages"]): ContextEvent["messages"] {
-		if (this.identities.size === 0) return messages;
-		const filtered = messages.filter((message) => {
-			if (message.role !== "user" && message.role !== "assistant") return true;
-			return !this.ownsMessage(message);
-		});
-		return filtered.length === messages.length ? messages : filtered;
-	}
-
-	/**
-	 * Omit known probe entries still visible in Pi's boundary projection at an
-	 * owned run's `turn_end`. The projection already applies compaction, earlier
-	 * edits, and earlier handlers' drafts, so each target is omitted once.
-	 */
-	public createContextEdits(contextEntries: readonly ProjectedSessionEntry[]): ContextEditEntryDraft[] {
-		if (!this.isCurrentRun) return [];
-		const edits: ContextEditEntryDraft[] = [];
-		for (const { sourceEntry, messages } of contextEntries) {
-			if (messages.length > 0
-				&& sourceEntry.type === "message"
-				&& (sourceEntry.message.role === "user" || sourceEntry.message.role === "assistant")
-				&& this.ownsMessage(sourceEntry.message)) {
-				edits.push({ type: "context_edit", targetId: sourceEntry.id, replacement: null });
-			}
-		}
-		return edits;
-	}
-
-	/** Resolve a running attempt from `agent_settled`. */
-	public settle(captured: boolean): boolean {
-		if (!this.isCurrentRun) return false;
-		this.phase = "settled";
-		this.resolve(
-			captured
-				? { status: "captured" }
-				: { status: "failed", reason: "Silent probe settled without a context snapshot." },
-		);
-		return true;
-	}
-
-	/**
-	 * End a pending attempt during shutdown or a synchronous startup failure.
-	 * Ownership is untouched: only the attempt's own completion is resolved.
-	 */
-	public fail(reason: string): void {
-		if (this.attempt === undefined) return;
-		this.resolve({ status: "failed", reason });
-	}
-
-	/**
-	 * Empty the synthetic prompt so no stored message keeps text another
-	 * extension's input transform added to it.
-	 */
-	private blankProbePrompt(
-		message: Extract<ContextEvent["messages"][number], { role: "user" }>,
-	): ContextEvent["messages"][number] | undefined {
-		if (message.content.length === 0 || !this.ownsMessage(message)) return undefined;
-		return { ...message, content: [] };
-	}
-
-	/**
-	 * Replace a recorded probe abort with an empty successful message so pi does
-	 * not render an abort transcript row. Pi reports the `turn_start` abort,
-	 * which authentication rejects before streaming, as an error.
-	 */
-	private blankProbeAbort(
-		message: Extract<ContextEvent["messages"][number], { role: "assistant" }>,
-	): ContextEvent["messages"][number] | undefined {
-		const isProbeAbort = message.stopReason === "error"
-			&& message.errorMessage !== undefined
-			&& SETUP_ABORT_ERROR_MESSAGES.has(message.errorMessage);
-		if (!isProbeAbort || !this.ownsMessage(message)) return undefined;
-		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };
-	}
-
-	/** Whether this exact role and timestamp was recorded for the probe. */
-	private ownsMessage(message: { role: "user" | "assistant"; timestamp: number }): boolean {
-		return this.identities.has(identityKey({ role: message.role, timestamp: message.timestamp }));
-	}
-
-	/** Whether `token` identifies the current attempt. */
-	private ownsToken(token: ProbeToken | undefined): boolean {
-		return token !== undefined && token === this.attempt?.token;
-	}
-
-	/** Settle the completion promise exactly once and clear the timeout. */
-	private resolve(outcome: ProbeOutcome): void {
-		if (this.outcome !== undefined) return;
-		if (this.timeout !== undefined) clearTimeout(this.timeout);
-		this.timeout = undefined;
-		this.outcome = outcome;
-		const resolve = this.resolveCompletion;
-		this.resolveCompletion = undefined;
-		resolve?.(outcome);
-	}
-}
-
-/**
- * Parse one persisted probe-identities entry payload. Malformed or foreign
- * records are ignored so a corrupt entry can never suppress genuine messages.
- */
-export function parsePersistedIdentities(data: unknown): SyntheticMessageIdentity[] {
-	if (typeof data !== "object" || data === null) return [];
-	const messages = (data as { messages?: unknown }).messages;
-	if (!Array.isArray(messages)) return [];
-	const identities: SyntheticMessageIdentity[] = [];
-	for (const message of messages) {
-		if (typeof message !== "object" || message === null) continue;
-		const { role, timestamp } = message as { role?: unknown; timestamp?: unknown };
-		if ((role === "user" || role === "assistant") && typeof timestamp === "number" && Number.isFinite(timestamp)) {
-			identities.push({ role, timestamp });
-		}
-	}
-	return identities;
 }
 
 /** Build a view-local pi-native snapshot without freezing the main capture state. */
@@ -665,11 +379,6 @@ function imagePreviewBlock<Block extends { readonly type: string }>(block: Block
 /** Preview whose whole text is one serialized JSON document. */
 function serializedPreview(text: string): MessagePreview {
 	return { text, jsonSpan: { start: 0, end: text.length } };
-}
-
-/** Map key uniquely identifying one probe message by role and timestamp. */
-function identityKey(identity: SyntheticMessageIdentity): string {
-	return `${identity.role}:${identity.timestamp}`;
 }
 
 /** Attribute a custom-role message to its customType; the actual injector is unknowable. */
