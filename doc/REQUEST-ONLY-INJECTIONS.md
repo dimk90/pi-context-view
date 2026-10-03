@@ -167,7 +167,7 @@ Rules for both paths:
 
 - **Dispatch confirmation.** On the physical path, the first identity-bearing event confirms the request model. If its provider, API or model differs, replace the guard with an incomplete result; do not parse again. This happens, for example, when an earlier handler calls `pi.setModel()` during preparation: `ctx.model` changes, but the prepared request does not.
 - **Shape check.** The payload must match the representation of the selected API. A mismatch or an unsupported API produces an incomplete result. The payload shape never selects the parser: shape alone cannot establish model capabilities, and providers that share one format can differ in `compat`. Normalization that is too broad would hide real edits.
-- **Event order.** OpenAI Completions, OpenAI Responses and Anthropic emit their normalized assistant start after receiving the HTTP response, before consuming provider stream events. Other adapters differ; do not require either identity-bearing event to arrive first. Confirm only once per paired request, return immediately from stream handlers, and treat `event.data` as read-only. A probe run's aborted request has only the assistant events, and both carry the identity.
+- **Event order.** OpenAI Completions, OpenAI Responses and Anthropic emit their normalized assistant start after receiving the HTTP response, before consuming provider stream events. Other adapters differ; do not require either identity-bearing event to arrive first. Confirm only once per paired request, return immediately from stream handlers, and treat `event.data` as read-only. A request that fails before streaming has only the assistant events, and both carry the identity. A standard Pi 1.0 probe has no payload to confirm (D10).
 
 All parsing remains deferred under D5. A single session may use several formats through virtual routing or model changes.
 
@@ -321,7 +321,7 @@ Shows the selected snapshot (Initial today): structured changes with attribution
 
 Counts the replayed projection and applies the selected snapshot's conversation changes by baseline entry: additions are counted, modifications replace their baseline message, and deletions remove it. Hidden declarations are a normalized Pi adjustment for Usage: hidden tools drop out without a finding. Tool counting uses D9's name sets:
 
-- **Source.** Take `declaredTools` from `latest()` of either origin. A probe's declared tools describe the next request as well as a real request's do.
+- **Source.** Take `declaredTools` from the latest snapshot of either origin that records them. A standard Pi 1.0 probe has no payload and records none (D10), so it does not replace the names of an earlier request.
 - **Filter.** Count a replayed tool only if the snapshot declares its name. Other replayed tools drop out of Usage: they are neither listed nor counted. Declared names missing from the replay are not Usage tools; D3 and D4 report them.
 - **Definitions.** Count the replayed name, description and schema, not the payload text. Usage stays a provider-independent estimate.
 - **Freshness.** Use the names only while the current replayed tool names equal the snapshot's baseline names. An active-tool change, branch navigation or resume that changes the set makes them unusable until a newer snapshot.
@@ -443,7 +443,7 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, snapshots: S
 
   pi.on("message_start", (event, ctx) => {
     // some adapters announce the assistant before consuming provider stream events;
-    // an aborted probe request has only the assistant events
+    // a request that fails before streaming has only the assistant events
     const message = event.message;
     if (message.role !== "assistant" || !awaitingDispatch) return;
     settle(ctx, awaitingDispatch, { provider: message.provider, api: message.api, model: message.model });
@@ -466,7 +466,7 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, snapshots: S
   });
 
   pi.on("agent_settled", (_event, ctx) => {
-    // for example, a probe on a provider that does not call onPayload
+    // for example, a standard probe: authentication rejects its aborted signal before onPayload
     if (unpaired) snapshots.publishGuard(unpaired.id, { status: "incomplete", reason: "No payload was observed." });
     unpaired = undefined;
     if (awaitingDispatch) settle(ctx, awaitingDispatch, undefined);
@@ -511,9 +511,9 @@ Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_
 | Handler ordering          | Load each fixture before and after the monitor. Exercise every resource position in D1 with project trust resolved.                                                                                                                                                                                                    |
 | Structured edits          | Add, modify and delete conversation messages; patch system sections; mutate messages in place; change active tools on a later prompt.                                                                                                                                                                                  |
 | Late edits                | Rewrite the payload before and after the monitor and confirm the stated visibility limits.                                                                                                                                                                                                                             |
-| Forced prompt             | Return `systemPrompt` from `before_agent_start`; verify the capture and guard apply it regardless of load order, in real and probe runs.                                                                                                                                                                               |
+| Forced prompt             | Return `systemPrompt` from `before_agent_start`; verify the capture applies it in both load orders, in real and probe runs, and the guard in real runs.                                                                                                                                                                |
 | Built-ins                 | Load codemode with an active `codemode` tool in both normal and `"codemode": { "mode": "only" }` settings; load tool-search and MCP with a minimal direct-tool server. Separate recorded prompt/description changes from hidden declarations.                                                                          |
-| Usage tools               | With codemode `"mode": "only"`, Usage counts only `codemode` after a request or a probe, and every replayed tool before both. Change active tools and reopen Usage before and after the next request. An incomplete tool-declaration channel falls back to replay. The placeholder never appears.                      |
+| Usage tools               | With codemode `"mode": "only"`, Usage counts only `codemode` after a request, also after a later probe, and every replayed tool before it, even after a probe. Change active tools and reopen Usage before and after the next request. An incomplete declaration channel uses replay. The placeholder never appears.   |
 | Routing and normalization | Alternate physical providers, directly and through a virtual model; route image input to a text-only model; cover every adjustment in D4.                                                                                                                                                                              |
 | Retries                   | Fail once with agent retries enabled, then with `"retry": { "enabled": false, "provider": { "maxRetries": 2 } }`. Verify capture pairing.                                                                                                                                                                              |
 | Cache warming             | Set model `"promptCache": { "short": 12 }`, `"cacheWarming": "idle"`, and return `{ action: "warm" }` from the decision fixture. Check successful and failed refreshes are skipped, including refreshes after a probe.                                                                                                 |
@@ -526,7 +526,7 @@ Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_
 | Snapshot store            | Retains the first and latest snapshot per origin; guard updates replace the retained copy. Capture runs with no consumer and in RPC mode. Consumers import no capture or probe internals.                                                                                                                              |
 | Cleanup and privacy       | Release pending data on settlement/shutdown; keep raw content out of logs, session entries and notifications. Persisted probe records contain only role and timestamp.                                                                                                                                                 |
 
-On Pi upgrades, recheck event shapes, handler order, provider adjustments, whether dispatch metadata is now exposed directly, and where the provider checks a probe's abort signal.
+On Pi upgrades, recheck event shapes, handler order, provider adjustments, whether dispatch metadata is now exposed directly, and where Pi checks a probe's abort signal (authentication resolution in Pi 1.0).
 
 ## References
 

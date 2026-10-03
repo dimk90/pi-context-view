@@ -97,13 +97,13 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
 
 - [ ] **Guard results in the views** (D7, D9, D11):
   - Injections: late edits without structure or attribution, hidden declarations with their candidates, guard status. Update `doc/ui/injections.md`.
-  - Usage: filter replayed tools by `declaredTools` from `latest()`, with the freshness and fallback rules; hidden tools drop out without a finding. Update `doc/ui/usage.md`.
+  - Usage: filter replayed tools by `declaredTools` from the latest snapshot that records them, with the freshness and fallback rules; hidden tools drop out without a finding. Update `doc/ui/usage.md`.
 
 - [ ] **Verify the fix for [#11](https://github.com/dimk90/pi-context-view/issues/11)**:
   - Unit test DeclaredTools with OpenAI Completions and Anthropic payloads that declare only `codemode` and `__pi_deferred_placeholder__`, against a baseline that replays `read`, `bash`, `edit`, `write`, and `codemode`. Declared names are `codemode` only; the placeholder never appears.
   - Unit test Usage: Built-in Tools neither lists nor counts hidden tools. It counts every replayed tool before the first snapshot, after an active-tool change, and with an incomplete tool-declaration channel.
   - Unit test Injections: hidden tools appear as hidden declarations with their `model-only` candidates, not as sent Built-in Tools.
-  - Verify in a real session with `"codemode": { "mode": "only" }`: after a prompt and after a probe, `/context` counts only `codemode`; a `before_provider_request` logger confirms the declared names. Change active tools and reopen Usage before and after the next request.
+  - Verify in a real session with `"codemode": { "mode": "only" }`: after a prompt, and after a later probe, `/context` counts only `codemode`; a probe before the first prompt records no declared names, so Usage counts every replayed tool; a `before_provider_request` logger confirms the declared names. Change active tools and reopen Usage before and after the next request.
   - Add a `Fixed` entry to `CHANGELOG.md` that links #11 and credits the reporter.
 
 - [ ] **Adopt tests from [#9](https://github.com/dimk90/pi-context-view/pull/9)** (the PR's capture code is not merged):
