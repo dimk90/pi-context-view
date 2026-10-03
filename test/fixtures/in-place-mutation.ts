@@ -2,6 +2,10 @@
  * Verification fixture: a `context_with_system` handler that edits the latest
  * user message in place and returns nothing. Later handlers share the same
  * message objects, so a capture that keeps references would see this edit.
+ *
+ * Expected result:
+ *   before the monitor   structured modification, unattributed
+ *   after the monitor    edited after monitor
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

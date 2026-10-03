@@ -1,6 +1,10 @@
 /**
  * Verification fixture: a `context` handler that removes every user message
  * containing a marker from the request. The session keeps the message.
+ *
+ * Expected result:
+ *   before the monitor   structured deletion, unattributed
+ *   after the monitor    structured deletion, unattributed
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

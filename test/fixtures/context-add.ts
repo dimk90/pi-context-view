@@ -1,6 +1,10 @@
 /**
  * Verification fixture: a `context` handler that adds a request-only custom
  * message. Nothing is persisted, so only the request contains it.
+ *
+ * Expected result:
+ *   before the monitor   structured addition, source `context-view-fixture-add`
+ *   after the monitor    structured addition, source `context-view-fixture-add`
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

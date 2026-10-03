@@ -2,6 +2,10 @@
  * Verification fixture: a `before_provider_request` handler that appends a
  * user message to the provider payload. OpenAI Completions and Anthropic
  * Messages both accept a `{ role, content }` message with string content.
+ *
+ * Expected result:
+ *   before the monitor   edited after monitor
+ *   after the monitor    not visible
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

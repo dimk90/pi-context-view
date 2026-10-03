@@ -1,6 +1,10 @@
 /**
  * Verification fixture: a `context_with_system` handler that appends a system
  * message setting one named prompt section for the request only.
+ *
+ * Expected result:
+ *   before the monitor   structured system change adding the section, unattributed
+ *   after the monitor    edited after monitor
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

@@ -4,16 +4,29 @@
  * makes its change visible in the provider request.
  */
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { suite, test, type TestContext } from "node:test";
 
 import { startMockProvider, type MockProvider, type RecordedRequest } from "./harness/mock-provider.ts";
 import { MOCK_PROVIDERS, startPi, type PiOptions, type PiProcess } from "./harness/pi-rpc.ts";
 import { CONTEXT_ADD_TEXT } from "./fixtures/context-add.ts";
+import { CONTEXT_ADD_USER_TEXT } from "./fixtures/context-add-user.ts";
 import { CONTEXT_DELETE_MARKER } from "./fixtures/context-delete.ts";
+import { CONTEXT_IN_PLACE_SUFFIX } from "./fixtures/context-in-place.ts";
 import { CONTEXT_MODIFY_PREFIX } from "./fixtures/context-modify.ts";
+import { CONTEXT_REORDER_MARKER } from "./fixtures/context-reorder.ts";
 import { IN_PLACE_SUFFIX } from "./fixtures/in-place-mutation.ts";
+import { PAYLOAD_DELETE_MARKER } from "./fixtures/payload-delete.ts";
+import { PAYLOAD_LOG_VARIABLE } from "./fixtures/payload-logger.ts";
+import { PAYLOAD_MODIFY_SUFFIX } from "./fixtures/payload-modify.ts";
+import { declaredToolName, PAYLOAD_REMOVED_TOOL } from "./fixtures/payload-remove-tool.ts";
 import { PAYLOAD_REWRITE_TEXT } from "./fixtures/payload-rewrite.ts";
+import { SECTION_DELETE_NAME } from "./fixtures/section-delete.ts";
+import { SECTION_MODIFY_TEXT } from "./fixtures/section-modify.ts";
 import { SECTION_PATCH_TEXT } from "./fixtures/section-patch.ts";
+import { SYSTEM_APPEND_TEXT } from "./fixtures/system-append.ts";
 
 /** A 1×1 PNG for image-input checks. */
 const PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -103,6 +116,91 @@ suite("harness fixtures change the provider request", { concurrency: true }, () 
 		const { provider, client } = await startHarness(t, { extensions: [fixture("payload-rewrite")] });
 		await client.promptAndWait("prompt");
 		assert.ok(requestText(provider.requests[0]).includes(PAYLOAD_REWRITE_TEXT));
+	});
+
+	test("context add user", async (t) => {
+		const { provider, client } = await startHarness(t, { extensions: [fixture("context-add-user")] });
+		await client.promptAndWait("prompt");
+		assert.ok(requestText(provider.requests[0]).includes(CONTEXT_ADD_USER_TEXT));
+	});
+
+	test("context reorder", async (t) => {
+		const { provider, client } = await startHarness(t, { extensions: [fixture("context-reorder")] });
+		await client.promptAndWait(`${CONTEXT_REORDER_MARKER}: move me`);
+		await client.promptAndWait("latest prompt");
+		const request = requestText(provider.requests[1]);
+		assert.ok(request.indexOf("latest prompt") < request.indexOf(CONTEXT_REORDER_MARKER));
+	});
+
+	test("context in-place mutation", async (t) => {
+		const { provider, client } = await startHarness(t, { extensions: [fixture("context-in-place")] });
+		await client.promptAndWait("first prompt");
+		await client.promptAndWait("second prompt");
+		const request = requestText(provider.requests[1]);
+		assert.equal(request.split(CONTEXT_IN_PLACE_SUFFIX).length - 1, 1, "the session keeps the first prompt unchanged");
+	});
+
+	test("context_with_system append", async (t) => {
+		const { provider, client } = await startHarness(t, { extensions: [fixture("system-append")] });
+		await client.promptAndWait("prompt");
+		assert.ok(requestText(provider.requests[0]).includes(SYSTEM_APPEND_TEXT));
+	});
+
+	test("context_with_system section modify", async (t) => {
+		const { provider, client } = await startHarness(t, { extensions: [fixture("section-modify")] });
+		await client.promptAndWait("prompt");
+		// JSON escapes the newline before the closing tag
+		assert.ok(requestText(provider.requests[0]).includes(`${SECTION_MODIFY_TEXT}\\n</cwd>`));
+	});
+
+	test("context_with_system section delete", async (t) => {
+		const { provider, client } = await startHarness(t, { extensions: [fixture("section-delete")] });
+		await client.promptAndWait("prompt");
+		const request = requestText(provider.requests[0]);
+		assert.ok(!request.includes(`<${SECTION_DELETE_NAME}>`));
+		assert.ok(request.includes("<cwd>"), "other sections stay");
+	});
+
+	for (const api of ["openai-completions", "anthropic-messages"] as const) {
+		const model = `${MOCK_PROVIDERS[api]}/vision`;
+
+		test(`${api}: before_provider_request modify`, async (t) => {
+			const { provider, client } = await startHarness(t, { model, extensions: [fixture("payload-modify")] });
+			await client.promptAndWait("prompt");
+			assert.ok(requestText(provider.requests[0]).includes(PAYLOAD_MODIFY_SUFFIX));
+		});
+
+		test(`${api}: before_provider_request delete`, async (t) => {
+			const { provider, client } = await startHarness(t, { model, extensions: [fixture("payload-delete")] });
+			await client.promptAndWait(`${PAYLOAD_DELETE_MARKER}: drop me`);
+			await client.promptAndWait("keep me");
+			const request = requestText(provider.requests[1]);
+			assert.ok(!request.includes(PAYLOAD_DELETE_MARKER));
+			assert.ok(request.includes("keep me"));
+		});
+
+		test(`${api}: before_provider_request tool removal`, async (t) => {
+			const { provider, client } = await startHarness(t, { model, extensions: [fixture("payload-remove-tool")] });
+			await client.promptAndWait("prompt");
+			const tools = provider.requests[0].body.tools;
+			assert.ok(Array.isArray(tools));
+			const names = tools.map(declaredToolName);
+			assert.ok(!names.includes(PAYLOAD_REMOVED_TOOL));
+			assert.ok(names.includes("read"), "other declarations stay");
+		});
+	}
+
+	test("payload logger writes the final payload", async (t) => {
+		const logDir = await mkdtemp(join(tmpdir(), "context-view-payload-log-"));
+		t.after(() => rm(logDir, { recursive: true, force: true }));
+		const logPath = join(logDir, "payloads.jsonl");
+		const { provider, client } = await startHarness(t, {
+			extensions: [fixture("payload-rewrite"), fixture("payload-logger")],
+			env: { [PAYLOAD_LOG_VARIABLE]: logPath },
+		});
+		await client.promptAndWait("prompt");
+		const logged = (await readFile(logPath, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+		assert.deepEqual(logged, provider.requests.map((request) => request.body));
 	});
 
 	test("cache_warming_decision warm sends a one-token refresh", async (t) => {

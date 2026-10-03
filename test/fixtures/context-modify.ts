@@ -2,6 +2,10 @@
  * Verification fixture: a `context` handler that rewrites the text of the
  * latest user message for the request only. It returns a modified copy and
  * leaves the original message object unchanged.
+ *
+ * Expected result:
+ *   before the monitor   structured modification, unattributed
+ *   after the monitor    structured modification, unattributed
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

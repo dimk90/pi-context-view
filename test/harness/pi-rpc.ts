@@ -53,6 +53,8 @@ export interface PiOptions {
 	readonly modelFields?: Record<string, unknown>;
 	/** Extra CLI arguments, such as `--no-session`. */
 	readonly args?: readonly string[];
+	/** Extra environment variables, such as a fixture's log path. */
+	readonly env?: Record<string, string>;
 }
 
 /** Running Pi process with its scratch directories. */
@@ -75,7 +77,7 @@ export async function startPi(options: PiOptions): Promise<PiProcess> {
 		const client = new RpcClient({
 			cliPath: resolveCliPath(),
 			cwd,
-			env: { PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" },
+			env: { PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...options.env },
 			model: options.model ?? DEFAULT_MODEL,
 			args: [
 				...ISOLATION_ARGS,
