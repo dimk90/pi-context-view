@@ -1,42 +1,11 @@
-/** Process-local replay of Pi's transcript-backed prompt sections and tool declarations. */
+/**
+ * Process-local helpers for Pi's transcript-backed system messages. Replay
+ * itself uses Pi's `getCurrentSystemMessage()`.
+ */
 import type { ContextEvent } from "@earendil-works/pi-coding-agent";
 
 /** System-message shape supplied by Pi, with content and declaration patches. */
 export type SystemMessage = Extract<ContextEvent["messages"][number], { role: "system" }>;
-
-/** Current prompt and tools after applying system messages in transcript order. */
-export interface SystemState {
-	readonly content: string;
-	readonly sections: Record<string, string>;
-	readonly tools: NonNullable<SystemMessage["toolsAdded"]>;
-}
-
-/**
- * Replay Pi's semantics: content appends, sections patch by name (null deletes),
- * removals precede additions, and replacing a name preserves its insertion order.
- * Undefined means a branch with no recorded system message yet, such as a new
- * session before its first prompt, not an explicitly empty system state.
- */
-export function replaySystemMessages(messages: readonly ContextEvent["messages"][number][]): SystemState | undefined {
-	const content: string[] = [];
-	const sections = new Map<string, string>();
-	const tools = new Map<string, NonNullable<SystemMessage["toolsAdded"]>[number]>();
-	let found = false;
-	for (const message of messages) {
-		if (message.role !== "system") continue;
-		found = true;
-		const text = systemContentText(message);
-		if (text.length > 0) content.push(text);
-		for (const [name, value] of Object.entries(message.sections ?? {})) {
-			if (value === null) sections.delete(name);
-			else sections.set(name, value);
-		}
-		for (const tool of message.toolsRemoved ?? []) tools.delete(tool.name);
-		for (const tool of message.toolsAdded ?? []) tools.set(tool.name, tool);
-	}
-	return found ? { content: content.join("\n\n"), sections: Object.fromEntries(sections), tools: [...tools.values()] }
-		: undefined;
-}
 
 /** Content followed by non-deleted sections, matching Pi's complete-prompt rendering. */
 export function systemMessageText(message: Pick<SystemMessage, "content" | "sections">): string {

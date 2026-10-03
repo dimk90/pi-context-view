@@ -61,14 +61,16 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
   - No Pi imports. Unit-test retention, replacement, and selection without an origin.
     Decided: types and store in `src/snapshot.ts`, type-only Pi imports allowed; `src/index.ts` clears it on `session_shutdown`. Change and finding types are minimal; the Structured capture and Payload guard steps extend them.
 
-- [ ] **Structured capture** (D2, D3, D5, D6):
+- [x] **Structured capture** (D2, D3, D5, D6):
   - RequestTracker: number captures, set the origin from `ProbeView`, settle an unpaired capture `incomplete` on the next capture or `agent_settled`. Until the payload guard exists, every guard settles `incomplete`.
   - ProjectionReader: read `buildSessionProjection()`, filter probe messages, keep source entry IDs and the leaf ID.
   - TranscriptCapture: clone `event.messages` synchronously; detect a forced prompt with `getCurrentSystemPrompt(baseline)`.
   - Differ: compare replayed system state (sections and declarations separately) and align conversation messages with an LCS diff; pair modifications; keep baseline entry references. Decide whether `src/transcript.ts` replay is replaced by `getCurrentSystemMessage()`.
+    Decided: replaced everywhere, Usage included; `src/transcript.ts` keeps only its render and copy helpers. A request message that copies a deleted baseline message is never paired, so a reorder stays a deletion plus an addition.
   - Attributor: `customType` for added messages, `details` provenance when present, everything else unattributed.
   - SnapshotBuilder: deferred work, publish with guard `pending`, release clones. Keep raw content process-local.
   - Register in `src/index.ts` after ProbeFilter, in every run mode. Run beside the old Initial capture; views do not read snapshots yet.
+    Decided: modules in `src/capture/` beside the old `src/capture.ts`. Snapshots redact the messages they retain (image data, signature bytes), so the privacy rule stays unchanged.
   - Test the empty diff (first and later prompts, tool follow-ups, resume with another model, compaction, after a probe), structured edits, forced prompts in real and probe runs in both load orders, and capture in RPC mode without consumers.
 
 - [ ] **ProbeTrigger** (D10, automatic policy):

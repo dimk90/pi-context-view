@@ -7,10 +7,11 @@ import {
 	SessionManager,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
+import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 
 import { buildUsageSnapshot, InitialCaptureState, measureInjectedMessages } from "../src/capture.ts";
 import { buildSnapshot } from "../src/model.ts";
-import { replaySystemMessages, type SystemMessage, systemMessageText } from "../src/transcript.ts";
+import { type SystemMessage, systemMessageText } from "../src/transcript.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
 
 const FIRST_TOOL = { name: "read", description: "Old read definition", parameters: { type: "object" } };
@@ -55,6 +56,7 @@ function appendCacheWarm(session: SessionManager) {
 	}, "CACHE_WARM_NOTE_MUST_NOT_APPEAR");
 }
 
+// Usage and capture rely on these replay semantics of Pi's getCurrentSystemMessage()
 test("system replay appends content, patches sections, and applies tool removals before additions", () => {
 	const replacement = { ...SECOND_TOOL, description: "Replacement definition" };
 	const final: SystemMessage = {
@@ -64,16 +66,16 @@ test("system replay appends content, patches sections, and applies tool removals
 	};
 	const messages = [INITIAL, PATCH, final];
 	const original = structuredClone(messages);
-	const state = replaySystemMessages(messages);
+	const state = getCurrentSystemMessage(messages);
 	assert.ok(state);
-	assert.deepEqual(Object.keys(state.sections), ["preamble", "cwd", "review"]);
-	assert.deepEqual(state.tools, [replacement]);
+	assert.deepEqual(Object.keys(state.sections ?? {}), ["preamble", "cwd", "review"]);
+	assert.deepEqual(state.toolsAdded, [replacement]);
 	assert.equal(state.content, "Additional system text\n\nFinal text");
 	assert.doesNotMatch(systemMessageText(state), /Old rules|New rules|OPAQUE/);
 	assert.deepEqual(messages, original);
-	assert.equal(replaySystemMessages([]), undefined);
-	assert.deepEqual(replaySystemMessages([{ role: "system", content: "", timestamp: 1 }]),
-		{ content: "", sections: {}, tools: [] });
+	assert.equal(getCurrentSystemMessage([]), undefined);
+	const empty: SystemMessage = { role: "system", content: "", timestamp: 1 };
+	assert.deepEqual(getCurrentSystemMessage([empty]), empty, "an explicitly empty state is still a state");
 });
 
 test("Usage counts replayed sections and declarations once instead of live state or patch history", () => {
@@ -92,11 +94,9 @@ test("Usage counts replayed sections and declarations once instead of live state
 	assert.equal(usage.categories.some((category) => category.id === "built-in-tools"), false);
 	assert.equal(usage.categories.find((category) => category.id === "custom-tools")?.children?.[0]?.label, "search");
 	// Collapsing the same state has exactly the same semantic estimate, not another patch charge.
-	const state = replaySystemMessages(messages);
+	const state = getCurrentSystemMessage(messages);
 	assert.ok(state);
-	assert.equal(usage.estimatedTokens, usageFor([
-		{ role: "system", content: state.content, sections: state.sections, toolsAdded: state.tools, timestamp: 1 },
-	]).estimatedTokens);
+	assert.equal(usage.estimatedTokens, usageFor([state]).estimatedTokens);
 });
 
 test("Usage distinguishes the live fallback from explicit removal of all prompt content and tools", () => {

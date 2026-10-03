@@ -2,7 +2,9 @@
  * pi-context-view - inspect what occupies the model context.
  *
  * Passively captures the first real turn, or runs one on-demand silent probe
- * when a context view is opened before any real turn. On a Pi version older
+ * when a context view is opened before any real turn. Structured capture also
+ * publishes a snapshot of every request to SnapshotStore; the views do not read
+ * it yet. On a Pi version older
  * than the supported one, it registers no lifecycle handlers, captures
  * nothing, and `/context` only reports the required version.
  */
@@ -21,6 +23,8 @@ import {
 	resolveInitialCapture,
 } from "./command.ts";
 import { buildUsageSnapshot, collectPromptSources, InitialCaptureState } from "./capture.ts";
+import { SnapshotBuilder } from "./capture/builder.ts";
+import { registerCapture } from "./capture/register.ts";
 import { CompactionState, registerCompactionTracking } from "./compaction.ts";
 import { isSupportedPiVersion } from "./pi-version.ts";
 import { ProbeFilter, registerProbeFilter } from "./probe/filter.ts";
@@ -32,13 +36,16 @@ import { showInjectionsView } from "./ui/injections-view.ts";
 import { showUsageView } from "./ui/usage-view.ts";
 import { computeUsage, toReportedUsage } from "./usage.ts";
 
-export default function (pi: ExtensionAPI) {
+/**
+ * Extension factory. Pi passes only `pi`; in-process tests pass `snapshots` to
+ * read what capture publishes.
+ */
+export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 	const capture = new InitialCaptureState();
 	const probeFilter = new ProbeFilter();
 	const probe = new SilentProbe(probeFilter);
 	const probeView = createProbeView(probeFilter, probe);
 	const compaction = new CompactionState();
-	const snapshots = new SnapshotStore();
 	const configStore = new ConfigStore();
 	const supported = isSupportedPiVersion(VERSION);
 
@@ -117,6 +124,7 @@ export default function (pi: ExtensionAPI) {
 	// Probe layer first: ProbeFilter's context_with_system handler must run before capture's
 	registerProbeFilter(pi, probeFilter);
 	registerSilentProbe(pi, probe, () => capture.snapshot !== undefined);
+	registerCapture(pi, probeView, new SnapshotBuilder(snapshots));
 	registerCompactionTracking(pi, compaction);
 
 	pi.on("session_shutdown", () => {

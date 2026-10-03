@@ -13,9 +13,10 @@ import {
 	type SourceInfo,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
+import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 
 import { analyzeSystemPrompt, type PromptOptionsSlice, textTokens, type ToolSlice } from "./measure.ts";
-import { copySystemMessage, replaySystemMessages, systemMessageText } from "./transcript.ts";
+import { copySystemMessage, systemMessageText } from "./transcript.ts";
 import {
 	AGGREGATE_SOURCE,
 	buildSnapshot,
@@ -140,12 +141,13 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 		.filter((item) => item.requestOnly === true && item.systemMessage !== undefined)
 		.flatMap((item) => item.systemMessage === undefined ? [] : [item.systemMessage])
 		.sort((a, b) => a.index - b.index).map((entry) => entry.message);
-	const state = replaySystemMessages([...input.messages, ...patches]);
+	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
+	const state = getCurrentSystemMessage([...input.messages, ...patches]);
 	if (state === undefined) return mergeRequestOnlyMessages(buildNativeSnapshot(input), input.initial);
 	const registered = new Map(input.allTools.map((tool) => [tool.name, tool]));
-	const tools: ToolSlice[] = state.tools.map((tool) => {
+	const tools: ToolSlice[] = (state.toolsAdded ?? []).map((tool) => {
 		const metadata = registered.get(tool.name);
-		const snippetLine = state.sections.tools?.split("\n").find((line) => line.startsWith(`- ${tool.name}: `));
+		const snippetLine = state.sections?.tools?.split("\n").find((line) => line.startsWith(`- ${tool.name}: `));
 		return {
 			name: tool.name,
 			description: tool.description,

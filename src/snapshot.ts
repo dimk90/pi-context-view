@@ -3,6 +3,7 @@
  * consumers (D11 in REQUEST-ONLY-INJECTIONS.md). Capture publishes; views read.
  * Imports Pi types only, so the store runs and is tested without a Pi runtime.
  */
+import type { Tool } from "@earendil-works/pi-ai";
 import type { ContextEvent } from "@earendil-works/pi-coding-agent";
 
 /** What produced the captured request: a real agent run or the silent probe. */
@@ -12,21 +13,45 @@ export type CaptureOrigin = "real-turn" | "synthetic-probe";
 export type RequestMessage = ContextEvent["messages"][number];
 
 /**
+ * Best-effort source of a conversation change (D6). Neither field proves
+ * ownership: any extension can reuse them. Both absent means unattributed.
+ * For a modification or deletion they describe the affected message, which
+ * names its owner, not the extension that edited it.
+ */
+export interface ChangeAttribution {
+	/** `customType` of a custom message. */
+	readonly customType?: string;
+	/** Cooperative provenance from a custom message's `details`, which is never sent to the model. */
+	readonly provenance?: { readonly source: string; readonly reason?: string };
+}
+
+/**
  * A request-only conversation edit. Modifications and deletions reference the
  * source entry of their baseline message, so consumers can apply them to a later
- * projection and drop them once the entry is gone.
+ * projection and drop them once the entry is gone. Retained messages are
+ * redacted: image data holds only a size marker, `textSignature` is removed, and
+ * thinking and tool-call signatures keep only their length.
  */
 export type ConversationChange =
-	| { readonly type: "added"; readonly message: RequestMessage }
-	| { readonly type: "modified"; readonly entryId: string; readonly message: RequestMessage }
-	| { readonly type: "deleted"; readonly entryId: string };
+	| { readonly type: "added"; readonly message: RequestMessage; readonly attribution: ChangeAttribution }
+	| {
+		readonly type: "modified";
+		readonly entryId: string;
+		readonly message: RequestMessage;
+		readonly attribution: ChangeAttribution;
+	}
+	| { readonly type: "deleted"; readonly entryId: string; readonly attribution: ChangeAttribution };
 
-/** A request-only system-prompt section patch; `null` text removes the section. */
-export interface SystemChange {
-	readonly type: "section";
-	readonly name: string;
-	readonly text: string | null;
-}
+/**
+ * A request-only change of the replayed system state:
+ *   content   the replayed plain content differs; `text` is the request's whole content
+ *   section   a section was added or changed; `null` text removes it
+ *   tool      a declaration was added or redefined; `null` removes it
+ */
+export type SystemChange =
+	| { readonly type: "content"; readonly text: string }
+	| { readonly type: "section"; readonly name: string; readonly text: string | null }
+	| { readonly type: "tool"; readonly name: string; readonly declaration: Tool | null };
 
 /** Structured request-only edits between the session projection and the captured request. */
 export interface StructuredChanges {

@@ -24,7 +24,7 @@ function userMessage(content: string, timestamp: number): ContextEvent["messages
 	return { role: "user", content, timestamp } satisfies ContextEvent["messages"][number];
 }
 
-test("context handler skips the session baseline rebuild after the Initial snapshot freezes", () => {
+test("Initial skips the baseline rebuild after it freezes; structured capture reads it once per request", () => {
 	const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
 	const pi = {
 		on: (event: string, handler: (...args: unknown[]) => unknown) => {
@@ -70,14 +70,15 @@ test("context handler skips the session baseline rebuild after the Initial snaps
 				sessionReads += 1;
 				return buildSessionProjection(entries, "2");
 			},
+			getLeafId: () => "2",
 		},
 	} as unknown as ExtensionContext;
 
 	registerExtension(pi);
-	/** Run every handler the extension registered for one event, in order; return the last result. */
+	/** Run every handler the extension registered for one event, in order; return the last defined result. */
 	function emit(event: SessionStartEvent | BeforeAgentStartEvent | ContextEvent | ContextWithSystemEvent): unknown {
 		let result: unknown;
-		for (const handler of handlers.get(event.type) ?? []) result = handler(event, ctx);
+		for (const handler of handlers.get(event.type) ?? []) result = handler(event, ctx) ?? result;
 		return result;
 	}
 
@@ -103,6 +104,7 @@ test("context handler skips the session baseline rebuild after the Initial snaps
 		messages: [system, realUser, patch],
 	});
 	assert.deepEqual(full, [system, probeUser, realUser, patch], "filter never mutates the input");
+	assert.equal(sessionReads, 3, "structured capture reads the baseline of each request");
 	assert.equal(emit({ type: "context_with_system", messages: [system, realUser, patch] }), undefined);
-	assert.equal(sessionReads, 2, "filtering does not rebuild the baseline");
+	assert.equal(sessionReads, 4);
 });
