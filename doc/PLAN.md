@@ -17,11 +17,18 @@ and conservative preconditions skip risky probes. Initial capture remains in
 normally aborts before payload hooks, so probe payload guards settle incomplete.
 
 - [ ] **Prerequisites and validation harness**:
-  - Target Pi 1.0: record the minimum Pi version in `README.md` and `CHANGELOG.md`.
   - Add `@earendil-works/pi-ai` and `@earendil-works/pi-agent-core` as `"*"` peer dependencies with exact development pins; run `pnpm install`.
   - Update the dependency contract in `AGENTS.md` and the pin step in `doc/RELEASE.md` for four Pi packages.
   - Build the harness from the Validation section: local mock provider (OpenAI Completions and Anthropic streaming, tool calls, delayed stream events, controlled failures, a text-only model), isolated `PI_CODING_AGENT_DIR`, RPC driver.
   - Add fixtures: `context` add/modify/delete, `context_with_system` section patch, in-place mutation, `before_provider_request` rewrite, `cache_warming_decision` returning `warm`.
+
+- [ ] **Demo extensions for request-only injections**:
+  - Write small dummy extensions under `test/fixtures/`, one kind of change each. Each uses its own marker text, so the change is easy to find in the views and in the request. Reuse the harness fixtures where they fit.
+  - System prompt: append text, modify a section, and delete a section in `context_with_system`; a forced prompt from `before_agent_start`.
+  - Conversation in `context`: add a custom message with a `customType`, add a user message, modify a message's text, delete a message, reorder messages, and mutate `event.messages` in place.
+  - Payload in `before_provider_request`: add, modify, and delete a message; remove a tool declaration.
+  - Load each extension before and after pi-context-view. Write the expected result for both orders in the fixture's header comment: structured change with its source, unattributed change, **edited after monitor**, or not visible.
+  - Check both views in a real session against a `before_provider_request` logger loaded last. Check that a change from an extension loaded after ours is shown as expected and never as "no edits".
 
 - [ ] **Remove pre-1.0 compatibility**:
   - Remove the Pi 0.80–0.85 prompt parser from `src/measure.ts`, `src/prompt-blocks.ts`, and `src/prompt-additions.ts`: unwrapped `Available tools:`, `Guidelines:`, and `Pi documentation` headers, the `Current working directory` and `Current date` footer, moved-block recovery from headers, the custom-tools filler rule, and helpers that only this parser uses. Remove or rewrite their tests.
