@@ -565,16 +565,24 @@ or repeat it on every Usage open.
 
 ### Probe Lifecycle
 
-Allow at most one attempt per extension runtime. Concurrent callers share it.
+ProbeTrigger (`src/probe/trigger.ts`) applies the automatic policy: at most one
+attempt per extension runtime, and concurrent and later callers share its
+result. The command asks it only while Initial does not exist. ProbeTrigger has
+no run-mode guard; the command keeps the TUI-only check.
 
 ```text
 /context
   Refuse the view if compaction is active
+  Ask ProbeTrigger when Initial does not exist yet
+  |
+  v
+ProbeTrigger
   Wait for idle
   Check compaction, pending messages, model, auth, and Pi settings
-  If unsafe, return a partial fallback without consuming the attempt
-  Otherwise hide the working row and call sendUserMessage("") inside
-  this attempt's probe-token scope
+  If unsafe, report why without consuming the attempt; the command
+  shows a partial fallback
+  Otherwise subscribe to SnapshotStore, hide the working row, and call
+  sendUserMessage("") inside this attempt's probe-token scope
   |
   v
 input
@@ -612,8 +620,19 @@ turn_end
   |
   v
 agent_settled
-  Restore UI, persist probe identities, resolve the attempt, open the view
+  SilentProbe: restore UI, persist probe identities, settle the attempt
+  Capture: settle the probe request's guard as incomplete (no payload)
+  ProbeTrigger: resolve with that synthetic-probe snapshot; open the view
 ```
+
+ProbeTrigger subscribes to SnapshotStore before it sends the probe prompt and
+resolves with the first `synthetic-probe` snapshot whose guard has settled.
+Probes run one at a time, so that snapshot belongs to this probe. SilentProbe's
+outcome only reports whether its run settled or failed; it knows nothing about
+capture. Capture settles the guard in its own `agent_settled` handler, after
+SilentProbe's, so ProbeTrigger waits up to one second after settlement before
+it reports a missing snapshot. Until the views read snapshots, the command still
+takes Initial from the old capture once ProbeTrigger resolves.
 
 Use `sendUserMessage("")`. `pi.sendMessage(..., { triggerTurn: true })` skips
 `before_agent_start`. Abort at `turn_start`, not `before_provider_request`,
@@ -790,7 +809,8 @@ extensions can still affect it. The nested-send ownership limitation also
 remains. Strict zero-provider-request guarantees require passive capture.
 
 Any skipped precondition above, a missing model, missing authentication, a
-startup failure, or a timeout returns a current prompt/tool snapshot with a precise reason that
+startup failure, a timeout, or a probe that settles without a request snapshot
+returns a current prompt/tool snapshot with a precise reason that
 extension additions were not observed. This fallback does not freeze Initial.
 Usage can still classify current session messages alongside it.
 
@@ -1018,7 +1038,7 @@ Persisted probe records contain only role and timestamp identities, plus
 | Path                         | Responsibility                                                                                |
 | ---------------------------- | --------------------------------------------------------------------------------------------- |
 | `src/index.ts`               | Create the layers, register them in order, and register the command; assemble view inputs.    |
-| `src/command.ts`             | Parse commands; resolve Initial through capture, probe, or fallback.                          |
+| `src/command.ts`             | Parse commands; resolve Initial through capture, ProbeTrigger, or fallback.                   |
 | `src/config.ts`              | Load, validate, cache, and explicitly create configuration.                                   |
 | `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
 | `src/capture.ts`             | Manage Initial and measure injected messages.                                                 |
@@ -1034,6 +1054,7 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/probe/filter.ts`        | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.     |
 | `src/probe/silent-probe.ts`  | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.             |
 | `src/probe/view.ts`          | ProbeView: the run origin and probe-message filter that capture reads.                        |
+| `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and the probe snapshot from the store.    |
 | `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                 |
 | `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                            |
 | `src/measure.ts`             | Split and estimate prompt/tool contributions without pi API access.                           |
@@ -1054,7 +1075,9 @@ in `src/index.ts`. SnapshotStore has no Pi handlers and imports Pi types only;
 it through SnapshotBuilder; no view reads it yet. Register the probe layer first:
 ProbeFilter's `context_with_system` handler must run before the capture handler
 on that event. The probe layer imports no capture module; capture reads it only
-through ProbeView. Capture imports no view, command, or trigger code. Keep state machines, measurement, and rendering in focused modules
+through ProbeView. Capture imports no view, command, or trigger code.
+ProbeTrigger imports SilentProbe and the store's reader, never capture.
+Keep state machines, measurement, and rendering in focused modules
 that can be tested independently.
 
 ## Required Invariants

@@ -21,9 +21,12 @@ const SETUP_ABORT_ERROR_MESSAGES = new Set([
 	"The operation was aborted.", // Bun
 ]);
 
-/** Result of the one allowed silent-probe attempt. */
+/**
+ * Result of the one allowed silent-probe attempt. A settled run says nothing
+ * about capture; ProbeTrigger reads the probe's snapshot from the store.
+ */
 export type ProbeOutcome =
-	| { readonly status: "captured" }
+	| { readonly status: "settled" }
 	| { readonly status: "failed"; readonly reason: string };
 
 /** A probe start request; concurrent callers share `token` and `completion`. */
@@ -44,7 +47,7 @@ type ProbePhase = "idle" | "waiting" | "running" | "settled";
 /**
  * State for one on-demand silent probe. It owns the correlation token and the
  * timeout, and records the exact synthetic message identities in ProbeFilter.
- * Pi API calls stay in `registerSilentProbe()` and the command.
+ * Pi API calls stay in `registerSilentProbe()` and ProbeTrigger.
  */
 export class SilentProbe {
 	private readonly filter: ProbeFilter;
@@ -152,14 +155,10 @@ export class SilentProbe {
 	}
 
 	/** Resolve a running attempt from `agent_settled`. */
-	public settle(captured: boolean): boolean {
+	public settle(): boolean {
 		if (!this.isCurrentRun) return false;
 		this.phase = "settled";
-		this.resolve(
-			captured
-				? { status: "captured" }
-				: { status: "failed", reason: "Silent probe settled without a context snapshot." },
-		);
+		this.resolve({ status: "settled" });
 		return true;
 	}
 
@@ -225,11 +224,8 @@ export class SilentProbe {
 	}
 }
 
-/**
- * Register the probe run's lifecycle handlers. `hasCapture` tells the settled
- * probe whether capture observed its run; SilentProbe imports no capture code.
- */
-export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe, hasCapture: () => boolean): void {
+/** Register the probe run's lifecycle handlers; SilentProbe imports no capture code. */
+export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void {
 	/** Append the identities entry when this runtime recorded new probe messages. */
 	function persistIdentities(): void {
 		probe.persistIdentities((data) => pi.appendEntry(PROBE_IDENTITIES_CUSTOM_TYPE, data));
@@ -268,7 +264,7 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe, hasCap
 	pi.on("agent_settled", (_event, ctx) => {
 		if (!probe.isCurrentRun) return;
 		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
-		probe.settle(hasCapture());
+		probe.settle();
 		persistIdentities();
 	});
 

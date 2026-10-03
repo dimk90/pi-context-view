@@ -73,12 +73,14 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
     Decided: modules in `src/capture/` beside the old `src/capture.ts`. Snapshots redact the messages they retain (image data, signature bytes), so the privacy rule stays unchanged.
   - Test the empty diff (first and later prompts, tool follow-ups, resume with another model, compaction, after a probe), structured edits, forced prompts in real and probe runs in both load orders, and capture in RPC mode without consumers.
 
-- [ ] **ProbeTrigger** (D10, automatic policy):
+- [x] **ProbeTrigger** (D10, automatic policy):
   - Replace `resolveInitialCapture()` in `src/command.ts`: wait for idle, one attempt per runtime, concurrent callers share it.
   - Preserve the implemented guards for compaction, reported pending messages, virtual selections, idle warming, excessive known context usage and unreadable settings.
   - Resolve with the first `synthetic-probe` snapshot published after the start whose guard has settled, or with the failure reason.
   - Keep the TUI mode guard in the command; ProbeTrigger itself has none.
   - Remove the `hasCapture` callback of `registerSilentProbe()` and the `captured` probe outcome: ProbeTrigger reads the result from the store.
+    Decided: `ProbeTrigger` in `src/probe/trigger.ts` owns the preconditions; `resolveInitialCapture()` keeps only Initial and the fallback until the views read snapshots.
+    SilentProbe settles before capture settles the probe guard, so ProbeTrigger waits up to 1 s after settlement before failing without a snapshot.
 
 - [ ] **Injections on snapshots** (full composition and changes):
   - Select `first()`; ask ProbeTrigger when the store is empty; keep today's degraded fallback.

@@ -2,17 +2,14 @@
  * `/context` command grammar, argument completions, and Initial capture
  * resolution shared by the Usage and Injections views.
  */
-import { type ExtensionAPI, type ExtensionCommandContext, shouldCompact } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
 import { buildNativeSnapshot, type InitialCaptureState } from "./capture.ts";
-import type { CompactionState } from "./compaction.ts";
 import type { ConfigCreationResult } from "./config.ts";
 import type { InitialSnapshot } from "./model.ts";
 import { MIN_PI_VERSION } from "./pi-version.ts";
-import type { SilentProbe } from "./probe/silent-probe.ts";
-import { runWithProbeToken } from "./probe/token.ts";
-import { readGlobalCacheWarmingMode, readLiveSettings } from "./settings.ts";
+import type { ProbeTrigger } from "./probe/trigger.ts";
 import { normalizePreviewText } from "./text.ts";
 
 const COMMAND_USAGE = "Usage: /context [usage|injections|config]";
@@ -71,47 +68,23 @@ export function getContextArgumentCompletions(argumentPrefix: string): Autocompl
 	return matches.length > 0 ? matches.map((option) => ({ ...option })) : null;
 }
 
-/** Obtain Initial through passive capture, one silent probe, or a pi-native fallback. */
+/**
+ * Obtain Initial through passive capture, the automatic probe, or a pi-native
+ * fallback. ProbeTrigger waits for idle, so a real turn that ends meanwhile
+ * still supplies Initial.
+ */
 export async function resolveInitialCapture(
 	pi: ExtensionAPI,
 	capture: InitialCaptureState,
-	probe: SilentProbe,
-	compaction: CompactionState,
+	trigger: ProbeTrigger,
 	context: ExtensionCommandContext,
 ): Promise<InitialCaptureResult> {
 	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
 
-	await context.waitForIdle();
+	const result = await trigger.request(context);
 	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
-
-	const unavailableReason = getProbeUnavailableReason(pi, context, compaction.isActive);
-	if (unavailableReason !== undefined) {
-		return createFallback(pi, context, unavailableReason);
-	}
-
-	const attempt = probe.start();
-	if (attempt.started) {
-		context.ui.setWorkingVisible(false);
-		try {
-			// Pi emits `input` and `before_agent_start` from inside this call, so the
-			// token reaches both handlers and identifies the run even when another
-			// extension's input transform rewrites the prompt text.
-			runWithProbeToken(attempt.token, () => pi.sendUserMessage(""));
-		} catch (error) {
-			probe.fail(error instanceof Error ? error.message : String(error));
-		}
-	}
-
-	try {
-		const outcome = await attempt.completion;
-		if (outcome.status === "captured" && capture.snapshot !== undefined) {
-			return { snapshot: capture.snapshot };
-		}
-		const reason = outcome.status === "failed" ? outcome.reason : "Silent probe did not capture Initial.";
-		return createFallback(pi, context, reason);
-	} finally {
-		if (attempt.started) context.ui.setWorkingVisible(true);
-	}
+	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture Initial.";
+	return createFallback(pi, context, reason);
 }
 
 /**
@@ -176,45 +149,6 @@ export function reportConfigCreation(context: ExtensionCommandContext, result: C
 /** Shorten over-long text with an ellipsis marker. */
 function truncate(text: string, maxLength: number): string {
 	return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
-}
-
-/** Explain why a silent probe cannot run now, or undefined when it can. */
-function getProbeUnavailableReason(
-	pi: ExtensionAPI,
-	context: ExtensionCommandContext,
-	compactionInProgress: boolean,
-): string | undefined {
-	if (compactionInProgress) return "Silent probe unavailable: context compaction is in progress.";
-	if (context.hasPendingMessages()) return "Silent probe unavailable: messages are waiting to be delivered.";
-	if (context.model === undefined) return "Silent probe unavailable: no model is selected.";
-	// Pi's virtual-model discriminator is not exported from its package root
-	if (context.model.api === "pi-virtual") return "Silent probe unavailable: a virtual model is selected.";
-	if (!context.modelRegistry.hasConfiguredAuth(context.model)) {
-		return `Silent probe unavailable: ${context.model.provider} has no configured authentication.`;
-	}
-	return getProbeSettingsUnavailableReason(pi, context);
-}
-
-/** Check live compaction settings and both sources of the global-only warming preference. */
-function getProbeSettingsUnavailableReason(
-	pi: ExtensionAPI,
-	context: ExtensionCommandContext,
-): string | undefined {
-	try {
-		const settings = readLiveSettings(pi);
-		// The merged snapshot can mask global idle warming with an ignored project override
-		if (settings.getCacheWarmingMode() === "idle" || readGlobalCacheWarmingMode(context.cwd) === "idle") {
-			return "Silent probe unavailable: idle cache warming is enabled.";
-		}
-		const compaction = settings.getCompactionSettings(context.model);
-		const usage = context.getContextUsage();
-		if (usage?.tokens != null && shouldCompact(usage.tokens, usage.contextWindow, compaction)) {
-			return "Silent probe unavailable: context exceeds the auto-compaction threshold.";
-		}
-	} catch {
-		return "Silent probe unavailable: Pi settings could not be checked.";
-	}
-	return undefined;
 }
 
 /** Build a degraded pi-native snapshot when passive capture and probing both failed. */

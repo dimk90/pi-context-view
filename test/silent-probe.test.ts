@@ -68,8 +68,8 @@ test("SilentProbe sanitizes and filters only exact probe identities", async () =
 		{ role: "assistant", timestamp: 12 },
 	]);
 
-	assert.equal(probe.settle(true), true);
-	assert.deepEqual(await attempt.completion, { status: "captured" });
+	assert.equal(probe.settle(), true);
+	assert.deepEqual(await attempt.completion, { status: "settled" });
 	assert.equal(probe.start().started, false);
 	assert.equal(probe.sanitizeMessage(probeAssistant), undefined);
 });
@@ -117,7 +117,7 @@ test("SilentProbe omissions persist without the extension and retain branch-safe
 	], "a later replacement restores a target until omitted again");
 	manager.appendCompaction("summary", null, 0);
 	assert.deepEqual(probe.createContextEdits(projectedEntries()), [], "compacted-away probes need no omission");
-	probe.settle(true);
+	probe.settle();
 	assert.deepEqual(probe.createContextEdits(replacedEntries), [], "foreign runs cannot append edits");
 
 	manager.branch(beforeEdits);
@@ -142,7 +142,7 @@ test("SilentProbe claims its run by token when an input transform rewrites the p
 	// Blanked for the transcript, filtered out of every later model context.
 	assert.deepEqual(probe.sanitizeMessage(probePrompt), { role: "user", content: [], timestamp: 30 });
 	assert.deepEqual(filter.filterMessages([probePrompt]), []);
-	probe.settle(true);
+	probe.settle();
 });
 
 test("SilentProbe leaves an unattributed run untouched and fails the attempt", async () => {
@@ -160,7 +160,7 @@ test("SilentProbe leaves an unattributed run untouched and fails the attempt", a
 	// A delayed probe run is still claimed, so it is aborted and sanitized.
 	assert.equal(probe.beginRun(attempt.token), true);
 	assert.equal(probe.isCurrentRun, true);
-	assert.equal(probe.settle(false), true);
+	assert.equal(probe.settle(), true);
 });
 
 test("SilentProbe recognizes probe input only for its own token and source", () => {
@@ -175,7 +175,7 @@ test("SilentProbe recognizes probe input only for its own token and source", () 
 
 	assert.equal(probe.beginRun(attempt.token), true);
 	assert.equal(probe.isProbeInput("extension", attempt.token), false, "the token is single-use");
-	probe.settle(true);
+	probe.settle();
 });
 
 for (const errorMessage of ["This operation was aborted", "The operation was aborted."]) {
@@ -203,7 +203,7 @@ for (const errorMessage of ["This operation was aborted", "The operation was abo
 		assert.equal(probe.sanitizeMessage(providerError), undefined);
 		assert.equal(probe.sanitizeMessage(unrecordedSetupAbort), undefined);
 		assert.equal(probe.sanitizeMessage(abortedStop), undefined);
-		probe.settle(true);
+		probe.settle();
 	});
 }
 
@@ -213,7 +213,7 @@ test("SilentProbe filters restored identities without consuming the probe attemp
 	assert.equal(previousRuntime.probe.beginRun(previousAttempt.token), true);
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	previousRuntime.probe.recordMessage(probeUser);
-	previousRuntime.probe.settle(true);
+	previousRuntime.probe.settle();
 
 	const { filter, probe } = createProbe();
 	filter.restoreIdentities(previousRuntime.filter.syntheticMessages);
@@ -251,7 +251,7 @@ test("SilentProbe persists every known identity only after recording new ones", 
 	probe.persistIdentities(write);
 	assert.equal(written.length, 2);
 	assert.deepEqual(written[1].messages.at(-1), { role: "assistant", timestamp: 11 });
-	probe.settle(true);
+	probe.settle();
 });
 
 test("SilentProbe keeps a timed-out running probe abortable until settlement", async () => {
@@ -261,7 +261,7 @@ test("SilentProbe keeps a timed-out running probe abortable until settlement", a
 
 	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
 	assert.equal(probe.isCurrentRun, true);
-	assert.equal(probe.settle(false), true);
+	assert.equal(probe.settle(), true);
 	assert.equal(probe.isCurrentRun, false);
 });
 
@@ -276,5 +276,5 @@ test("SilentProbe retains a delayed synthetic turn after a pre-run timeout", asy
 	assert.equal(probe.isCurrentRun, false);
 	assert.equal(probe.beginRun(attempt.token), true);
 	assert.equal(probe.isCurrentRun, true);
-	assert.equal(probe.settle(false), true);
+	assert.equal(probe.settle(), true);
 });

@@ -3,11 +3,11 @@ import { afterEach, beforeEach, mock, test } from "node:test";
 
 import { type ExtensionAPI, type ExtensionCommandContext, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-import { InitialCaptureState } from "../src/capture.ts";
-import { resolveInitialCapture } from "../src/command.ts";
 import { CompactionState } from "../src/compaction.ts";
 import { ProbeFilter } from "../src/probe/filter.ts";
 import { SilentProbe } from "../src/probe/silent-probe.ts";
+import { ProbeTrigger } from "../src/probe/trigger.ts";
+import { SnapshotStore } from "../src/snapshot.ts";
 
 /** Settings accepted by Pi's in-memory manager. */
 type Settings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
@@ -20,15 +20,11 @@ afterEach(() => mock.restoreAll());
 
 /** A safe idle command context; a send ends immediately instead of running an agent. */
 function createHarness(settings: Settings = {}) {
-	const capture = new InitialCaptureState();
 	const probe = new SilentProbe(new ProbeFilter());
-	const compaction = new CompactionState();
 	const sent: string[] = [];
 	const visibility: boolean[] = [];
 	const pi = {
 		getSettings: () => settings,
-		getAllTools: () => [],
-		getActiveTools: () => [],
 		sendUserMessage: (content: string) => {
 			sent.push(content);
 			probe.fail("Test run ended.");
@@ -40,26 +36,24 @@ function createHarness(settings: Settings = {}) {
 		modelRegistry: { hasConfiguredAuth: () => true },
 		hasPendingMessages: () => false,
 		getContextUsage: () => ({ tokens: 0, contextWindow: 100_000, percent: 0 }),
-		getSystemPrompt: () => "base",
-		getSystemPromptOptions: () => ({ cwd: "/tmp" }),
 		waitForIdle: async () => undefined,
 		ui: { setWorkingVisible: (visible: boolean) => visibility.push(visible) },
 	} as unknown as ExtensionCommandContext;
-	return { pi, context, capture, probe, compaction, sent, visibility };
+	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction: new CompactionState() });
+	return { context, probe, trigger, sent, visibility };
 }
 
-/** Run the command resolution without opening an overlay. */
+/** Ask the trigger for a probe as a consumer would. */
 async function resolve(harness: ReturnType<typeof createHarness>) {
-	return resolveInitialCapture(harness.pi, harness.capture, harness.probe, harness.compaction, harness.context);
+	return harness.trigger.request(harness.context);
 }
 
-/** A skipped probe neither freezes Initial nor consumes the runtime's attempt. */
+/** A skipped probe sends nothing and does not consume the runtime's attempt. */
 async function assertSkipped(harness: ReturnType<typeof createHarness>, reason: string): Promise<void> {
 	const result = await resolve(harness);
-	assert.equal(result.degradedReason, `Silent probe unavailable: ${reason} Extension additions were not observed.`);
+	assert.deepEqual(result, { status: "failed", reason: `Silent probe unavailable: ${reason}` });
 	assert.deepEqual(harness.sent, []);
 	assert.deepEqual(harness.visibility, []);
-	assert.equal(harness.capture.snapshot, undefined);
 	const attempt = harness.probe.start();
 	assert.equal(attempt.started, true);
 	harness.probe.fail("cleanup");

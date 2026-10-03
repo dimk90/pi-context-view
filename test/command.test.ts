@@ -18,6 +18,8 @@ import {
 import { CompactionState } from "../src/compaction.ts";
 import { ProbeFilter } from "../src/probe/filter.ts";
 import { SilentProbe } from "../src/probe/silent-probe.ts";
+import { ProbeTrigger } from "../src/probe/trigger.ts";
+import { SnapshotStore } from "../src/snapshot.ts";
 import { readProbeToken } from "../src/probe/token.ts";
 
 /** Collect what a command reports through the TUI notification path. */
@@ -160,7 +162,8 @@ test("resolveInitialCapture sends the synthetic prompt inside the probe token sc
 		waitForIdle: async () => undefined,
 	} as unknown as ExtensionCommandContext;
 
-	const result = await resolveInitialCapture(pi, capture, probe, compaction, context);
+	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction });
+	const result = await resolveInitialCapture(pi, capture, trigger, context);
 
 	assert.equal(sentContent, "", "the probe prompt carries no instructions of its own");
 	assert.equal(probe.isProbeInput("extension", tokenDuringSend), true, "the send must carry this attempt's token");
@@ -191,7 +194,8 @@ test("resolveInitialCapture skips the probe when compaction starts while waiting
 		},
 	} as unknown as ExtensionCommandContext;
 
-	const result = await resolveInitialCapture(pi, capture, probe, compaction, context);
+	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction });
+	const result = await resolveInitialCapture(pi, capture, trigger, context);
 
 	assert.equal(waitedForIdle, true);
 	assert.equal(sentUserMessages, 0);

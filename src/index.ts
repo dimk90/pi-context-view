@@ -29,6 +29,7 @@ import { CompactionState, registerCompactionTracking } from "./compaction.ts";
 import { isSupportedPiVersion } from "./pi-version.ts";
 import { ProbeFilter, registerProbeFilter } from "./probe/filter.ts";
 import { registerSilentProbe, SilentProbe } from "./probe/silent-probe.ts";
+import { ProbeTrigger } from "./probe/trigger.ts";
 import { createProbeView } from "./probe/view.ts";
 import { readAutoCompactReserveTokens } from "./settings.ts";
 import { SnapshotStore } from "./snapshot.ts";
@@ -46,6 +47,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 	const probe = new SilentProbe(probeFilter);
 	const probeView = createProbeView(probeFilter, probe);
 	const compaction = new CompactionState();
+	const trigger = new ProbeTrigger({ pi, probe, snapshots, compaction });
 	const configStore = new ConfigStore();
 	const supported = isSupportedPiVersion(VERSION);
 
@@ -76,7 +78,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 				reportCompactionInProgress(ctx, command.view);
 				return;
 			}
-			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
+			const initial = await resolveInitialCapture(pi, capture, trigger, ctx);
 			// Compaction can start while waiting for idle; refuse instead of showing its fallback
 			if (compaction.isActive) {
 				reportCompactionInProgress(ctx, command.view);
@@ -123,7 +125,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 
 	// Probe layer first: ProbeFilter's context_with_system handler must run before capture's
 	registerProbeFilter(pi, probeFilter);
-	registerSilentProbe(pi, probe, () => capture.snapshot !== undefined);
+	registerSilentProbe(pi, probe);
 	registerCapture(pi, probeView, new SnapshotBuilder(snapshots));
 	registerCompactionTracking(pi, compaction);
 
