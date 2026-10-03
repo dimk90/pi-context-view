@@ -39,7 +39,7 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
   - Keep Usage's live prompt/tool fallback for branches with no recorded system message yet, such as a new session before its first prompt; drop the "legacy" wording.
   - Remove pre-1.0 notes from `doc/ARCHITECTURE.md` and code comments: the legacy parser section, Pi 0.84 abort notes, compaction on Pi without `session_compact_failed`, and "checked against pi 0.86.1".
   - Decide whether to report an unsupported Pi version once, using `VERSION`, instead of capturing nothing: Pi before 0.87 never fires `context_with_system`.
-    Decided: before Pi 1.0.0, register no lifecycle handlers; the views report the required version, `/context config` still works.
+    Decided: before Pi 1.0.0, register no lifecycle handlers; every `/context` form, including `config`, only reports the required version.
   - Add a `Changed` entry to `CHANGELOG.md` for the removed compatibility.
 
 - [ ] **Probe layer** (D10):

@@ -105,9 +105,9 @@ filtering, `turn_end` omission edits, and the probe's abort form described
 below. The Pi packages stay `"*"` peer dependencies, so an older Pi can still
 load the extension. The factory therefore compares pi's `VERSION` with
 `MIN_PI_VERSION` and, on an older Pi, registers no lifecycle handlers: nothing
-is captured, probed, or filtered. `/context usage` and `/context injections`
-then report the required and running versions as an error; `/context config`
-keeps working. A version without a numeric `major.minor.patch` core is treated
+is captured, probed, or filtered. Every `/context` form, including `config`,
+then reports the required and running versions as an error and does nothing
+else. A version without a numeric `major.minor.patch` core is treated
 as supported.
 
 ### Pi APIs Use
@@ -868,7 +868,8 @@ when the file's modification time changes.
 
 `/context config` is the create-only action. It writes every default with one
 atomic `O_EXCL` create and never overwrites or modifies an existing path. It
-works in every run mode. Only the views require `ctx.mode === "tui"`.
+works in every run mode on a [supported Pi](#supported-pi-versions). Only the views require
+`ctx.mode === "tui"`.
 
 Any later action that updates an existing file must debounce writes and merge
 over a fresh read, preserving concurrent edits and unknown keys.

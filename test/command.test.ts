@@ -94,7 +94,7 @@ test("reportUnsupportedPi names the required and the running Pi version", () => 
 	reportUnsupportedPi(context, "0.86.1");
 
 	assert.deepEqual(notified, [{
-		message: "/context views require Pi 1.0.0 or newer; this is Pi 0.86.1. Nothing was captured.",
+		message: "/context requires Pi 1.0.0 or newer; this is Pi 0.86.1. Nothing was captured.",
 		type: "error",
 	}]);
 });

@@ -140,10 +140,10 @@ export function reportTuiOnly(context: ExtensionCommandContext, view: ContextVie
 	reportCommandMessage(context, `/context ${view} is available in TUI mode only.`, "warning");
 }
 
-/** Refuse a view on a Pi version whose lifecycle this extension does not capture. */
+/** Refuse any `/context` form on a Pi version whose lifecycle this extension does not capture. */
 export function reportUnsupportedPi(context: ExtensionCommandContext, version: string): void {
 	reportCommandMessage(context,
-		`/context views require Pi ${MIN_PI_VERSION} or newer; this is Pi ${version}. Nothing was captured.`,
+		`/context requires Pi ${MIN_PI_VERSION} or newer; this is Pi ${version}. Nothing was captured.`,
 		"error",
 	);
 }

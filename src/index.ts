@@ -3,8 +3,8 @@
  *
  * Passively captures the first real turn, or runs one on-demand silent probe
  * when a context view is opened before any real turn. On a Pi version older
- * than the supported one, it registers no lifecycle handlers and captures
- * nothing; only `/context config` keeps working.
+ * than the supported one, it registers no lifecycle handlers, captures
+ * nothing, and `/context` only reports the required version.
  */
 import { type ExtensionAPI, VERSION } from "@earendil-works/pi-coding-agent";
 
@@ -55,6 +55,11 @@ export default function (pi: ExtensionAPI) {
 		description: CONTEXT_COMMAND_DESCRIPTION,
 		getArgumentCompletions: getContextArgumentCompletions,
 		handler: async (args, ctx) => {
+			// Every form, config included, would describe a lifecycle this Pi does not have
+			if (!supported) {
+				reportUnsupportedPi(ctx, VERSION);
+				return;
+			}
 			const command = parseContextCommand(args);
 			if (command.type === "invalid") {
 				reportCommandMessage(ctx, command.message, "error");
@@ -63,10 +68,6 @@ export default function (pi: ExtensionAPI) {
 			// Creating the file needs no UI, so it stays available in every run mode.
 			if (command.type === "config") {
 				reportConfigCreation(ctx, createDefaultConfigFile());
-				return;
-			}
-			if (!supported) {
-				reportUnsupportedPi(ctx, VERSION);
 				return;
 			}
 			if (ctx.mode !== "tui") {
