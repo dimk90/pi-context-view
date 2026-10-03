@@ -1,6 +1,7 @@
 /**
- * Compaction lifecycle tracking for the silent-probe preconditions: a probe
- * must not start while an observed compaction can still reject prompts.
+ * Compaction lifecycle tracking for the silent-probe preconditions and the
+ * `/context` refusal: a probe must not start while an observed compaction can
+ * still reject prompts, and no view opens on a projection about to be replaced.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

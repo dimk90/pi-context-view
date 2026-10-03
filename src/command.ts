@@ -137,6 +137,14 @@ export function reportTuiOnly(context: ExtensionCommandContext, view: ContextVie
 	reportCommandMessage(context, `/context ${view} is available in TUI mode only.`, "warning");
 }
 
+/**
+ * Refuse a view while compaction is active: the session projection both views
+ * read is about to be replaced, and a probe could not run safely anyway.
+ */
+export function reportCompactionInProgress(context: ExtensionCommandContext, view: ContextView): void {
+	reportCommandMessage(context, `/context ${view} is unavailable while compaction is in progress.`, "warning");
+}
+
 /** Refuse any `/context` form on a Pi version whose lifecycle this extension does not capture. */
 export function reportUnsupportedPi(context: ExtensionCommandContext, version: string): void {
 	reportCommandMessage(context,

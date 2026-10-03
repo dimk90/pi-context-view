@@ -14,6 +14,7 @@ import {
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
+	reportCompactionInProgress,
 	reportConfigCreation,
 	reportTuiOnly,
 	reportUnsupportedPi,
@@ -62,7 +63,16 @@ export default function (pi: ExtensionAPI) {
 				reportTuiOnly(ctx, command.view);
 				return;
 			}
+			if (compaction.isActive) {
+				reportCompactionInProgress(ctx, command.view);
+				return;
+			}
 			const initial = await resolveInitialCapture(pi, capture, probe, compaction, ctx);
+			// Compaction can start while waiting for idle; refuse instead of showing its fallback
+			if (compaction.isActive) {
+				reportCompactionInProgress(ctx, command.view);
+				return;
+			}
 			if (command.view === "injections") {
 				await showInjectionsView(ctx, {
 					snapshot: initial.snapshot,

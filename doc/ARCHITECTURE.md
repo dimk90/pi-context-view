@@ -497,6 +497,7 @@ Allow at most one attempt per extension runtime. Concurrent callers share it.
 
 ```text
 /context
+  Refuse the view if compaction is active
   Wait for idle
   Check compaction, pending messages, model, auth, and Pi settings
   If unsafe, return a partial fallback without consuming the attempt
@@ -680,6 +681,13 @@ Pi 1.0's `waitForIdle()` includes compaction. Still recheck the tracked lifecycl
 after waiting, because compaction can start before the probe is sent. Track
 `session_before_compact` until its signal aborts or Pi reports `session_compact`
 or `session_compact_failed`; do not infer completion from a later agent run.
+
+Pi runs extension commands at once during compaction, so `/context` checks the
+tracked lifecycle itself. While compaction is active, both views are refused
+with a warning and do not open: compaction is about to replace the session
+projection they read. The command checks before resolving Initial, so it never
+waits for compaction, and again after, because compaction can start while it
+waits for idle. The second check replaces that probe fallback with the refusal.
 
 Before starting or consuming an attempt, use the fallback when:
 
@@ -933,7 +941,7 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/config.ts`             | Load, validate, cache, and explicitly create configuration.                                   |
 | `src/settings.ts`           | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
 | `src/capture.ts`            | Manage Initial and measure injected messages.                                                 |
-| `src/compaction.ts`         | Track the compaction lifecycle for the probe preconditions.                                   |
+| `src/compaction.ts`         | Track the compaction lifecycle for the probe preconditions and the command refusal.           |
 | `src/probe/filter.ts`       | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.     |
 | `src/probe/silent-probe.ts` | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.             |
 | `src/probe/view.ts`         | ProbeView: the run origin and probe-message filter that capture reads.                        |
@@ -970,9 +978,9 @@ probe request isolation and message ownership, not a relaxation of those goals.
   state, in every later model context, and in the saved session.
 - Only a run carrying the probe token is aborted or rewritten. Every other run
   proceeds untouched, because it may belong to the user or another extension.
-- Active compaction, reported pending messages, virtual models, idle warming,
-  excessive known context usage, or unreadable settings use fallback without
-  consuming the probe attempt.
+- Active compaction refuses both views. Reported pending messages, virtual
+  models, idle warming, excessive known context usage, or unreadable settings
+  use fallback. Neither consumes the probe attempt.
 - Genuine messages and genuine aborts remain visible.
 - Synthetic probe entries never reach later model contexts or Usage, including
   after resume, reload, or fork.

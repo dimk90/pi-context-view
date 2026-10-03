@@ -7,6 +7,7 @@
 * `[probe]` Skip probing for queued input, virtual models, and idle warming.
 * `[probe]` Skip probing above the auto-compaction threshold or when settings cannot be checked.
 * `[package]` Require Pi 1.0 and report older versions, drop the pre-0.86 prompt parser.
+* `[context]` Refuse both views with a warning while compaction is in progress.
 
 ### Fixed
 * `[probe]` Preserve system-message positions when filtering and persist probe context omissions.

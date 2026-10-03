@@ -9,6 +9,7 @@ import {
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
+	reportCompactionInProgress,
 	reportConfigCreation,
 	reportTuiOnly,
 	reportUnsupportedPi,
@@ -88,6 +89,18 @@ test("reportTuiOnly names the refused view instead of the whole command", () => 
 	assert.deepEqual(notified, [
 		{ message: "/context usage is available in TUI mode only.", type: "warning" },
 		{ message: "/context injections is available in TUI mode only.", type: "warning" },
+	]);
+});
+
+test("reportCompactionInProgress names the refused view", () => {
+	const { context, notified } = createNotifyingContext();
+
+	reportCompactionInProgress(context, "usage");
+	reportCompactionInProgress(context, "injections");
+
+	assert.deepEqual(notified, [
+		{ message: "/context usage is unavailable while compaction is in progress.", type: "warning" },
+		{ message: "/context injections is unavailable while compaction is in progress.", type: "warning" },
 	]);
 });
 

@@ -50,6 +50,11 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
   - Preserve `turn_end` omission drafts and identity filtering for branches before those edits. Only unomitted blank probe entries remain visible to `context` and earlier `context_with_system` handlers.
   - Test that system messages keep their positions after probes on a model with `supportsMidConvoSystemMessages`; run the lifecycle smoke test with the three fixtures in both orders and an `after_provider_response` sentinel.
 
+- [x] **Refuse views during compaction**:
+  - Current behavior: "If compaction is active, return a partial fallback without probing".
+  - Decided: both views refuse with a warning and do not open, checked before and after resolving Initial.
+    The probe precondition stays as a safety guard; its fallback is no longer shown.
+
 - [ ] **SnapshotStore** (D11):
   - Add snapshot types (`RequestSnapshot`, `StructuredChanges`, `GuardResult`, `DeclaredTools`, `SnapshotReader`) and move `CaptureOrigin` out of `src/model.ts`.
   - Retain the first and latest snapshot per origin; a guard update replaces the copy with the same ID; `subscribe()` reports every publication; clear on `session_shutdown`.
@@ -140,7 +145,3 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
 - [ ] **Manual probe trigger** (D10):
   - An explicit user action starts a new probe; one probe at a time, concurrent requests share it.
   - Choose a command or a view key; keep parsing, completions, registration text, README usage, and command tests in sync.
-
-- [ ] Refuse to show usage during compaction:
-  - Current behavior: "If compaction is active, return a partial fallback without probing".
-  - Show warning message without opening usage map?
