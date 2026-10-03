@@ -503,7 +503,7 @@ The physical-selection path also stores `ctx.model` in the capture. `before_prov
 
 ## Validation
 
-Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_DIR` and RPC mode. The server should support OpenAI Completions and Anthropic streaming, tool calls, delayed stream events and controlled failures. Include a text-only model. Probe cases need TUI mode for the current triggers; follow the `pi-extension` skill for real-PTY tests.
+Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_DIR` and RPC mode. The server should support OpenAI Completions and Anthropic streaming, tool calls, delayed stream events and controlled failures. Include a text-only model. The harness lives in `test/harness/` (`startMockProvider()`, `startPi()`); `test/harness.test.ts` checks it and the fixtures in `test/fixtures/`. Probe cases need TUI mode for the current triggers; follow the `pi-extension` skill for real-PTY tests.
 
 | Check                     | Required cases                                                                                                                                                                                                                                                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

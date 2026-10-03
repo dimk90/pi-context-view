@@ -16,7 +16,7 @@ and conservative preconditions skip risky probes. Initial capture remains in
 `context`. Keep these behaviors when splitting the probe layer below. Pi 1.0
 normally aborts before payload hooks, so probe payload guards settle incomplete.
 
-- [ ] **Prerequisites and validation harness**:
+- [x] **Prerequisites and validation harness**:
   - Add `@earendil-works/pi-ai` and `@earendil-works/pi-agent-core` as `"*"` peer dependencies with exact development pins; run `pnpm install`.
   - Update the dependency contract in `AGENTS.md` and the pin step in `doc/RELEASE.md` for four Pi packages.
   - Build the harness from the Validation section: local mock provider (OpenAI Completions and Anthropic streaming, tool calls, delayed stream events, controlled failures, a text-only model), isolated `PI_CODING_AGENT_DIR`, RPC driver.
