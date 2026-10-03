@@ -121,9 +121,9 @@ When auto-compaction is enabled, the tail of the map shows the settings
 `reserveTokens` reserve as `⛝` cells after the free cells: tokens content will
 never occupy because compaction triggers first. The buffer shrinks once
 estimated content grows into the reserve, and disappears when auto-compaction is
-disabled or settings are unreadable. Read the reserve from pi's merged
-global/project settings at view-open time, honoring project trust and the
-current model: `compaction.modelOverrides["<provider>/<id>"].reserveTokens`
+disabled or settings are invalid. Read the reserve from pi's live merged
+settings (`pi.getSettings()`) at view-open time, so runtime changes apply, and
+honor the current model: `compaction.modelOverrides["<provider>/<id>"].reserveTokens`
 wins over `compaction.reserveTokens`, which wins over pi's default. A model
 switch changes the buffer on the next open. At Fit scale
 the reserve lies past the mapped range, so no `⛝` cells render while the

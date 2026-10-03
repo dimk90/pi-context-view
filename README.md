@@ -98,7 +98,9 @@ You can configure the number of rows and columns in the `Context Usage` map:
 
 ## Context Footprint
 
-`pi-context-view` does not add any instructions or messages to the model context.
+`pi-context-view` adds nothing to the model context. Opening a view before the
+first turn may run one [silent probe](doc/ARCHITECTURE.md#on-demand-silent-probe)
+that sends no request and leaves only blank entries, omitted from future context.
 
 ## My Other Stuff
 

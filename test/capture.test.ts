@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { estimateTokens } from "@earendil-works/pi-coding-agent";
+import { estimateTokens, SessionManager } from "@earendil-works/pi-coding-agent";
 
 import type {
 	BuildSystemPromptOptions,
@@ -494,6 +494,67 @@ test("SilentProbeState sanitizes and filters only exact probe identities", async
 	assert.deepEqual(await attempt.completion, { status: "captured" });
 	assert.equal(state.start().started, false);
 	assert.equal(state.sanitizeMessage(probeAssistant), undefined);
+});
+
+test("SilentProbeState leaves unmatched message arrays unchanged", () => {
+	const state = new SilentProbeState();
+	const messages = [{ role: "user", content: [], timestamp: 11 }] satisfies ContextEvent["messages"];
+	assert.strictEqual(state.filterMessages(messages), messages);
+	state.restoreIdentities([{ role: "user", timestamp: 10 }]);
+	assert.strictEqual(state.filterMessages(messages), messages);
+});
+
+test("SilentProbeState omissions persist without the extension and retain branch-safe filtering", () => {
+	const state = new SilentProbeState();
+	const attempt = state.start(1_000);
+	state.beginRun(attempt.token);
+	const manager = SessionManager.inMemory("/tmp");
+	const genuineUser = { role: "user", content: [], timestamp: 1 } satisfies ContextEvent["messages"][number];
+	const genuineAbort = assistantMessage("aborted", 2);
+	const probeUser = { role: "user", content: [], timestamp: 3 } satisfies ContextEvent["messages"][number];
+	const probeAssistant = assistantMessage("error", 4, "This operation was aborted");
+	manager.appendMessage(genuineUser);
+	manager.appendMessage(genuineAbort);
+	state.recordMessage(probeUser);
+	state.recordMessage(probeAssistant);
+	const userId = manager.appendMessage(probeUser);
+	const sanitized = state.sanitizeMessage(probeAssistant);
+	assert.ok(sanitized?.role === "assistant");
+	const assistantId = manager.appendMessage(sanitized);
+	manager.appendCustomMessageEntry("other-extension", "keep", false);
+	const beforeEdits = manager.getLeafId();
+	assert.ok(beforeEdits);
+	const projectedEntries = () => manager.buildSessionProjection().entries;
+	const drafts = state.createContextEdits(projectedEntries());
+	assert.deepEqual(drafts, [
+		{ type: "context_edit", targetId: userId, replacement: null },
+		{ type: "context_edit", targetId: assistantId, replacement: null },
+	]);
+	for (const draft of drafts) manager.appendContextEdit(draft.targetId, draft.replacement);
+	assert.deepEqual(manager.buildSessionProjection().messages.slice(0, 2), [genuineUser, genuineAbort]);
+	assert.equal(manager.buildSessionProjection().messages.length, 3, "only the two probe messages are omitted");
+	assert.deepEqual(state.createContextEdits(projectedEntries()), [], "do not append duplicate omissions");
+	assert.equal(manager.getBranch().filter((entry) => entry.type === "message").length, 4, "raw history stays intact");
+	const header = manager.getHeader();
+	assert.ok(header);
+	const reloaded = SessionManager.inMemory("/tmp", undefined, [header, ...manager.getEntries()]);
+	assert.deepEqual(reloaded.buildSessionProjection().messages, manager.buildSessionProjection().messages);
+
+	manager.appendContextEdit(userId, { content: "replacement" });
+	const replacedEntries = projectedEntries();
+	assert.deepEqual(state.createContextEdits(replacedEntries), [
+		{ type: "context_edit", targetId: userId, replacement: null },
+	], "a later replacement restores a target until omitted again");
+	manager.appendCompaction("summary", null, 0);
+	assert.deepEqual(state.createContextEdits(projectedEntries()), [], "compacted-away probes need no omission");
+	state.settle(true);
+	assert.deepEqual(state.createContextEdits(replacedEntries), [], "foreign runs cannot append edits");
+
+	manager.branch(beforeEdits);
+	const restored = new SilentProbeState();
+	restored.restoreIdentities(state.syntheticMessages);
+	assert.equal(manager.buildSessionProjection().messages.length, 5);
+	assert.equal(restored.filterMessages(manager.buildSessionProjection().messages).length, 3);
 });
 
 test("SilentProbeState claims its run by token when an input transform rewrites the prompt", () => {

@@ -5,11 +5,13 @@
  */
 import {
 	type BuildSystemPromptOptions,
+	type ContextEditEntryDraft,
 	type ContextEvent,
 	convertToLlm,
 	estimateTokens,
 	formatSize,
 	type InputSource,
+	type ProjectedSessionEntry,
 	type SlashCommandInfo,
 	type SourceInfo,
 	type ToolInfo,
@@ -285,10 +287,30 @@ export class SilentProbeState {
 	/** Remove only messages whose exact role+timestamp identity belongs to the probe. */
 	public filterMessages(messages: ContextEvent["messages"]): ContextEvent["messages"] {
 		if (this.identities.size === 0) return messages;
-		return messages.filter((message) => {
+		const filtered = messages.filter((message) => {
 			if (message.role !== "user" && message.role !== "assistant") return true;
-			return !this.identities.has(identityKey(message));
+			return !this.ownsMessage(message);
 		});
+		return filtered.length === messages.length ? messages : filtered;
+	}
+
+	/**
+	 * Omit known probe entries still visible in Pi's boundary projection at an
+	 * owned run's `turn_end`. The projection already applies compaction, earlier
+	 * edits, and earlier handlers' drafts, so each target is omitted once.
+	 */
+	public createContextEdits(contextEntries: readonly ProjectedSessionEntry[]): ContextEditEntryDraft[] {
+		if (!this.isCurrentRun) return [];
+		const edits: ContextEditEntryDraft[] = [];
+		for (const { sourceEntry, messages } of contextEntries) {
+			if (messages.length > 0
+				&& sourceEntry.type === "message"
+				&& (sourceEntry.message.role === "user" || sourceEntry.message.role === "assistant")
+				&& this.ownsMessage(sourceEntry.message)) {
+				edits.push({ type: "context_edit", targetId: sourceEntry.id, replacement: null });
+			}
+		}
+		return edits;
 	}
 
 	/** Resolve a running attempt from `agent_settled`. */

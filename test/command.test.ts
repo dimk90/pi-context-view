@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 import { CompactionState, InitialCaptureState, SilentProbeState } from "../src/capture.ts";
 import { readProbeToken } from "../src/probe-token.ts";
@@ -103,7 +103,8 @@ test("reportConfigCreation reports every create outcome with its own severity", 
 	]);
 });
 
-test("resolveInitialCapture sends the synthetic prompt inside the probe token scope", async () => {
+test("resolveInitialCapture sends the synthetic prompt inside the probe token scope", async (t) => {
+	t.mock.method(SettingsManager, "create", () => SettingsManager.inMemory());
 	const capture = new InitialCaptureState();
 	const probe = new SilentProbeState();
 	const compaction = new CompactionState();
@@ -112,6 +113,7 @@ test("resolveInitialCapture sends the synthetic prompt inside the probe token sc
 	const pi = {
 		getActiveTools: () => [],
 		getAllTools: () => [],
+		getSettings: () => ({}),
 		sendUserMessage: (content: string) => {
 			sentContent = content;
 			tokenDuringSend = readProbeToken();
@@ -121,6 +123,8 @@ test("resolveInitialCapture sends the synthetic prompt inside the probe token sc
 	} as unknown as ExtensionAPI;
 	const context = {
 		model: { provider: "anthropic", id: "test-model" },
+		hasPendingMessages: () => false,
+		getContextUsage: () => undefined,
 		modelRegistry: { hasConfiguredAuth: () => true },
 		ui: { setWorkingVisible: () => undefined },
 		getSystemPrompt: () => "base prompt",

@@ -10,6 +10,12 @@ Decisions: Injections keeps the full composition and adds request-only changes; 
 automatic (manual probing is in the backlog); the D4 parsing strategy is chosen in its own step;
 code kept only for Pi versions before 1.0 is removed, not migrated.
 
+Probe hardening was implemented separately from the full migration: filtering now
+runs in `context_with_system`, owned `turn_end` boundaries append omission edits,
+and conservative preconditions skip risky probes. Initial capture remains in
+`context`. Keep these behaviors when splitting the probe layer below. Pi 1.0
+normally aborts before payload hooks, so probe payload guards settle incomplete.
+
 - [ ] **Prerequisites and validation harness**:
   - Target Pi 1.0: record the minimum Pi version in `README.md` and `CHANGELOG.md`.
   - Add `@earendil-works/pi-ai` and `@earendil-works/pi-agent-core` as `"*"` peer dependencies with exact development pins; run `pnpm install`.
@@ -29,9 +35,9 @@ code kept only for Pi versions before 1.0 is removed, not migrated.
 
 - [ ] **Probe layer** (D10):
   - Split `src/capture.ts` into ProbeFilter (identities, restore, `filterMessages`) and SilentProbe (token, claim, abort, blanking, persistence). Keep the SilentProbe lifecycle unchanged.
-  - Move probe filtering from `context` to a ProbeFilter `context_with_system` handler that returns nothing when no message matches. Keep the self-filter in the old Initial capture until it is removed.
+  - Preserve the existing `context_with_system` filter when extracting ProbeFilter; it returns nothing when no message matches. Keep the self-filter in the old Initial capture until it is removed.
   - Expose the `ProbeView` interface (`isCurrentRun`, `filterMessages`) for capture.
-  - Document the visibility change: `context` handlers and earlier `context_with_system` handlers now see blank probe messages.
+  - Preserve `turn_end` omission drafts and identity filtering for branches before those edits. Only unomitted blank probe entries remain visible to `context` and earlier `context_with_system` handlers.
   - Test that system messages keep their positions after probes on a model with `supportsMidConvoSystemMessages`; run the lifecycle smoke test with the three fixtures in both orders and an `after_provider_response` sentinel.
 
 - [ ] **SnapshotStore** (D11):
@@ -51,7 +57,7 @@ code kept only for Pi versions before 1.0 is removed, not migrated.
 
 - [ ] **ProbeTrigger** (D10, automatic policy):
   - Replace `resolveInitialCapture()` in `src/command.ts`: wait for idle, one attempt per runtime, concurrent callers share it.
-  - Keep the compaction check and add the auto-compaction-threshold check from Pi's reported context usage.
+  - Preserve the implemented guards for compaction, reported pending messages, virtual selections, idle warming, excessive known context usage and unreadable settings.
   - Resolve with the first `synthetic-probe` snapshot published after the start whose guard has settled, or with the failure reason.
   - Keep the TUI mode guard in the command; ProbeTrigger itself has none.
 
@@ -86,7 +92,7 @@ code kept only for Pi versions before 1.0 is removed, not migrated.
   - PayloadGuard: normalize every Pi adjustment listed in D4; report the rest as **edited after monitor**.
   - LoadoutAttributor: explain missing declarations with active `model-only` candidates from `pi.getAllTools()`.
   - DeclaredTools: record declared and baseline tool names when the tool-declaration channel is complete.
-  - Probe payloads use the normal pairing; blanking keeps the assistant message's provider, API, and model.
+  - Standard Pi 1.0 probes have no payload: settle their guards incomplete on settlement. Pair any payload from a nonstandard host normally; blanking keeps the assistant message's provider, API, and model.
   - Test late edits, built-ins (codemode normal and `only`, tool-search, MCP), routing and normalization, retries, cache warming, dispatch timing, incomplete comparison, and probe payloads.
 
 - [ ] **Guard results in the views** (D7, D9, D11):
@@ -110,7 +116,7 @@ code kept only for Pi versions before 1.0 is removed, not migrated.
   - Adapt the pi-ide editor-context simulation in `test/provider-runtime.test.ts` to the payload guard: an unexplained payload user message is reported with its text, including non-ASCII text.
   - Move the `providerToAgentMessage()` cases (text-block flattening, mixed content with images, assistant blocks, system text blocks, unknown roles) to PayloadParser channel tests for each supported format. Image data must not reach previews.
   - Drop the `InitialCaptureState` rebuild test: the SnapshotStore tests cover retention.
-  - Check the PR's statement that `before_provider_request` does not fire for a probe run; D10 says it does on built-in adapters.
+  - The PR's statement that `before_provider_request` does not fire for a standard Pi 1.0 probe is verified by `test/probe-runtime.test.ts`; keep this regression test.
   - Credit the PR in the `CHANGELOG.md` entry for request-only capture: `([#9](https://github.com/dimk90/pi-context-view/pull/9) by [@Drakejiejie](https://github.com/Drakejiejie))`.
 
 - [ ] **Final documentation and validation**:

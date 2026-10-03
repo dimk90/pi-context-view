@@ -3,7 +3,12 @@
 
 ## Unreleased
 
+### Changed
+* `[probe]` Skip probing for queued input, virtual models, and idle warming.
+* `[probe]` Skip probing above the auto-compaction threshold or when settings cannot be checked.
+
 ### Fixed
+* `[probe]` Preserve system-message positions when filtering and persist probe context omissions.
 * `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).
 
 

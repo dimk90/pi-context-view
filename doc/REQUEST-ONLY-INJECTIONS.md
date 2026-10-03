@@ -54,7 +54,7 @@ Within an event, handlers run in extension order and see previous handlers' resu
 
 On the response side, `after_provider_response` reports HTTP status. Both `provider_stream_event` and assistant `message_start` identify the dispatched provider, API and model; their order depends on the adapter. Assistant `message_end` carries that identity too, including for failures. Cache warming fires provider events but no context, turn or assistant-message events.
 
-A silent probe run follows the same pipeline. It aborts at `turn_start`, but Pi checks the abort signal only when the provider sends the HTTP request. Preparation, serialization and, on built-in adapters, `before_provider_request` therefore still run; no HTTP request is sent (D10).
+A silent probe aborts at `turn_start`. For a physical model, structured context preparation still runs, but Pi 1.0's standard runtime rejects the aborted signal during authentication, before provider headers and payload serialization. Such a probe has no provider payload (D10).
 
 ## Module layers
 
@@ -134,7 +134,7 @@ Number captures locally; `turnIndex` restarts at zero for every agent run and ca
 - An agent-level retry (`retry.enabled`) starts a new run, repeats routing and context capture, and can choose a different physical model. A failure before streaming still produces an assistant message naming the model.
 - A provider-level retry (`retry.provider.maxRetries`) resends the same payload without repeating `before_provider_request`.
 - A cache-warm refresh fires `before_provider_request` without a new capture. Mark it when `cache_warming_decision` occurred after the latest capture and the payload has a one-token output limit. Skip its comparison while consuming its provider events.
-- A capture can end without a payload, for example when a provider does not call `onPayload` or a probe run's authentication fails on the aborted signal (D10). A new capture or the run's `agent_settled` settles a capture that is still unpaired as incomplete.
+- A capture can end without a payload, as Pi 1.0's standard silent probe does when authentication rejects the aborted signal (D10), or when a provider does not call `onPayload`. A new capture or the run's `agent_settled` settles a capture that is still unpaired as incomplete.
 
 The cache-warming decision alone is insufficient: handler results do not update `event.action`, so the monitor cannot see whether a later handler changed it. Failed warm refreshes have no assistant-message fallback and do not need one because their comparison is skipped.
 
@@ -220,26 +220,27 @@ A silent probe starts an agent run so that capture can observe request preparati
 The probe layer has three parts:
 
 - **ProbeFilter** removes recorded probe messages from every request and from the capture baseline. It stays active even when probing is off, because sessions keep probe messages from earlier runtimes.
-- **SilentProbe** runs one probe. Its lifecycle, run identification by token, message blanking, persisted identities and the [nested-send limitation](ARCHITECTURE.md#known-limitation-nested-sends) stay as in [ARCHITECTURE.md](ARCHITECTURE.md#on-demand-silent-probe), except for the filter placement below.
+- **SilentProbe** runs one probe. Its lifecycle, run identification by token, message blanking, `turn_end` omission edits, persisted identities and the [nested-send limitation](ARCHITECTURE.md#known-limitation-nested-sends) stay as in [ARCHITECTURE.md](ARCHITECTURE.md#on-demand-silent-probe).
 - **ProbeTrigger** decides when to probe:
   - **Automatic:** when a consumer needs a snapshot and the store has none. At most one attempt per extension runtime, as today.
   - **Manual:** an explicit user action. One probe at a time; concurrent requests share it. Every probe leaves blank entries in the session tree and runs other extensions' handlers, so never repeat probes without a user action.
 
-Both policies wait for idle and return the consumer's fallback without probing while compaction is active ([ARCHITECTURE.md](ARCHITECTURE.md#compaction-failures-and-fallback)) or while Pi's reported context usage already exceeds the auto-compaction threshold (see [side effects](#side-effects)). ProbeTrigger resolves when the first `synthetic-probe` snapshot published after the start has a settled guard, or with the probe's failure reason. Probes run one at a time, so that snapshot belongs to this probe.
+Both policies wait for idle and apply the [probe preconditions](ARCHITECTURE.md#compaction-failures-and-fallback): fallback for active compaction, reported pending messages, virtual selections, idle warming, excessive known context usage, or settings that cannot be checked. No skipped case consumes the attempt. ProbeTrigger resolves when the first `synthetic-probe` snapshot published after the start has a settled guard, or with the probe's failure reason. Probes run one at a time, so that snapshot belongs to this probe.
 
 #### What a probe run reaches
 
-SilentProbe aborts at `turn_start`. Pi checks the abort signal only in the provider's HTTP call, so the run still:
+SilentProbe aborts at `turn_start`. For a physical model on Pi 1.0's standard runtime, the run still:
 
-- prepares the request: routing, compaction checks, `context` and `context_with_system` handlers, hidden declarations, the forced prompt projection and `convertToLlm()`;
-- on built-in adapters, serializes the payload and runs `before_provider_headers` and `before_provider_request` handlers;
-- ends with an assistant error or aborted message naming the physical provider, API and model. `after_provider_response` and `provider_stream_event` do not fire.
+- prepares structured context through `context`, `context_with_system`, hidden declarations, the forced prompt projection and `convertToLlm()`;
+- enters the agent stream function, which starts cache-warming bookkeeping;
+- fails authentication resolution on the already-aborted signal, before `before_provider_headers`, `before_provider_request`, or the provider stream implementation;
+- ends with an assistant error naming the physical provider, API and model. `after_provider_response` and `provider_stream_event` do not fire.
 
-A probe therefore gets a full structured capture (D3) and usually a payload. RequestTracker pairs the payload by the normal rule, and DispatchConfirmer reads the identity from the assistant `message_start`. SilentProbe blanks that message in `message_end`, but the blanking keeps its provider, API and model.
+A probe therefore gets the structured capture (D3), but normally no payload. Its guard settles incomplete at `agent_settled` (D4); consumers must not wait indefinitely for a payload or infer declared tool names from one. If a nonstandard host reaches a payload hook, pair it normally. SilentProbe blanks the assistant message in `message_end` while keeping its provider, API and model.
 
-The payload guard is best-effort for probes. A provider that does not call `onPayload`, or authentication that fails on the aborted signal, leaves no payload; the guard then settles incomplete (D4). A virtual model's `route()` also receives the aborted signal. A router that honors it ends the run before the context handlers, and the probe produces no snapshot.
+Virtual selections are skipped before probing. If another extension switches to one during preparation, its `route()` receives the aborted signal and can stop before context handlers or perform side effects. The preconditions cannot lock other extensions' behavior.
 
-Keep the abort at `turn_start`. It prevents the HTTP request even where no payload hook runs.
+Keep the abort at `turn_start`, not a provider-payload hook that this path never reaches. Correct ownership remains necessary; the nested-send limitation prevents a universal zero-request guarantee.
 
 #### Probe messages
 
@@ -247,7 +248,7 @@ ProbeFilter removes messages whose role and timestamp match a recorded probe ide
 
 Capture applies the same filter to the baseline. The filter is the monitor's own change: it is not a finding, and the empty diff of D2 still holds after probes.
 
-Every `context` handler, and every `context_with_system` handler before the monitor, still sees the blank probe messages. Later handlers and the payload do not. During the probe run, the filter also removes the probe's own prompt.
+At the owned run's `turn_end`, SilentProbe appends `context_edit` omissions for known probe entries still visible in `event.context.contextEntries`, by session entry ID. That projection already applies compaction, earlier edits and earlier handlers' drafts, so each entry is omitted once. Pi then excludes them before any context handler, including without this extension. Keep identity filtering for old sessions, interrupted probes and branches before the edits. Such unomitted blank entries remain visible to every `context` handler and earlier `context_with_system` handlers. During the probe itself, the filter removes its prompt from the request.
 
 #### What a probe snapshot represents
 
@@ -263,11 +264,12 @@ A later `real-turn` snapshot replaces it as the latest snapshot. Consumers label
 
 "Silent" means that the probe's own run sends no provider request and leaves no transcript text. It does not mean that the probe has no side effects:
 
-- Other extensions' handlers run, including `before_provider_headers` and `before_provider_request` for a request that is never sent.
-- Virtual-model routing can make classifier calls and persist routing state.
+- Other extensions' input, agent, context, message and turn handlers run. Provider header/payload handlers normally do not run because authentication rejects the aborted signal first.
+- Virtual-model routing can make classifier calls and persist routing state; the trigger skips virtual selections, but later model changes remain possible.
 - Pi's pre-prompt compaction check runs before `before_agent_start` and can start auto-compaction, which sends a summary request. The context-usage precondition above approximates Pi's threshold check; it cannot predict every case.
-- The agent stream function starts cache warming for the probe request and cancels the warm run of the last real request. In the default `streaming` mode, warming stops when the run settles. In `idle` mode, later warm refreshes replay the probe's context; RequestTracker marks and skips them (D4).
-- The blanked probe assistant message has zero usage, so Pi's next pre-prompt compaction check estimates the context size instead of reading reported usage.
+- The agent stream function starts warming bookkeeping and cancels the warm run of the last real request. Default `streaming` warming stops at settlement; the trigger skips idle warming. Slow handlers, later settings changes and other extensions can still affect this path.
+- A `context_edit` makes Pi distrust earlier reported usage, so its next pre-prompt compaction check and `getContextUsage()` estimate the context size until a later response reports usage again.
+- Omission edits persist in the session and outlive the extension; raw blank entries remain in history.
 
 ### D11. Snapshots decouple capture from consumers
 
@@ -327,24 +329,24 @@ Counts the replayed projection and applies the selected snapshot's conversation 
 
 ## Components
 
-| Layer     | Component         | Hook                                                                                                             | Responsibility                                                                                      |
-| --------- | ----------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Probe     | ProbeFilter       | `session_start`, `context_with_system` before capture                                                            | Restore persisted identities; remove recorded probe messages from requests and baselines            |
-| Probe     | SilentProbe       | `input`, `before_agent_start`, `turn_start`, `message_start`, `message_end`, `agent_settled`, `session_shutdown` | Claim, abort and sanitize its own run; record identities in ProbeFilter and persist them            |
-| Capture   | RequestTracker    | `context_with_system`, `cache_warming_decision`, `before_provider_request`, `agent_settled`, `session_shutdown`  | Number captures, set origin, pair payloads, mark warm refreshes, settle unpaired captures, clean up |
-| Capture   | ProjectionReader  | Inside `context_with_system`                                                                                     | Read filtered baseline messages, their source entries and the leaf ID                               |
-| Capture   | TranscriptCapture | `context_with_system`                                                                                            | Clone the filtered messages; record a forced prompt and the request model                           |
-| Capture   | Differ            | Deferred                                                                                                         | Compare system state and align conversation messages                                                |
-| Capture   | Attributor        | Deferred                                                                                                         | Label changes from `customType` and cooperative provenance                                          |
-| Capture   | PayloadParser     | Deferred                                                                                                         | Select the parser by API; extract message and tool-declaration channels                             |
-| Capture   | PayloadGuard      | Deferred                                                                                                         | Normalize Pi adjustments and report unexplained differences or incomplete comparison                |
-| Capture   | LoadoutAttributor | Deferred                                                                                                         | Explain missing declarations with active `model-only` candidates                                    |
-| Capture   | DeclaredTools     | Deferred, after PayloadGuard                                                                                     | Record the declared and baseline tool names (D9)                                                    |
-| Capture   | DispatchConfirmer | Assistant `message_start`, `provider_stream_event`, assistant `message_end`                                      | Record identity once per paired request; confirm the request model or supply the virtual route      |
-| Capture   | SnapshotBuilder   | Deferred                                                                                                         | Assemble snapshots, publish them and their guard updates, release clones                            |
-| Store     | SnapshotStore     | None; the wiring clears it on `session_shutdown`                                                                 | Retain the first and latest snapshot per origin; notify subscribers                                 |
-| Trigger   | ProbeTrigger      | Called by consumers or commands                                                                                  | Apply the automatic or manual policy and preconditions; start SilentProbe; wait for its snapshot    |
-| Consumers | Views             | `/context` command                                                                                               | Read snapshots; sanitize, render and count                                                          |
+| Layer     | Component         | Hook                                                                                                                         | Responsibility                                                                                      |
+| --------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Probe     | ProbeFilter       | `session_start`, `context_with_system` before capture                                                                        | Restore persisted identities; remove recorded probe messages from requests and baselines            |
+| Probe     | SilentProbe       | `input`, `before_agent_start`, `turn_start`, `message_start`, `message_end`, `turn_end`, `agent_settled`, `session_shutdown` | Claim, abort, blank and omit its own run; record identities in ProbeFilter and persist them         |
+| Capture   | RequestTracker    | `context_with_system`, `cache_warming_decision`, `before_provider_request`, `agent_settled`, `session_shutdown`              | Number captures, set origin, pair payloads, mark warm refreshes, settle unpaired captures, clean up |
+| Capture   | ProjectionReader  | Inside `context_with_system`                                                                                                 | Read filtered baseline messages, their source entries and the leaf ID                               |
+| Capture   | TranscriptCapture | `context_with_system`                                                                                                        | Clone the filtered messages; record a forced prompt and the request model                           |
+| Capture   | Differ            | Deferred                                                                                                                     | Compare system state and align conversation messages                                                |
+| Capture   | Attributor        | Deferred                                                                                                                     | Label changes from `customType` and cooperative provenance                                          |
+| Capture   | PayloadParser     | Deferred                                                                                                                     | Select the parser by API; extract message and tool-declaration channels                             |
+| Capture   | PayloadGuard      | Deferred                                                                                                                     | Normalize Pi adjustments and report unexplained differences or incomplete comparison                |
+| Capture   | LoadoutAttributor | Deferred                                                                                                                     | Explain missing declarations with active `model-only` candidates                                    |
+| Capture   | DeclaredTools     | Deferred, after PayloadGuard                                                                                                 | Record the declared and baseline tool names (D9)                                                    |
+| Capture   | DispatchConfirmer | Assistant `message_start`, `provider_stream_event`, assistant `message_end`                                                  | Record identity once per paired request; confirm the request model or supply the virtual route      |
+| Capture   | SnapshotBuilder   | Deferred                                                                                                                     | Assemble snapshots, publish them and their guard updates, release clones                            |
+| Store     | SnapshotStore     | None; the wiring clears it on `session_shutdown`                                                                             | Retain the first and latest snapshot per origin; notify subscribers                                 |
+| Trigger   | ProbeTrigger      | Called by consumers or commands                                                                                              | Apply the automatic or manual policy and preconditions; start SilentProbe; wait for its snapshot    |
+| Consumers | Views             | `/context` command                                                                                                           | Read snapshots; sanitize, render and count                                                          |
 
 SilentProbe and DispatchConfirmer both handle assistant `message_start` and `message_end`; neither depends on the other's result. Today both views, and therefore the automatic probe, require `ctx.mode === "tui"`; dialogs also need `ctx.hasUI`. Capture, the probe layer and the store work in RPC, JSON and print modes too.
 
@@ -519,8 +521,8 @@ Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_
 | Incomplete comparison     | Missing model metadata and unsupported or ambiguous payloads must not appear as empty diffs.                                                                                                                                                                                                                           |
 | Format selection          | Select parsers by API on both paths. A payload that does not match its API's representation settles incomplete. Do not accept an image placeholder as Pi's adjustment without model evidence.                                                                                                                          |
 | Silent probe              | Probe before the first request with `test/fixtures/marker.ts`, `test/fixtures/forced-prompt.ts` and `test/fixtures/input-transform.ts` in both load orders; an `after_provider_response` sentinel stays silent. On a model with `supportsMidConvoSystemMessages`, system messages keep their positions after probes.   |
-| Probe payload             | Built-in adapters pair a probe payload and settle its guard. A provider that does not call `onPayload` settles it incomplete. A router that honors the aborted signal produces no snapshot and a failed probe.                                                                                                         |
-| Probe triggers            | Automatic: one attempt per runtime; concurrent consumers share it. Manual: repeated probes run one at a time. Neither starts during compaction or above the auto-compaction threshold.                                                                                                                                 |
+| Probe payload             | Pi 1.0's standard runtime produces a structured capture but no probe payload; settle its guard incomplete at settlement. Virtual selections fall back without probing. Test any nonstandard host that reaches a payload hook separately.                                                                               |
+| Probe triggers            | Automatic: one attempt per runtime; concurrent consumers share it. Manual: repeated probes run one at a time. Both apply every conservative precondition from D10 without consuming an attempt.                                                                                                                        |
 | Snapshot store            | Retains the first and latest snapshot per origin; guard updates replace the retained copy. Capture runs with no consumer and in RPC mode. Consumers import no capture or probe internals.                                                                                                                              |
 | Cleanup and privacy       | Release pending data on settlement/shutdown; keep raw content out of logs, session entries and notifications. Persisted probe records contain only role and timestamp.                                                                                                                                                 |
 

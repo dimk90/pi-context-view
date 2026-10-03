@@ -38,13 +38,13 @@ Usage is therefore not independent of Initial today. See the
 
 ## How Pi Prepares a Request
 
-The following flow was checked against pi `0.86.1`. The notes on the right show
+The following flow was checked against pi `1.0.0`. The notes on the right show
 which parts `pi-context-view` uses or skips.
 
 ```text
-Current agent history
-  Restored/rebuilt with buildSessionContext()    USE: session branch baseline
-  (branch, compaction, saved custom messages)
+Canonical session projection
+  Read through buildSessionContext()            USE: session branch baseline
+  (branch, compaction, context edits, custom messages)
   |
   + New user message and pending messages
   |
@@ -56,7 +56,11 @@ before_agent_start handlers                     OBSERVE: copy prompt options
   |
   v
 context handlers, in extension load order       OBSERVE: freeze Initial once
-  Add, replace, remove, or reorder messages
+  Conversation only; Pi restores system state
+  |
+  v
+context_with_system handlers                    FILTER: known probe identities
+  Full transcript, with system positions intact
   |
   v
 convertToLlm()                                  USE: selected estimates/previews
@@ -85,9 +89,9 @@ before_provider_request handlers                NOT used for capture
 Send to provider
 ```
 
-This is a simplified flow. Pi maintains agent history in memory. It does not
-rebuild the session tree before every request. It can also compact history and
-deliver queued messages between requests. `before_agent_start` runs for a new
+This is a simplified flow. Pi rebuilds each request from the canonical session
+projection. It can also compact history, route virtual models, and deliver
+queued messages between requests. `before_agent_start` runs for a new
 prompt, while `context` runs before each model call, including tool follow-ups.
 
 Pi's `context` handler chain starts with a deep copy of the messages. Its result
@@ -214,7 +218,11 @@ messages, read when the view opens
   |
   v
 Later context events
-  Filter known probe messages, do not replace Initial
+  Do not replace Initial
+  |
+  v
+Every context_with_system event
+  Filter known probe messages without moving system messages
 ```
 
 Usage therefore combines two sources: the request-only changes frozen in
@@ -288,8 +296,9 @@ another extension later changes the original objects. Apply the
 
 Build these comparison inputs only for the event that freezes Initial.
 Rebuilding the session baseline costs time proportional to the conversation
-length, so later `context` events must skip that work and only filter known
-probe messages.
+length, so later `context` events skip that work. Capture filters its own
+comparison inputs but never returns a changed request. Request filtering runs
+separately in `context_with_system`.
 
 ### Capture Coverage and Load Order
 
@@ -323,6 +332,9 @@ it sees.
   neither counted nor attributed. Pi projects the forced text onto the request
   after the `context` handlers and keeps recording the structured sections, so
   only Initial sees it: Usage reads the transcript instead.
+
+- **`context_with_system` changes: not captured.** Initial still freezes in
+  `context`; moving capture itself belongs to the request-only redesign.
 
 - **Provider-payload rewrites: no extension, whatever the load order.**
   `before_provider_request` handlers and provider transports run after the
@@ -471,7 +483,8 @@ Allow at most one attempt per extension runtime. Concurrent callers share it.
 ```text
 /context
   Wait for idle
-  If compaction is active, return a partial fallback without probing
+  Check compaction, pending messages, model, auth, and Pi settings
+  If unsafe, return a partial fallback without consuming the attempt
   Otherwise hide the working row and call sendUserMessage("") inside
   this attempt's probe-token scope
   |
@@ -490,12 +503,24 @@ turn_start
   Abort before the provider; context processing still reaches our handler
   |
   v
-context
-  Filter the synthetic user message, finalize Initial
+message_end (user)
+  Blank the synthetic prompt before Pi persists it
   |
   v
-message_end
-  Blank the synthetic prompt and the recorded abort result
+context
+  Filter only capture's comparison inputs, finalize Initial
+  |
+  v
+context_with_system
+  Filter the request without changing system-message positions
+  |
+  v
+message_end (assistant)
+  Blank the recorded abort result before Pi persists it
+  |
+  v
+turn_end
+  Append context_edit omissions for known probe entries on this branch
   |
   v
 agent_settled
@@ -504,7 +529,11 @@ agent_settled
 
 Use `sendUserMessage("")`. `pi.sendMessage(..., { triggerTurn: true })` skips
 `before_agent_start`. Abort at `turn_start`, not `before_provider_request`,
-because some transports skip the latter.
+because some transports skip the latter. On Pi 1.0's standard runtime path,
+authentication rejects the already-aborted signal before provider headers and
+payload serialization. Structured context handlers still run for physical
+models, but a probe normally has no provider payload. A router honoring the
+aborted signal can stop before context handlers; virtual selections are skipped.
 
 “Silent” means no provider request and no transcript text of the probe's own.
 This depends on correct run recognition: the
@@ -575,11 +604,35 @@ Track synthetic user and assistant messages by exact role and timestamp.
 Never identify them by empty content: genuine empty messages and genuine aborts
 must remain visible.
 
-Filter the recorded identities from every later model context and Usage
-calculation. Blank both recorded probe messages in `message_end`: the synthetic
-prompt, which may carry text an input transform added, and the assistant abort
-result. Filtering keeps probe messages out of model contexts; blanking keeps
-them out of stored messages.
+Blank both recorded probe messages in `message_end`: the synthetic prompt,
+which may carry text an input transform added, and the assistant abort result.
+Blanking removes their content before Pi stores the messages.
+
+At the owned run's `turn_end`, append `context_edit` drafts with
+`replacement: null` and the exact session entry IDs of known probe messages that
+are still visible in `event.context.contextEntries`. That boundary projection
+already applies compaction, earlier edits, and earlier handlers' drafts, so each
+visible target is omitted once. Preserve other handlers' proposed entries and do
+not request continuation. Pi applies
+these omissions to future context even when this extension is absent. The raw
+blank messages remain in the session tree. Use `turn_end`, not
+`agent_before_settle`: an explicit abort skips the latter boundary.
+
+Targets include identities restored from earlier runtimes. An omission persists
+in the session file and outlives this extension, so a genuine message whose role
+and timestamp match a probe identity would stay omitted, not only filtered in
+memory. Such a collision needs the same millisecond timestamp; exact identities
+keep it unlikely.
+
+Keep identity filtering for Usage, capture comparison inputs, and requests.
+Omission edits are branch-relative: navigating before an edit can reveal a probe
+entry again. Old sessions and an interrupted run may also lack omissions.
+Request filtering runs in `context_with_system`, returning nothing when no
+identity matches. A changed `context` result would collapse Pi's system messages
+into a leading checkpoint; filtering the full transcript preserves their
+positions and cached prefixes. `context` handlers and earlier
+`context_with_system` handlers can still see blank probe entries that have not
+been omitted from the projection.
 
 Pi 0.84 and newer report an abort during stream setup, such as the probe's
 `turn_start` abort, with an `error` stop reason instead of `aborted`. Its error
@@ -603,25 +656,46 @@ disappears on reload or resume. Nothing of that text is sent or stored.
 
 Persist only role-and-timestamp identities in `pi-context-view:probe-identities`
 custom entries on `agent_settled` and `session_shutdown`. Restore all prior
-identities on `session_start`, including after resume, reload, and fork. Never
-persist probe content in these records.
+identities on `session_start`, including after resume, reload, and fork. Omission
+edits persist only target entry IDs and `null`. Neither record stores content.
 
 ### Compaction, Failures and Fallback
 
-`waitForIdle()` does not cover manual compaction. Track
-`session_before_compact` until its signal aborts or pi reports the outcome:
+Pi 1.0's `waitForIdle()` includes compaction. Still recheck the tracked lifecycle
+after waiting, because compaction can start before the probe is sent. Track
+`session_before_compact` until its signal aborts or Pi reports `session_compact`
+or `session_compact_failed`; do not infer completion from a later agent run.
 
-- Pi 0.84.3 and newer finish each observed compaction with exactly one of
-  `session_compact` or `session_compact_failed`. Do not infer completion from
-  later agent runs.
-- Older pi does not emit the failure event. A failed compaction keeps this
-  extension in fallback mode until the session ends.
+Before starting or consuming an attempt, use the fallback when:
 
-While compaction is active, return the fallback without starting or consuming
-the probe attempt.
+- compaction is active or `ctx.hasPendingMessages()` reports queued input;
+- the selected model is virtual (`api: "pi-virtual"`), since routing can make
+  classifier calls or fail before capture;
+- idle cache warming is enabled, since its refresh uses a separate abort signal;
+- known context usage exceeds `contextWindow - reserveTokens` while automatic
+  compaction is enabled, using Pi's `shouldCompact()` and per-model settings;
+- Pi settings cannot be checked safely.
 
-A missing model, missing authentication, startup failure, timeout, or active
-compaction returns a current prompt/tool snapshot with a precise reason that
+Compaction settings come from `pi.getSettings()`, so runtime changes apply; the
+Usage map's auto-compaction reserve reads the same source. The warming check
+also reads global settings with project settings disabled: Pi's warming mode is
+global-only, but the merged API can hide it under an ignored project override.
+An idle value in either source triggers fallback. Extensions cannot see an SDK
+host's custom agent directory, so this file read uses Pi's default directory,
+which honors `PI_CODING_AGENT_DIR`; an unsaved runtime warming change hidden by
+a project override is also missed. Never write or change Pi settings to make a
+probe possible.
+
+These are conservative checks, not a lock on Pi or other extensions. Unknown
+usage does not block probing; pre-prompt overflow recovery, hidden `nextTurn`
+messages (not reported by `hasPendingMessages()`), later model/settings changes,
+and arbitrary extension side effects remain possible. Default `streaming`
+warming remains enabled in Pi and stops on settlement; slow handlers or other
+extensions can still affect it. The nested-send ownership limitation also
+remains. Strict zero-provider-request guarantees require passive capture.
+
+Any skipped precondition above, a missing model, missing authentication, a
+startup failure, or a timeout returns a current prompt/tool snapshot with a precise reason that
 extension additions were not observed. This fallback does not freeze Initial.
 Usage can still classify current session messages alongside it.
 
@@ -851,7 +925,8 @@ respectively, before serializing injected-message previews. This includes
 request-only replacements. Do not change the provider-bound message or tool
 arguments, even if an argument has the same name as a signature field.
 
-Persisted probe records contain only role and timestamp identities.
+Persisted probe records contain only role and timestamp identities, plus
+`context_edit` target entry IDs with null replacements.
 
 ## Module Boundaries
 
@@ -860,7 +935,7 @@ Persisted probe records contain only role and timestamp identities.
 | `src/index.ts`            | Register events and commands; assemble view inputs.                                           |
 | `src/command.ts`          | Parse commands; resolve Initial through capture, probe, or fallback.                          |
 | `src/config.ts`           | Load, validate, cache, and explicitly create configuration.                                   |
-| `src/settings.ts`         | Read pi's own settings: the auto-compaction reserve for the current model.                    |
+| `src/settings.ts`         | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
 | `src/capture.ts`          | Manage Initial, probes, compaction state, probe identities, and injected messages.            |
 | `src/probe-token.ts`      | Carry the probe token through the async context of this extension's own send.                 |
 | `src/measure.ts`          | Split and estimate prompt/tool contributions without pi API access.                           |
@@ -887,7 +962,9 @@ probe request isolation and message ownership, not a relaxation of those goals.
   state, in every later model context, and in the saved session.
 - Only a run carrying the probe token is aborted or rewritten. Every other run
   proceeds untouched, because it may belong to the user or another extension.
-- Active compaction uses the fallback without consuming the probe attempt.
+- Active compaction, reported pending messages, virtual models, idle warming,
+  excessive known context usage, or unreadable settings use fallback without
+  consuming the probe attempt.
 - Genuine messages and genuine aborts remain visible.
 - Synthetic probe entries never reach later model contexts or Usage, including
   after resume, reload, or fork.

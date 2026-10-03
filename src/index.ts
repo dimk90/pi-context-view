@@ -100,12 +100,11 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("context", (event, ctx) => {
-		const messages = probe.filterMessages(event.messages);
 		// Lazy: this event fires once per LLM request, but only the freezing call
 		// reads these inputs, and the baseline rebuild alone is O(session).
 		capture.finalize(() => ({
 			systemPrompt: ctx.getSystemPrompt(),
-			messages,
+			messages: probe.filterMessages(event.messages),
 			baselineMessages: probe.filterMessages(
 				buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
 			),
@@ -114,7 +113,18 @@ export default function (pi: ExtensionAPI) {
 			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 			origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
 		}));
+	});
+
+	pi.on("context_with_system", (event) => {
+		// Filtering here preserves system-message positions and cached prefixes
+		const messages = probe.filterMessages(event.messages);
 		return messages === event.messages ? undefined : { messages };
+	});
+
+	pi.on("turn_end", (event) => {
+		if (!probe.isCurrentRun) return;
+		const entries = probe.createContextEdits(event.context.contextEntries);
+		return entries.length === 0 ? undefined : { entries: [...event.entries, ...entries] };
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
@@ -179,7 +189,7 @@ export default function (pi: ExtensionAPI) {
 					messages,
 					reported: toReportedUsage(ctx.getContextUsage()),
 					modelLabel: ctx.model?.id,
-					autoCompactReserveTokens: readAutoCompactReserveTokens(ctx),
+					autoCompactReserveTokens: readAutoCompactReserveTokens(pi, ctx.model),
 				}),
 				degradedReason: initial.degradedReason,
 				// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
