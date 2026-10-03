@@ -4,6 +4,7 @@
  * never parse labels to recover source, kind, or parent/child relationships.
  */
 
+import type { CaptureOrigin } from "./snapshot.ts";
 import type { SystemMessage } from "./transcript.ts";
 
 export const PI_SOURCE_ID = "pi";
@@ -35,9 +36,6 @@ export const SKILLS_LABEL = "Skills";
 
 /** Shared name of pi's built-in tools; Usage and Injections must present it identically. */
 export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
-
-/** What produced the captured snapshot. */
-export type CaptureOrigin = "real-turn" | "synthetic-probe";
 
 /** The frozen lifecycle phase represented by the v0.2.0 injection model. */
 export type InjectionPhase = "initial";

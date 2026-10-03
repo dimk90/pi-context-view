@@ -27,6 +27,7 @@ import { ProbeFilter, registerProbeFilter } from "./probe/filter.ts";
 import { registerSilentProbe, SilentProbe } from "./probe/silent-probe.ts";
 import { createProbeView } from "./probe/view.ts";
 import { readAutoCompactReserveTokens } from "./settings.ts";
+import { SnapshotStore } from "./snapshot.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
 import { showUsageView } from "./ui/usage-view.ts";
 import { computeUsage, toReportedUsage } from "./usage.ts";
@@ -37,6 +38,7 @@ export default function (pi: ExtensionAPI) {
 	const probe = new SilentProbe(probeFilter);
 	const probeView = createProbeView(probeFilter, probe);
 	const compaction = new CompactionState();
+	const snapshots = new SnapshotStore();
 	const configStore = new ConfigStore();
 	const supported = isSupportedPiVersion(VERSION);
 
@@ -116,6 +118,10 @@ export default function (pi: ExtensionAPI) {
 	registerProbeFilter(pi, probeFilter);
 	registerSilentProbe(pi, probe, () => capture.snapshot !== undefined);
 	registerCompactionTracking(pi, compaction);
+
+	pi.on("session_shutdown", () => {
+		snapshots.clear();
+	});
 
 	pi.on("before_agent_start", (event) => {
 		// The chained prompt here already carries additions from extensions loaded

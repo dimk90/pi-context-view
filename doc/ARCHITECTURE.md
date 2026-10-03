@@ -942,6 +942,7 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/settings.ts`           | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
 | `src/capture.ts`            | Manage Initial and measure injected messages.                                                 |
 | `src/compaction.ts`         | Track the compaction lifecycle for the probe preconditions and the command refusal.           |
+| `src/snapshot.ts`           | Define request snapshots; SnapshotStore retains the first and latest per origin.              |
 | `src/probe/filter.ts`       | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.     |
 | `src/probe/silent-probe.ts` | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.             |
 | `src/probe/view.ts`         | ProbeView: the run origin and probe-message filter that capture reads.                        |
@@ -960,7 +961,8 @@ Persisted probe records contain only role and timestamp identities, plus
 Each layer's module exports its state and a `register*()` function with its pi
 handlers; `src/index.ts` creates the layers and calls those functions. Only
 Initial capture still registers its `before_agent_start` and `context` handlers
-in `src/index.ts`. Register the probe layer first: ProbeFilter's
+in `src/index.ts`. SnapshotStore has no Pi handlers and imports Pi types only;
+`src/index.ts` clears it on `session_shutdown`. Nothing publishes to it yet. Register the probe layer first: ProbeFilter's
 `context_with_system` handler must run before any capture handler on that event.
 The probe layer imports no capture module; capture reads it only through
 ProbeView. Keep state machines, measurement, and rendering in focused modules

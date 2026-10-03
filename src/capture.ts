@@ -19,13 +19,13 @@ import { copySystemMessage, replaySystemMessages, systemMessageText } from "./tr
 import {
 	AGGREGATE_SOURCE,
 	buildSnapshot,
-	type CaptureOrigin,
 	type InitialSnapshot,
 	type InjectionItem,
 	type InjectionSource,
 	type JsonSpan,
 } from "./model.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
+import type { CaptureOrigin } from "./snapshot.ts";
 
 /** Everything available when the first context event finalizes a snapshot. */
 export interface CaptureFinalization {

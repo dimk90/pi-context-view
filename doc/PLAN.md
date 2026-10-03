@@ -55,10 +55,11 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
   - Decided: both views refuse with a warning and do not open, checked before and after resolving Initial.
     The probe precondition stays as a safety guard; its fallback is no longer shown.
 
-- [ ] **SnapshotStore** (D11):
+- [x] **SnapshotStore** (D11):
   - Add snapshot types (`RequestSnapshot`, `StructuredChanges`, `GuardResult`, `DeclaredTools`, `SnapshotReader`) and move `CaptureOrigin` out of `src/model.ts`.
   - Retain the first and latest snapshot per origin; a guard update replaces the copy with the same ID; `subscribe()` reports every publication; clear on `session_shutdown`.
   - No Pi imports. Unit-test retention, replacement, and selection without an origin.
+    Decided: types and store in `src/snapshot.ts`, type-only Pi imports allowed; `src/index.ts` clears it on `session_shutdown`. Change and finding types are minimal; the Structured capture and Payload guard steps extend them.
 
 - [ ] **Structured capture** (D2, D3, D5, D6):
   - RequestTracker: number captures, set the origin from `ProbeView`, settle an unpaired capture `incomplete` on the next capture or `agent_settled`. Until the payload guard exists, every guard settles `incomplete`.
