@@ -26,7 +26,7 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 - **Command contract.** Keep parsing, completions, registration text, README usage, and command tests synchronized whenever the `/context` grammar or mode guard changes.
 - **Config contract.** Keep user-configurable state override-only: defaults in code, no auto-created or default-backfilled config file, invalid entries degrading to defaults. `doc/ARCHITECTURE.md` holds the full load and write contract.
 - **UI contract.** Treat `doc/UI.md` and `doc/ui/` as canonical; update the owning page and focused tests whenever the specified TUI behavior changes.
-- **Dependency contract.** Keep both pi packages as `"*"` peer dependencies and exact development pins matching `pi --version`; run `pnpm install` after changing either pin.
+- **Dependency contract.** Keep all four Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) as `"*"` peer dependencies and exact development pins matching `pi --version`; run `pnpm install` after changing any pin.
 
 ## Verification
 

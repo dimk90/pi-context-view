@@ -21,6 +21,13 @@ readonly _RELEASE_PUBLICATION_ATTEMPTS=90
 readonly _RELEASE_PUBLICATION_INTERVAL=10
 readonly _RELEASE_DEVELOP_BRANCH='develop'
 readonly _RELEASE_MASTER_BRANCH='master'
+# Pi packages that must stay `*` peer dependencies with exact development pins
+readonly _RELEASE_PI_PACKAGES=(
+    pi-coding-agent
+    pi-tui
+    pi-ai
+    pi-agent-core
+)
 readonly _RELEASE_ALLOWED_PATHS=(
     CHANGELOG.md
     doc/PLAN.md
@@ -432,36 +439,39 @@ _release_check_package_metadata() {
     # Example:
     #   _release_check_package_metadata
     #
-    local package_name agent_peer tui_peer pi_version agent_pin tui_pin
+    local package_name pi_version package peer pin
+    local peers_valid=true pins_valid=true peer_report='' pin_report=''
 
     package_name="$(_release_package_value 'name')"
-    agent_peer="$(_release_package_value 'peerDependencies.@earendil-works/pi-coding-agent')"
-    tui_peer="$(_release_package_value 'peerDependencies.@earendil-works/pi-tui')"
+    pi_version="$(pi --version 2>/dev/null | tr -d '\r\n')"
+    pi_version="${pi_version#v}"
+    [[ $pi_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || pins_valid=false
+    for package in "${_RELEASE_PI_PACKAGES[@]}"; do
+        peer="$(_release_package_value "peerDependencies.@earendil-works/${package}")"
+        pin="$(_release_package_value "devDependencies.@earendil-works/${package}")"
+        [[ $peer == '*' ]] || peers_valid=false
+        [[ $pin == "$pi_version" ]] || pins_valid=false
+        peer_report+="$(printf '\n%s: %s' "$package" "${peer:-missing}")"
+        pin_report+="$(printf '\n%s: %s' "$package" "${pin:-missing}")"
+    done
+
     if [[ $package_name == "$_RELEASE_PACKAGE_NAME" ]]; then
         _release_pass "package identity is ${_RELEASE_PACKAGE_NAME}"
     else
         _release_block 'package.json has an unexpected package name' \
                        "found: ${package_name:-missing}"
     fi
-    if [[ $agent_peer == '*' && $tui_peer == '*' ]]; then
+    if [[ $peers_valid == true ]]; then
         _release_pass 'Pi peer dependencies remain *'
     else
-        _release_block 'Pi peer dependencies must remain *' \
-                       "$(printf 'pi-coding-agent: %s\npi-tui: %s' \
-                                 "${agent_peer:-missing}" "${tui_peer:-missing}")"
+        _release_block 'Pi peer dependencies must remain *' "${peer_report#$'\n'}"
     fi
 
-    pi_version="$(pi --version 2>/dev/null | tr -d '\r\n')"
-    pi_version="${pi_version#v}"
-    agent_pin="$(_release_package_value 'devDependencies.@earendil-works/pi-coding-agent')"
-    tui_pin="$(_release_package_value 'devDependencies.@earendil-works/pi-tui')"
-    if [[ $pi_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
-       [[ $agent_pin == "$pi_version" && $tui_pin == "$pi_version" ]]; then
+    if [[ $pins_valid == true ]]; then
         _release_pass "development pins match the local Pi ${pi_version}"
     else
         _release_block 'development pins do not match the local Pi' \
-                       "$(printf 'pi: %s\npi-coding-agent: %s\npi-tui: %s' \
-                                 "${pi_version:-unknown}" "${agent_pin:-missing}" "${tui_pin:-missing}")"
+                       "$(printf 'pi: %s%s' "${pi_version:-unknown}" "$pin_report")"
     fi
 }
 
