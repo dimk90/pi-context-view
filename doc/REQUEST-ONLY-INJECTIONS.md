@@ -123,7 +123,7 @@ A forced prompt is not in this capture. Detect it by comparing `ctx.getSystemPro
 Clone the payload synchronously, then parse and compare two channels off the critical path:
 
 - **Messages:** model-facing message and system text, excluding `details` and other unsent metadata.
-- **Tool declarations:** tool names and descriptions.
+- **Tool declarations:** tool names and descriptions. On Anthropic's native mid-conversation tool changes, this channel also includes the `tool_addition` and `tool_removal` blocks in the payload's system messages (see Pi's own adjustments).
 
 Compare them with the corresponding data extracted from the capture after Pi's adjustments. Unexplained additions, changes or removals are reported as **edited after monitor**, without structure or attribution. Missing declarations first go through the loadout check in D7. Later `before_provider_request` handlers remain invisible.
 
@@ -147,8 +147,10 @@ Pi changes the request after the capture. None of these changes are **edited aft
 - `convertToLlm()`: custom messages become user messages; bash executions and summaries get wrapper text; bash executions excluded from context are dropped. Image blocking replaces images with `Image reading is disabled.`
 - Models without image input receive `(image omitted: model does not support images)` or the tool-result variant.
 - Cross-model assistant replay can turn thinking into text, drop empty or redacted thinking, remove signatures and rewrite tool-call IDs.
-- Error and aborted assistant messages are dropped. Tool calls without results receive synthetic `No result provided` error results. A system message between a tool call and its results moves after the results.
-- Without `compat.supportsMidConvoSystemMessages`, system messages collapse into one leading prompt and declarations become the current tool set. With support, later system messages remain; Anthropic's native mid-conversation tool changes also declare `__pi_deferred_placeholder__`.
+- Error and aborted assistant messages are dropped. Tool calls without results receive synthetic `No result provided` error results. A system message between a tool call and its results moves after the results. Anthropic moves each later system message to just before the next assistant message, so it can follow a user message.
+- Without `compat.supportsMidConvoSystemMessages`, system messages collapse into one leading prompt and declarations become the current tool set. With support, later system messages remain.
+- Anthropic's native mid-conversation tool changes (`compat.supportsMidConvoToolChanges` with an initial tool set): the request-level `tools` list holds only the initial tools and `__pi_deferred_placeholder__`, and never changes. Later system messages define added tools inline in `tool_addition` blocks with a `tool_definition` and withdraw removed tools in `tool_removal` blocks. A redefinition under the same name has no `tool_removal`. The extractor removes these blocks from the message channel and replays them, in order, on the initial list to get the declared tools; a later definition with the same name wins.
+- With an Anthropic OAuth token, tool names that match Claude Code tools change case, such as `read` to `Read`. Match such names case-insensitively, as Pi does when it maps tool calls back.
 
 Use `convertToLlm` from `@earendil-works/pi-coding-agent` and the exported `getCurrentSystemMessage`, `getCurrentSystemPrompt` and `resolveTranscript` helpers from `@earendil-works/pi-ai`. Per-model message transforms are not exported; extractors must account for them without treating uncertain differences as proven Pi adjustments.
 
@@ -208,7 +210,7 @@ Built-ins load as `builtin:<name>` at the positions in D1. Codemode, tool search
 
 Tool declarations replayed from the session projection include hidden tools: they stay active, so the replay still declares them, although the model never receives them. Each snapshot therefore records two name sets from its paired payload:
 
-- **Declared:** names in the payload's tool-declaration channel, without `__pi_deferred_placeholder__`.
+- **Declared:** names in the payload's tool-declaration channel after the inline tool changes are replayed (D4), without `__pi_deferred_placeholder__`.
 - **Baseline:** names replayed from the capture's baseline (D2).
 
 Record them only when the tool-declaration channel is complete; the message channel does not matter. Warm refreshes record nothing. Retain only the two name sets and release the payload clone as D4 describes. Consumers decide how to use them; Usage's rules are in D11.
@@ -520,13 +522,14 @@ Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_
 | Dispatch timing           | Delay stream events after HTTP headers; accept whichever identity-bearing event arrives first. Later events must not repeat findings. Include failures before streaming. On a physical selection, the guard settles before the response; a handler that calls `pi.setModel()` during preparation leaves it incomplete. |
 | Incomplete comparison     | Missing model metadata and unsupported or ambiguous payloads must not appear as empty diffs.                                                                                                                                                                                                                           |
 | Format selection          | Select parsers by API on both paths. A payload that does not match its API's representation settles incomplete. Do not accept an image placeholder as Pi's adjustment without model evidence.                                                                                                                          |
+| Anthropic tool changes    | On an Anthropic model with `supportsMidConvoToolChanges`, activate a tool after the first request, remove one, and redefine one under the same name. Both diffs stay empty, and declared names match the active tools. Repeat with an OAuth token for Claude Code tool names.                                          |
 | Silent probe              | Probe before the first request with `test/fixtures/marker.ts`, `test/fixtures/forced-prompt.ts` and `test/fixtures/input-transform.ts` in both load orders; an `after_provider_response` sentinel stays silent. On a model with `supportsMidConvoSystemMessages`, system messages keep their positions after probes.   |
 | Probe payload             | Pi 1.0's standard runtime produces a structured capture but no probe payload; settle its guard incomplete at settlement. Virtual selections fall back without probing. Test any nonstandard host that reaches a payload hook separately.                                                                               |
 | Probe triggers            | Automatic: one attempt per runtime; concurrent consumers share it. Manual: repeated probes run one at a time. Both apply every conservative precondition from D10 without consuming an attempt.                                                                                                                        |
 | Snapshot store            | Retains the first and latest snapshot per origin; guard updates replace the retained copy. Capture runs with no consumer and in RPC mode. Consumers import no capture or probe internals.                                                                                                                              |
 | Cleanup and privacy       | Release pending data on settlement/shutdown; keep raw content out of logs, session entries and notifications. Persisted probe records contain only role and timestamp.                                                                                                                                                 |
 
-On Pi upgrades, recheck event shapes, handler order, provider adjustments, whether dispatch metadata is now exposed directly, and where Pi checks a probe's abort signal (authentication resolution in Pi 1.0).
+Last checked against Pi 1.0.1. On Pi upgrades, recheck event shapes, handler order, provider adjustments, whether dispatch metadata is now exposed directly, and where Pi checks a probe's abort signal (authentication resolution in Pi 1.0).
 
 ## References
 
