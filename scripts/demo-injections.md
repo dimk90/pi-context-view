@@ -122,20 +122,22 @@ so `system-append`, `section-patch`, `section-modify`, and `section-delete`
 do not reach the request. Pi still sends the tool declarations of the
 recorded system state with the forced text.
 
-Checked with Pi 1.0.2 at `053aa57`, using the same setup and prompts as above.
+Checked with Pi 1.0.2 at `053aa57`, using the same setup and prompts as above;
+the `Forced` markers were checked on the uncommitted changes that add them.
 The payload log confirmed that, in both load orders, the system message of
 every request was the forced text alone, and the tools were still declared.
 Built-in Tools therefore stays in both views.
 
 | Content                                             | Target                                       | Unreleased: before                    | Unreleased: after |
 | --------------------------------------------------- | -------------------------------------------- | ------------------------------------- | ----------------- |
-| Injections: forced prompt                           | System Prompt holds the forced text          | ✅ 17 tokens, no parts ⁸              | ✅ same as before |
+| Injections: forced prompt                           | System Prompt holds the forced text, Forced  | ✅ 17 tokens, `Forced` ⁸              | ✅ same as before |
 | Injections: `system-append` and `section-*` changes | not in the request                           | ➖                                    | ➖                |
-| Usage: forced prompt                                | counted as System Prompt, with a Forced note | ✅ 17 tokens, note in the preview     | ✅ same as before |
+| Usage: forced prompt                                | counted as System Prompt, Forced             | ✅ 17 tokens, `Forced` in the preview | ✅ same as before |
 | Usage: system changes from `context_with_system`    | not counted                                  | ➖                                    | ➖                |
 
-8. The System Prompt row stays under `pi`, unattributed, and has no marker:
-   only the text shows that it was forced. Its preview has no legend.
+8. The System Prompt row stays under `pi`, unattributed, with no parts. Its
+   row and preview header carry `Forced`, and both the list and the preview
+   explain it with a legend bullet.
 
 The conversation demos still reached the request and appeared in Injections
 as `Added`, `Modified`, and `Deleted` user messages.

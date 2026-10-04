@@ -25,7 +25,7 @@ import {
 } from "./model.ts";
 import { type MessageFilter, type ProjectedMessage, readProjection } from "./projection.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
-import { applySystemChanges, buildNativeSnapshot, replayedToolSlices } from "./replay.ts";
+import { applySystemChanges, buildNativeSnapshot, markForcedPrompt, replayedToolSlices } from "./replay.ts";
 import type { ConversationChange, RequestMessage, RequestSnapshot } from "./snapshot.ts";
 import { systemMessageText } from "./transcript.ts";
 
@@ -68,7 +68,7 @@ export function buildInjectionsSnapshot(input: InjectionsInput): InitialSnapshot
 function measureRequestPrompt(input: InjectionsInput, baseline: readonly RequestMessage[]): InjectionItem[] {
 	const base = getCurrentSystemMessage(baseline);
 	if (base === undefined) {
-		const native = buildNativeSnapshot({ ...input, systemPrompt: input.snapshot.forcedPrompt ?? input.systemPrompt });
+		const native = buildNativeSnapshot({ ...input, forcedPrompt: input.snapshot.forcedPrompt });
 		return native.groups.flatMap((group) => group.items);
 	}
 	const request = applySystemChanges(base, input.snapshot.changes.system);
@@ -79,13 +79,13 @@ function measureRequestPrompt(input: InjectionsInput, baseline: readonly Request
 		...replayedToolSlices(base, request.deletedTools, input.allTools)
 			.map((tool) => withToolChange(tool, "deleted")),
 	];
-	return analyzeSystemPrompt(
+	return markForcedPrompt(analyzeSystemPrompt(
 		forced ?? systemMessageText(request.state),
 		{ homeDir: process.env.HOME, customPrompt: input.options.customPrompt },
 		tools,
 		{ sources: input.promptSources },
 		forced === undefined ? request.prompt : {},
-	);
+	), forced);
 }
 
 /** The slice with a request-only change, or unchanged when there is none. */

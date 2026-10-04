@@ -283,6 +283,7 @@ function leafFromItem(item: InjectionItem): UsageCategory {
 			jsonSpan: item.jsonSpan,
 			// Tool parts stay a preview breakdown of the same estimate, never separate entries.
 			sections: item.sections,
+			change: item.change,
 		}],
 	};
 }

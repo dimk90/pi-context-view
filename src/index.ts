@@ -125,7 +125,6 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 				autoCompactReserveTokens: readAutoCompactReserveTokens(pi, ctx.model),
 			}),
 			degradedReason: latest.type === "missing" ? latest.degradedReason : undefined,
-			forcedPrompt: forcedPrompt !== undefined,
 			// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
 			notices: loadedConfig.warnings,
 			categoryColors: loadedConfig.config.categoryColors,

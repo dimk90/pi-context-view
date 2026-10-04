@@ -92,6 +92,7 @@ uses, followed by dim text:
 >   nowhere.
 > - **Moved** blocks appear in a different position in the system prompt than
 >   usual. Their token counts are unchanged.
+> - **Forced** prompts replace pi’s system prompt for this request.
 > - **Added** parts exist only in this request: an extension added them, and
 >   the session does not keep them. They are counted.
 > - **Modified** parts were changed by an extension for this request only; the
@@ -104,10 +105,6 @@ reads as the exception to the `Highlighted` one wherever a preview shows both.
 The `(guess)` bullet covers a guessed `:<tool>` qualifier as well, which is
 inferred the same way and never gets a marker of its own.
 
-A view may open the legend with dim note bullets that explain no mark, such as
-Usage's [forced-prompt note](usage.md#forced-prompt). They come before the
-marker bullets and collapse with them.
-
 A bullet renders only where its mark is visible on that frame:
 
 - `Highlighted` and `(guess)` follow injected-reference metadata, so native-only
@@ -116,9 +113,11 @@ A bullet renders only where its mark is visible on that frame:
   preview of both views, including the direct single-entry Usage preview, in the
   standalone `Available Tools` and `Guidelines` children in Injections, and in
   multi-entry Usage streams and their full content levels.
-- `Dropped`, `Moved`, `Added`, `Modified`, and `Deleted` follow the part
-  states a frame renders: preview subheaders and item metadata in any category,
-  and Injections hierarchy rows. Only Injections renders the last three.
+- `Dropped`, `Moved`, `Forced`, `Added`, `Modified`, and `Deleted` follow the
+  part states a frame renders: preview subheaders and item metadata in any
+  category, and Injections hierarchy rows. Only Injections renders the last
+  three; Usage renders `Forced` only in
+  [System Prompt previews](usage.md#forced-prompt).
   They follow the captured state, not each row's fit, so a row too narrow for
   its own marker keeps the bullet that explains it.
 

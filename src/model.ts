@@ -46,8 +46,9 @@ export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
  *   added      only the request has it; counted
  *   modified   the request version differs from the session; the request version is counted
  *   deleted    the request removed it; reads 0 tokens, text is the session original
+ *   forced     the request carried an extension's forced system prompt instead of pi's; counted
  */
-export type RequestChange = "added" | "modified" | "deleted";
+export type RequestChange = "added" | "modified" | "deleted" | "forced";
 
 /** The frozen lifecycle phase represented by the v0.2.0 injection model. */
 export type InjectionPhase = "initial";
@@ -223,6 +224,8 @@ export interface UsagePreviewEntry {
 	readonly jsonSpan?: JsonSpan;
 	/** Labeled parts of `text`, carried from the measured item; never extra tokens. */
 	readonly sections?: readonly InjectionSection[];
+	/** Request-only change of the measured item; Usage measures only `forced`. */
+	readonly change?: RequestChange;
 }
 
 /** Pi-reported usage; tokens/percent are omitted when unknown (e.g. right after compaction). */

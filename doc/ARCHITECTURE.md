@@ -289,7 +289,8 @@ checks and the TUI guard remain in the command.
    recorded declarations supply definitions, current tool metadata supplies
    provenance and guidelines. Shared helpers live in `src/replay.ts`.
 3. A forced prompt replaces the replayed prompt, so captured content/section
-   patches do not apply to it; tool changes still apply. Current
+   patches do not apply to it; tool changes still apply. The System Prompt
+   item carries the `forced` request-only change. Current
    `getSystemPromptOptions().customPrompt` preserves Dropped markers for
    `--system-prompt`. Other live prompt options do not replace recorded sections.
 4. Keep session-backed custom messages. Replace their rows when modified or
@@ -428,8 +429,8 @@ turn supplies the changes. `src/projection.ts` applies them when the view opens:
   section and content changes do not apply to it, and tool changes still do.
   Pi's sections inside it are
   [measured as usual](#prompt-parts-and-moved-blocks), so appended text counts
-  as an extension addition. The System Prompt preview
-  [notes the forced prompt](ui/usage.md#forced-prompt) instead of marking it.
+  as an extension addition. Like Injections, Usage marks the System Prompt item
+  `forced`, and its previews [show the marker](ui/usage.md#forced-prompt).
 
 Without a snapshot, after a failed or skipped probe, Usage counts the current
 branch alone and shows the degraded reason. Session-backed custom messages

@@ -11,7 +11,7 @@ import { type BuildSystemPromptOptions, SessionManager, type ToolInfo } from "@e
 // Deep import bypasses the package barrel, which does not re-export buildSystemPrompt.
 import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
-import type { InjectionItem } from "../src/model.ts";
+import type { InjectionItem, UsagePreviewEntry } from "../src/model.ts";
 import { applyRequestSnapshot } from "../src/projection.ts";
 import { buildUsageSnapshot } from "../src/replay.ts";
 import type { RequestSnapshot, SystemChange } from "../src/snapshot.ts";
@@ -75,7 +75,10 @@ function injectionItems(forcedPrompt: string): InjectionItem[] {
 
 test("Injections measures a forced prompt instead of the recorded sections", () => {
 	const items = injectionItems(FORCED_SYSTEM_PROMPT);
-	assert.equal(items.find((item) => item.id === "base-prompt")?.text, FORCED_SYSTEM_PROMPT);
+	const base = items.find((item) => item.id === "base-prompt");
+	assert.equal(base?.text, FORCED_SYSTEM_PROMPT);
+	assert.equal(base?.change, "forced");
+	assert.deepEqual(items.filter((item) => item.change !== undefined).map((item) => item.id), ["base-prompt"]);
 	// Sections Pi recorded but did not send must be neither counted nor attributed.
 	assert.doesNotMatch(items.map((item) => item.text).join("\n"), /Recorded preamble/);
 	assert.equal(items.some((item) => item.kind === "prompt-addition"), false);
@@ -86,6 +89,9 @@ test("Injections measures a forced prompt instead of the recorded sections", () 
 test("a forced prompt extending Pi's sections keeps the section parts and its addition", () => {
 	const items = injectionItems(`${buildSystemPrompt(OPTIONS)}\n\nEXTRA INSTRUCTION`);
 	const base = items.find((item) => item.id === "base-prompt");
+	// Only the whole prompt is forced; its parts carry no marker of their own
+	assert.equal(base?.change, "forced");
+	assert.equal(base?.children?.some((child) => child.change !== undefined), false);
 	assert.deepEqual(
 		base?.children?.map((child) => child.label),
 		["Preamble", "Available Tools", "Guidelines", "Documentation", "Appended Prompt", "Current Dir",
@@ -94,8 +100,8 @@ test("a forced prompt extending Pi's sections keeps the section parts and its ad
 	assert.equal(items.find((item) => item.kind === "prompt-addition")?.text.trim(), "EXTRA INSTRUCTION");
 });
 
-/** Preview text of every Usage category, keyed by category id, with `snapshot` applied to the session. */
-function usagePreviews(session: SessionManager, snapshot: RequestSnapshot): Map<string, string> {
+/** Preview entries of every Usage category, keyed by category id, with `snapshot` applied to the session. */
+function usageEntries(session: SessionManager, snapshot: RequestSnapshot): Map<string, UsagePreviewEntry[]> {
 	const { messages, systemChanges, forcedPrompt } = applyRequestSnapshot({
 		snapshot,
 		entries: session.getEntries(),
@@ -113,8 +119,18 @@ function usagePreviews(session: SessionManager, snapshot: RequestSnapshot): Map<
 		forcedPrompt,
 	});
 	const usage = computeUsage({ snapshot: usageSnapshot, messages });
-	return new Map(usage.categories.map((category) =>
-		[category.id, collectPreviewEntries(category).map((entry) => entry.text).join("\n")]));
+	return new Map(usage.categories.map((category) => [category.id, collectPreviewEntries(category)]));
+}
+
+/** Preview text of every Usage category, keyed by category id, with `snapshot` applied to the session. */
+function usagePreviews(session: SessionManager, snapshot: RequestSnapshot): Map<string, string> {
+	return new Map([...usageEntries(session, snapshot)].map(([id, entries]) =>
+		[id, entries.map((entry) => entry.text).join("\n")]));
+}
+
+/** Request-only changes Usage carries on its System Prompt entries. */
+function systemPromptChanges(session: SessionManager, snapshot: RequestSnapshot): unknown[] {
+	return (usageEntries(session, snapshot).get("system-prompt") ?? []).map((entry) => entry.change);
 }
 
 test("Usage measures the forced prompt while the recorded system state is unchanged", () => {
@@ -123,6 +139,7 @@ test("Usage measures the forced prompt while the recorded system state is unchan
 	session.appendMessage({ role: "user", content: "later prompt", timestamp: 2 });
 	const previews = usagePreviews(session, snapshot);
 	assert.equal(previews.get("system-prompt"), FORCED_SYSTEM_PROMPT);
+	assert.deepEqual(systemPromptChanges(session, snapshot), ["forced"]);
 	// Tool declarations still reach the provider, whatever the forced text says.
 	assert.match(previews.get("custom-tools") ?? "", /Recorded search definition/);
 	assert.doesNotMatch([...previews.values()].join("\n"), /Recorded preamble|Pi documentation/);
@@ -134,6 +151,7 @@ test("Usage reads the recorded sections once the system state changed after a fo
 	session.appendMessage({ role: "system", content: "", timestamp: 2, sections: { preamble: "Newer preamble" } });
 	const previews = [...usagePreviews(session, snapshot).values()].join("\n");
 	assert.match(previews, /Newer preamble/);
+	assert.deepEqual(systemPromptChanges(session, snapshot), [undefined]);
 	assert.match(previews, /Recorded search definition/);
 	assert.doesNotMatch(previews, /XYZZY_FORCED_PROMPT|Pi documentation/);
 });

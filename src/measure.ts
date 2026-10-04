@@ -49,6 +49,9 @@ const PROMPT_ADDITIONS_LABEL = "system prompt additions";
 /** Leading part of pi's prompt, before its first XML section. */
 const PREAMBLE_BLOCK = { id: "base-prompt:preamble", label: "Preamble" };
 
+/** Id of the System Prompt item, which holds pi's whole prompt. */
+export const SYSTEM_PROMPT_ITEM_ID = "base-prompt";
+
 /** Known XML section names retain the existing semantic ids and labels. */
 const SECTION_PARTS: Readonly<Record<string, { id: string; label: string }>> = {
 	tools: AVAILABLE_TOOLS_BLOCK,
@@ -97,7 +100,7 @@ export interface DeletedSection {
 /** Request-only prompt changes and their replayed layout; a forced prompt ignores them. */
 export interface PromptChanges {
 	/** Added or changed sections by name; `preamble` also stands for changed plain content. */
-	readonly sections?: ReadonlyMap<string, Exclude<RequestChange, "deleted">>;
+	readonly sections?: ReadonlyMap<string, Exclude<RequestChange, "deleted" | "forced">>;
 	/** Sections the request removed, in session order. */
 	readonly deleted?: readonly DeletedSection[];
 	/** Exact recorded layout, including sections without Pi's usual XML framing. */
@@ -742,7 +745,7 @@ function appendPromptPart(
  */
 function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 	const text = countedText(parts);
-	const item = createItem("base-prompt", "base-prompt", PI_SOURCE, SYSTEM_PROMPT_LABEL, text);
+	const item = createItem(SYSTEM_PROMPT_ITEM_ID, "base-prompt", PI_SOURCE, SYSTEM_PROMPT_LABEL, text);
 	if (parts.length === 0) return item;
 	if (parts.length === 1 && parts[0].id === PREAMBLE_BLOCK.id && parts[0].change !== "deleted") {
 		return withChange(item, parts[0].change);

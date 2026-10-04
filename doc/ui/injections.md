@@ -66,6 +66,8 @@ Present Initial contributions in this order:
     A forced prompt without XML sections has no children: System Prompt is one
     undivided part holding the whole forced text, with no `Dropped`, `Moved`,
     or `Extension Additions` parts, and each tool shows only its `Definition`.
+    Any forced prompt carries the
+    [`Forced` marker](#request-only-changes) on System Prompt.
   - `Instruction Files (M)`, with one child per context file, abbreviating home
     paths with `~`
   - Skills (K), with one content-only child per skill
@@ -88,6 +90,7 @@ stay in place in the tree, with a marker after the estimate:
 | `Added`    | `toolDiffAdded`   | A message, System Prompt part, or tool the request has and the session does not       |
 | `Modified` | `warning`         | A message, System Prompt part, or tool whose request version differs from the session |
 | `Deleted`  | `toolDiffRemoved` | A message, System Prompt part, or tool the request removed; it reads 0 tokens         |
+| `Forced`   | `warning`         | System Prompt, when the request carried an extension's forced prompt instead of pi's  |
 
 - **Messages.** An added or modified custom message sits under its
   `customType` source with the `message` label; any other message sits under
@@ -99,7 +102,8 @@ stay in place in the tree, with a marker after the estimate:
   and empty sections. Pi renders changed plain content before the first section, so
   it marks `Preamble`. A deleted section follows the parts the request sent, in
   session order, before `Extension Additions`. A forced prompt replaces every
-  section, so section and content changes do not apply to it.
+  section, so section and content changes do not apply to it. `Forced` marks
+  the System Prompt row and its preview header, never its parts.
 - **Tools.** A changed declaration marks its tool. A deleted tool keeps a
   0-token row under its source; `Built-in Tools (N)` counts only the tools the
   request declared.
@@ -136,8 +140,8 @@ collapses it by itself. When capture is degraded, wrap the precise reason below
 the header and show a `[Degraded: …]` indicator beside the description, keeping
 the fallback hierarchy usable. Below both come the probe and late-edit bullets,
 when shown, and one [legend bullet](previews.md#marker-legend) per marker the rows
-carry — `Dropped`, `Moved`, `Added`, `Modified`, `Deleted`, or none. All of them
-collapse with the rest of the block.
+carry — `Dropped`, `Moved`, `Forced`, `Added`, `Modified`, `Deleted`, or none.
+All of them collapse with the rest of the block.
 
 ## Injection preview
 

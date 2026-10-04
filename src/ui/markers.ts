@@ -14,7 +14,7 @@ import { BODY_INDENT, fitLine } from "./layout.ts";
 const MARKER_SEPARATOR = " · ";
 
 /** Markers a frame can show, in the fixed order their legend bullets render. */
-const MARKER_ORDER = ["highlighted", "guess", "dropped", "moved", "added", "modified", "deleted"] as const;
+const MARKER_ORDER = ["highlighted", "guess", "dropped", "moved", "forced", "added", "modified", "deleted"] as const;
 
 /** One marked state a description bullet explains. */
 export type ContextMarker = (typeof MARKER_ORDER)[number];
@@ -54,6 +54,11 @@ const MARKER_LEGENDS: Record<ContextMarker, MarkerLegend> = {
 		color: "warning",
 		explanation: " blocks appear in a different position in the system prompt than usual." +
 			" Their token counts are unchanged.",
+	},
+	forced: {
+		keyword: "Forced",
+		color: "warning",
+		explanation: " prompts replace pi’s system prompt for this request.",
 	},
 	added: {
 		keyword: "Added",

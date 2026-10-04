@@ -906,6 +906,27 @@ test("InjectionsView marks request-only changes after the estimate and explains 
 	assert.equal(plain.find((line) => line.trim().startsWith("TOTAL"))?.trim().endsWith("9"), true);
 });
 
+test("InjectionsView marks a forced System Prompt in its row, preview header, and both legends", () => {
+	const theme = createTheme();
+	const prompt = { ...item("base-prompt", "pi", false, 7), label: "System Prompt", text: "forced text", change: "forced" as const };
+	const forced: InitialSnapshot = {
+		origin: "real-turn", capturedAt: new Date("2026-07-10T12:00:00Z"), groups: [group("pi", false, [prompt])], totalTokens: 7,
+	};
+	const view = new InjectionsView(theme, { snapshot: forced }, () => {}, () => 40);
+	const lines = view.render(100);
+	const plain = lines.map(stripSgr);
+	assert.match(plain.find((line) => line.includes("System Prompt")) ?? "", /7 · Forced$/);
+	assert.ok(lines.some((line) => line.includes(theme.fg("warning", "Forced"))));
+	const bullet = "  - Forced prompts replace pi’s system prompt for this request.";
+	assert.ok(plain.includes(bullet), "the list legend explains the marker");
+
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const preview = view.render(100).map(stripSgr);
+	assert.match(preview.find((line) => line.includes("System Prompt")) ?? "", /7 tokens · Forced/);
+	assert.ok(preview.includes(bullet), "the preview legend explains the marker");
+});
+
 test("InjectionsView previews a modification as Request and Session parts", () => {
 	const view = new InjectionsView(createTheme(), { snapshot: changedSnapshot() }, () => {}, () => 40);
 	view.handleInput("\u001b[B");

@@ -8,6 +8,7 @@ import { DEFAULT_CATEGORY_COLORS, DEFAULT_MAP_SIZE, THEME_COLOR_NAMES } from "..
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import { analyzeSystemPrompt } from "../src/measure.ts";
 import { buildSnapshot, type InitialSnapshot } from "../src/model.ts";
+import { markForcedPrompt } from "../src/replay.ts";
 import type { RequestMessage } from "../src/snapshot.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
 import type { ContextMarker } from "../src/ui/markers.ts";
@@ -48,6 +49,11 @@ const LEGEND: Record<ContextMarker, { keyword: string; color: ThemeColor; senten
 		sentence: "blocks appear in a different position in the system prompt than usual." +
 			" Their token counts are unchanged.",
 	},
+	forced: {
+		keyword: "Forced",
+		color: "warning",
+		sentence: "prompts replace pi’s system prompt for this request.",
+	},
 	added: {
 		keyword: "Added",
 		color: "toolDiffAdded",
@@ -68,8 +74,6 @@ const LEGEND: Record<ContextMarker, { keyword: string; color: ThemeColor; senten
 	},
 };
 const DESCRIPTION = `- ${LEGEND.highlighted.keyword} ${LEGEND.highlighted.sentence}`;
-const FORCED_PROMPT_NOTE = "Forced: an extension replaced the system prompt of the latest request. " +
-	"This preview shows and counts that text, assuming the next request uses it too.";
 
 /** Distinct colors make attribution and theme invalidation observable without a terminal. */
 function createTheme(): Theme {
@@ -442,14 +446,14 @@ test("attribution wraps the preceding word and label together unless wider than 
 /** All preview levels that can render attributed System Prompt text. */
 type PreviewTarget = "injections-parent" | "injections-child" | "usage-single" | "usage-stream" | "usage-full";
 
-/** Open a synthetic long preview through the same Enter gates as a user; `forcedPrompt` applies to Usage only. */
+/** Open a synthetic long preview through the same Enter gates as a user, optionally of a forced prompt. */
 function createPreview(
 	target: PreviewTarget,
 	theme: Theme,
 	getRows: () => number,
-	forcedPrompt = false,
+	forced = false,
 ): InjectionsView | UsageView {
-	const snapshot = createSnapshot(80);
+	const snapshot = forced ? forcedSnapshot(createSnapshot(80)) : createSnapshot(80);
 	if (target === "injections-parent" || target === "injections-child") {
 		const view = new InjectionsView(theme, { snapshot }, () => {}, getRows);
 		view.render(120);
@@ -469,7 +473,6 @@ function createPreview(
 		usage: { ...usage, categories, estimatedTokens: usage.estimatedTokens + (target === "usage-single" ? 0 : 1) },
 		categoryColors: new Map(DEFAULT_CATEGORY_COLORS).set("system-prompt", "error"),
 		mapSize: DEFAULT_MAP_SIZE,
-		forcedPrompt,
 	}, () => {}, getRows);
 	view.render(120);
 	view.handleInput("\r");
@@ -744,44 +747,46 @@ test("Usage explains markers in categories beyond the System Prompt, at both pre
 	assertLegend(stream, theme, ["dropped"]);
 });
 
-for (const target of ["usage-single", "usage-stream", "usage-full"] as const) {
-	test(`${target} System Prompt preview opens its legend with the dim forced-prompt note`, () => {
+/** The snapshot with its System Prompt marked as a forced prompt. */
+function forcedSnapshot(snapshot: InitialSnapshot): InitialSnapshot {
+	return {
+		...snapshot,
+		groups: snapshot.groups.map((group) => ({ ...group, items: markForcedPrompt([...group.items], "forced") })),
+	};
+}
+
+for (const target of ["injections-parent", "usage-single", "usage-stream", "usage-full"] as const) {
+	test(`${target} marks a forced System Prompt in its header and explains it in the legend`, () => {
 		let height = 40;
 		const theme = createTheme();
 		const lines = createPreview(target, theme, () => height, true).render(120);
-		const rendered = plain(lines).split("\n");
-		const start = rendered.findIndex((line) => line.trim().startsWith("- Forced:"));
-		const legend = rendered.findIndex((line) => line.trim().startsWith("- Highlighted"));
-		assert.ok(start > 0 && legend > start);
-		assert.equal(rendered[start - 1], "");
-		assert.equal(
-			rendered.slice(start, legend).map((line) => line.trim()).join(" "),
-			`- ${FORCED_PROMPT_NOTE}`,
-		);
-		assert.ok(lines[start]?.includes(`${theme.getFgAnsi("dim")}Forced: an extension`));
-		assertLegendBullets(lines, theme, ["highlighted"]);
+		const header = lines.find((line) => plain([line]).startsWith("System Prompt")) ?? "";
+		assert.match(plain([header]), /· Forced $/);
+		assert.ok(header.includes(styledMarker(theme, "forced")));
+		assertLegend(lines, theme, ["highlighted", "forced"]);
 
-		// The note collapses with the legend instead of claiming rows on its own
+		// The bullet collapses with the legend; the header keeps its marker
 		height = 12;
-		assert.doesNotMatch(plain(createPreview(target, theme, () => height, true).render(120)), /Forced:|Highlighted/);
+		const short = plain(createPreview(target, theme, () => height, true).render(120));
+		assert.doesNotMatch(short, /Forced prompts|Highlighted/);
+		assert.match(short, /· Forced/);
 		height = 40;
-		assert.doesNotMatch(plain(createPreview(target, theme, () => height).render(120)), /Forced:/);
+		assert.doesNotMatch(plain(createPreview(target, theme, () => height).render(120)), /Forced/);
 	});
 }
 
-test("the forced-prompt note stays out of previews other than System Prompt", () => {
-	const theme = createTheme();
-	const view = new UsageView(theme, {
-		usage: computeUsage({ snapshot: createSnapshot(), messages: [] }),
+test("Usage keeps the Forced marker out of previews other than System Prompt", () => {
+	const view = new UsageView(createTheme(), {
+		usage: computeUsage({ snapshot: forcedSnapshot(createSnapshot()), messages: [] }),
 		categoryColors: DEFAULT_CATEGORY_COLORS,
 		mapSize: DEFAULT_MAP_SIZE,
-		forcedPrompt: true,
 	}, () => {}, () => 40);
+	assert.doesNotMatch(plain(view.render(120)), /Forced/);
 	view.handleInput("j"); // Custom Tools
 	view.handleInput("\r");
 	const preview = plain(view.render(120));
 	assert.match(preview, /Custom Tools/);
-	assert.doesNotMatch(preview, /Forced:/);
+	assert.doesNotMatch(preview, /Forced/);
 });
 
 test("native-only System Prompt and sibling previews do not claim extension injection", () => {

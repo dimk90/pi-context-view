@@ -10,9 +10,10 @@ import {
 	type DeletedSection,
 	type PromptChanges,
 	type PromptOptionsSlice,
+	SYSTEM_PROMPT_ITEM_ID,
 	type ToolSlice,
 } from "./measure.ts";
-import { buildSnapshot, type InitialSnapshot, type RequestChange } from "./model.ts";
+import { buildSnapshot, type InitialSnapshot, type InjectionItem, type RequestChange } from "./model.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
 import type { RequestMessage, SystemChange } from "./snapshot.ts";
 import { type SystemMessage, systemMessageText } from "./transcript.ts";
@@ -25,6 +26,8 @@ export interface NativeSnapshotInput {
 	activeToolNames: readonly string[];
 	/** Loaded extension provenance, used only to guess who appended prompt text. */
 	promptSources?: readonly PromptSourceSlice[];
+	/** Forced prompt of the request, measured instead of the prompt; tool changes still apply. */
+	forcedPrompt?: string;
 	capturedAt?: Date;
 }
 
@@ -34,8 +37,6 @@ export interface UsageSnapshotInput extends NativeSnapshotInput {
 	messages: readonly RequestMessage[];
 	/** Request-only system changes of the latest request, applied after the replayed state. */
 	systemChanges?: readonly SystemChange[];
-	/** Forced prompt of the latest request, measured instead of the prompt; tool changes still apply. */
-	forcedPrompt?: string;
 }
 
 /** System state a request carried, with what its changes touched. */
@@ -43,7 +44,7 @@ export interface RequestSystemState {
 	readonly state: Pick<SystemMessage, "content" | "sections">;
 	readonly declarations: readonly Tool[];
 	readonly prompt: PromptChanges;
-	readonly tools: ReadonlyMap<string, Exclude<RequestChange, "deleted">>;
+	readonly tools: ReadonlyMap<string, Exclude<RequestChange, "deleted" | "forced">>;
 	readonly deletedTools: readonly Tool[];
 }
 
@@ -51,8 +52,9 @@ export interface RequestSystemState {
 export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot {
 	const options = copyPromptOptions(input.options);
 	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options);
-	const items = analyzeSystemPrompt(input.systemPrompt, options, tools, { sources: input.promptSources });
-	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
+	const prompt = input.forcedPrompt ?? input.systemPrompt;
+	const items = analyzeSystemPrompt(prompt, options, tools, { sources: input.promptSources });
+	return buildSnapshot(markForcedPrompt(items, input.forcedPrompt), "synthetic-probe", input.capturedAt ?? new Date());
 }
 
 /**
@@ -65,7 +67,7 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 	const forced = input.forcedPrompt;
 	const base = getCurrentSystemMessage(input.messages);
 	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
-	if (base === undefined) return buildNativeSnapshot({ ...input, systemPrompt: forced ?? input.systemPrompt });
+	if (base === undefined) return buildNativeSnapshot(input);
 	const request = applySystemChanges(base, input.systemChanges ?? []);
 	const tools = replayedToolSlices(request.state, request.declarations, input.allTools);
 	const options = copyPromptOptions(input.options);
@@ -73,19 +75,25 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 		...options,
 		// Current loader overrides are not evidence of what this branch recorded.
 		customPrompt: undefined, sections: undefined,
-		// The replayed layout locates inline or unwrapped request sections; Usage marks no changes
+		// The replayed layout locates inline or unwrapped request sections; Usage marks no section changes
 	}, tools, { sources: input.promptSources }, forced === undefined ? { replayed: request.prompt.replayed } : {});
-	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
+	return buildSnapshot(markForcedPrompt(items, forced), "synthetic-probe", input.capturedAt ?? new Date());
+}
+
+/** Items with the System Prompt marked `forced` when the request carried a forced prompt. */
+export function markForcedPrompt(items: InjectionItem[], forced: string | undefined): InjectionItem[] {
+	if (forced === undefined) return items;
+	return items.map((item) => item.id === SYSTEM_PROMPT_ITEM_ID ? { ...item, change: "forced" } : item);
 }
 
 /** Apply content, section, and tool changes in capture order to a replayed system state. */
 export function applySystemChanges(base: SystemMessage, changes: readonly SystemChange[]): RequestSystemState {
 	let content = contentText(base.content);
 	const sections: Record<string, string | null> = { ...base.sections };
-	const sectionChanges = new Map<string, Exclude<RequestChange, "deleted">>();
+	const sectionChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced">>();
 	const deletedSections: DeletedSection[] = [];
 	const declarations = [...(base.toolsAdded ?? [])];
-	const toolChanges = new Map<string, Exclude<RequestChange, "deleted">>();
+	const toolChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced">>();
 	const deletedTools: Tool[] = [];
 	for (const change of changes) {
 		switch (change.type) {

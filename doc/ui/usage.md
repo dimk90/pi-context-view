@@ -231,15 +231,11 @@ the estimate.
 
 When System Prompt measures the latest request's
 [forced prompt](../ARCHITECTURE.md#usage-and-attribution), every System Prompt
-preview level opens its [marker legend](previews.md#marker-legend) with one dim
-note bullet, before any marker bullets:
-
-> - Forced: an extension replaced the system prompt of the latest request. This
->   preview shows and counts that text, assuming the next request uses it too.
-
-The note is not a marker: no row or subheader carries `Forced`, and other
-categories never show it. It belongs to the legend block, so it collapses and
-returns with it.
+preview level shows it as the Injections System Prompt preview does: the
+[`Forced` marker](../UI.md#color-and-casing) after the category metadata in
+its header, and the `Forced` bullet in its
+[marker legend](previews.md#marker-legend). The header drops the whole marker
+when it does not fit. The dashboard rows and other categories never show it.
 
 ### Single-entry categories
 

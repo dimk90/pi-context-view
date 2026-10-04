@@ -8,7 +8,7 @@
 
 ### Changed
 * `[usage]` Apply the latest request's added/modified/deleted messages instead of first-turn copies.
-* `[usage]` Count the latest request's forced system prompt and note it in the System Prompt preview.
+* `[usage]` Count the latest request's forced system prompt and mark it as Forced in the System Prompt preview.
 * `[probe]` Skip probing for queued input, virtual models, and idle warming.
 * `[probe]` Skip probing above the auto-compaction threshold or when settings cannot be checked.
 * `[context]` Refuse both views with a warning while compaction is in progress.
