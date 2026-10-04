@@ -9,8 +9,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 
-import { buildUsageSnapshot, InitialCaptureState, measureInjectedMessages } from "../src/capture.ts";
-import { buildSnapshot } from "../src/model.ts";
+import { buildUsageSnapshot } from "../src/replay.ts";
+import type { SystemChange } from "../src/snapshot.ts";
 import { type SystemMessage, systemMessageText } from "../src/transcript.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
 
@@ -34,11 +34,10 @@ const CURRENT_TOOL: ToolInfo = {
 };
 
 /** Build Usage through the same prompt/tool replay path the command uses. */
-function usageFor(messages: Parameters<typeof buildUsageSnapshot>[0]["messages"], patches: SystemMessage[] = []) {
+function usageFor(messages: ContextEvent["messages"], systemChanges: SystemChange[] = []) {
 	const snapshot = buildUsageSnapshot({
 		systemPrompt: "LIVE PROMPT MUST NOT REPLACE TRANSCRIPT", options: { cwd: "/current" },
-		allTools: [CURRENT_TOOL], activeToolNames: ["search"], messages,
-		initial: buildSnapshot(measureInjectedMessages(patches, []), "real-turn", new Date(0)),
+		allTools: [CURRENT_TOOL], activeToolNames: ["search"], messages, systemChanges,
 	});
 	return computeUsage({ snapshot, messages });
 }
@@ -207,48 +206,26 @@ test("warming-only sessions add no message categories or previews to Usage", () 
 	assert.doesNotMatch(previewText(usage), /cache_warm|warming-model|CACHE_WARM_NOTE/);
 });
 
-test("captured system previews include section content and omit opaque text signatures", () => {
-	const message: SystemMessage = {
-		role: "system", content: [{ type: "text", text: "", textSignature: "OPAQUE_SYSTEM_SIGNATURE" }],
-		sections: { review: "<review>\nSection-only instructions\n</review>", rules: null }, timestamp: 1,
-	};
-	const original = structuredClone(message);
-	const items = measureInjectedMessages([message], []);
-	assert.equal(items[0].text, "<review>\nSection-only instructions\n</review>");
-	assert.ok(items[0].tokens > 0);
-	assert.equal(items[0].jsonSpan, undefined);
-	assert.doesNotMatch(JSON.stringify(items), /OPAQUE_SYSTEM_SIGNATURE/);
-	assert.deepEqual(message, original);
-	assert.deepEqual(measureInjectedMessages([message], [original]), []);
-});
-
-test("frozen request-only system patches replay in request order and do not count as Extensions", () => {
-	const first: SystemMessage = { role: "system", content: "", timestamp: 1,
-		sections: { rules: "<rules>\n" + "Long earlier rule ".repeat(50) + "\n</rules>" } };
-	const last: SystemMessage = { role: "system", content: "", timestamp: 1,
-		sections: { rules: "<rules>\nFinal short rule\n</rules>" },
-		toolsAdded: [SECOND_TOOL], toolsRemoved: [{ name: "read" }] };
-	const usage = usageFor([INITIAL], [first, last]);
-	assert.match(previewText(usage), /Final short rule/);
-	assert.doesNotMatch(previewText(usage), /Long earlier rule|Old rules/);
+test("request-only system changes apply once after the replayed state and do not count as Extensions", () => {
+	const changes: SystemChange[] = [
+		{ type: "section", name: "rules", text: "<rules>\nRequest rule\n</rules>" },
+		// Inline XML has no line breaks for a text search; the replayed layout still locates it
+		{ type: "section", name: "inline", text: "<inline>Inline request section</inline>" },
+		{ type: "tool", name: "search", declaration: SECOND_TOOL },
+		{ type: "tool", name: "read", declaration: null },
+	];
+	const usage = usageFor([INITIAL], changes);
+	assert.match(previewText(usage), /Request rule/);
+	assert.match(previewText(usage), /Inline request section/);
+	assert.match(previewText(usage), /Recorded search definition/);
+	assert.doesNotMatch(previewText(usage), /Old rules|Old read definition/);
 	assert.equal(usage.categories.some((category) => category.id === "extensions"), false);
-	assert.equal(usage.estimatedTokens, usageFor([INITIAL, last]).estimatedTokens);
-});
-
-test("Initial keeps the effective prompt while owning request-only system patch replay inputs", () => {
-	const state = new InitialCaptureState();
-	state.prepare({ cwd: "/fixture" });
-	const patch = structuredClone(PATCH);
-	const snapshot = state.finalize(() => ({
-		systemPrompt: "EFFECTIVE PROMPT", messages: [INITIAL, patch], baselineMessages: [INITIAL],
-		allTools: [], activeToolNames: [], origin: "real-turn",
-	}));
-	assert.ok(snapshot);
-	assert.equal(snapshot.groups[0]?.items[0]?.text, "EFFECTIVE PROMPT");
-	const item = snapshot.groups.flatMap((group) => group.items).find((item) => item.systemMessage !== undefined);
-	assert.ok(item);
-	patch.sections = {};
-	patch.toolsAdded = [];
-	assert.deepEqual(item.systemMessage?.message.sections, PATCH.sections);
-	assert.deepEqual(item.systemMessage?.message.toolsAdded, PATCH.toolsAdded);
+	const recorded: SystemMessage = {
+		role: "system", content: "", timestamp: 2,
+		sections: { rules: "<rules>\nRequest rule\n</rules>", inline: "<inline>Inline request section</inline>" },
+		toolsAdded: [SECOND_TOOL], toolsRemoved: [{ name: "read" }],
+	};
+	assert.equal(usage.estimatedTokens, usageFor([INITIAL, recorded]).estimatedTokens);
+	assert.equal(usageFor([], changes).estimatedTokens, usageFor([]).estimatedTokens,
+		"the live fallback has no recorded state to patch");
 });

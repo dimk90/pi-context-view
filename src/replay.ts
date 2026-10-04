@@ -3,12 +3,19 @@
  * fallback when no state was recorded. Usage and Injections share these helpers.
  */
 import type { BuildSystemPromptOptions, ToolInfo } from "@earendil-works/pi-coding-agent";
-import type { Tool } from "@earendil-works/pi-ai";
+import { getCurrentSystemMessage, type Tool } from "@earendil-works/pi-ai";
 
-import { analyzeSystemPrompt, type PromptOptionsSlice, type ToolSlice } from "./measure.ts";
-import { buildSnapshot, type InitialSnapshot } from "./model.ts";
+import {
+	analyzeSystemPrompt,
+	type DeletedSection,
+	type PromptChanges,
+	type PromptOptionsSlice,
+	type ToolSlice,
+} from "./measure.ts";
+import { buildSnapshot, type InitialSnapshot, type RequestChange } from "./model.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
-import type { SystemMessage } from "./transcript.ts";
+import type { RequestMessage, SystemChange } from "./snapshot.ts";
+import { type SystemMessage, systemMessageText } from "./transcript.ts";
 
 /** Inputs for an on-demand pi-native prompt/tool fallback without recorded system state. */
 export interface NativeSnapshotInput {
@@ -21,12 +28,101 @@ export interface NativeSnapshotInput {
 	capturedAt?: Date;
 }
 
+/** Inputs for Usage's branch-local prompt/tool estimate. */
+export interface UsageSnapshotInput extends NativeSnapshotInput {
+	/** Current branch messages; their system messages supply the recorded state. */
+	messages: readonly RequestMessage[];
+	/** Request-only system changes of the latest request, applied after the replayed state. */
+	systemChanges?: readonly SystemChange[];
+}
+
+/** System state a request carried, with what its changes touched. */
+export interface RequestSystemState {
+	readonly state: Pick<SystemMessage, "content" | "sections">;
+	readonly declarations: readonly Tool[];
+	readonly prompt: PromptChanges;
+	readonly tools: ReadonlyMap<string, Exclude<RequestChange, "deleted">>;
+	readonly deletedTools: readonly Tool[];
+}
+
 /** Build a view-local pi-native fallback without starting a capture. */
 export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot {
 	const options = copyPromptOptions(input.options);
 	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options);
 	const items = analyzeSystemPrompt(input.systemPrompt, options, tools, { sources: input.promptSources });
 	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
+}
+
+/**
+ * Measure the branch's replayed prompt and tools instead of today's loader
+ * prompt/tools, with the latest request's system changes applied once. Only a
+ * branch with no recorded system message yet uses the live fallback.
+ */
+export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
+	const base = getCurrentSystemMessage(input.messages);
+	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
+	if (base === undefined) return buildNativeSnapshot(input);
+	const request = applySystemChanges(base, input.systemChanges ?? []);
+	const tools = replayedToolSlices(request.state, request.declarations, input.allTools);
+	const options = copyPromptOptions(input.options);
+	const items = analyzeSystemPrompt(systemMessageText(request.state), {
+		...options,
+		// Current loader overrides are not evidence of what this branch recorded.
+		customPrompt: undefined, sections: undefined,
+		// The replayed layout locates inline or unwrapped request sections; Usage marks no changes
+	}, tools, { sources: input.promptSources }, { replayed: request.prompt.replayed });
+	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
+}
+
+/** Apply content, section, and tool changes in capture order to a replayed system state. */
+export function applySystemChanges(base: SystemMessage, changes: readonly SystemChange[]): RequestSystemState {
+	let content = contentText(base.content);
+	const sections: Record<string, string | null> = { ...base.sections };
+	const sectionChanges = new Map<string, Exclude<RequestChange, "deleted">>();
+	const deletedSections: DeletedSection[] = [];
+	const declarations = [...(base.toolsAdded ?? [])];
+	const toolChanges = new Map<string, Exclude<RequestChange, "deleted">>();
+	const deletedTools: Tool[] = [];
+	for (const change of changes) {
+		switch (change.type) {
+			case "content":
+				content = change.text;
+				// Pi renders plain content before the first section, inside the measured Preamble
+				sectionChanges.set("preamble", "modified");
+				break;
+			case "section": {
+				const previous = sections[change.name];
+				if (change.text === null) {
+					if (typeof previous === "string") deletedSections.push({ name: change.name, text: previous });
+					delete sections[change.name];
+					break;
+				}
+				sectionChanges.set(change.name, typeof previous === "string" ? "modified" : "added");
+				sections[change.name] = change.text;
+				break;
+			}
+			case "tool": {
+				const index = declarations.findIndex((tool) => tool.name === change.name);
+				if (change.declaration === null) {
+					if (index !== -1) deletedTools.push(...declarations.splice(index, 1));
+				} else if (index === -1) {
+					declarations.push(change.declaration);
+					toolChanges.set(change.name, "added");
+				} else {
+					declarations[index] = change.declaration;
+					toolChanges.set(change.name, "modified");
+				}
+				break;
+			}
+		}
+	}
+	return {
+		state: { content, sections },
+		declarations,
+		prompt: { sections: sectionChanges, deleted: deletedSections, replayed: { content, sections } },
+		tools: toolChanges,
+		deletedTools,
+	};
 }
 
 /** Copy the prompt-options slice used by measurement, without shared nested references. */
@@ -87,6 +183,11 @@ export function replayedToolSlices(
 			source: metadata?.sourceInfo.source ?? "unattributed",
 		};
 	});
+}
+
+/** Plain text of system content; text blocks join with a newline, as Pi renders them. */
+function contentText(content: SystemMessage["content"]): string {
+	return typeof content === "string" ? content : content.map((block) => block.text).join("\n");
 }
 
 /** Normalize the string-or-array promptGuidelines field to an owned array. */

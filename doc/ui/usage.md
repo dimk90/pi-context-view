@@ -174,6 +174,11 @@ one child per injected `customType`, plus one per source whose system-prompt
 additions were attributed, named by that source. Those additions stay out of the
 System Prompt total, which counts pi's own prompt alone.
 
+Messages the latest request added or modified count in the category of their
+role or `customType`, like session messages; deleted ones count nowhere. Usage
+marks none of these [request-only changes](../ARCHITECTURE.md#usage-and-attribution):
+Injections shows them for the first request.
+
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
 the smaller middle dot `·`. Keep aggregate breakdowns collapsed except Tool
 Output, whose per-tool results and bash executions appear directly and scroll

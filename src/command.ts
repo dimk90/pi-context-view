@@ -1,16 +1,13 @@
 /**
- * `/context` command grammar, argument completions, and Initial resolution:
- * the old Initial capture for Usage, the first request snapshot for Injections.
+ * `/context` command grammar, argument completions, and request snapshot
+ * resolution: the first snapshot for Injections, the latest one for Usage.
  */
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
-import type { InitialCaptureState } from "./capture.ts";
 import type { ConfigCreationResult } from "./config.ts";
-import type { InitialSnapshot } from "./model.ts";
 import { MIN_PI_VERSION } from "./pi-version.ts";
 import type { ProbeTrigger } from "./probe/trigger.ts";
-import { buildNativeSnapshot } from "./replay.ts";
 import type { RequestSnapshot, SnapshotReader } from "./snapshot.ts";
 import { normalizePreviewText } from "./text.ts";
 
@@ -39,16 +36,13 @@ export type ContextCommand =
 	| { readonly type: "config" }
 	| { readonly type: "invalid"; readonly message: string };
 
-/** Resolved Initial capture, possibly degraded to the pi-native fallback. */
-export interface InitialCaptureResult {
-	readonly snapshot: InitialSnapshot;
-	readonly degradedReason?: string;
-}
+/** Which retained request snapshot a view reads: Initial for Injections, the latest for Usage. */
+export type SnapshotSelection = "first" | "latest";
 
-/** Initial request for Injections: the first request snapshot, or the degraded pi-native fallback. */
-export type InitialRequestResult =
+/** The selected request snapshot, or why the view must degrade without one. */
+export type RequestSnapshotResult =
 	| { readonly type: "snapshot"; readonly snapshot: RequestSnapshot }
-	| { readonly type: "fallback"; readonly fallback: InitialCaptureResult };
+	| { readonly type: "missing"; readonly degradedReason: string };
 
 /** Parse the complete, intentionally small `/context` argument grammar. */
 export function parseContextCommand(argumentsText: string): ContextCommand {
@@ -76,46 +70,28 @@ export function getContextArgumentCompletions(argumentPrefix: string): Autocompl
 }
 
 /**
- * Obtain Initial through passive capture, the automatic probe, or a pi-native
- * fallback. ProbeTrigger waits for idle, so a real turn that ends meanwhile
- * still supplies Initial.
+ * Obtain the selected request snapshot of this runtime, asking ProbeTrigger
+ * only when the store has none after the agent is idle: a real turn that was
+ * running publishes one without a probe.
  */
-export async function resolveInitialCapture(
-	pi: ExtensionAPI,
-	capture: InitialCaptureState,
-	trigger: ProbeTrigger,
-	context: ExtensionCommandContext,
-): Promise<InitialCaptureResult> {
-	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
-
-	const result = await trigger.request(context);
-	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
-	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture Initial.";
-	return createFallback(pi, context, reason);
-}
-
-/**
- * Obtain the first request snapshot of this runtime, asking ProbeTrigger only
- * when the store has none after the agent is idle: a real turn that was running
- * publishes one without a probe.
- */
-export async function resolveInitialRequest(
-	pi: ExtensionAPI,
+export async function resolveRequestSnapshot(
 	snapshots: SnapshotReader,
 	trigger: ProbeTrigger,
 	context: ExtensionCommandContext,
-): Promise<InitialRequestResult> {
-	const existing = snapshots.first();
+	selection: SnapshotSelection,
+): Promise<RequestSnapshotResult> {
+	const select = (): RequestSnapshot | undefined => selection === "first" ? snapshots.first() : snapshots.latest();
+	const existing = select();
 	if (existing !== undefined) return { type: "snapshot", snapshot: existing };
 	await context.waitForIdle();
-	const afterIdle = snapshots.first();
+	const afterIdle = select();
 	if (afterIdle !== undefined) return { type: "snapshot", snapshot: afterIdle };
 
 	const result = await trigger.request(context);
-	const probed = snapshots.first();
+	const probed = select();
 	if (probed !== undefined) return { type: "snapshot", snapshot: probed };
 	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture a request.";
-	return { type: "fallback", fallback: createFallback(pi, context, reason) };
+	return { type: "missing", degradedReason: `${reason} Extension additions were not observed.` };
 }
 
 /**
@@ -180,21 +156,4 @@ export function reportConfigCreation(context: ExtensionCommandContext, result: C
 /** Shorten over-long text with an ellipsis marker. */
 function truncate(text: string, maxLength: number): string {
 	return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
-}
-
-/** Build a degraded pi-native snapshot when passive capture and probing both failed. */
-function createFallback(
-	pi: ExtensionAPI,
-	context: ExtensionCommandContext,
-	reason: string,
-): InitialCaptureResult {
-	return {
-		snapshot: buildNativeSnapshot({
-			systemPrompt: context.getSystemPrompt(),
-			options: context.getSystemPromptOptions(),
-			allTools: pi.getAllTools(),
-			activeToolNames: pi.getActiveTools(),
-		}),
-		degradedReason: `${reason} Extension additions were not observed.`,
-	};
 }

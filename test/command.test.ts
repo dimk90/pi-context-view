@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import { type ExtensionAPI, type ExtensionCommandContext, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-import { InitialCaptureState } from "../src/capture.ts";
 import {
 	CONTEXT_COMMAND_DESCRIPTION,
 	getContextArgumentCompletions,
@@ -13,8 +12,7 @@ import {
 	reportConfigCreation,
 	reportTuiOnly,
 	reportUnsupportedPi,
-	resolveInitialCapture,
-	resolveInitialRequest,
+	resolveRequestSnapshot,
 } from "../src/command.ts";
 import { CompactionState } from "../src/compaction.ts";
 import { ProbeFilter } from "../src/probe/filter.ts";
@@ -134,16 +132,13 @@ test("reportConfigCreation reports every create outcome with its own severity", 
 	]);
 });
 
-test("resolveInitialCapture sends the synthetic prompt inside the probe token scope", async (t) => {
+test("resolveRequestSnapshot sends the synthetic prompt inside the probe token scope", async (t) => {
 	t.mock.method(SettingsManager, "create", () => SettingsManager.inMemory());
-	const capture = new InitialCaptureState();
 	const probe = new SilentProbe(new ProbeFilter());
 	const compaction = new CompactionState();
 	let sentContent: string | undefined;
 	let tokenDuringSend: string | undefined;
 	const pi = {
-		getActiveTools: () => [],
-		getAllTools: () => [],
 		getSettings: () => ({}),
 		sendUserMessage: (content: string) => {
 			sentContent = content;
@@ -158,53 +153,51 @@ test("resolveInitialCapture sends the synthetic prompt inside the probe token sc
 		getContextUsage: () => undefined,
 		modelRegistry: { hasConfiguredAuth: () => true },
 		ui: { setWorkingVisible: () => undefined },
-		getSystemPrompt: () => "base prompt",
-		getSystemPromptOptions: () => ({ cwd: "/tmp" }),
 		waitForIdle: async () => undefined,
 	} as unknown as ExtensionCommandContext;
 
-	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction });
-	const result = await resolveInitialCapture(pi, capture, trigger, context);
+	const store = new SnapshotStore();
+	const trigger = new ProbeTrigger({ pi, probe, snapshots: store, compaction });
+	const result = await resolveRequestSnapshot(store, trigger, context, "latest");
 
 	assert.equal(sentContent, "", "the probe prompt carries no instructions of its own");
 	assert.equal(probe.isProbeInput("extension", tokenDuringSend), true, "the send must carry this attempt's token");
 	assert.equal(readProbeToken(), undefined, "the token must not outlive the send");
-	assert.equal(result.degradedReason, "No agent run in this harness. Extension additions were not observed.");
+	assert.deepEqual(result, {
+		type: "missing",
+		degradedReason: "No agent run in this harness. Extension additions were not observed.",
+	});
 });
 
-test("resolveInitialCapture skips the probe when compaction starts while waiting for idle", async () => {
-	const capture = new InitialCaptureState();
+test("resolveRequestSnapshot skips the probe when compaction starts while waiting for idle", async () => {
 	const probe = new SilentProbe(new ProbeFilter());
 	const compaction = new CompactionState();
 	const controller = new AbortController();
 	let sentUserMessages = 0;
 	let waitedForIdle = false;
 	const pi = {
-		getActiveTools: () => [],
-		getAllTools: () => [],
 		sendUserMessage: () => {
 			sentUserMessages++;
 		},
 	} as unknown as ExtensionAPI;
 	const context = {
-		getSystemPrompt: () => "base prompt",
-		getSystemPromptOptions: () => ({ cwd: "/tmp" }),
 		waitForIdle: async () => {
 			waitedForIdle = true;
 			compaction.begin(controller.signal);
 		},
 	} as unknown as ExtensionCommandContext;
 
-	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction });
-	const result = await resolveInitialCapture(pi, capture, trigger, context);
+	const store = new SnapshotStore();
+	const trigger = new ProbeTrigger({ pi, probe, snapshots: store, compaction });
+	const result = await resolveRequestSnapshot(store, trigger, context, "first");
 
 	assert.equal(waitedForIdle, true);
 	assert.equal(sentUserMessages, 0);
-	assert.equal(
-		result.degradedReason,
-		"Silent probe unavailable: context compaction is in progress. Extension additions were not observed.",
-	);
-	assert.equal(result.snapshot.origin, "synthetic-probe");
+	assert.deepEqual(result, {
+		type: "missing",
+		degradedReason:
+			"Silent probe unavailable: context compaction is in progress. Extension additions were not observed.",
+	});
 
 	const unusedAttempt = probe.start(1_000);
 	assert.equal(unusedAttempt.started, true, "skipping compaction must not consume the runtime's probe attempt");
@@ -221,32 +214,34 @@ function requestSnapshot(id: number, origin: RequestSnapshot["origin"]): Request
 	};
 }
 
-test("resolveInitialRequest returns the first snapshot without probing", async () => {
+test("resolveRequestSnapshot returns the selected snapshot without probing", async () => {
 	const store = new SnapshotStore();
 	store.publish(requestSnapshot(1, "real-turn"));
-	store.publish(requestSnapshot(2, "real-turn"));
+	store.publish(requestSnapshot(2, "synthetic-probe"));
 	const trigger = { request: async () => assert.fail("no probe while a snapshot exists") } as unknown as ProbeTrigger;
 	const context = { waitForIdle: async () => assert.fail("no wait while a snapshot exists") } as unknown as
 		ExtensionCommandContext;
 
-	const result = await resolveInitialRequest({} as ExtensionAPI, store, trigger, context);
+	const first = await resolveRequestSnapshot(store, trigger, context, "first");
+	const latest = await resolveRequestSnapshot(store, trigger, context, "latest");
 
-	assert.equal(result.type === "snapshot" ? result.snapshot.id : undefined, 1);
+	assert.equal(first.type === "snapshot" ? first.snapshot.id : undefined, 1);
+	assert.equal(latest.type === "snapshot" ? latest.snapshot.id : undefined, 2, "the latest of either origin");
 });
 
-test("resolveInitialRequest takes a snapshot a running turn published before idle, without probing", async () => {
+test("resolveRequestSnapshot takes a snapshot a running turn published before idle, without probing", async () => {
 	const store = new SnapshotStore();
 	const trigger = { request: async () => assert.fail("the running turn supplies Initial") } as unknown as ProbeTrigger;
 	const context = {
 		waitForIdle: async () => store.publish(requestSnapshot(1, "real-turn")),
 	} as unknown as ExtensionCommandContext;
 
-	const result = await resolveInitialRequest({} as ExtensionAPI, store, trigger, context);
+	const result = await resolveRequestSnapshot(store, trigger, context, "first");
 
 	assert.equal(result.type === "snapshot" ? result.snapshot.origin : undefined, "real-turn");
 });
 
-test("resolveInitialRequest asks ProbeTrigger once the store is empty and falls back on failure", async () => {
+test("resolveRequestSnapshot asks ProbeTrigger once the store is empty and reports a failure", async () => {
 	const store = new SnapshotStore();
 	let probed = 0;
 	const failing = {
@@ -255,18 +250,14 @@ test("resolveInitialRequest asks ProbeTrigger once the store is empty and falls 
 			return { status: "failed", reason: "Silent probe unavailable: a virtual model is selected." };
 		},
 	} as unknown as ProbeTrigger;
-	const pi = { getActiveTools: () => [], getAllTools: () => [] } as unknown as ExtensionAPI;
-	const context = {
-		waitForIdle: async () => undefined,
-		getSystemPrompt: () => "base prompt",
-		getSystemPromptOptions: () => ({ cwd: "/tmp" }),
-	} as unknown as ExtensionCommandContext;
+	const context = { waitForIdle: async () => undefined } as unknown as ExtensionCommandContext;
 
-	const fallback = await resolveInitialRequest(pi, store, failing, context);
+	const missing = await resolveRequestSnapshot(store, failing, context, "first");
 	assert.equal(probed, 1);
-	assert.equal(fallback.type, "fallback");
-	assert.equal(fallback.type === "fallback" ? fallback.fallback.degradedReason : undefined,
-		"Silent probe unavailable: a virtual model is selected. Extension additions were not observed.");
+	assert.deepEqual(missing, {
+		type: "missing",
+		degradedReason: "Silent probe unavailable: a virtual model is selected. Extension additions were not observed.",
+	});
 
 	const capturing = {
 		request: async () => {
@@ -275,6 +266,6 @@ test("resolveInitialRequest asks ProbeTrigger once the store is empty and falls 
 			return { status: "captured", snapshot };
 		},
 	} as unknown as ProbeTrigger;
-	const probe = await resolveInitialRequest(pi, store, capturing, context);
+	const probe = await resolveRequestSnapshot(store, capturing, context, "latest");
 	assert.equal(probe.type === "snapshot" ? probe.snapshot.origin : undefined, "synthetic-probe");
 });

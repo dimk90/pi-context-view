@@ -213,35 +213,6 @@ test("computeUsage produces exactly the top-level categories that carry a config
 	assert.deepEqual(usage.categories.map((entry) => entry.id).sort(), configuredIds);
 });
 
-test("computeUsage includes frozen request-only messages without recounting session-backed injections", () => {
-	const initial = snapshot();
-	const requestOnly = {
-		...item("request-user", "message", 8, false),
-		source: { id: "aggregate:extensions", label: "unattributed", native: false },
-		label: "user message",
-		text: "request-only content",
-		requestOnly: true,
-	} satisfies InjectionItem;
-	const requestGroup = {
-		source: requestOnly.source,
-		items: [requestOnly],
-		totalTokens: requestOnly.tokens,
-	};
-	const usage = computeUsage({
-		snapshot: {
-			...initial,
-			groups: [...initial.groups, requestGroup],
-			totalTokens: initial.totalTokens + requestOnly.tokens,
-		},
-		messages: [],
-	});
-
-	const extensions = category(usage.categories, "extensions");
-	assert.equal(extensions.tokens, 17);
-	assert.deepEqual(extensions.children?.map((entry) => entry.label), ["npm:test", "unattributed"]);
-	assert.ok(collectPreviewEntries(extensions).some((entry) => entry.text === "request-only content"));
-});
-
 test("computeUsage carries measured tool parts into tool preview entries", () => {
 	const snippet = "\n- web_search: Search the web";
 	const definition = "web_search: Search\n{}";

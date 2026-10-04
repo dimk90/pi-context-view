@@ -4,10 +4,11 @@ import { test } from "node:test";
 import { type ContextEvent, Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { measureInjectedMessages, mergeRequestOnlyMessages } from "../src/capture.ts";
 import { DEFAULT_CATEGORY_COLORS, DEFAULT_MAP_SIZE, THEME_COLOR_NAMES } from "../src/config.ts";
+import { buildInjectionsSnapshot } from "../src/injections.ts";
 import { analyzeSystemPrompt } from "../src/measure.ts";
 import { buildSnapshot, type InitialSnapshot } from "../src/model.ts";
+import type { RequestMessage } from "../src/snapshot.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
 import type { ContextMarker } from "../src/ui/markers.ts";
 import { previewBodyLines, previewLegendLines } from "../src/ui/section-preview.ts";
@@ -160,7 +161,26 @@ function assertFrame(lines: readonly string[], width: number, height: number): v
 	assert.ok(lines.every((line) => visibleWidth(line) <= width));
 }
 
-test("captured summaries and bash text reach both previews without envelope metadata", () => {
+/** Injections items of a request that added `message`, without the prompt items. */
+function addedMessageSnapshot(message: RequestMessage): InitialSnapshot {
+	const full = buildInjectionsSnapshot({
+		snapshot: {
+			id: 1, origin: "real-turn", capturedAt: 0, leafId: null,
+			changes: { conversation: [{ type: "added", message, attribution: {} }], system: [] },
+			guard: { status: "incomplete", reason: "No payload." },
+		},
+		entries: [],
+		filterMessages: (messages) => messages,
+		options: { cwd: "/tmp" },
+		allTools: [],
+		systemPrompt: "",
+		activeToolNames: [],
+	});
+	const items = full.groups.flatMap((group) => group.items).filter((item) => item.kind === "message");
+	return buildSnapshot(items, full.origin, full.capturedAt);
+}
+
+test("request summaries and bash text reach both previews without envelope metadata", () => {
 	const messages = [
 		{ role: "compactionSummary", summary: "CAPTURE_VISIBLE_SUMMARY", tokensBefore: 42_000, timestamp: 1 },
 		{ role: "branchSummary", summary: "CAPTURE_VISIBLE_SUMMARY", fromId: "INTERNAL_BRANCH_ID", timestamp: 2 },
@@ -171,13 +191,11 @@ test("captured summaries and bash text reach both previews without envelope meta
 	] satisfies ContextEvent["messages"];
 	for (const message of messages) {
 		let height = 40;
-		const snapshot = buildSnapshot(measureInjectedMessages([message], []), "real-turn", new Date());
-		const current = buildSnapshot([], "synthetic-probe", new Date());
 		const theme = createTheme();
-		const injections = new InjectionsView(theme, { snapshot }, () => {}, () => height);
+		const injections = new InjectionsView(theme, { snapshot: addedMessageSnapshot(message) }, () => {}, () => height);
 		injections.handleInput("j"); // Select the message below its source group
 		const usage = new UsageView(theme, {
-			usage: computeUsage({ snapshot: mergeRequestOnlyMessages(current, snapshot), messages: [] }),
+			usage: computeUsage({ snapshot: buildSnapshot([], "synthetic-probe", new Date()), messages: [message] }),
 			categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE,
 		}, () => {}, () => height);
 		for (const view of [injections, usage]) {
@@ -187,7 +205,8 @@ test("captured summaries and bash text reach both previews without envelope meta
 			const preview = plain(view.render(120));
 			assert.match(preview, /CAPTURE_VISIBLE/);
 			assert.doesNotMatch(preview, /"role"|"summary"|tokensBefore|fromId|timestamp|exitCode|INTERNAL_BRANCH_ID/);
-			if (message.role === "bashExecution") {
+			// Injections previews what the provider receives; Usage keeps its own bash entry form
+			if (message.role === "bashExecution" && view === injections) {
 				assert.match(preview, /Ran `ls`/);
 				assert.match(preview, /Command exited with code 2/);
 			}

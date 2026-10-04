@@ -2,11 +2,11 @@
  * pi-context-view - inspect what occupies the model context.
  *
  * Structured capture publishes a snapshot of every request to SnapshotStore;
- * Injections shows the first one. Usage still reads the Initial capture of the
- * first real turn. Either view runs one on-demand silent probe when opened
- * before any request. On a Pi version older
- * than the supported one, it registers no lifecycle handlers, captures
- * nothing, and `/context` only reports the required version.
+ * Injections shows the first one, Usage applies the latest one to the current
+ * branch. Either view runs one on-demand silent probe when opened before any
+ * request. On a Pi version older than the supported one, it registers no
+ * lifecycle handlers, captures nothing, and `/context` only reports the
+ * required version.
  */
 import { type ExtensionAPI, type ExtensionCommandContext, VERSION } from "@earendil-works/pi-coding-agent";
 
@@ -20,10 +20,8 @@ import {
 	reportConfigCreation,
 	reportTuiOnly,
 	reportUnsupportedPi,
-	resolveInitialCapture,
-	resolveInitialRequest,
+	resolveRequestSnapshot,
 } from "./command.ts";
-import { buildUsageSnapshot, collectPromptSources, InitialCaptureState } from "./capture.ts";
 import { SnapshotBuilder } from "./capture/builder.ts";
 import { registerCapture } from "./capture/register.ts";
 import { CompactionState, registerCompactionTracking } from "./compaction.ts";
@@ -33,6 +31,9 @@ import { ProbeFilter, registerProbeFilter } from "./probe/filter.ts";
 import { registerSilentProbe, SilentProbe } from "./probe/silent-probe.ts";
 import { ProbeTrigger } from "./probe/trigger.ts";
 import { createProbeView } from "./probe/view.ts";
+import { applyRequestSnapshot } from "./projection.ts";
+import { collectPromptSources } from "./prompt-additions.ts";
+import { buildNativeSnapshot, buildUsageSnapshot } from "./replay.ts";
 import { readAutoCompactReserveTokens } from "./settings.ts";
 import { SnapshotStore } from "./snapshot.ts";
 import { showInjectionsView } from "./ui/injections-view.ts";
@@ -44,7 +45,6 @@ import { computeUsage, toReportedUsage } from "./usage.ts";
  * read what capture publishes.
  */
 export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
-	const capture = new InitialCaptureState();
 	const probeFilter = new ProbeFilter();
 	const probe = new SilentProbe(probeFilter);
 	const probeView = createProbeView(probeFilter, probe);
@@ -55,14 +55,22 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 
 	/** Open Injections on the first request snapshot, or on the degraded fallback without one. */
 	async function openInjections(ctx: ExtensionCommandContext): Promise<void> {
-		const initial = await resolveInitialRequest(pi, snapshots, trigger, ctx);
+		const initial = await resolveRequestSnapshot(snapshots, trigger, ctx, "first");
 		// Compaction can start while waiting for idle; refuse instead of showing its fallback
 		if (compaction.isActive) {
 			reportCompactionInProgress(ctx, "injections");
 			return;
 		}
-		if (initial.type === "fallback") {
-			await showInjectionsView(ctx, initial.fallback);
+		if (initial.type === "missing") {
+			await showInjectionsView(ctx, {
+				snapshot: buildNativeSnapshot({
+					systemPrompt: ctx.getSystemPrompt(),
+					options: ctx.getSystemPromptOptions(),
+					allTools: pi.getAllTools(),
+					activeToolNames: pi.getActiveTools(),
+				}),
+				degradedReason: initial.degradedReason,
+			});
 			return;
 		}
 		const snapshot = initial.snapshot;
@@ -82,9 +90,9 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 		});
 	}
 
-	/** Open Usage on the current branch plus Initial's request-only changes. */
+	/** Open Usage on the current branch with the latest request snapshot's changes applied. */
 	async function openUsage(ctx: ExtensionCommandContext): Promise<void> {
-		const initial = await resolveInitialCapture(pi, capture, trigger, ctx);
+		const latest = await resolveRequestSnapshot(snapshots, trigger, ctx, "latest");
 		// Compaction can start while waiting for idle; refuse instead of showing its fallback
 		if (compaction.isActive) {
 			reportCompactionInProgress(ctx, "usage");
@@ -92,10 +100,15 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 		}
 		// Loaded only for the Usage view, the sole consumer of configured colors.
 		const loadedConfig = configStore.load();
-		const messages = probeView.filterMessages(ctx.sessionManager.buildSessionProjection().messages);
+		const { messages, systemChanges } = applyRequestSnapshot({
+			snapshot: latest.type === "snapshot" ? latest.snapshot : undefined,
+			entries: ctx.sessionManager.getEntries(),
+			leafId: ctx.sessionManager.getLeafId(),
+			filterMessages: (projected) => probeView.filterMessages(projected),
+		});
 		const current = buildUsageSnapshot({
 			messages,
-			initial: initial.snapshot,
+			systemChanges,
 			systemPrompt: ctx.getSystemPrompt(),
 			options: ctx.getSystemPromptOptions(),
 			allTools: pi.getAllTools(),
@@ -110,7 +123,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 				modelLabel: ctx.model?.id,
 				autoCompactReserveTokens: readAutoCompactReserveTokens(pi, ctx.model),
 			}),
-			degradedReason: initial.degradedReason,
+			degradedReason: latest.type === "missing" ? latest.degradedReason : undefined,
 			// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
 			notices: loadedConfig.warnings,
 			categoryColors: loadedConfig.config.categoryColors,
@@ -161,26 +174,5 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 
 	pi.on("session_shutdown", () => {
 		snapshots.clear();
-	});
-
-	pi.on("before_agent_start", (event) => {
-		// The chained prompt here already carries additions from extensions loaded
-		// earlier; anything the context event adds came from extensions after us.
-		capture.prepare(event.systemPromptOptions, event.systemPrompt);
-	});
-
-	pi.on("context", (event, ctx) => {
-		// Lazy: this event fires once per LLM request, but only the freezing call
-		// reads these inputs, and the baseline rebuild alone is O(session).
-		capture.finalize(() => ({
-			systemPrompt: ctx.getSystemPrompt(),
-			// Initial's own comparison inputs; the request itself is filtered in context_with_system
-			messages: probeView.filterMessages(event.messages),
-			baselineMessages: probeView.filterMessages(ctx.sessionManager.buildSessionProjection().messages),
-			allTools: pi.getAllTools(),
-			activeToolNames: pi.getActiveTools(),
-			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
-			origin: probeView.isCurrentRun ? "synthetic-probe" : "real-turn",
-		}));
 	});
 }

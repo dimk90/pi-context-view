@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { type PromptSourceSlice, splitPromptAdditions } from "../src/prompt-additions.ts";
+import type { SlashCommandInfo, ToolInfo } from "@earendil-works/pi-coding-agent";
+
+import { collectPromptSources, type PromptSourceSlice, splitPromptAdditions } from "../src/prompt-additions.ts";
 
 const CWD_SECTION = "<cwd>\n/tmp/project\n</cwd>";
 const ASK: PromptSourceSlice = {
@@ -22,13 +24,9 @@ const BUILTIN: PromptSourceSlice = { source: "builtin", path: "<builtin:read>" }
 function split(
 	addition: string,
 	sources: readonly PromptSourceSlice[] = [],
-	promptAtHandler?: string,
 ): Array<[string, string, string | undefined]> {
 	const prompt = `${CWD_SECTION}${addition}`;
-	const runs = splitPromptAdditions(prompt, CWD_SECTION.length, {
-		sources,
-		promptAtHandler: promptAtHandler === undefined ? undefined : `${CWD_SECTION}${promptAtHandler}`,
-	});
+	const runs = splitPromptAdditions(prompt, CWD_SECTION.length, { sources });
 	// Runs must reconstruct the region exactly; no measured text is invented or lost.
 	assert.equal(runs.map((run) => run.text).join(""), addition);
 	return runs.map((run) => [run.text, run.source.label, run.attribution]);
@@ -136,38 +134,16 @@ test("splitPromptAdditions attributes blank-line blocks separately and merges sa
 	);
 });
 
-test("splitPromptAdditions never lets one run span the handler boundary", () => {
-	// Same unattributed text on both sides stays two runs: different extensions wrote them.
-	assert.deepEqual(
-		split("\n\nBefore us.\nStill before.\n\nAfter us.", [], "\n\nBefore us.\nStill before."),
-		[
-			["\n\nBefore us.\nStill before.", "unattributed", undefined],
-			["\n\nAfter us.", "unattributed", undefined],
-		],
-	);
-	// A later extension that replaced the whole prompt invalidates the boundary.
-	assert.deepEqual(
-		split("\n\nRewritten prompt.", [], "\n\nUnrelated observation."),
-		[["\n\nRewritten prompt.", "unattributed", undefined]],
-	);
-});
-
-test("section exclusions preserve handler boundaries and keep source evidence separate", () => {
+test("section exclusions keep source evidence separate", () => {
 	const before = "\n\nRead npm:pi-web docs.";
 	const moved = "\n<tools>\n- web_search: Search\n</tools>";
 	const after = "\nStill unowned.";
 	const prompt = CWD_SECTION + before + moved + after;
 	const start = CWD_SECTION.length + before.length;
 	const end = start + moved.length;
-	for (const boundary of [CWD_SECTION.length, start, start + 5, end, prompt.length]) {
-		const runs = splitPromptAdditions(prompt, CWD_SECTION.length, {
-			sources: [WEB],
-			promptAtHandler: prompt.slice(0, boundary),
-			excluded: [{ start, end }],
-		});
-		assert.equal(runs.map((run) => run.text).join(""), before + after);
-		assert.deepEqual(runs.map((run) => run.source.label), [WEB.source, "unattributed"]);
-	}
+	const runs = splitPromptAdditions(prompt, CWD_SECTION.length, { sources: [WEB], excluded: [{ start, end }] });
+	assert.equal(runs.map((run) => run.text).join(""), before + after);
+	assert.deepEqual(runs.map((run) => run.source.label), [WEB.source, "unattributed"]);
 });
 
 test("splitPromptAdditions excludes several sections without inventing whitespace owners", () => {
@@ -190,4 +166,31 @@ test("splitPromptAdditions keeps separators and trailing whitespace inside runs"
 			["\n \n@eko24ive/pi-ask rules.\n\n  \n", "npm:@eko24ive/pi-ask", "guess"],
 		],
 	);
+});
+
+test("collectPromptSources rosters the names of extension tools and commands", () => {
+	const tool = (name: string, source: string): ToolInfo => ({
+		name,
+		description: `${name} description`,
+		parameters: {} as ToolInfo["parameters"],
+		exposure: "direct",
+		sourceInfo: { path: `/tmp/${name}.ts`, source, scope: "temporary", origin: "top-level" },
+	});
+	const command = (name: string, source: string): SlashCommandInfo => ({
+		name,
+		source: "extension",
+		sourceInfo: { path: `/tmp/${name}.ts`, source, scope: "temporary", origin: "top-level" },
+	});
+	const sources = collectPromptSources(
+		[tool("read", "builtin"), tool("search", "npm:web"), tool("fetch", "npm:web")],
+		[command("ask", "npm:ask"), command("/web", "npm:web")],
+	);
+
+	// One roster entry per extension file, and commands keep the slash prompts use.
+	assert.deepEqual(sources.map((source) => [source.source, source.names]), [
+		["npm:web", ["search"]],
+		["npm:web", ["fetch"]],
+		["npm:ask", ["/ask"]],
+		["npm:web", ["/web"]],
+	]);
 });

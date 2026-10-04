@@ -13,18 +13,6 @@ export function systemMessageText(message: Pick<SystemMessage, "content" | "sect
 		.filter((part): part is string => part !== null && part.length > 0).join("\n\n");
 }
 
-/** Copy only replay inputs; opaque text signatures and message-envelope metadata are not retained. */
-export function copySystemMessage(message: SystemMessage): SystemMessage {
-	return {
-		role: "system",
-		content: systemContentText(message),
-		sections: message.sections === undefined ? undefined : { ...message.sections },
-		toolsAdded: message.toolsAdded === undefined ? undefined : structuredClone(message.toolsAdded),
-		toolsRemoved: message.toolsRemoved?.map((tool) => ({ name: tool.name })),
-		timestamp: message.timestamp,
-	};
-}
-
 /** Extract plain text without copying opaque text-block signatures. */
 function systemContentText(message: Pick<SystemMessage, "content">): string {
 	return typeof message.content === "string" ? message.content : message.content.map((block) => block.text).join("\n");

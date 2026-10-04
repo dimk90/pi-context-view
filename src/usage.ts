@@ -19,7 +19,10 @@ import {
 	type UsagePreviewEntry,
 } from "./model.ts";
 
-/** Everything computeUsage needs; messages must already be synthetic-filtered. */
+/**
+ * Everything computeUsage needs; messages must already be synthetic-filtered and
+ * carry the latest request's conversation changes.
+ */
 export interface UsageInputs {
 	snapshot: InitialSnapshot;
 	messages: ContextEvent["messages"];
@@ -33,7 +36,7 @@ export interface UsageInputs {
 /**
  * Estimate the current/next-request context composition. Prompt and tool
  * categories come from the caller's current-state snapshot; message categories are
- * classified from the live session context. System messages have already been
+ * classified from the session messages with the latest request's changes. System messages have already been
  * replayed into that snapshot and must not count again. Empty categories are dropped and
  * every aggregate equals the exact sum of its children.
  */
@@ -41,7 +44,7 @@ export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
 	const prompt = classifyPromptCategories(inputs.snapshot);
 	const categories = [
 		...prompt.categories,
-		...classifyMessages(inputs.messages, requestOnlyMessages(inputs.snapshot), prompt.promptAdditions),
+		...classifyMessages(inputs.messages, prompt.promptAdditions),
 	].filter((category) => category.tokens > 0);
 	return {
 		computedAt: inputs.computedAt ?? new Date(),
@@ -145,17 +148,9 @@ function isMcpTool(item: InjectionItem): boolean {
 	return /(^|[^a-z])mcp([^a-z]|$)/i.test(`${item.source.id} ${item.source.label}`);
 }
 
-/** Collect frozen messages that existed only in the captured outgoing request. */
-function requestOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
-	return snapshot.groups.flatMap((group) =>
-		group.items.filter((item) => item.kind === "message" && item.requestOnly === true && item.systemMessage === undefined)
-	);
-}
-
-/** Classify live session messages and frozen request-only injections with preview entries. */
+/** Classify session and request messages with preview entries. */
 function classifyMessages(
 	messages: ContextEvent["messages"],
-	requestOnly: readonly InjectionItem[],
 	promptAdditions: readonly UsageCategory[],
 ): UsageCategory[] {
 	const user: UsagePreviewEntry[] = [];
@@ -167,14 +162,6 @@ function classifyMessages(
 	const toolResults = new Map<string, UsagePreviewEntry[]>();
 	const customMessages = new Map<string, UsagePreviewEntry[]>();
 
-	for (const item of requestOnly) {
-		appendEntry(customMessages, item.source.label, {
-			breadcrumb: [item.label],
-			tokens: item.tokens,
-			text: item.text,
-			jsonSpan: item.jsonSpan,
-		});
-	}
 	for (const message of messages) {
 		switch (message.role) {
 			case "system":

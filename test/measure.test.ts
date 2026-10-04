@@ -262,24 +262,6 @@ test("analyzeSystemPrompt gives guessed prompt additions to their extension and 
 	assert.equal(base?.tokens, base?.children?.reduce((sum, child) => sum + child.tokens, 0));
 });
 
-test("analyzeSystemPrompt bounds prompt-addition attribution at this extension's own handler", () => {
-	const base = buildSystemPrompt({ cwd: CWD, selectedTools: [] });
-	const before = "\n\nShared wording.";
-	const after = "\n\nShared wording.";
-
-	const items = analyzeSystemPrompt(`${base}${before}${after}`, {}, [], {
-		promptAtHandler: `${base}${before}`,
-	});
-
-	// Identical text on both sides has two authors, so the preview keeps two runs.
-	assert.deepEqual(
-		findItem(items, "base-prompt:additions")?.injectedReferences?.map((reference) => reference.text),
-		[before, after],
-	);
-	// They remain unattributable, so one item still counts them exactly once.
-	assert.equal(findItem(items, "prompt-addition:unattributed")?.text, `${before}${after}`);
-});
-
 test("analyzeSystemPrompt exposes each aggregate child as a labeled part carrying its marked JSON", () => {
 	const systemPrompt = buildSystemPrompt({ cwd: CWD, selectedTools: ["read", "bash"] });
 	const tools: ToolSlice[] = [

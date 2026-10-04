@@ -1,4 +1,6 @@
 /** Pure, deliberately heuristic attribution of the unwrapped text around pi's prompt sections. */
+import type { SlashCommandInfo, SourceInfo, ToolInfo } from "@earendil-works/pi-coding-agent";
+
 import { AGGREGATE_SOURCE, extensionSource, type InjectionSource, type TextSpan } from "./model.ts";
 
 /** Public tool/command provenance only; no extension files are read to guess an owner. */
@@ -14,8 +16,6 @@ export interface PromptSourceSlice {
 /** Optional observations that improve guesses without claiming handler-level provenance. */
 export interface PromptAdditionOptions {
 	readonly sources?: readonly PromptSourceSlice[];
-	/** Prompt seen at our latest before_agent_start handler; used only if still a prefix. */
-	readonly promptAtHandler?: string;
 	/** Ordered, non-overlapping ranges counted as System Prompt sections, not additions. */
 	readonly excluded?: readonly TextSpan[];
 }
@@ -36,29 +36,22 @@ const PATH_BOUNDARY = "[/\\s\"'`<>\\[\\](),;:]";
 const MIN_NAME_LENGTH = 3;
 
 /**
- * Bound blank-line blocks at our handler position, then guess a source only on
- * a unique package-name or full-path match. Unmatched/ambiguous text stays
- * unattributed. The boundary is internal and never establishes an owner.
+ * Split the text after `start` into blank-line blocks, then guess a source only
+ * on a unique package-name or full-path match. Unmatched/ambiguous text stays
+ * unattributed.
  */
 export function splitPromptAdditions(
 	prompt: string,
 	start: number,
 	options: PromptAdditionOptions,
 ): PromptAdditionRun[] {
-	const observed = options.promptAtHandler;
-	const boundary = observed !== undefined && observed.length > start && prompt.startsWith(observed)
-		? observed.length
-		: start;
-	const regions = [
-		...additionRegions(prompt, start, boundary, options.excluded ?? []),
-		...additionRegions(prompt, boundary, prompt.length, options.excluded ?? []),
-	];
+	const regions = additionRegions(prompt, start, prompt.length, options.excluded ?? []);
 	const runs: Array<{ text: string; source: InjectionSource; tool?: string }> = [];
 	for (const region of regions) {
 		let previous: { text: string; source: InjectionSource; tool?: string } | undefined;
 		for (const text of splitBlocks(region)) {
 			const owner = guessOwner(text, options.sources ?? []);
-			// Merge only inside one region: text on either side of the boundary has different authors.
+			// Merge only inside one region: text on either side of a section has different authors.
 			if (previous?.source.id === owner.source.id && previous.tool === owner.tool) {
 				previous.text += text;
 				continue;
@@ -71,6 +64,25 @@ export function splitPromptAdditions(
 		...run,
 		attribution: run.source.id === AGGREGATE_SOURCE.id ? undefined : "guess",
 	}));
+}
+
+/**
+ * Collect the provenance of every loaded extension that registered a tool or a
+ * command, together with the names it registered. It is the only extension
+ * roster pi exposes, and it feeds attribution guesses alone: extensions
+ * registering neither are invisible here.
+ */
+export function collectPromptSources(
+	allTools: readonly ToolInfo[],
+	commands: readonly SlashCommandInfo[],
+): PromptSourceSlice[] {
+	const sources = new Map<string, CollectedPromptSource>();
+	for (const tool of allTools) addPromptSource(sources, tool.sourceInfo, tool.name);
+	// Prompt text refers to a command the way a user types it, so keep its slash.
+	for (const command of commands) {
+		addPromptSource(sources, command.sourceInfo, command.name.startsWith("/") ? command.name : `/${command.name}`);
+	}
+	return [...sources.values()];
 }
 
 /** Keep gaps separate: removing a section must not join evidence from different additions. */
@@ -178,4 +190,31 @@ function containsPath(text: string, path: string | undefined): boolean {
 /** Escape literal provenance before using it in a boundary-sensitive pattern. */
 function escapePattern(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Slice under construction: its names arrive one tool or command at a time. */
+interface CollectedPromptSource extends Omit<PromptSourceSlice, "names"> {
+	readonly names: string[];
+}
+
+/** Record one registered name under its extension's provenance, skipping pi's own sources. */
+function addPromptSource(
+	sources: Map<string, CollectedPromptSource>,
+	sourceInfo: SourceInfo,
+	name: string,
+): void {
+	if (sourceInfo.source === "builtin" || sourceInfo.source === "sdk") return;
+	const key = `${sourceInfo.source}\n${sourceInfo.path}`;
+	let collected = sources.get(key);
+	if (collected === undefined) {
+		collected = {
+			source: sourceInfo.source,
+			path: sourceInfo.path,
+			// A top-level extension's baseDir is a shared directory, not its own root.
+			baseDir: sourceInfo.origin === "package" ? sourceInfo.baseDir : undefined,
+			names: [],
+		};
+		sources.set(key, collected);
+	}
+	if (!collected.names.includes(name)) collected.names.push(name);
 }

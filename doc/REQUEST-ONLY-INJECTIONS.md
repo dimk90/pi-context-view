@@ -321,7 +321,7 @@ Shows the selected snapshot (Initial today): structured changes with attribution
 
 #### Usage view
 
-Counts the replayed projection and applies the selected snapshot's conversation changes by baseline entry: additions are counted, modifications replace their baseline message, and deletions remove it. Hidden declarations are a normalized Pi adjustment for Usage: hidden tools drop out without a finding. Tool counting uses D9's name sets:
+Counts the replayed projection and applies the selected snapshot's conversation changes by baseline entry: additions are counted, modifications replace their baseline message, and deletions remove it. System changes apply after the replayed system state only while it equals the state rebuilt at the snapshot's `leafId`; the forced prompt is not applied. Hidden declarations are a normalized Pi adjustment for Usage: hidden tools drop out without a finding. Tool counting uses D9's name sets:
 
 - **Source.** Take `declaredTools` from the latest snapshot of either origin that records them. A standard Pi 1.0 probe has no payload and records none (D10), so it does not replace the names of an earlier request.
 - **Filter.** Count a replayed tool only if the snapshot declares its name. Other replayed tools drop out of Usage: they are neither listed nor counted. Declared names missing from the replay are not Usage tools; D3 and D4 report them.

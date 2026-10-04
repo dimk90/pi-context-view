@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import {
 	buildSessionProjection,
-	type BeforeAgentStartEvent,
 	type ContextEvent,
 	type ContextWithSystemEvent,
 	type ExtensionAPI,
@@ -12,10 +11,6 @@ import {
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 
-// Deep import bypasses the package barrel, which does not re-export the option normalizer.
-import {
-	normalizeBuildSystemPromptOptions,
-} from "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import registerExtension from "../src/index.ts";
 import { PROBE_IDENTITIES_CUSTOM_TYPE } from "../src/probe/filter.ts";
 
@@ -24,7 +19,7 @@ function userMessage(content: string, timestamp: number): ContextEvent["messages
 	return { role: "user", content, timestamp } satisfies ContextEvent["messages"][number];
 }
 
-test("Initial skips the baseline rebuild after it freezes; structured capture reads it once per request", () => {
+test("only context_with_system observes requests: the filter returns a result, capture reads the baseline once", () => {
 	const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
 	const pi = {
 		on: (event: string, handler: (...args: unknown[]) => unknown) => {
@@ -76,25 +71,16 @@ test("Initial skips the baseline rebuild after it freezes; structured capture re
 
 	registerExtension(pi);
 	/** Run every handler the extension registered for one event, in order; return the last defined result. */
-	function emit(event: SessionStartEvent | BeforeAgentStartEvent | ContextEvent | ContextWithSystemEvent): unknown {
+	function emit(event: SessionStartEvent | ContextWithSystemEvent): unknown {
 		let result: unknown;
 		for (const handler of handlers.get(event.type) ?? []) result = handler(event, ctx) ?? result;
 		return result;
 	}
 
-	// Rehydrate the persisted probe identity, then prepare the first real run.
+	// Rehydrate the persisted probe identity.
 	emit({ type: "session_start", reason: "resume" });
-	emit({ type: "before_agent_start", prompt: "hello", systemPrompt: "system prompt",
-		systemPromptOptions: normalizeBuildSystemPromptOptions({ cwd: "/tmp" }) });
 	assert.equal(sessionReads, 1);
-
-	const messages = [probeUser, userMessage("hello", 1)];
-	assert.equal(emit({ type: "context", messages }), undefined);
-	assert.equal(sessionReads, 2, "the first context event builds the session baseline");
-	assert.deepEqual(messages, [probeUser, userMessage("hello", 1)], "capture does not filter the request");
-
-	assert.equal(emit({ type: "context", messages: [probeUser, userMessage("again", 2)] }), undefined);
-	assert.equal(sessionReads, 2, "a frozen snapshot must not rebuild the session baseline");
+	assert.equal(handlers.has("context"), false, "no handler observes the conversation-only context event");
 
 	const system = { role: "system", content: "base", timestamp: 20 } satisfies ContextEvent["messages"][number];
 	const patch = { role: "system", content: "patch", timestamp: 21 } satisfies ContextEvent["messages"][number];
@@ -104,7 +90,7 @@ test("Initial skips the baseline rebuild after it freezes; structured capture re
 		messages: [system, realUser, patch],
 	});
 	assert.deepEqual(full, [system, probeUser, realUser, patch], "filter never mutates the input");
-	assert.equal(sessionReads, 3, "structured capture reads the baseline of each request");
+	assert.equal(sessionReads, 2, "structured capture reads the baseline of each request");
 	assert.equal(emit({ type: "context_with_system", messages: [system, realUser, patch] }), undefined);
-	assert.equal(sessionReads, 4);
+	assert.equal(sessionReads, 3);
 });

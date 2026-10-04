@@ -6,41 +6,42 @@ extension can read, and how that data reaches the two views.
 
 ## Views and Data Sources
 
-| View       | What it shows                                                                           | When its data changes                                     |
-| ---------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Injections | First request's prompt, tools, custom messages, and marked request-only changes.        | First snapshot's content stays fixed; its guard may settle. |
-| Usage      | Replayed branch prompt/tools and session messages, plus old Initial's request-only changes. | Rebuilt when the view opens; old Initial changes stay frozen. |
+| View       | What it shows                                                                    | When its data changes                                       |
+| ---------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Injections | First request's prompt, tools, custom messages, and marked request-only changes. | First snapshot's content stays fixed; its guard may settle. |
+| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes.    | Rebuilt from the current branch and store when it opens.    |
 
-**Initial in Injections** is `SnapshotStore.first()`, across real turns and probes.
-It uses [structured request capture](#structured-request-capture) and rebuilds the
-session baseline at that snapshot's leaf. [Injections on snapshots](#injections-on-snapshots)
-describes composition, changes, and previews. Usage still uses the older Initial
-capture below until its migration; its accounting is unchanged.
+Both views read request snapshots that
+[structured request capture](#structured-request-capture) publishes to
+SnapshotStore for every request. A snapshot exists in two ways:
 
-**Old Initial** is a frozen snapshot of the system prompt, active tools, and injected messages at the first
-`context` capture after this extension loads. There are two ways to capture it:
+- **You send a prompt.** While pi prepares each model request, `pi-context-view`
+  records how the request differs from the saved session. The request then
+  continues normally. This is capture during a real turn.
 
-- **You send a prompt.** While pi prepares the model request, `pi-context-view` copies the prompt,
-  tools, and injected messages it can see. The request then continues normally. This is capture
-  during a real turn.
+- **You open Usage or Injections before anything has been captured.**
+  `pi-context-view` can start a run with an empty user message so pi and other
+  extensions execute their request-preparation handlers. It captures that run's
+  request, but aborts before a request reaches the model provider. This is the
+  [silent probe](#on-demand-silent-probe). It does not generate a model reply.
 
-- **You open Usage or Injections before anything has been captured.** `pi-context-view` can start
-  a run with an empty user message so pi and other extensions execute their request-preparation
-  handlers. It captures the context from that run, but aborts before a request reaches the model
-  provider. This is the [silent probe](#on-demand-silent-probe). It does not generate a model reply.
+**Initial in Injections** is `SnapshotStore.first()`, across real turns and
+probes. Injections rebuilds the session baseline at that snapshot's leaf.
+[Injections on snapshots](#injections-on-snapshots) describes composition,
+changes, and previews.
 
-**In the old Initial capture**, request-only messages are message versions seen during request preparation but not found in the
-saved session context. They may be extra messages added by an extension, or modified versions of
-existing messages. Capture marks both cases as `requestOnly`. It does not determine which original
-message, if any, was replaced. These request-only changes do not update the saved conversation.
+**Usage** applies `SnapshotStore.latest()` to the current session branch:
+request-only additions are counted, modifications replace their session
+message, and deletions remove it. See [Usage and Attribution](#usage-and-attribution).
 
-Usage is therefore not independent of Initial today. See the
-[known limitation](#known-limitation-replacements-and-removals) below.
+Request-only changes are message, section, and tool versions that a request
+carried but the saved session does not. They do not update the saved
+conversation.
 
 > [!NOTE]
-> When resuming a session or reloading extensions, Initial reflects the next successful capture - not
-> the session’s beginning. Once captured, it stays unchanged. Ordinary conversation history is not
-> copied into this snapshot.
+> When resuming a session or reloading extensions, Initial reflects the next
+> successful capture - not the session’s beginning. Once captured, it stays
+> unchanged. Snapshots keep only changes, not ordinary conversation history.
 
 ## How Pi Prepares a Request
 
@@ -55,14 +56,14 @@ Canonical session projection
   + New user message and pending messages
   |
   v
-before_agent_start handlers                     OBSERVE: copy prompt options
+before_agent_start handlers                     PROBE: claim the probe run only
   Inject messages, change structured prompt options
   |
   + Persist system-section patches and tool changes
   |
   v
-context handlers, in extension load order       OBSERVE: freeze Initial once
-  Conversation only; Pi restores system state
+context handlers, in extension load order       NOT observed directly; every
+  Conversation only; Pi restores system state     result reaches the next step
   |
   v
 context_with_system handlers                    FILTER: known probe identities
@@ -80,7 +81,7 @@ Settings-specific conversion                    NOT used
   with a text placeholder
   |
   v
-Messages + effective prompt + active tools      READ: prompt and tool APIs
+Messages + effective prompt + active tools      READ: forced prompt, tool APIs
   |
   v
 Provider-specific serialization                 NOT used
@@ -125,27 +126,27 @@ as supported.
   such as model changes, bookmarks, and saved extension state. Pi does not send
   those records to the model, so they must not contribute to token estimates.
   **Goal:** count current session messages in Usage and identify request-only
-  messages by comparing this list with the captured `context` event.
+  changes by comparing this list, with source entry IDs, with each captured
+  request.
 
 - `ctx.getSystemPrompt()` reads Pi's effective prompt during a run, including
   `before_agent_start` edits and a forced prompt, which Pi renders instead of
   the structured sections. Pi clears per-run options on settlement, so an idle
   read is not the prompt used by the last request. It does not expose later
   provider-payload rewrites.
-  **Goal:** preserve Initial's effective-prompt capture, provide a Usage fallback
+  **Goal:** detect a forced prompt during capture, and provide a view fallback
   only when the branch has no system messages.
 
 - `ctx.getSystemPromptOptions()` reads the base prompt construction options in
-  a command handler. The corresponding event field is
-  `event.systemPromptOptions` in `before_agent_start`.
-  **Goal:** identify prompt sections, such as instruction files and skills,
-  for separate estimates and previews.
+  a command handler.
+  **Goal:** keep `customPrompt` Dropped markers in Injections and measure the
+  live fallback.
 
 - `pi.getActiveTools()` and `pi.getAllTools()` supply the active tool names,
   definitions, and source information. `pi.getCommands()` supplies additional
   extension source information for prompt attribution.
-  **Goal:** estimate Initial's active tools and provide Usage's live fallback.
-  For transcript-backed Usage, recorded declarations supply definitions and the
+  **Goal:** provide the views' live fallback.
+  For transcript-backed views, recorded declarations supply definitions and the
   active set; current registration metadata supplies provenance and guideline
   attribution only. Unregistered recorded tools stay visible as unattributed.
   Tool and command source information also supports prompt-addition guesses.
@@ -189,191 +190,23 @@ sent does not undo actions that those handlers have already performed.
 **Pi has no API for extensions to prepare the complete next request without
 risking such side effects.**
 
-`pi-context-view` normally captures Initial while pi is already preparing a
-request for your prompt. This avoids starting another run - and repeating other
+`pi-context-view` normally captures requests while pi is already preparing
+them for your prompts. This avoids starting another run - and repeating other
 extensions’ actions - just to inspect the context.
 
-If the user opens a view before Initial exists, it can make one explicit
+If the user opens a view before any request snapshot exists, it can make one explicit
 [silent probe](#on-demand-silent-probe). That probe still
 runs other extensions' handlers, so it is limited to one attempt per extension
 runtime. Later view opens read the existing capture and current pi data instead
 of starting another run.
 
-## Old Initial Snapshot (Usage)
-
-This path now serves Usage only. Injections uses the structured snapshot below.
-Old Initial is captured once per extension runtime. The capture has two parts: the
-prompt with its active tools, and the injected messages. They use different
-events and different rules, so the first two sections below follow this flow.
-The last section states what the captured result covers.
-
-```text
-Real turn or explicit silent probe
-  |
-  v
-before_agent_start                              → Capturing the Final
-  Copy structured prompt options and the prompt     Prompt and Tools
-  at this handler
-  |
-  v
-First context event after preparation
-  Read effective prompt + active tools          → Capturing the Final
-                                                    Prompt and Tools
-
-  Remove known probe messages from both lists   → Message Comparison
-  Compare event messages with the session branch    and Stored Data
-  Measure content and copy the retained data
-  |
-  v
-Frozen old Initial
-  |
-  +-- request-only messages ---------+
-                                     |
-                                     +-------> Usage at view-open time
-                                     |
-Current prompt, tools, and session --+
-messages, read when the view opens
-
-  |
-  v
-Later context events
-  Do not replace Initial
-  |
-  v
-Every context_with_system event
-  Filter known probe messages without moving system messages
-```
-
-Usage therefore combines two sources: the request-only changes frozen in
-Initial, and the session-branch messages read when the view opens. Those
-messages also carry the recorded prompt and tool state. See
-[Usage and Attribution](#usage-and-attribution) for that flow.
-
-### Capturing the Final Prompt and Tools
-
-This covers the first two steps of the flow above: the `before_agent_start` copy
-and the prompt and tool read in the first `context` event.
-
-**Goal:** record the prompt and tools that pi actually sends, after every
-extension injection.
-
-The capture is therefore split across two events:
-
-- **`before_agent_start`: copy the prompt options.** Pi exposes
-  `event.systemPromptOptions` here, not in `session_start`. These options name
-  the prompt's sources, such as instruction files and skills, so the prompt can
-  later be split into separate items.
-
-- **First `context` event: freeze the prompt and tools.** Waiting until here is
-  what makes the result final: extensions loaded after this one can still edit
-  the prompt or call `pi.setActiveTools()` during `before_agent_start`. At this
-  point `ctx.getSystemPrompt()` and pi's active tools already include those
-  changes, whatever the extension load order.
-
-Initial describes one specific run: an injection that did not run for it is
-absent, so the snapshot must never be overwritten with a later turn's content,
-which would mix data from different runs. The other limits of this timing are
-listed in [Capture Coverage and Load Order](#capture-coverage-and-load-order).
-
-### Message Comparison and Stored Data
-
-This covers the remaining steps of the same `context` event: comparing messages,
-then measuring and copying what the snapshot keeps.
-
-**Goal:** keep only the messages a user cannot already see in the conversation,
-and keep them stable for later inspection.
-
-The request message list contains the whole conversation, so storing it would
-duplicate visible history and make the snapshot large. To separate injected
-content, compare the `context` event messages with `buildSessionProjection()` for
-the current branch, after removing known probe messages from both lists:
-
-- **Match complete messages by their serialized JSON.** An exact comparison
-  avoids guessing which fields matter. Count duplicate matches separately so
-  two identical messages are not collapsed, and ignore order, because handlers
-  may reorder messages.
-
-- **Keep custom messages, even when already saved in the session.** They are
-  extension content, which the Injections view exists to show. `customType`
-  names a message type, not necessarily the extension package, so it identifies
-  the type only.
-
-- **Keep unmatched messages of other roles, marked `requestOnly`.** These exist
-  only in the request, so no other source can show them. Custom messages are
-  marked the same way when they do not match.
-
-- **Skip matched ordinary session messages, including system messages.** Usage
-  reads them from the current session branch instead, which keeps them up to
-  date and avoids counting them twice. Captured request-only system messages
-  retain sanitized replay inputs and their original request order, so Usage
-  can apply section and tool patches instead of counting their preview again.
-
-Store copies of everything retained: prompt parts, tools, message previews,
-sources, and children. Copies keep the frozen snapshot correct even when pi or
-another extension later changes the original objects. Apply the
-[privacy rules](#privacy) before retaining preview content.
-
-Build these comparison inputs only for the event that freezes Initial.
-Rebuilding the session baseline costs time proportional to the conversation
-length, so later `context` events skip that work. Capture filters its own
-comparison inputs but never returns a changed request. Request filtering runs
-separately in `context_with_system`.
-
-### Capture Coverage and Load Order
-
-This subsection describes old Initial, still used by Usage. Injections uses
-[structured request capture](#structured-request-capture), which sees all
-`context` handlers regardless of load order.
-
-**Goal:** state what a capture can and cannot contain, so a missing injection
-reads as a known limit instead of a bug.
-
-Coverage follows from the two capture events above. It is the same for a real
-turn and for a silent probe: the probe decides when a capture happens, not what
-it sees.
-
-- **Prompt and active tools: every extension, whatever the load order.** They
-  are read in the first `context` event, after every `before_agent_start`
-  handler has run, through `ctx.getSystemPrompt()` and pi's active-tool API.
-  Both report pi's current state rather than one handler's result, so an
-  extension loaded after this one is still included.
-
-- **Messages injected in `before_agent_start`: every extension.** They are
-  already part of the message list that the `context` chain receives.
-
-- **Message changes by `context` handlers: only extensions loaded before this
-  one.** Pi runs that chain in extension load order and passes each handler's
-  result to the next, so this extension freezes the list as it stands at its
-  own position. Later additions, replacements, removals, and reordering are
-  absent.
-
-- **Forced prompts: every extension, whatever the load order.** A
-  `before_agent_start` handler returning `systemPrompt` sets
-  `systemPromptOptions.forceSystemPrompt`, and `ctx.getSystemPrompt()` then
-  renders that exact text instead of the structured sections. Initial measures
-  the forced text as the prompt, so recorded sections the run did not send are
-  neither counted nor attributed; without XML sections it is
-  [one undivided part](#prompt-parts-and-moved-blocks). Pi projects the forced text onto the request
-  after the `context` handlers and keeps recording the structured sections, so
-  Injections and old Initial see it, but Usage reads the transcript instead.
-
-- **`context_with_system` changes: not in old Initial.** It still freezes in
-  `context`. [Structured request capture](#structured-request-capture) sees
-  changes from extensions loaded before this one; Injections now reads those
-  snapshots, while Usage still reads old Initial.
-
-- **Provider-payload rewrites: no extension, whatever the load order.**
-  `before_provider_request` handlers and provider transports run after the
-  capture point, so an effective prompt they rewrite there never reaches
-  Initial or Usage.
-
 ## Structured Request Capture
 
 This is the first part of the design in
 [REQUEST-ONLY-INJECTIONS.md](REQUEST-ONLY-INJECTIONS.md) (D2, D3, D5, D6,
-D11). It runs beside old Initial capture and publishes request snapshots to
-SnapshotStore. Injections reads the first snapshot; Usage still reads old
-Initial. Capture runs in every mode, independently of either consumer.
+D11). It publishes request snapshots to SnapshotStore. Injections reads the
+first snapshot; Usage reads the latest. Capture runs in every mode,
+independently of either consumer.
 
 **Goal:** describe every request as structured changes against the session
 projection, for any consumer, in every run mode.
@@ -466,8 +299,8 @@ checks and the TUI guard remain in the command.
 
 Added and modified rows count their request version. Deleted rows count zero.
 A modified message previews `Request` and `Session` parts: only Request counts;
-a deletion previews its session original. Message previews use the same
-content-only extraction as old Initial, in `src/message-preview.ts`. Snapshot
+a deletion previews its session original. Message previews use the
+content-only extraction in `src/message-preview.ts`. Snapshot
 images already hold size markers; session originals are redacted on extraction.
 Neither source's opaque signature bytes reach a preview.
 
@@ -480,11 +313,10 @@ zero tokens, after sent parts and before Extension Additions. A deleted tool
 keeps its definition at zero tokens. The total counts only this view's
 contributions, not unchanged ordinary history or provider serialization.
 
-The `before_agent_start` prompt boundary (`promptAtHandler`) is not used by
-Injections: recorded structured edits already belong to the baseline, and the
-forced prompt is captured as final text. Unwrapped additions still split at
-blank lines and section boundaries; adjacent additions with no separator may
-share an attribution guess. Old Initial retains the old boundary until removal.
+Prompt additions have no `before_agent_start` handler boundary: recorded
+structured edits already belong to the baseline, and the forced prompt is
+captured as final text. Unwrapped additions split at blank lines and section
+boundaries; adjacent additions with no separator may share an attribution guess.
 
 Probe snapshots carry the warning specified in [ui/injections.md](ui/injections.md).
 Pending and incomplete guards appear as an unavailable late-edit comparison in
@@ -501,7 +333,7 @@ new transformed request on each open.
                              Open Usage
                                  |
                                  v
-      Resolve Initial: existing capture, one probe, or fallback
+     Resolve the latest snapshot: existing one, one probe, or none
                                  |
                                  v
                         Collect view inputs
@@ -509,33 +341,39 @@ new transformed request on each open.
          +-----------------------+---------------------------+
          |                       |                           |
          v                       v                           v
-Live prompt/tool fallback   Initial snapshot          Current session branch
+Live prompt/tool fallback   Latest snapshot           Current session branch
          |                       |                           |
-         |                       v                           v
-         |                requestOnly items         buildSessionProjection()
-         |                 (still frozen)                    |
          |                       |                           v
-         |                       |                  Filter probe messages
+         |                       |                  buildSessionProjection()
+         |                       |                  Filter probe messages,
+         |                       |                  keep source entry IDs
          |                       |                           |
-         +-----------------------+---------------------------+
+         |                       +-------------+-------------+
+         |                                     |
+         |                                     v
+         |                           applyRequestSnapshot()
+         |                  Conversation changes by entry; drop stale ones
+         |                  System changes only while still fresh
+         |                                     |
+         +-------------------------------------+
                                  |
                                  v
                        buildUsageSnapshot()
-                  Replay system sections and tool deltas
+                  Replay system sections and tool deltas,
+                  then the fresh request-only system changes
                   (live fallback only without system state)
-                  Merge non-system request-only messages
                                  |
                                  v
                            computeUsage()
                   Skip already-replayed system messages
-                                      |
-                                      v
-                          Category estimates + previews
-                                      |
-                                      v
-                           Usage map and breakdown
-                                      ^
-                                      |
+                                 |
+                                 v
+                    Category estimates + previews
+                                 |
+                                 v
+                     Usage map and breakdown
+                                 ^
+                                 |
                   Separate inputs: pi's reported usage/window,
                   model, auto-compaction reserve, display config
 ```
@@ -561,11 +399,28 @@ Generated instruction-file and skill records are read from the recorded prompt,
 not today's loader metadata. Custom XML sections remain named System Prompt
 parts even after `cwd`; their tag does not establish extension ownership.
 
-Frozen request-only system patches apply after the branch state in their captured
-request order. They are not also merged as counted message previews. Other
-request-only messages retain the existing merge. Session-backed custom messages
-count from the current branch, not again from Initial. `computeUsage()` skips
-system messages because the prompt/tool snapshot already accounts for them.
+**Usage applies the latest request's changes to the current branch.** It reads
+`SnapshotStore.latest()` across both origins, so a probe after the last real
+turn supplies the changes. `src/projection.ts` applies them when the view opens:
+
+- **Conversation changes, by baseline entry.** A modification replaces the
+  first unchanged conversation message of its source entry with the request
+  version; a deletion removes it; an addition is appended and classified like
+  any other message by role or `customType`. A reorder, captured as a deletion
+  plus an addition, is counted once. A modification or deletion whose entry is
+  no longer in the current projection, after compaction or branch navigation,
+  is stale and dropped: the current message is counted instead. Additions have
+  no entry and always apply.
+- **System changes, while fresh.** Content, section, and tool changes are
+  deltas against the snapshot's replayed system state. They apply after the
+  branch replay only while the current replayed state equals the state rebuilt
+  at the snapshot's `leafId`; any recorded system change since capture drops
+  them until the next request. Usage marks none of these changes.
+
+Without a snapshot, after a failed or skipped probe, Usage counts the current
+branch alone and shows the degraded reason. Session-backed custom messages
+count from the current branch once. `computeUsage()` skips system messages
+because the prompt/tool snapshot already accounts for them.
 
 This is a provider-independent semantic estimate, not a wire-size estimate.
 Some providers keep earlier section versions or tool declarations in the cached
@@ -574,60 +429,47 @@ patch framing, or provider-specific serialization. A forced prompt is likewise
 out of scope for Usage: Pi never records that text, and the per-run options are
 cleared on settlement, so both the replayed transcript and the idle live
 fallback describe the structured prompt, not the forced projection of the last
-request. Initial's frozen forced prompt is not merged back in, because it
-describes one past run. Initial continues to read the effective prompt rather
-than replacing it with replay.
+request. A snapshot's forced prompt is not applied, because it describes one
+past run; its system changes still apply to the structured prompt Usage shows.
 
 The UI receives `ctx.getContextUsage()` separately. Its reported total is not
 used to force category estimates to match. Map rendering rules belong to
 [ui/usage.md](ui/usage.md#context-map).
 
-### Known Limitation: Replacements and Removals
+### Known Limitation: One Request's Changes
 
-The current merge handles additions, but cannot correctly account for all
-message transformations. This is tracked in
-[issue #6](https://github.com/dimk90/pi-context-view/issues/6).
-
-If an earlier `context` handler replaces a session message, the replacement
-fails the exact baseline match and becomes `requestOnly`. Usage then counts
-both the original session message and the captured replacement. For example,
-a 40,000-character user message replaced with `bbbb` contributes 10,001 estimated
-tokens, although the observed replacement alone contributes 1.
-If a handler removes a message, capture records no removal. Usage still counts
-the session original.
-
-Beyond replacement and removal, frozen request-only messages can go out of
-date. Initial is never recaptured, so later turns, branch changes, or compaction
-can leave it describing content the session no longer contains.
-
-These are limits of the current data combination, not normal tokenizer error.
-Usage combines data from different times. It is not an exact view of the last
-or next provider request.
+Usage assumes the next request repeats the latest request's changes. A change
+that an extension makes only once, or only for a particular prompt, therefore
+stays counted until the next request replaces the snapshot. Additions carry no
+entry reference, so they remain after branch navigation or compaction. A
+modification whose entry is still projected replaces that entry's current
+message even if a later `context_edit` changed it. Changes from later
+`context_with_system` handlers and payload rewrites are not visible yet. Usage
+is not an exact view of the last or next provider request.
 
 ## On-demand Silent Probe
 
 ### Why it is Needed
 
 Before a real turn, pi's APIs can supply the current prompt, tools, and saved
-session messages. That is enough for a partial view, but not for Initial's
-observation of extension handlers.
+session messages. That is enough for a partial view, but not for a request
+snapshot's observation of extension handlers.
 
 Without running a turn, this extension cannot observe:
 
 - `before_agent_start` changes for that run: prompt edits, injected messages,
   and tool activation;
 - request-only messages and transformations from `context` handlers and earlier
-  `context_with_system` handlers (old Initial still sees only earlier `context`
-  handlers).
+  `context_with_system` handlers.
 
 Reading session history or calling `convertToLlm()` does not run those handlers.
 The silent probe starts the lifecycle so capture can see them, then aborts
 before a provider request. A probe uses the same capture handlers as a real
-turn, so it does not widen either capture path's coverage. An empty-input probe
+turn, so it does not widen capture coverage. An empty-input probe
 also cannot reveal contributions that run only for a particular real prompt.
 
-If the view's Initial exists, no probe is needed: Injections checks the store's
-first snapshot; Usage checks old Initial. Either view can request the shared
+If the view's snapshot exists, no probe is needed: Injections checks the store's
+first snapshot; Usage checks its latest. Either view can request the shared
 one automatic attempt when its data is missing. Never probe in the background
 or repeat it on every view open.
 
@@ -635,13 +477,13 @@ or repeat it on every view open.
 
 ProbeTrigger (`src/probe/trigger.ts`) applies the automatic policy: at most one
 attempt per extension runtime, and concurrent and later callers share its
-result. The command asks it only while the view's Initial does not exist.
+result. The command asks it only while the store holds no snapshot.
 ProbeTrigger has no run-mode guard; the command keeps the TUI-only check.
 
 ```text
 /context
   Refuse the view if compaction is active
-  Ask ProbeTrigger when Initial does not exist yet
+  Ask ProbeTrigger when the store holds no snapshot yet
   |
   v
 ProbeTrigger
@@ -660,7 +502,6 @@ input
 before_agent_start
   Claim this run if it carries the token, otherwise fail the attempt
   and leave the run alone
-  Prepare Initial
   |
   v
 turn_start
@@ -671,12 +512,9 @@ message_end (user)
   Blank the synthetic prompt before Pi persists it
   |
   v
-context
-  Filter only capture's comparison inputs, finalize Initial
-  |
-  v
 context_with_system
-  Filter the request without changing system-message positions
+  Filter the request without changing system-message positions;
+  capture then records the probe request
   |
   v
 message_end (assistant)
@@ -699,9 +537,8 @@ Probes run one at a time, so that snapshot belongs to this probe. SilentProbe's
 outcome only reports whether its run settled or failed; it knows nothing about
 capture. Capture settles the guard in its own `agent_settled` handler, after
 SilentProbe's, so ProbeTrigger waits up to one second after settlement before
-it reports a missing snapshot. Injections uses that snapshot through the
-store's `first()` selection; Usage still takes Initial from the old capture
-once ProbeTrigger resolves.
+it reports a missing snapshot. Injections and Usage read that snapshot through
+the store's `first()` and `latest()` selections.
 
 Use `sendUserMessage("")`. `pi.sendMessage(..., { triggerTurn: true })` skips
 `before_agent_start`. Abort at `turn_start`, not `before_provider_request`,
@@ -845,7 +682,7 @@ or `session_compact_failed`; do not infer completion from a later agent run.
 Pi runs extension commands at once during compaction, so `/context` checks the
 tracked lifecycle itself. While compaction is active, both views are refused
 with a warning and do not open: compaction is about to replace the session
-projection they read. The command checks before resolving Initial, so it never
+projection they read. The command checks before resolving its snapshot, so it never
 waits for compaction, and again after, because compaction can start while it
 waits for idle. The second check replaces that probe fallback with the refusal.
 
@@ -879,9 +716,9 @@ remains. Strict zero-provider-request guarantees require passive capture.
 
 Any skipped precondition above, a missing model, missing authentication, a
 startup failure, a timeout, or a probe that settles without a request snapshot
-returns a current prompt/tool snapshot with a precise reason that
-extension additions were not observed. This fallback does not freeze Initial.
-Usage can still classify current session messages alongside it.
+reports a precise reason that extension additions were not observed.
+Injections then shows a current prompt/tool snapshot; Usage counts the current
+branch without request changes. Neither fallback enters the store.
 
 Always restore the working-row state in `finally`. If the probe times out,
 keep tracking its run until it settles: delayed synthetic messages must still
@@ -984,9 +821,8 @@ For unwrapped gaps between or after XML sections:
 
 - Split at blank lines and ignore whitespace-only gaps. Keep gaps on opposite
   sides of a section separate, so unrelated source evidence cannot mix.
-- Old Initial also splits at the prompt boundary seen by this extension's
-  `before_agent_start` handler. Injections on snapshots no longer uses that
-  boundary; adjacent unwrapped additions may share a block.
+- There is no `before_agent_start` handler boundary: adjacent unwrapped
+  additions without a blank line may share a block.
 - Name a source only when the text contains exactly one loaded package
   specifier or extension path from `getAllTools()`/`getCommands()` source data.
   Always mark that name as a guess: pi does not record who made each prompt edit.
@@ -1059,10 +895,8 @@ later model request.
 Capture message content, not the whole message object:
 
 - System previews contain plain `content` followed by non-deleted section text,
-  even when `content` is empty. Omit text-block signatures. Request-only system
-  replay data contains only content, section patches, tool declarations/removals,
-  and ordering metadata; it stays process-local and is never persisted by this
-  extension. Deleted sections have no preview text or text-token contribution.
+  even when `content` is empty. Omit text-block signatures. Deleted sections
+  have no preview text or text-token contribution.
 - Branch and compaction previews contain only `summary`.
 - Bash previews use pi's `convertToLlm` text, including failure/cancellation
   notices and truncated-output file references.
@@ -1107,10 +941,9 @@ Persisted probe records contain only role and timestamp identities, plus
 | Path                         | Responsibility                                                                                |
 | ---------------------------- | --------------------------------------------------------------------------------------------- |
 | `src/index.ts`               | Create the layers, register them in order, and register the command; assemble view inputs.    |
-| `src/command.ts`             | Parse commands; resolve Injections through the store/trigger/fallback, Usage through old Initial.                   |
+| `src/command.ts`             | Parse commands; resolve the first or latest snapshot through the store and ProbeTrigger.      |
 | `src/config.ts`              | Load, validate, cache, and explicitly create configuration.                                   |
 | `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
-| `src/capture.ts`             | Manage old Initial and its request-only merge for Usage; collect prompt source metadata.                                                 |
 | `src/capture/register.ts`    | Capture layer wiring: observe every request in `context_with_system`; settle unpaired guards. |
 | `src/capture/tracker.ts`     | RequestTracker: number captures and remember the latest unpaired one.                         |
 | `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline with entry IDs, clone, forced prompt.        |
@@ -1127,12 +960,13 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                 |
 | `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                            |
 | `src/injections.ts`          | Rebuild the first snapshot's baseline and measure its composition with marked changes.       |
-| `src/replay.ts`              | Shared recorded tool slices and live prompt/tool fallback measurement.                       |
+| `src/projection.ts`          | Rebuild filtered projections; apply the latest snapshot's changes to the branch for Usage.    |
+| `src/replay.ts`              | Replay recorded system state and changes; Usage prompt/tools and the live fallback.           |
 | `src/message-preview.ts`     | Content-only message previews, redacting session images and omitting opaque signatures.      |
 | `src/measure.ts`             | Split and estimate prompt/tool contributions without pi API access.                           |
 | `src/prompt-blocks.ts`       | Locate XML sections and moved tool surfaces, excluding nested/fenced examples.                |
-| `src/transcript.ts`          | Render and copy system messages; replay itself uses Pi's `getCurrentSystemMessage()`.         |
-| `src/prompt-additions.ts`    | Identify prompt additions and make source-attribution guesses.                                |
+| `src/transcript.ts`          | Render system messages; replay itself uses Pi's `getCurrentSystemMessage()`.                  |
+| `src/prompt-additions.ts`    | Collect extension sources; identify prompt additions and make source-attribution guesses.     |
 | `src/usage.ts`               | Classify messages; build usage totals and previews.                                           |
 | `src/model.ts`               | Define types, ownership, hierarchy, and grouping.                                             |
 | `src/text.ts`                | Sanitize dynamic text before terminal display.                                                |
@@ -1140,11 +974,12 @@ Persisted probe records contain only role and timestamp identities, plus
 | `test/fixtures/`             | Test capture visibility, forced prompts, and extension load order.                            |
 
 Each layer's module exports its state and a `register*()` function with its pi
-handlers; `src/index.ts` creates the layers and calls those functions. Only
-Initial capture still registers its `before_agent_start` and `context` handlers
-in `src/index.ts`. SnapshotStore has no Pi handlers and imports Pi types only;
+handlers; `src/index.ts` creates the layers and calls those functions.
+SnapshotStore has no Pi handlers and imports Pi types only;
 `src/index.ts` clears it on `session_shutdown`. Structured capture publishes to
-it through SnapshotBuilder; Injections reads its first snapshot. Register the probe layer first:
+it through SnapshotBuilder; Injections reads its first snapshot, Usage its
+latest. `src/ui/` and `src/usage.ts` import no capture or probe module, directly
+or indirectly; a test enforces this. Register the probe layer first:
 ProbeFilter's `context_with_system` handler must run before the capture handler
 on that event. The probe layer imports no capture module; capture reads it only
 through ProbeView. Capture imports no view, command, or trigger code.
@@ -1172,7 +1007,10 @@ probe request isolation and message ownership, not a relaxation of those goals.
 - Synthetic probe entries never reach later model contexts or Usage, including
   after resume, reload, or fork.
 - Injections selects the first structured snapshot per runtime; guard updates
-  keep its ID. Old Initial still freezes once for Usage. A fallback freezes neither.
+  keep its ID. A fallback never enters the store.
+- Usage applies the latest snapshot's conversation changes by baseline entry,
+  drops changes whose entry left the projection, and applies system changes
+  only while the replayed system state is unchanged since capture.
 - Raw content appears only after Enter and is never logged or newly persisted.
 - Parent and child contributions are never double-counted.
 - Usage counts the replayed branch prompt/tool state once, never again as system

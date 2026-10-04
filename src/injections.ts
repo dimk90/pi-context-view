@@ -4,16 +4,15 @@
  * request-only changes applied and marked. Reads the snapshot and current Pi
  * data only; imports no capture or probe module.
  */
-import { getCurrentSystemMessage, type Tool } from "@earendil-works/pi-ai";
+import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import {
 	type BuildSystemPromptOptions,
-	buildSessionProjection,
 	estimateTokens,
 	type SessionEntry,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
-import { analyzeSystemPrompt, type DeletedSection, type PromptChanges, type ToolSlice } from "./measure.ts";
+import { analyzeSystemPrompt, type ToolSlice } from "./measure.ts";
 import { messagePreview } from "./message-preview.ts";
 import {
 	AGGREGATE_SOURCE,
@@ -24,10 +23,11 @@ import {
 	messageTypeSource,
 	type RequestChange,
 } from "./model.ts";
+import { type MessageFilter, type ProjectedMessage, readProjection } from "./projection.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
-import { buildNativeSnapshot, replayedToolSlices } from "./replay.ts";
-import type { ConversationChange, RequestMessage, RequestSnapshot, SystemChange } from "./snapshot.ts";
-import { type SystemMessage, systemMessageText } from "./transcript.ts";
+import { applySystemChanges, buildNativeSnapshot, replayedToolSlices } from "./replay.ts";
+import type { ConversationChange, RequestMessage, RequestSnapshot } from "./snapshot.ts";
+import { systemMessageText } from "./transcript.ts";
 
 /** Everything the composition reads besides the snapshot itself. */
 export interface InjectionsInput {
@@ -35,7 +35,7 @@ export interface InjectionsInput {
 	/** Current session entries; they are append-only, so the snapshot's leaf still rebuilds its baseline. */
 	readonly entries: SessionEntry[];
 	/** Removes recorded probe messages, as capture did for the baseline. */
-	readonly filterMessages: (messages: RequestMessage[]) => RequestMessage[];
+	readonly filterMessages: MessageFilter;
 	/** Live prompt options; only `customPrompt` is used, to mark dropped blocks. */
 	readonly options: BuildSystemPromptOptions;
 	readonly allTools: readonly ToolInfo[];
@@ -48,7 +48,7 @@ export interface InjectionsInput {
 
 /** Build the Injections tree of one request: its replayed prompt and tools, custom messages, and changes. */
 export function buildInjectionsSnapshot(input: InjectionsInput): InitialSnapshot {
-	const baseline = rebuildBaseline(input.entries, input.snapshot.leafId, input.filterMessages);
+	const baseline = readProjection(input.entries, input.snapshot.leafId, input.filterMessages);
 	const items = [
 		...measureRequestPrompt(input, baseline.map(({ message }) => message)),
 		...measureMessages(input.snapshot.changes.conversation, baseline),
@@ -57,37 +57,8 @@ export function buildInjectionsSnapshot(input: InjectionsInput): InitialSnapshot
 }
 
 // ============================================================================
-// Baseline
-// ============================================================================
-
-/** A baseline message with the session entry that owns it. */
-interface BaselineMessage {
-	readonly entryId: string;
-	readonly message: RequestMessage;
-}
-
-/** The filtered session projection at `leafId`, keeping each message's source entry. */
-function rebuildBaseline(
-	entries: SessionEntry[],
-	leafId: string | null,
-	filterMessages: InjectionsInput["filterMessages"],
-): BaselineMessage[] {
-	return buildSessionProjection(entries, leafId).entries.flatMap(({ sourceEntry, messages }) =>
-		filterMessages(messages).map((message) => ({ entryId: sourceEntry.id, message })));
-}
-
-// ============================================================================
 // Prompt and tools
 // ============================================================================
-
-/** System state the request carried, with what its changes touched. */
-interface RequestSystemState {
-	readonly state: Pick<SystemMessage, "content" | "sections">;
-	readonly declarations: readonly Tool[];
-	readonly prompt: PromptChanges;
-	readonly tools: ReadonlyMap<string, Exclude<RequestChange, "deleted">>;
-	readonly deletedTools: readonly Tool[];
-}
 
 /**
  * Measure the replayed prompt and tools with the request's system changes
@@ -117,65 +88,9 @@ function measureRequestPrompt(input: InjectionsInput, baseline: readonly Request
 	);
 }
 
-/** Apply content, section, and tool changes in capture order to the replayed session state. */
-function applySystemChanges(base: SystemMessage, changes: readonly SystemChange[]): RequestSystemState {
-	let content = contentText(base.content);
-	const sections: Record<string, string | null> = { ...base.sections };
-	const sectionChanges = new Map<string, Exclude<RequestChange, "deleted">>();
-	const deletedSections: DeletedSection[] = [];
-	const declarations = [...(base.toolsAdded ?? [])];
-	const toolChanges = new Map<string, Exclude<RequestChange, "deleted">>();
-	const deletedTools: Tool[] = [];
-	for (const change of changes) {
-		switch (change.type) {
-			case "content":
-				content = change.text;
-				// Pi renders plain content before the first section, inside the measured Preamble
-				sectionChanges.set("preamble", "modified");
-				break;
-			case "section": {
-				const previous = sections[change.name];
-				if (change.text === null) {
-					if (typeof previous === "string") deletedSections.push({ name: change.name, text: previous });
-					delete sections[change.name];
-					break;
-				}
-				sectionChanges.set(change.name, typeof previous === "string" ? "modified" : "added");
-				sections[change.name] = change.text;
-				break;
-			}
-			case "tool": {
-				const index = declarations.findIndex((tool) => tool.name === change.name);
-				if (change.declaration === null) {
-					if (index !== -1) deletedTools.push(...declarations.splice(index, 1));
-				} else if (index === -1) {
-					declarations.push(change.declaration);
-					toolChanges.set(change.name, "added");
-				} else {
-					declarations[index] = change.declaration;
-					toolChanges.set(change.name, "modified");
-				}
-				break;
-			}
-		}
-	}
-	return {
-		state: { content, sections },
-		declarations,
-		prompt: { sections: sectionChanges, deleted: deletedSections, replayed: { content, sections } },
-		tools: toolChanges,
-		deletedTools,
-	};
-}
-
 /** The slice with a request-only change, or unchanged when there is none. */
 function withToolChange(tool: ToolSlice, change: RequestChange | undefined): ToolSlice {
 	return change === undefined ? tool : { ...tool, change };
-}
-
-/** Plain text of system content; text blocks join with a newline, as Pi renders them. */
-function contentText(content: SystemMessage["content"]): string {
-	return typeof content === "string" ? content : content.map((block) => block.text).join("\n");
 }
 
 // ============================================================================
@@ -188,9 +103,9 @@ function contentText(content: SystemMessage["content"]): string {
  */
 function measureMessages(
 	changes: readonly ConversationChange[],
-	baseline: readonly BaselineMessage[],
+	baseline: readonly ProjectedMessage[],
 ): InjectionItem[] {
-	const consumed = new Set<BaselineMessage>();
+	const consumed = new Set<ProjectedMessage>();
 	/** The first unconsumed conversation message of an entry; an entry rarely holds more than one. */
 	const take = (entryId: string): RequestMessage | undefined => {
 		const found = baseline.find((candidate) => candidate.entryId === entryId
