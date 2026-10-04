@@ -4,10 +4,12 @@
 # and this working copy of pi-context-view, for demo recordings.
 #
 # Usage:
-#   ./scripts/demo-injections.sh [--after] [pi arguments...]
+#   ./scripts/demo-injections.sh [--after] [--force] [pi arguments...]
 #
 #   --after   load pi-context-view before the demo extensions, so their
 #             handlers run after the monitor's; by default they run before it
+#   --force   also load forced-prompt.ts, which replaces the whole system
+#             prompt of every run
 #
 # Other arguments go to pi unchanged, for example `--model` or `--no-session`.
 # Discovered extensions stay disabled, so an installed copy of pi-context-view
@@ -20,8 +22,8 @@
 #
 # context-modify.ts and context-in-place.ts both edit the latest prompt.
 # payload-remove-tool.ts removes the `write` declaration from every request.
-# forced-prompt.ts is left out: it replaces the whole system prompt and would
-# hide the system-prompt demos.
+# forced-prompt.ts loads only with --force: its prompt replaces Pi's structured
+# one, so the system-prompt demos no longer reach the request.
 #
 
 set -euo pipefail
@@ -45,21 +47,32 @@ main() {
     # shell with pi.
     #
     # Parameters:
-    #   $1 - --after - (optional) - load pi-context-view first.
+    #   $1.. - --after, --force - (optional) - load pi-context-view first;
+    #          add the forced-prompt demo. Either order.
     #   $@ - pi arguments - (optional) - passed to pi after the extensions.
     #
     # Example:
-    #   ./scripts/demo-injections.sh --after --model anthropic/claude-haiku-4-5
+    #   ./scripts/demo-injections.sh --after --force --model anthropic/claude-haiku-4-5
     #
     local monitor_first=false
-    if [[ "${1-}" == "--after" ]]; then
-        monitor_first=true
+    local forced=false
+    while (($# > 0)); do
+        case "$1" in
+            --after) monitor_first=true ;;
+            --force) forced=true ;;
+            *) break ;;
+        esac
         shift
+    done
+
+    local fixtures=("${_DEMO_FIXTURES[@]}")
+    if [[ "$forced" == true ]]; then
+        fixtures+=(forced-prompt)
     fi
 
     local extension_args=()
     local fixture
-    for fixture in "${_DEMO_FIXTURES[@]}"; do
+    for fixture in "${fixtures[@]}"; do
         extension_args+=(-e "$_DEMO_REPO_ROOT/test/fixtures/$fixture.ts")
     done
     if [[ "$monitor_first" == true ]]; then

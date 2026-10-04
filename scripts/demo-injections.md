@@ -20,7 +20,7 @@ Marks:
 ## How the results were checked
 
 The v0.6.0 results were checked with Pi 1.0.0. Unreleased was rechecked with
-Pi 1.0.2 at `de563ca`, in a real TUI (tmux, 180×70), in both load orders.
+Pi 1.0.2 at `053aa57`, in a real TUI (tmux, 180×70), in both load orders.
 Both checks used the mock provider from `test/harness/` (`mock-openai/vision`),
 `--no-session --no-skills --no-context-files`, and
 `test/fixtures/payload-logger.ts` loaded last. The Unreleased run also disabled
@@ -86,18 +86,56 @@ external payload log confirms those changes reached the request.
 
 ## Usage view
 
-Demo extensions loaded before pi-context-view. With `--after`, the Extensions
-category is empty; the other counts are the same. The Unreleased rerun confirmed
-these results are unchanged: Usage still uses the older Initial capture, not
-the structured snapshot used by Injections.
+Unreleased Usage counts the current branch with the latest request snapshot
+applied, the one Injections uses for the first request. v0.6.0 used the older
+Initial capture; its `--after` results come from the notes of that check.
 
-| Content in Usage                                     | Target                                          | v0.6.0                                  | Unreleased                              |
-| ---------------------------------------------------- | ----------------------------------------------- | --------------------------------------- | --------------------------------------- |
-| Prompt `two`, deleted by `context-delete`            | not counted                                     | ⚠️ counted                            | ⚠️ counted                            |
-| Prompt `four`, modified by `context-modify`          | counted once, as modified                       | ⚠️ counted twice: original and copy ⁴ | ⚠️ counted twice: original and copy ⁴ |
-| Additions by `context-add` and `context-add-user`    | counted                                         | ✅ counted under Extensions             | ✅ counted under Extensions             |
-| System changes from `context_with_system`            | to decide (D11 lists only conversation changes) | ❌ not counted                          | ❌ not counted                          |
-| `write` declaration removed by `payload-remove-tool` | not counted; counted with `--after`             | ⚠️ counted under Built-in Tools       | ⚠️ counted under Built-in Tools       |
+| Content in Usage                                     | Target: before            | Target: after                     | v0.6.0: before                        | v0.6.0: after      | Unreleased: before              | Unreleased: after |
+| ---------------------------------------------------- | ------------------------- | --------------------------------- | ------------------------------------- | ------------------ | ------------------------------- | ----------------- |
+| Prompt `two`, deleted by `context-delete`            | not counted               | same as before                    | ⚠️ counted                            | ⚠️ counted         | ✅ not counted                   | ✅ not counted     |
+| Prompt `four`, modified by `context-modify`          | counted once, as modified | same as before                    | ⚠️ counted twice: original and copy ⁴ | ⚠️ original only ⁴ | ✅ counted once ⁵                | ✅ counted once ⁵  |
+| Additions by `context-add` and `context-add-user`    | counted                   | same as before                    | ✅ counted under Extensions            | ❌ not counted      | ✅ counted ⁶                     | ✅ counted ⁶       |
+| System changes from `context_with_system`            | counted while fresh       | not counted: edited after monitor | ❌ not counted                         | ➖                  | ✅ counted under System Prompt ⁷ | ➖                 |
+| `XYZZY_IN_PLACE`, appended by `in-place-mutation`    | counted                   | not counted: edited after monitor | not checked                           | not checked        | ✅ counted                       | ➖                 |
+| `write` declaration removed by `payload-remove-tool` | not counted               | counted                           | ⚠️ counted under Built-in Tools       | ✅ counted          | ⚠️ counted under Built-in Tools | ✅ counted         |
 
 4. [Issue #6](https://github.com/dimk90/pi-context-view/issues/6). With `--after`,
    only the original `four` is counted; its edited copy is missing.
+5. As in Injections (footnote 3), the `context-add-user` message replaces the
+   original `four`, and the edited copy of `four` counts as an addition. Each
+   text is counted once, so the total is right. Usage shows no markers.
+6. The `context-add` message counts under Extensions, and the
+   `context-add-user` message under User Messages, by role.
+7. `system-append`, `section-modify`, and `section-patch` text counts under
+   System Prompt, and the section that `section-delete` removes is not counted.
+
+Payload edits from `before_provider_request` are not applied to Usage, in
+either load order: prompt `three`, removed by `payload-delete`, is still
+counted, and the text that `payload-modify` and `payload-rewrite` add is not.
+
+## Forced system prompt
+
+`--force` also loads `forced-prompt.ts`, which returns `systemPrompt` from
+`before_agent_start` on every run (`./scripts/demo-injections.sh --force`, and
+`--after --force`). Pi then sends that text instead of its structured prompt,
+so `system-append`, `section-patch`, `section-modify`, and `section-delete`
+do not reach the request. Pi still sends the tool declarations of the
+recorded system state with the forced text.
+
+Checked with Pi 1.0.2 at `053aa57`, using the same setup and prompts as above.
+The payload log confirmed that, in both load orders, the system message of
+every request was the forced text alone, and the tools were still declared.
+Built-in Tools therefore stays in both views.
+
+| Content                                             | Target                                       | Unreleased: before                    | Unreleased: after |
+| --------------------------------------------------- | -------------------------------------------- | ------------------------------------- | ----------------- |
+| Injections: forced prompt                           | System Prompt holds the forced text          | ✅ 17 tokens, no parts ⁸              | ✅ same as before |
+| Injections: `system-append` and `section-*` changes | not in the request                           | ➖                                    | ➖                |
+| Usage: forced prompt                                | counted as System Prompt, with a Forced note | ✅ 17 tokens, note in the preview     | ✅ same as before |
+| Usage: system changes from `context_with_system`    | not counted                                  | ➖                                    | ➖                |
+
+8. The System Prompt row stays under `pi`, unattributed, and has no marker:
+   only the text shows that it was forced. Its preview has no legend.
+
+The conversation demos still reached the request and appeared in Injections
+as `Added`, `Modified`, and `Deleted` user messages.
