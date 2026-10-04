@@ -25,15 +25,15 @@ the replayed prompt when the request had one, and the custom messages of the
 projection. Ordinary session messages are not listed unless a request-only
 change touches them.
 
-When Initial came from a silent probe, a wrapped `warning` row below the header
-says so:
+When Initial came from a silent probe, the description block carries a wrapped
+bullet with only `request probe` in `warning` color; the rest is dim:
 
 ```text
-Captured by a silent probe with an empty prompt; injections that depend on the prompt text may be missing.
+- Captured by a request probe with an empty prompt. Prompt-dependent injections may be missing.
 ```
 
-Like the degraded reason, it never collapses. The payload guard will compare
-late edits against the provider payload; it is not implemented yet. While that
+The bullet collapses with the rest of the description block. The payload guard
+will compare late edits against the provider payload; it is not implemented yet. While that
 comparison is pending or incomplete, the description block carries one dim
 bullet with the reason, for
 example `Late edits were not checked: No provider payload was observed for this
@@ -85,9 +85,9 @@ stay in place in the tree, with a marker after the estimate:
 
 | Marker     | Color             | Row                                                                                   |
 | ---------- | ----------------- | ------------------------------------------------------------------------------------- |
-| `Added`    | `toolDiffAdded`   | A message, System Prompt part, or tool the request has and the session does not      |
+| `Added`    | `toolDiffAdded`   | A message, System Prompt part, or tool the request has and the session does not       |
 | `Modified` | `warning`         | A message, System Prompt part, or tool whose request version differs from the session |
-| `Deleted`  | `toolDiffRemoved` | A message, System Prompt part, or tool the request removed; it reads 0 tokens        |
+| `Deleted`  | `toolDiffRemoved` | A message, System Prompt part, or tool the request removed; it reads 0 tokens         |
 
 - **Messages.** An added or modified custom message sits under its
   `customType` source with the `message` label; any other message sits under
@@ -134,8 +134,8 @@ The list description survives scrolling, per the floor in
 [Descriptions](../UI.md#descriptions); the `(current/total)` counter never
 collapses it by itself. When capture is degraded, wrap the precise reason below
 the header and show a `[Degraded: …]` indicator beside the description, keeping
-the fallback hierarchy usable. Below both come the late-edit bullet, when
-shown, and one [legend bullet](previews.md#marker-legend) per marker the rows
+the fallback hierarchy usable. Below both come the probe and late-edit bullets,
+when shown, and one [legend bullet](previews.md#marker-legend) per marker the rows
 carry — `Dropped`, `Moved`, `Added`, `Modified`, `Deleted`, or none. All of them
 collapse with the rest of the block.
 

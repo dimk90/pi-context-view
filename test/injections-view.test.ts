@@ -922,7 +922,7 @@ test("InjectionsView previews a modification as Request and Session parts", () =
 	assert.ok(plain.some((line) => line.startsWith("  - Modified parts")), "the preview legend explains its marker");
 });
 
-test("InjectionsView warns about a probe snapshot and notes an unavailable payload comparison", () => {
+test("InjectionsView describes a probe snapshot and notes an unavailable payload comparison", () => {
 	const theme = createTheme();
 	const input = {
 		snapshot: snapshot(2),
@@ -933,20 +933,50 @@ test("InjectionsView warns about a probe snapshot and notes an unavailable paylo
 	const plain = lines.map(stripSgr);
 
 	const header = plain.findIndex((line) => line === "Context Injections · [INITIAL]");
-	assert.match(plain[header + 2] ?? "", /^ {2}Captured by a silent probe with an empty prompt/);
-	assert.ok((lines[header + 2] ?? "").startsWith(theme.getFgAnsi("warning")));
+	assert.match(plain[header + 2] ?? "", /^→ pi/);
+	const description = plain.findIndex((line) => line.includes("Injections into the model context"));
+	const probeNote = lines[description + 1] ?? "";
+	assert.equal(stripSgr(probeNote),
+		"  - Captured by a request probe with an empty prompt. Prompt-dependent injections may be missing.");
+	assert.ok(probeNote.includes(theme.fg("warning", "request probe")));
+	assert.ok(probeNote.includes(`${theme.getFgAnsi("dim")}Captured by a `));
+	assert.ok(probeNote.includes(`${theme.getFgAnsi("dim")} with an empty prompt.`));
+	assert.equal(probeNote.split(theme.getFgAnsi("warning")).length, 2);
 	assert.ok(plain.some((line) =>
 		line === "  - Late edits were not checked: No provider payload was observed for this request."));
 
 	const pending = new InjectionsView(theme, { snapshot: snapshot(2), guard: { status: "pending" } }, () => {}, () => 40);
 	const pendingLines = pending.render(120).map(stripSgr);
 	assert.ok(pendingLines.some((line) => line.includes("Late edits are not checked yet")));
-	assert.ok(!pendingLines.some((line) => line.includes("Captured by a silent probe")));
+	assert.ok(!pendingLines.some((line) => line.includes("request probe")));
 
-	// The note belongs to the description and collapses with it; the probe warning stays
+	// Both notes belong to the description and collapse with it
 	const short = new InjectionsView(theme, input, () => {}, () => 16).render(120).map(stripSgr);
 	assert.ok(!short.some((line) => line.includes("Late edits")));
-	assert.ok(short.some((line) => line.includes("Captured by a silent probe")));
+	assert.ok(!short.some((line) => line.includes("request probe")));
+});
+
+test("InjectionsView wraps the probe bullet and collapses and restores it with the description", () => {
+	let height = 40;
+	const view = new InjectionsView(createTheme(), { snapshot: snapshot(2), probe: true }, () => {}, () => height);
+	for (const width of [24, 60, 80, 120]) {
+		for (height = 12; height <= 40; height++) {
+			const lines = view.render(width);
+			assert.ok(lines.length <= height);
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
+			const plain = lines.map(stripSgr);
+			const description = plain.findIndex((line) => line.includes("Injections into"));
+			const note = plain.findIndex((line) => line.startsWith("  - Captured by a"));
+			assert.equal(note >= 0, description >= 0);
+			if (note < 0) continue;
+			const hints = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
+			const bullet = plain.slice(note, hints - 1);
+			assert.ok(bullet.slice(1).every((line) => line.startsWith("    ")));
+			assert.equal(bullet.map((line) => line.trim()).join(" "),
+				"- Captured by a request probe with an empty prompt. Prompt-dependent injections may be missing.");
+		}
+		assert.ok(view.render(width).map(stripSgr).some((line) => line.startsWith("  - Captured by a")));
+	}
 });
 
 test("changed Injections frames reflow without raw text leaks or partial descriptions", () => {

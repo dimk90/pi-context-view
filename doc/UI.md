@@ -118,10 +118,10 @@ partial and never ellipsized.
 | Injections list | `LIST_DESCRIPTION_MIN_ROWS` (26) rows visible, or a shorter list in full |
 | Preview marker legend | `DESCRIPTION_MIN_CONTENT_ROWS` (22) content rows visible, or a shorter preview in full |
 
-Hints, borders, capture warnings (including the Injections probe warning), and
-configuration notices are not descriptions and never collapse. The Injections `[Degraded: …]` indicator belongs to its
-description block and collapses with it, while the wrapped reason below the
-header stays. The Usage thinking-notation explanation is view content, not a
+Hints, borders, degraded-capture warnings, and configuration notices are not
+descriptions and never collapse. The Injections probe bullet and `[Degraded: …]`
+indicator belong to its description block and collapse with it, while the
+wrapped degraded reason below the header stays. The Usage thinking-notation explanation is view content, not a
 description, and also never collapses.
 
 Why the floors differ: the Usage dashboard has a bounded legend and can drop its

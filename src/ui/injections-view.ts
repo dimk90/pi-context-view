@@ -44,8 +44,6 @@ import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines }
 const LIST_FIXED_LINE_COUNT = 8;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const LIST_DESCRIPTION = "Injections into the model context for the first turn, with token estimates.";
-const PROBE_WARNING = "Captured by a silent probe with an empty prompt; injections that depend on the prompt text" +
-	" may be missing.";
 /** List rows that must stay visible for the description to keep its own rows. */
 const LIST_DESCRIPTION_MIN_ROWS = 26;
 const CURSOR_COLUMN_WIDTH = 2;
@@ -472,11 +470,10 @@ export class InjectionsView {
 		);
 	}
 
-	/** Wrapped capture warnings placed below the dialog header: the degraded reason and the probe origin. */
+	/** Wrapped degraded-capture reason placed below the dialog header. */
 	private degradedWarningLines(width: number): string[] {
 		const warnings: string[] = [];
 		if (this.input.degradedReason !== undefined) warnings.push(normalizeInlineText(this.input.degradedReason));
-		if (this.input.probe === true) warnings.push(PROBE_WARNING);
 		return warnings.flatMap((warning) => wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${warning}`), width));
 	}
 
@@ -495,7 +492,7 @@ export class InjectionsView {
 
 	/**
 	 * Wrapped dialog description: the list sentence, the degraded-capture
-	 * indicator when needed, and one legend bullet per marker the rows show.
+	 * indicator, request notes, and one legend bullet per marker the rows show.
 	 */
 	private descriptionLines(width: number): string[] {
 		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "dim", width);
@@ -506,6 +503,12 @@ export class InjectionsView {
 				"warning",
 				width,
 			));
+		}
+		if (this.input.probe === true) {
+			const note = `Captured by a ${this.theme.fg("warning", "request probe")}` + this.theme.fg(
+				"dim", " with an empty prompt. Prompt-dependent injections may be missing.",
+			);
+			lines.push(...noteBulletLines(this.theme, note, width));
 		}
 		const guardNote = lateEditNote(this.input.guard);
 		if (guardNote !== undefined) lines.push(...noteBulletLines(this.theme, guardNote, width));
