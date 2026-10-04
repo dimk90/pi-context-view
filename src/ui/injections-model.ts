@@ -2,7 +2,7 @@
  * Pure presentation model for the Injections view: flattened rows and
  * list navigation/scrolling state. No pi or TUI access — unit-testable.
  */
-import type { InitialSnapshot, InjectionItem } from "../model.ts";
+import type { InitialSnapshot, InjectionItem, RequestChange } from "../model.ts";
 
 /** One flattened list row derived from the snapshot hierarchy. */
 export type InjectionRow =
@@ -26,6 +26,8 @@ export type InjectionRow =
 		readonly dropped?: boolean;
 		/** Whether an extension moved this part out of the region pi renders it into. */
 		readonly moved?: boolean;
+		/** Request-only change of this contribution. */
+		readonly change?: RequestChange;
 		/** Stable preview target id from the snapshot. */
 		readonly itemId: string;
 	}
@@ -74,6 +76,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 				isLast: isLastItem,
 				dropped: item.dropped,
 				moved: item.moved,
+				change: item.change,
 				itemId: item.id,
 			});
 			const children = item.children ?? [];
@@ -87,6 +90,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 					parentContinues: !isLastItem,
 					dropped: child.dropped,
 					moved: child.moved,
+					change: child.change,
 					itemId: child.id,
 				});
 			});

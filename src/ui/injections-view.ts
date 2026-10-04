@@ -6,6 +6,7 @@ import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-a
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { InitialSnapshot, InjectionItem } from "../model.ts";
+import type { GuardResult } from "../snapshot.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import {
 	buildInjectionRows,
@@ -32,7 +33,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
-import { type ContextMarker, droppedMarker, markerLegendLines, movedMarker } from "./markers.ts";
+import { type ContextMarker, markerLegendLines, noteBulletLines, partMarkers, stateMarkers } from "./markers.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
@@ -43,6 +44,8 @@ import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines }
 const LIST_FIXED_LINE_COUNT = 8;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const LIST_DESCRIPTION = "Injections into the model context for the first turn, with token estimates.";
+const PROBE_WARNING = "Captured by a silent probe with an empty prompt; injections that depend on the prompt text" +
+	" may be missing.";
 /** List rows that must stay visible for the description to keep its own rows. */
 const LIST_DESCRIPTION_MIN_ROWS = 26;
 const CURSOR_COLUMN_WIDTH = 2;
@@ -53,6 +56,10 @@ const TOKEN_LEADER_GAP = 4;
 export interface InjectionsViewInput {
 	readonly snapshot: InitialSnapshot;
 	readonly degradedReason?: string;
+	/** True when a silent probe captured the request, not a real turn. */
+	readonly probe?: boolean;
+	/** Payload comparison of the request; absent for the degraded fallback, which has no request. */
+	readonly guard?: GuardResult;
 }
 
 /** Shared token-value column measured after the fixed cursor column. */
@@ -279,7 +286,7 @@ export class InjectionsView {
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(item.label)));
 		const source = normalizeInlineText(item.source.label);
 		const meta = theme.fg("muted", `${source} · ${item.tokens.toLocaleString("en-US")} tokens`);
-		const marker = item.moved === true ? movedMarker(theme) : "";
+		const marker = stateMarkers(theme, { moved: item.moved, change: item.change });
 		const fitsMarker = visibleWidth(title) + visibleWidth(meta) + visibleWidth(marker) + 2 <= width;
 		lines.push(this.spread(title, `${meta}${fitsMarker ? marker : ""} `, width));
 		lines.push("");
@@ -416,9 +423,7 @@ export class InjectionsView {
 		width: number,
 	): string {
 		if (row.kind !== "item") return "";
-		const marker = row.dropped === true
-			? droppedMarker(this.theme)
-			: row.moved === true ? movedMarker(this.theme) : "";
+		const marker = stateMarkers(this.theme, row);
 		return lineWidth + visibleWidth(marker) <= width ? marker : "";
 	}
 
@@ -467,14 +472,12 @@ export class InjectionsView {
 		);
 	}
 
-	/** Wrapped degraded-capture reason placed below the dialog header. */
+	/** Wrapped capture warnings placed below the dialog header: the degraded reason and the probe origin. */
 	private degradedWarningLines(width: number): string[] {
-		if (this.input.degradedReason === undefined) return [];
-		const reason = this.theme.fg(
-			"warning",
-			`${BODY_INDENT}${normalizeInlineText(this.input.degradedReason)}`,
-		);
-		return wrapTextWithAnsi(reason, width);
+		const warnings: string[] = [];
+		if (this.input.degradedReason !== undefined) warnings.push(normalizeInlineText(this.input.degradedReason));
+		if (this.input.probe === true) warnings.push(PROBE_WARNING);
+		return warnings.flatMap((warning) => wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${warning}`), width));
 	}
 
 	/**
@@ -504,17 +507,15 @@ export class InjectionsView {
 				width,
 			));
 		}
+		const guardNote = lateEditNote(this.input.guard);
+		if (guardNote !== undefined) lines.push(...noteBulletLines(this.theme, guardNote, width));
 		lines.push(...markerLegendLines(this.theme, this.rowMarkers(), width));
 		return lines;
 	}
 
 	/** Markers the hierarchy rows carry, whatever the current width leaves room to render. */
 	private rowMarkers(): ContextMarker[] {
-		const items = this.rows.filter((row) => row.kind === "item");
-		const markers: ContextMarker[] = [];
-		if (items.some((row) => row.dropped === true)) markers.push("dropped");
-		if (items.some((row) => row.moved === true)) markers.push("moved");
-		return markers;
+		return this.rows.flatMap((row) => row.kind === "item" ? partMarkers(row) : []);
 	}
 
 	private spread(left: string, right: string, width: number): string {
@@ -529,5 +530,20 @@ export class InjectionsView {
 		this.cachedWidth = undefined;
 		this.cachedTerminalRows = undefined;
 		this.cachedLines = undefined;
+	}
+}
+
+/**
+ * Description note for a payload comparison that is unavailable, so a missing
+ * comparison never reads as "no late edits". A complete comparison has none.
+ */
+function lateEditNote(guard: GuardResult | undefined): string | undefined {
+	switch (guard?.status) {
+		case "pending":
+			return "Late edits are not checked yet: the payload comparison is pending.";
+		case "incomplete":
+			return `Late edits were not checked: ${normalizeInlineText(guard.reason)}`;
+		default:
+			return undefined;
 	}
 }

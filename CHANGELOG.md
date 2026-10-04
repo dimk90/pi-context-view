@@ -3,6 +3,9 @@
 
 ## Unreleased
 
+### New
+* `[injections]` Show Added, Modified, and Deleted contributions (first request only).
+
 ### Changed
 * `[probe]` Skip probing for queued input, virtual models, and idle warming.
 * `[probe]` Skip probing above the auto-compaction threshold or when settings cannot be checked.

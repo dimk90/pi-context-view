@@ -25,6 +25,11 @@ export function extensionSource(source: string): InjectionSource {
 	return { id: `tool-source:${source}`, label: source, native: false };
 }
 
+/** Source of a custom-role message: its customType, since the actual injector is unknowable. */
+export function messageTypeSource(customType: string): InjectionSource {
+	return { id: `message-type:${customType}`, label: customType, native: false };
+}
+
 /** Shared name of pi's own prompt; Usage and Injections must present it identically. */
 export const SYSTEM_PROMPT_LABEL = "System Prompt";
 
@@ -36,6 +41,14 @@ export const SKILLS_LABEL = "Skills";
 
 /** Shared name of pi's built-in tools; Usage and Injections must present it identically. */
 export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
+
+/**
+ * How a request-only change touched a contribution, relative to the session:
+ *   added      only the request has it; counted
+ *   modified   the request version differs from the session; the request version is counted
+ *   deleted    the request removed it; reads 0 tokens, text is the session original
+ */
+export type RequestChange = "added" | "modified" | "deleted";
 
 /** The frozen lifecycle phase represented by the v0.2.0 injection model. */
 export type InjectionPhase = "initial";
@@ -117,6 +130,8 @@ export interface InjectionSection {
 	 * into. Pi still sends the text, so it counts exactly as an unmoved part.
 	 */
 	readonly moved?: boolean;
+	/** Request-only change of this part; a deleted part carries no counted characters. */
+	readonly change?: RequestChange;
 	/** Serialized JSON inside `text`, e.g. a tool's parameter schema. */
 	readonly jsonSpan?: JsonSpan;
 	/** Preview-only extension prompt lines; their owning tools count them instead. */
@@ -145,6 +160,8 @@ export interface InjectionItem {
 	readonly dropped?: boolean;
 	/** True when an extension moved this part out of the region pi renders it into. */
 	readonly moved?: boolean;
+	/** Request-only change of this contribution; a deleted one reads 0 tokens. */
+	readonly change?: RequestChange;
 	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
 	readonly injectedReferences?: readonly InjectedReference[];
 	/** True when a message exists only in the outgoing request, not the session branch. */

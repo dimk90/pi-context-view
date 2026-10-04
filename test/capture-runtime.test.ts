@@ -21,6 +21,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import registerExtension from "../src/index.ts";
+import { buildInjectionsSnapshot } from "../src/injections.ts";
 import type { ConversationChange, RequestSnapshot, SystemChange } from "../src/snapshot.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
 import contextAdd, { CONTEXT_ADD_TEXT, CONTEXT_ADD_TYPE } from "./fixtures/context-add.ts";
@@ -236,6 +237,43 @@ suite("structured edits", { concurrency: true }, () => {
 			});
 		});
 	}
+});
+
+suite("Injections composition", { concurrency: true }, () => {
+	test("the first snapshot rebuilds its baseline and marks the request-only changes", async (t) => {
+		const provider = await startProvider(t);
+		const fixtures = [contextAdd, contextModify, systemAppend, sectionPatch, sectionDelete];
+		const runtime = await createRuntime(t, provider, { factories: [...fixtures, monitorSlot] });
+		await runtime.session.prompt("original text");
+		await runtime.session.prompt("later prompt");
+		const [first] = await runtime.settled();
+		const composition = buildInjectionsSnapshot({
+			snapshot: first,
+			// Later entries do not change the first snapshot's baseline
+			entries: runtime.session.sessionManager.getEntries(),
+			filterMessages: (messages) => messages,
+			options: { cwd: "/" },
+			allTools: [],
+			systemPrompt: "",
+			activeToolNames: [],
+		});
+
+		const marked = composition.groups.flatMap((group) => group.items.flatMap((item) => [item, ...(item.children ?? [])]))
+			.filter((item) => item.change !== undefined)
+			.map((item) => `${item.source.label} / ${item.label}: ${item.change}`);
+		assert.deepEqual(marked.sort(), [
+			`${CONTEXT_ADD_TYPE} / message: added`,
+			"pi / Documentation: deleted",
+			"pi / Preamble: modified",
+			`pi / ${SECTION_PATCH_NAME}: added`,
+			"unattributed / user message: modified",
+		]);
+		const modified = composition.groups.flatMap((group) => group.items).find((item) => item.change === "modified");
+		assert.deepEqual(modified?.sections?.map((part) => [part.label, part.text]), [
+			["Request", `${CONTEXT_MODIFY_PREFIX} original text`],
+			["Session", JSON.stringify([{ type: "text", text: "original text" }])],
+		]);
+	});
 });
 
 /** Placeholder replaced by the monitor in `createRuntime`, so fixtures can be ordered around it. */

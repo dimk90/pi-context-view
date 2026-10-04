@@ -82,13 +82,15 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
     Decided: `ProbeTrigger` in `src/probe/trigger.ts` owns the preconditions; `resolveInitialCapture()` keeps only Initial and the fallback until the views read snapshots.
     SilentProbe settles before capture settles the probe guard, so ProbeTrigger waits up to 1 s after settlement before failing without a snapshot.
 
-- [ ] **Injections on snapshots** (full composition and changes):
+- [x] **Injections on snapshots** (full composition and changes):
   - Select `first()`; ask ProbeTrigger when the store is empty; keep today's degraded fallback.
   - Build the composition from the snapshot baseline: rebuild with `buildSessionProjection(entries, leafId)`, replay the system state, and measure it the way Usage does today. A forced prompt is measured as the prompt.
   - Decide whether the `before_agent_start` prompt boundary (`promptAtHandler`) is still needed for splitting prompt additions, now that structured prompt edits are in the baseline.
   - Add request-only changes: added messages under their `customType` source or unattributed; modifications and deletions with their baseline message; system patches.
   - Label probe snapshots; show a pending or incomplete guard as an unavailable comparison, never as "no edits".
   - Specify rows and previews for modifications and deletions in `doc/ui/injections.md` before implementing them.
+    Decided: apply changes in place with Added/Modified/Deleted markers (diff colors); modified messages preview Request plus the uncounted Session original, deletions preview the original at zero tokens. Keep baseline custom messages, current `customPrompt` for Dropped markers, a probe warning below the header, and pending/incomplete guard notes in the collapsible description. Injections no longer uses `promptAtHandler`; old Initial keeps it until the next step.
+    Verified on Pi 1.0.1: `pnpm check` (365 tests); mock-provider real-PTY runs in fullscreen and regular modes, both extension orders, 24/60/80/120 columns, height changes, preview/back, both views, reload, and dark/system themes. Marker/forced-prompt/input-transform probes in both orders kept the `after_provider_response` sentinel silent.
 
 - [ ] **Usage on snapshots and old capture removal** (D11, [#6](https://github.com/dimk90/pi-context-view/issues/6)):
   - Select `latest()` instead of Initial. Apply conversation changes by baseline entry: count additions, replace modified messages, remove deleted ones. Drop stale changes whose entry is no longer in the current projection.

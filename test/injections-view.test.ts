@@ -867,3 +867,112 @@ test("InjectionsView navigation scrolls the non-selectable total and Escape clos
 	view.handleInput("\u001b");
 	assert.equal(closed, true);
 });
+
+/** A snapshot whose items carry each request-only change, one of them with Request and Session parts. */
+function changedSnapshot(): InitialSnapshot {
+	const base = (id: string, tokens: number) => ({ ...item(id, "unattributed", false, tokens), text: `${id} text` });
+	const items: InjectionItem[] = [
+		{ ...base("added", 4), label: "added message", change: "added" },
+		{
+			...base("modified", 5),
+			label: "modified message",
+			change: "modified",
+			sections: [
+				{ label: "Request", text: "request version", tokens: 5 },
+				{ label: "Session", text: "session original", tokens: 0 },
+			],
+		},
+		{ ...base("deleted", 0), label: "deleted message", text: "deleted original", change: "deleted" },
+	];
+	const changes = group("unattributed", false, items);
+	return { origin: "real-turn", capturedAt: new Date("2026-07-10T12:00:00Z"), groups: [changes], totalTokens: 9 };
+}
+
+test("InjectionsView marks request-only changes after the estimate and explains them", () => {
+	const theme = createTheme();
+	const view = new InjectionsView(theme, { snapshot: changedSnapshot() }, () => {}, () => 40);
+	const lines = view.render(100);
+	const plain = lines.map(stripSgr);
+
+	assert.match(plain.find((line) => line.includes("added message")) ?? "", /4 · Added$/);
+	assert.match(plain.find((line) => line.includes("modified message")) ?? "", /5 · Modified$/);
+	assert.match(plain.find((line) => line.includes("deleted message")) ?? "", /0 · Deleted$/);
+	const deletedLine = lines.find((line) => stripSgr(line).includes("deleted message")) ?? "";
+	assert.ok(deletedLine.includes(theme.fg("toolDiffRemoved", "Deleted")));
+	assert.ok(lines.some((line) => line.includes(theme.fg("toolDiffAdded", "Added"))));
+	for (const keyword of ["Added", "Modified", "Deleted"]) {
+		assert.ok(plain.some((line) => line.startsWith(`  - ${keyword} parts`)), `${keyword} legend bullet`);
+	}
+	assert.equal(plain.find((line) => line.trim().startsWith("TOTAL"))?.trim().endsWith("9"), true);
+});
+
+test("InjectionsView previews a modification as Request and Session parts", () => {
+	const view = new InjectionsView(createTheme(), { snapshot: changedSnapshot() }, () => {}, () => 40);
+	view.handleInput("\u001b[B");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	const plain = view.render(100).map(stripSgr);
+
+	assert.match(plain.find((line) => line.includes("modified message")) ?? "", /5 tokens · Modified/);
+	const request = plain.findIndex((line) => line.trim() === "Request · 5 tokens");
+	const session = plain.findIndex((line) => line.trim() === "Session · 0 tokens");
+	assert.ok(request >= 0 && session > request);
+	assert.equal(plain[request + 1]?.trim(), "request version");
+	assert.equal(plain[session + 1]?.trim(), "session original");
+	assert.ok(plain.some((line) => line.startsWith("  - Modified parts")), "the preview legend explains its marker");
+});
+
+test("InjectionsView warns about a probe snapshot and notes an unavailable payload comparison", () => {
+	const theme = createTheme();
+	const input = {
+		snapshot: snapshot(2),
+		probe: true,
+		guard: { status: "incomplete", reason: "No provider payload was observed for this request." },
+	} as const;
+	const lines = new InjectionsView(theme, input, () => {}, () => 40).render(120);
+	const plain = lines.map(stripSgr);
+
+	const header = plain.findIndex((line) => line === "Context Injections · [INITIAL]");
+	assert.match(plain[header + 2] ?? "", /^ {2}Captured by a silent probe with an empty prompt/);
+	assert.ok((lines[header + 2] ?? "").startsWith(theme.getFgAnsi("warning")));
+	assert.ok(plain.some((line) =>
+		line === "  - Late edits were not checked: No provider payload was observed for this request."));
+
+	const pending = new InjectionsView(theme, { snapshot: snapshot(2), guard: { status: "pending" } }, () => {}, () => 40);
+	const pendingLines = pending.render(120).map(stripSgr);
+	assert.ok(pendingLines.some((line) => line.includes("Late edits are not checked yet")));
+	assert.ok(!pendingLines.some((line) => line.includes("Captured by a silent probe")));
+
+	// The note belongs to the description and collapses with it; the probe warning stays
+	const short = new InjectionsView(theme, input, () => {}, () => 16).render(120).map(stripSgr);
+	assert.ok(!short.some((line) => line.includes("Late edits")));
+	assert.ok(short.some((line) => line.includes("Captured by a silent probe")));
+});
+
+test("changed Injections frames reflow without raw text leaks or partial descriptions", () => {
+	let height = 70;
+	const view = new InjectionsView(createTheme(), {
+		snapshot: changedSnapshot(), probe: true,
+		guard: { status: "incomplete", reason: "No payload.\u001b[2J" },
+	}, () => {}, () => height);
+	for (const width of [1, 24, 60, 80, 120]) {
+		for (height of [1, 16, 24, 45, 70]) {
+			const frame = view.render(width);
+			assert.ok(frame.length <= height, `${width}x${height}: height`);
+			assert.ok(frame.every((line) => visibleWidth(line) <= width), `${width}x${height}: width`);
+			const plain = frame.map(stripSgr).join("\n");
+			assert.doesNotMatch(plain, /session original|deleted original|\u001b\[2J/);
+		}
+	}
+	height = 70;
+	const expanded = view.render(120).map(stripSgr).join("\n");
+	assert.match(expanded, /Late edits were not checked/);
+	assert.match(expanded, /Deleted parts/);
+	view.handleInput("\u001b[F");
+	view.handleInput("\r");
+	assert.match(view.render(120).map(stripSgr).join("\n"), /deleted original/);
+	view.handleInput("\u001b");
+	const returned = view.render(120).map(stripSgr).join("\n");
+	assert.match(returned, /→ .*deleted message/);
+	assert.doesNotMatch(returned, /deleted original/);
+});

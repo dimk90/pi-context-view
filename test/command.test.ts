@@ -14,12 +14,13 @@ import {
 	reportTuiOnly,
 	reportUnsupportedPi,
 	resolveInitialCapture,
+	resolveInitialRequest,
 } from "../src/command.ts";
 import { CompactionState } from "../src/compaction.ts";
 import { ProbeFilter } from "../src/probe/filter.ts";
 import { SilentProbe } from "../src/probe/silent-probe.ts";
 import { ProbeTrigger } from "../src/probe/trigger.ts";
-import { SnapshotStore } from "../src/snapshot.ts";
+import { type RequestSnapshot, SnapshotStore } from "../src/snapshot.ts";
 import { readProbeToken } from "../src/probe/token.ts";
 
 /** Collect what a command reports through the TUI notification path. */
@@ -209,4 +210,71 @@ test("resolveInitialCapture skips the probe when compaction starts while waiting
 	assert.equal(unusedAttempt.started, true, "skipping compaction must not consume the runtime's probe attempt");
 	probe.fail("test cleanup");
 	assert.deepEqual(await unusedAttempt.completion, { status: "failed", reason: "test cleanup" });
+});
+
+/** A published snapshot with no changes; only its identity matters to Initial resolution. */
+function requestSnapshot(id: number, origin: RequestSnapshot["origin"]): RequestSnapshot {
+	return {
+		id, origin, capturedAt: 0, leafId: null,
+		changes: { conversation: [], system: [] },
+		guard: { status: "incomplete", reason: "No payload." },
+	};
+}
+
+test("resolveInitialRequest returns the first snapshot without probing", async () => {
+	const store = new SnapshotStore();
+	store.publish(requestSnapshot(1, "real-turn"));
+	store.publish(requestSnapshot(2, "real-turn"));
+	const trigger = { request: async () => assert.fail("no probe while a snapshot exists") } as unknown as ProbeTrigger;
+	const context = { waitForIdle: async () => assert.fail("no wait while a snapshot exists") } as unknown as
+		ExtensionCommandContext;
+
+	const result = await resolveInitialRequest({} as ExtensionAPI, store, trigger, context);
+
+	assert.equal(result.type === "snapshot" ? result.snapshot.id : undefined, 1);
+});
+
+test("resolveInitialRequest takes a snapshot a running turn published before idle, without probing", async () => {
+	const store = new SnapshotStore();
+	const trigger = { request: async () => assert.fail("the running turn supplies Initial") } as unknown as ProbeTrigger;
+	const context = {
+		waitForIdle: async () => store.publish(requestSnapshot(1, "real-turn")),
+	} as unknown as ExtensionCommandContext;
+
+	const result = await resolveInitialRequest({} as ExtensionAPI, store, trigger, context);
+
+	assert.equal(result.type === "snapshot" ? result.snapshot.origin : undefined, "real-turn");
+});
+
+test("resolveInitialRequest asks ProbeTrigger once the store is empty and falls back on failure", async () => {
+	const store = new SnapshotStore();
+	let probed = 0;
+	const failing = {
+		request: async () => {
+			probed++;
+			return { status: "failed", reason: "Silent probe unavailable: a virtual model is selected." };
+		},
+	} as unknown as ProbeTrigger;
+	const pi = { getActiveTools: () => [], getAllTools: () => [] } as unknown as ExtensionAPI;
+	const context = {
+		waitForIdle: async () => undefined,
+		getSystemPrompt: () => "base prompt",
+		getSystemPromptOptions: () => ({ cwd: "/tmp" }),
+	} as unknown as ExtensionCommandContext;
+
+	const fallback = await resolveInitialRequest(pi, store, failing, context);
+	assert.equal(probed, 1);
+	assert.equal(fallback.type, "fallback");
+	assert.equal(fallback.type === "fallback" ? fallback.fallback.degradedReason : undefined,
+		"Silent probe unavailable: a virtual model is selected. Extension additions were not observed.");
+
+	const capturing = {
+		request: async () => {
+			const snapshot = requestSnapshot(1, "synthetic-probe");
+			store.publish(snapshot);
+			return { status: "captured", snapshot };
+		},
+	} as unknown as ProbeTrigger;
+	const probe = await resolveInitialRequest(pi, store, capturing, context);
+	assert.equal(probe.type === "snapshot" ? probe.snapshot.origin : undefined, "synthetic-probe");
 });

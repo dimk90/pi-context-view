@@ -6,26 +6,31 @@
 import {
 	type BuildSystemPromptOptions,
 	type ContextEvent,
-	convertToLlm,
 	estimateTokens,
-	formatSize,
 	type SlashCommandInfo,
 	type SourceInfo,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 
-import { analyzeSystemPrompt, type PromptOptionsSlice, textTokens, type ToolSlice } from "./measure.ts";
+import { analyzeSystemPrompt, type PromptOptionsSlice, textTokens } from "./measure.ts";
+import { messagePreview } from "./message-preview.ts";
 import { copySystemMessage, systemMessageText } from "./transcript.ts";
 import {
 	AGGREGATE_SOURCE,
 	buildSnapshot,
 	type InitialSnapshot,
 	type InjectionItem,
-	type InjectionSource,
-	type JsonSpan,
+	messageTypeSource,
 } from "./model.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
+import {
+	buildNativeSnapshot,
+	captureActiveTools,
+	copyPromptOptions,
+	type NativeSnapshotInput,
+	replayedToolSlices,
+} from "./replay.ts";
 import type { CaptureOrigin } from "./snapshot.ts";
 
 /** Everything available when the first context event finalizes a snapshot. */
@@ -38,17 +43,6 @@ export interface CaptureFinalization {
 	/** Loaded extension provenance, used only to guess who appended prompt text. */
 	promptSources?: readonly PromptSourceSlice[];
 	origin: CaptureOrigin;
-	capturedAt?: Date;
-}
-
-/** Inputs for an on-demand pi-native prompt/tool snapshot. */
-export interface NativeSnapshotInput {
-	systemPrompt: string;
-	options: BuildSystemPromptOptions;
-	allTools: readonly ToolInfo[];
-	activeToolNames: readonly string[];
-	/** Loaded extension provenance, used only to guess who appended prompt text. */
-	promptSources?: readonly PromptSourceSlice[];
 	capturedAt?: Date;
 }
 
@@ -117,14 +111,6 @@ export class InitialCaptureState {
 	}
 }
 
-/** Build a view-local pi-native snapshot without freezing the main capture state. */
-export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot {
-	const options = copyPromptOptions(input.options);
-	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options);
-	const items = analyzeSystemPrompt(input.systemPrompt, options, tools, { sources: input.promptSources });
-	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
-}
-
 /** Inputs for Usage's branch-local prompt/tool estimate and frozen request-only patches. */
 export interface UsageSnapshotInput extends NativeSnapshotInput {
 	messages: ContextEvent["messages"];
@@ -144,19 +130,7 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
 	const state = getCurrentSystemMessage([...input.messages, ...patches]);
 	if (state === undefined) return mergeRequestOnlyMessages(buildNativeSnapshot(input), input.initial);
-	const registered = new Map(input.allTools.map((tool) => [tool.name, tool]));
-	const tools: ToolSlice[] = (state.toolsAdded ?? []).map((tool) => {
-		const metadata = registered.get(tool.name);
-		const snippetLine = state.sections?.tools?.split("\n").find((line) => line.startsWith(`- ${tool.name}: `));
-		return {
-			name: tool.name,
-			description: tool.description,
-			parametersJson: JSON.stringify(tool.parameters),
-			snippet: snippetLine?.slice(`- ${tool.name}: `.length),
-			guidelines: normalizeGuidelines(metadata?.promptGuidelines),
-			source: metadata?.sourceInfo.source ?? "unattributed",
-		};
-	});
+	const tools = replayedToolSlices(state, state.toolsAdded ?? [], input.allTools);
 	const options = copyPromptOptions(input.options);
 	const items = analyzeSystemPrompt(systemMessageText(state), {
 		...options,
@@ -181,15 +155,6 @@ export function mergeRequestOnlyMessages(
 		...requestOnly,
 	];
 	return buildSnapshot(items, snapshot.origin, snapshot.capturedAt);
-}
-
-/** Copy the prompt-options slice used by measurement, without shared nested references. */
-export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOptionsSlice {
-	return {
-		homeDir: process.env.HOME,
-		customPrompt: options.customPrompt,
-		sections: options.sections === undefined ? undefined : { ...options.sections },
-	};
 }
 
 /**
@@ -239,30 +204,6 @@ function addPromptSource(
 }
 
 /**
- * Snapshot the final active tool set with provenance and payload definitions.
- * Keep pi's active-tool order: it decides which tool owns a guideline bullet
- * that several tools declare.
- */
-export function captureActiveTools(
-	allTools: readonly ToolInfo[],
-	activeToolNames: readonly string[],
-	options: { readonly toolSnippets?: Readonly<Record<string, string>> },
-): ToolSlice[] {
-	const byName = new Map(allTools.map((tool) => [tool.name, tool]));
-	return [...new Set(activeToolNames)]
-		.map((name) => byName.get(name))
-		.filter((tool) => tool !== undefined)
-		.map((tool) => ({
-			name: tool.name,
-			description: tool.description,
-			parametersJson: JSON.stringify(tool.parameters ?? {}),
-			snippet: options.toolSnippets?.[tool.name],
-			guidelines: normalizeGuidelines(tool.promptGuidelines),
-			source: tool.sourceInfo.source,
-		}));
-}
-
-/**
  * Measure extension messages while excluding ordinary session history. Custom
  * messages remain attributable by customType; other roles are captured only
  * when they differ from the session-branch baseline.
@@ -288,7 +229,7 @@ export function measureInjectedMessages(
 				: `message:context:${message.role}:${occurrence}`,
 			phase: "initial",
 			kind: "message",
-			source: message.role === "custom" ? messageSource(message.customType) : AGGREGATE_SOURCE,
+			source: message.role === "custom" ? messageTypeSource(message.customType) : AGGREGATE_SOURCE,
 			label: message.role === "custom" ? "message" : `${message.role} message`,
 			chars: text.length,
 			tokens: message.role === "system" ? textTokens(systemMessageText(message)) : estimateTokens(message),
@@ -322,74 +263,4 @@ function consumeMessageSignature(
 	if (count === 1) counts.delete(signature);
 	else counts.set(signature, count - 1);
 	return true;
-}
-
-/** Provider-bound message content for raw preview, with any serialization marked as JSON. */
-interface MessagePreview {
-	readonly text: string;
-	readonly jsonSpan?: JsonSpan;
-}
-
-/** Extract content-only previews without raw image payloads or opaque assistant signatures. */
-function messagePreview(message: ContextEvent["messages"][number]): MessagePreview {
-	if (message.role === "system") return { text: systemMessageText(message) };
-	if (message.role === "branchSummary" || message.role === "compactionSummary") {
-		return { text: message.summary };
-	}
-	if (message.role === "bashExecution") {
-		const content = convertToLlm([message])[0]?.content ?? "";
-		return {
-			text: typeof content === "string"
-				? content
-				: content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n"),
-		};
-	}
-	if (typeof message.content === "string") return { text: message.content };
-	if (message.role === "assistant") {
-		const content = message.content.map((block) => {
-			if (block.type === "text") {
-				const { textSignature, ...preview } = block;
-				return preview;
-			}
-			if (block.type === "thinking") {
-				const { thinkingSignature, ...preview } = block;
-				return preview;
-			}
-			if (block.type === "toolCall") {
-				const { thoughtSignature, ...preview } = block;
-				return preview;
-			}
-			return block;
-		});
-		return serializedPreview(JSON.stringify(content));
-	}
-	return serializedPreview(JSON.stringify(message.content.map(imagePreviewBlock)));
-}
-
-/**
- * Replace a captured image payload with the size it occupied, so a preview
- * reports what the message carried without retaining or rendering its bytes.
- * Sizes measure the base64 text as captured, not the decoded image.
- */
-function imagePreviewBlock<Block extends { readonly type: string }>(block: Block): Block {
-	if (block.type !== "image") return block;
-	const data = (block as { readonly data?: unknown }).data;
-	if (typeof data !== "string") return block;
-	return { ...block, data: `<${formatSize(data.length)} omitted>` };
-}
-
-/** Preview whose whole text is one serialized JSON document. */
-function serializedPreview(text: string): MessagePreview {
-	return { text, jsonSpan: { start: 0, end: text.length } };
-}
-
-/** Attribute a custom-role message to its customType; the actual injector is unknowable. */
-function messageSource(customType: string): InjectionSource {
-	return { id: `message-type:${customType}`, label: customType, native: false };
-}
-
-/** Normalize the string-or-array promptGuidelines field to an owned array. */
-function normalizeGuidelines(guidelines: string | string[] | undefined): string[] {
-	if (guidelines === undefined) return [];
-	return Array.isArray(guidelines) ? [...guidelines] : [guidelines];
 }

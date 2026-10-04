@@ -74,7 +74,8 @@ Every frame showing a marker also explains it, through the
 [marker legend](ui/previews.md#marker-legend) in its description block. A legend
 bullet opens with the keyword in the same fixed color as the marker it explains,
 so `Highlighted` uses `syntaxNumber`, `(guess)` `dim`, `Dropped`
-`toolDiffRemoved`, and `Moved` `warning`.
+`toolDiffRemoved`, `Moved` `warning`, `Added` `toolDiffAdded`, `Modified`
+`warning`, and `Deleted` `toolDiffRemoved`.
 
 Moved `Available Tools` and `Guidelines` sections outside pi's normal order
 carry a fixed `warning` `Moved` marker after the estimate, in hierarchy rows,
@@ -83,6 +84,12 @@ standalone header omits the whole marker when it will not fit. It describes
 position, not ownership or a dropped contribution: these parts count normally,
 and extension tool lines keep their own attribution. Like `Dropped`, it is not
 configurable and does not change category/map colors.
+
+Injections marks request-only changes with fixed `Added`, `Modified`, and
+`Deleted` markers after the estimate, in hierarchy rows, preview subheaders,
+and preview headers; [ui/injections.md](ui/injections.md#request-only-changes)
+defines them. They follow the same separator, fit, and configuration rules as
+`Dropped` and `Moved`.
 
 A user-configurable color names either a pi theme color key, which tracks the
 active theme, or a literal `#rgb`/`#rrggbb` value, which pins the element across
@@ -111,8 +118,8 @@ partial and never ellipsized.
 | Injections list | `LIST_DESCRIPTION_MIN_ROWS` (26) rows visible, or a shorter list in full |
 | Preview marker legend | `DESCRIPTION_MIN_CONTENT_ROWS` (22) content rows visible, or a shorter preview in full |
 
-Hints, borders, capture warnings, and configuration notices are not descriptions
-and never collapse. The Injections `[Degraded: …]` indicator belongs to its
+Hints, borders, capture warnings (including the Injections probe warning), and
+configuration notices are not descriptions and never collapse. The Injections `[Degraded: …]` indicator belongs to its
 description block and collapses with it, while the wrapped reason below the
 header stays. The Usage thinking-notation explanation is view content, not a
 description, and also never collapses.

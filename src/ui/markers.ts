@@ -7,13 +7,14 @@
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
+import type { RequestChange } from "../model.ts";
 import { BODY_INDENT, fitLine } from "./layout.ts";
 
 /** Dim separator introducing a state marker after the estimate it explains. */
 const MARKER_SEPARATOR = " · ";
 
 /** Markers a frame can show, in the fixed order their legend bullets render. */
-const MARKER_ORDER = ["highlighted", "guess", "dropped", "moved"] as const;
+const MARKER_ORDER = ["highlighted", "guess", "dropped", "moved", "added", "modified", "deleted"] as const;
 
 /** One marked state a description bullet explains. */
 export type ContextMarker = (typeof MARKER_ORDER)[number];
@@ -54,6 +55,24 @@ const MARKER_LEGENDS: Record<ContextMarker, MarkerLegend> = {
 		explanation: " blocks appear in a different position in the system prompt than usual." +
 			" Their token counts are unchanged.",
 	},
+	added: {
+		keyword: "Added",
+		color: "toolDiffAdded",
+		explanation: " parts exist only in this request: an extension added them, and the session does not" +
+			" keep them. They are counted.",
+	},
+	modified: {
+		keyword: "Modified",
+		color: "warning",
+		explanation: " parts were changed by an extension for this request only; the session keeps the" +
+			" original. The request version is counted.",
+	},
+	deleted: {
+		keyword: "Deleted",
+		color: "toolDiffRemoved",
+		explanation: " parts were removed by an extension for this request only; the session keeps them." +
+			" They are counted nowhere.",
+	},
 };
 
 /** Themed marker naming content pi never sent, for a preview subheader or a hierarchy row. */
@@ -64,6 +83,35 @@ export function droppedMarker(theme: Theme): string {
 /** Themed marker naming content pi sends from elsewhere in the prompt than it wrote it. */
 export function movedMarker(theme: Theme): string {
 	return stateMarker(theme, MARKER_LEGENDS.moved);
+}
+
+/** Themed marker naming how a request-only change touched a part. */
+export function changeMarker(theme: Theme, change: RequestChange): string {
+	return stateMarker(theme, MARKER_LEGENDS[change]);
+}
+
+/**
+ * Every state marker of one part, in legend order: dropped, moved, then its
+ * request-only change. Empty when the part carries none.
+ */
+export function stateMarkers(
+	theme: Theme,
+	part: { readonly dropped?: boolean; readonly moved?: boolean; readonly change?: RequestChange },
+): string {
+	let markers = part.dropped === true ? droppedMarker(theme) : part.moved === true ? movedMarker(theme) : "";
+	if (part.change !== undefined) markers += changeMarker(theme, part.change);
+	return markers;
+}
+
+/** Markers one part carries, for the legend of the frame showing it. */
+export function partMarkers(
+	part: { readonly dropped?: boolean; readonly moved?: boolean; readonly change?: RequestChange },
+): ContextMarker[] {
+	const markers: ContextMarker[] = [];
+	if (part.dropped === true) markers.push("dropped");
+	if (part.moved === true) markers.push("moved");
+	if (part.change !== undefined) markers.push(part.change);
+	return markers;
 }
 
 /** Themed suffix naming an owner this extension inferred rather than one pi reported. */
@@ -85,6 +133,11 @@ export function markerLegendLines(
 	const shown = new Set(markers);
 	return MARKER_ORDER.filter((marker) => shown.has(marker))
 		.flatMap((marker) => bulletLines(theme, MARKER_LEGENDS[marker], width));
+}
+
+/** One dim description bullet with a hanging indent, for a note that is not a marker legend. */
+export function noteBulletLines(theme: Theme, text: string, width: number): string[] {
+	return bulletLines(theme, { keyword: "", color: "dim", explanation: text }, width);
 }
 
 /** Dim separator plus the keyword in the one fixed color its legend bullet also opens with. */

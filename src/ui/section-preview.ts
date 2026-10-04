@@ -7,17 +7,11 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { InjectedReference, InjectionSection, JsonSpan } from "../model.ts";
+import type { InjectedReference, InjectionSection, JsonSpan, RequestChange } from "../model.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { shiftJsonSpan } from "./json-preview.ts";
 import { BODY_INDENT, calculateViewport, descriptionBlockRows } from "./layout.ts";
-import {
-	type ContextMarker,
-	droppedMarker,
-	guessMarker,
-	markerLegendLines,
-	movedMarker,
-} from "./markers.ts";
+import { type ContextMarker, guessMarker, markerLegendLines, partMarkers, stateMarkers } from "./markers.ts";
 
 /**
  * Arrow introducing a restored line's source label. Non-breaking spaces bind
@@ -38,6 +32,8 @@ export interface SectionedContent {
 	readonly dropped?: boolean;
 	/** True when an extension moved this content out of the region pi renders it into. */
 	readonly moved?: boolean;
+	/** Request-only change of this content, shown only by Injections. */
+	readonly change?: RequestChange;
 }
 
 /** Space shared by uncapped preview content, its counter, and the marker legend. */
@@ -110,8 +106,8 @@ function previewMarkers(contents: readonly SectionedContent[]): ContextMarker[] 
 	const markers: ContextMarker[] = [];
 	if (referenced.length > 0) markers.push("highlighted");
 	if (referenced.some(hasGuessedReferences)) markers.push("guess");
-	if (marked.some((part) => part.dropped === true)) markers.push("dropped");
-	if (marked.some((part) => part.moved === true)) markers.push("moved");
+	// The legend orders and deduplicates markers itself
+	markers.push(...marked.flatMap(partMarkers));
 	return markers;
 }
 
@@ -204,6 +200,5 @@ function headingKey(text: string): string {
 function sectionHeaderLines(theme: Theme, section: InjectionSection, wrapWidth: number): string[] {
 	const label = theme.fg("syntaxKeyword", theme.bold(normalizeInlineText(section.label)));
 	const tokens = theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
-	const marker = section.dropped === true ? droppedMarker(theme) : section.moved === true ? movedMarker(theme) : "";
-	return wrapTextWithAnsi(`${label}${tokens}${marker}`, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
+	return wrapTextWithAnsi(`${label}${tokens}${stateMarkers(theme, section)}`, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
 }

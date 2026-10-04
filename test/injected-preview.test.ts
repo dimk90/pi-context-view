@@ -47,6 +47,24 @@ const LEGEND: Record<ContextMarker, { keyword: string; color: ThemeColor; senten
 		sentence: "blocks appear in a different position in the system prompt than usual." +
 			" Their token counts are unchanged.",
 	},
+	added: {
+		keyword: "Added",
+		color: "toolDiffAdded",
+		sentence: "parts exist only in this request: an extension added them, and the session does not" +
+			" keep them. They are counted.",
+	},
+	modified: {
+		keyword: "Modified",
+		color: "warning",
+		sentence: "parts were changed by an extension for this request only; the session keeps the" +
+			" original. The request version is counted.",
+	},
+	deleted: {
+		keyword: "Deleted",
+		color: "toolDiffRemoved",
+		sentence: "parts were removed by an extension for this request only; the session keeps them." +
+			" They are counted nowhere.",
+	},
 };
 const DESCRIPTION = `- ${LEGEND.highlighted.keyword} ${LEGEND.highlighted.sentence}`;
 

@@ -11,13 +11,12 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import {
-	captureActiveTools,
 	collectPromptSources,
-	copyPromptOptions,
 	InitialCaptureState,
 	measureInjectedMessages,
 	mergeRequestOnlyMessages,
 } from "../src/capture.ts";
+import { captureActiveTools, copyPromptOptions } from "../src/replay.ts";
 import { buildSnapshot, type InjectionItem } from "../src/model.ts";
 
 /** Minimal custom-role message fixture. */

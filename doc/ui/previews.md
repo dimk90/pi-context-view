@@ -12,9 +12,12 @@ part under its own bold `syntaxKeyword` subheader followed by a muted
 trailing blank rows of the preceding part with this separator; preserve blank
 rows inside its body and leave captured text and token estimates unchanged.
 Part shares reconcile exactly with the item or entry estimate and never add to
-it. Show the applicable subheader even when `Definition` is the only captured
+it. In Injections, a modified message's `Session` part and a deleted part keep
+reference text at 0 tokens; only the request version contributes to the parent.
+Show the applicable subheader even when `Definition` is the only captured
 part; omit parts with no captured text rather than rendering zero-token
-placeholders. Two kinds of part carry no counted text by design and still
+placeholders. In addition to those request-only change references, two kinds
+of part carry no counted text by design and still
 render at 0 tokens: `Extension Additions` whenever it hosts restored lines, and
 any part a `--system-prompt` replacement dropped, which keeps its subheader with
 the [`Dropped` marker](../UI.md#color-and-casing) after its estimate — even with
@@ -89,6 +92,12 @@ uses, followed by dim text:
 >   nowhere.
 > - **Moved** blocks appear in a different position in the system prompt than
 >   usual. Their token counts are unchanged.
+> - **Added** parts exist only in this request: an extension added them, and
+>   the session does not keep them. They are counted.
+> - **Modified** parts were changed by an extension for this request only; the
+>   session keeps the original. The request version is counted.
+> - **Deleted** parts were removed by an extension for this request only; the
+>   session keeps them. They are counted nowhere.
 
 Each sentence is fixed and states its own accounting, so the `Dropped` bullet
 reads as the exception to the `Highlighted` one wherever a preview shows both.
@@ -103,8 +112,9 @@ A bullet renders only where its mark is visible on that frame:
   preview of both views, including the direct single-entry Usage preview, in the
   standalone `Available Tools` and `Guidelines` children in Injections, and in
   multi-entry Usage streams and their full content levels.
-- `Dropped` and `Moved` follow the part states a frame renders: preview
-  subheaders and item metadata in any category, and Injections hierarchy rows.
+- `Dropped`, `Moved`, `Added`, `Modified`, and `Deleted` follow the part
+  states a frame renders: preview subheaders and item metadata in any category,
+  and Injections hierarchy rows. Only Injections renders the last three.
   They follow the captured state, not each row's fit, so a row too narrow for
   its own marker keeps the bullet that explains it.
 

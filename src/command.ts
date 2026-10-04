@@ -1,15 +1,17 @@
 /**
- * `/context` command grammar, argument completions, and Initial capture
- * resolution shared by the Usage and Injections views.
+ * `/context` command grammar, argument completions, and Initial resolution:
+ * the old Initial capture for Usage, the first request snapshot for Injections.
  */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
-import { buildNativeSnapshot, type InitialCaptureState } from "./capture.ts";
+import type { InitialCaptureState } from "./capture.ts";
 import type { ConfigCreationResult } from "./config.ts";
 import type { InitialSnapshot } from "./model.ts";
 import { MIN_PI_VERSION } from "./pi-version.ts";
 import type { ProbeTrigger } from "./probe/trigger.ts";
+import { buildNativeSnapshot } from "./replay.ts";
+import type { RequestSnapshot, SnapshotReader } from "./snapshot.ts";
 import { normalizePreviewText } from "./text.ts";
 
 const COMMAND_USAGE = "Usage: /context [usage|injections|config]";
@@ -42,6 +44,11 @@ export interface InitialCaptureResult {
 	readonly snapshot: InitialSnapshot;
 	readonly degradedReason?: string;
 }
+
+/** Initial request for Injections: the first request snapshot, or the degraded pi-native fallback. */
+export type InitialRequestResult =
+	| { readonly type: "snapshot"; readonly snapshot: RequestSnapshot }
+	| { readonly type: "fallback"; readonly fallback: InitialCaptureResult };
 
 /** Parse the complete, intentionally small `/context` argument grammar. */
 export function parseContextCommand(argumentsText: string): ContextCommand {
@@ -85,6 +92,30 @@ export async function resolveInitialCapture(
 	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
 	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture Initial.";
 	return createFallback(pi, context, reason);
+}
+
+/**
+ * Obtain the first request snapshot of this runtime, asking ProbeTrigger only
+ * when the store has none after the agent is idle: a real turn that was running
+ * publishes one without a probe.
+ */
+export async function resolveInitialRequest(
+	pi: ExtensionAPI,
+	snapshots: SnapshotReader,
+	trigger: ProbeTrigger,
+	context: ExtensionCommandContext,
+): Promise<InitialRequestResult> {
+	const existing = snapshots.first();
+	if (existing !== undefined) return { type: "snapshot", snapshot: existing };
+	await context.waitForIdle();
+	const afterIdle = snapshots.first();
+	if (afterIdle !== undefined) return { type: "snapshot", snapshot: afterIdle };
+
+	const result = await trigger.request(context);
+	const probed = snapshots.first();
+	if (probed !== undefined) return { type: "snapshot", snapshot: probed };
+	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture a request.";
+	return { type: "fallback", fallback: createFallback(pi, context, reason) };
 }
 
 /**

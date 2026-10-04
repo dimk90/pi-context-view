@@ -15,6 +15,31 @@ roadmap-only, so no Runtime label, switching key, or Runtime status renders
 until that step lands. If the combined header does not fit, put title and label
 on separate lines with one empty row before and after the label.
 
+## Initial request
+
+Initial is the first request snapshot of the extension runtime. Its
+composition is the session projection at the snapshot's leaf, rebuilt when the
+view opens, with the snapshot's request-only changes applied: the prompt and
+tools replayed from the recorded system messages, the forced prompt in place of
+the replayed prompt when the request had one, and the custom messages of the
+projection. Ordinary session messages are not listed unless a request-only
+change touches them.
+
+When Initial came from a silent probe, a wrapped `warning` row below the header
+says so:
+
+```text
+Captured by a silent probe with an empty prompt; injections that depend on the prompt text may be missing.
+```
+
+Like the degraded reason, it never collapses. The payload guard will compare
+late edits against the provider payload; it is not implemented yet. While that
+comparison is pending or incomplete, the description block carries one dim
+bullet with the reason, for
+example `Late edits were not checked: No provider payload was observed for this
+request.` It is never shown as "no edits". The bullet collapses with the rest of
+the block.
+
 ## Contribution tree
 
 Present Initial contributions in this order:
@@ -50,7 +75,43 @@ Present Initial contributions in this order:
   - `system prompt additions` when unwrapped text around pi's sections was
     attributed to that source
   - injected messages identified by `customType` where available
-- `unattributed` for prompt additions no signal could attribute
+- `unattributed` for prompt additions no signal could attribute, and for
+  request-only changes to messages without a `customType`
+
+### Request-only changes
+
+Changes from all `context` handlers and earlier `context_with_system` handlers
+stay in place in the tree, with a marker after the estimate:
+
+| Marker     | Color             | Row                                                                                   |
+| ---------- | ----------------- | ------------------------------------------------------------------------------------- |
+| `Added`    | `toolDiffAdded`   | A message, System Prompt part, or tool the request has and the session does not      |
+| `Modified` | `warning`         | A message, System Prompt part, or tool whose request version differs from the session |
+| `Deleted`  | `toolDiffRemoved` | A message, System Prompt part, or tool the request removed; it reads 0 tokens        |
+
+- **Messages.** An added or modified custom message sits under its
+  `customType` source with the `message` label; any other message sits under
+  `unattributed` with a `<role> message` label, such as `user message`. A
+  deleted message uses the `customType` of the session message it removed. A
+  modified or deleted session custom message replaces its unchanged row.
+- **System Prompt.** A changed section marks its part, at its position in the
+  request prompt. The recorded layout also identifies inline XML, unwrapped,
+  and empty sections. Pi renders changed plain content before the first section, so
+  it marks `Preamble`. A deleted section follows the parts the request sent, in
+  session order, before `Extension Additions`. A forced prompt replaces every
+  section, so section and content changes do not apply to it.
+- **Tools.** A changed declaration marks its tool. A deleted tool keeps a
+  0-token row under its source; `Built-in Tools (N)` counts only the tools the
+  request declared.
+
+These source groups identify the affected content, not the extension that
+edited it. Changes to a pi part or a custom message remain unattributed to an
+editor.
+
+A row can carry `Moved` and a change marker together; markers keep the order
+`Dropped`, `Moved`, then the change. The estimate counts the request version.
+`TOTAL` covers these contributions only, not unchanged ordinary conversation;
+it is not a provider-payload size.
 
 Within the `pi` group, keep the fixed semantic order above and sort remaining
 prompt additions by size. Children break down parent contributions and do not
@@ -73,9 +134,10 @@ The list description survives scrolling, per the floor in
 [Descriptions](../UI.md#descriptions); the `(current/total)` counter never
 collapses it by itself. When capture is degraded, wrap the precise reason below
 the header and show a `[Degraded: …]` indicator beside the description, keeping
-the fallback hierarchy usable. Below both, the description block ends with one
-[legend bullet](previews.md#marker-legend) per marker the rows carry — `Dropped`,
-`Moved`, or neither — and collapses with the rest of the block.
+the fallback hierarchy usable. Below both come the late-edit bullet, when
+shown, and one [legend bullet](previews.md#marker-legend) per marker the rows
+carry — `Dropped`, `Moved`, `Added`, `Modified`, `Deleted`, or none. All of them
+collapse with the rest of the block.
 
 ## Injection preview
 
@@ -91,3 +153,14 @@ Built-in Tools — renders one part per child under the same rules, so children
 stay separated by two blank rows instead of running together. The whole preview
 is full content, so marked JSON expands here, in an aggregate part as much as in
 a tool's own definition.
+
+The preview header carries the item's markers after its estimate. A changed
+message previews both versions:
+
+- **Modified** renders a `Request` part with the counted request version and a
+  `Session` part with the session original at 0 tokens.
+- **Deleted** renders the session original undivided; the header reads 0
+  tokens.
+
+A deleted System Prompt part or tool previews the session text it removed, at 0
+tokens. A modified System Prompt part or tool shows only the request version.

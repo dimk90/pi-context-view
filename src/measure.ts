@@ -20,6 +20,7 @@ import {
 	type InjectionSource,
 	type JsonSpan,
 	PI_SOURCE,
+	type RequestChange,
 	SKILLS_LABEL,
 	SYSTEM_PROMPT_LABEL,
 } from "./model.ts";
@@ -82,27 +83,77 @@ export interface ToolSlice {
 	guidelines: string[];
 	/** Provenance, e.g. "builtin" or "npm:pi-web-providers". */
 	source: string;
+	/** Request-only change of the declaration; a deleted tool keeps only its uncounted definition. */
+	change?: RequestChange;
+}
+
+/** One section the request deleted, as the session recorded it. */
+export interface DeletedSection {
+	readonly name: string;
+	/** Recorded section text, including its XML wrapper. */
+	readonly text: string;
+}
+
+/** Request-only prompt changes and their replayed layout; a forced prompt ignores them. */
+export interface PromptChanges {
+	/** Added or changed sections by name; `preamble` also stands for changed plain content. */
+	readonly sections?: ReadonlyMap<string, Exclude<RequestChange, "deleted">>;
+	/** Sections the request removed, in session order. */
+	readonly deleted?: readonly DeletedSection[];
+	/** Exact recorded layout, including sections without Pi's usual XML framing. */
+	readonly replayed?: { readonly content: string; readonly sections: Readonly<Record<string, string | null>> };
 }
 
 /**
  * Split a captured system prompt into semantic items: pi base prompt,
  * appended prompt, context files, skills, active tool contributions, and the
- * unwrapped text extensions added around pi's sections.
+ * unwrapped text extensions added around pi's sections. `changes` marks the
+ * parts a request-only change touched.
  */
 export function analyzeSystemPrompt(
 	systemPrompt: string,
 	options: PromptOptionsSlice,
 	tools: ToolSlice[] = [],
 	additions: PromptAdditionOptions = {},
+	changes: PromptChanges = {},
 ): InjectionItem[] {
 	const names = new Set<string>();
-	const sections = findPromptSections(systemPrompt).filter((section) => {
+	const sections = (changes.replayed === undefined
+		? findPromptSections(systemPrompt)
+		: locateReplayedSections(changes.replayed)).filter((section) => {
 		if (names.has(section.name)) return false;
 		names.add(section.name);
 		return true;
 	});
-	if (sections.length === 0) return analyzeForcedPrompt(systemPrompt, tools);
-	return analyzePromptSections(systemPrompt, sections, options, tools, additions);
+	if (sections.length === 0 && changes.replayed === undefined) return analyzeForcedPrompt(systemPrompt, tools);
+	return analyzePromptSections(systemPrompt, sections, options, tools, additions, changes);
+}
+
+/**
+ * Locate sections from the replay's exact join order, not by searching their
+ * text. Request patches may supply inline wrappers, unwrapped text, or empty
+ * sections; identical text elsewhere in the prompt must not steal their marker.
+ */
+function locateReplayedSections(state: NonNullable<PromptChanges["replayed"]>): PromptSection[] {
+	const located: PromptSection[] = [];
+	let offset = state.content.length;
+	for (const [name, text] of Object.entries(state.sections)) {
+		if (text === null) continue;
+		const start = offset + (offset > 0 && text.length > 0 ? 2 : 0);
+		const end = start + text.length;
+		offset = end;
+		if (name === "preamble") continue;
+		const open = `<${name}>`;
+		const close = `</${name}>`;
+		const wrapped = text.startsWith(open) && text.endsWith(close);
+		let bodyStart = wrapped ? start + open.length : start;
+		let bodyEnd = wrapped ? end - close.length : end;
+		if (wrapped && text[open.length] === "\n") bodyStart++;
+		if (wrapped && text[text.length - close.length - 1] === "\n") bodyEnd--;
+		// PromptSection includes the character before its body for tool bullet attribution
+		located.push({ name, start, end, body: { start: bodyStart - 1, end: Math.max(bodyStart, bodyEnd) } });
+	}
+	return located;
 }
 
 /**
@@ -124,6 +175,7 @@ function analyzePromptSections(
 	options: PromptOptionsSlice,
 	tools: ToolSlice[],
 	additions: PromptAdditionOptions,
+	changes: PromptChanges,
 ): InjectionItem[] {
 	const items: InjectionItem[] = [];
 	const spans: Span[] = [];
@@ -131,11 +183,13 @@ function analyzePromptSections(
 	const blocks = findSectionToolBlocks(prompt, sections);
 	const replaced = Boolean(options.customPrompt);
 	const droppedIds = replaced ? BASE_PROMPT_BLOCKS
-		.filter((block) => !sections.some((section) => SECTION_PARTS[section.name]?.id === block.id))
+		.filter((block) => !sections.some((section) => SECTION_PARTS[section.name]?.id === block.id)
+			&& !changes.deleted?.some((section) => SECTION_PARTS[section.name]?.id === block.id))
 		.map((block) => block.id) : [];
 	const lines = measureTools(prompt, tools, items, spans, droppedIds, blocks);
 	const preambleEnd = sections[0]?.start ?? prompt.length;
-	appendPromptPart(parts, PREAMBLE_BLOCK, prompt.slice(0, preambleEnd).trimEnd());
+	appendPromptPart(parts, { ...PREAMBLE_BLOCK, change: changes.sections?.get("preamble") },
+		prompt.slice(0, preambleEnd).trimEnd());
 	for (const block of BASE_PROMPT_BLOCKS) {
 		if (droppedIds.includes(block.id)) {
 			parts.push({ ...block, kind: "base-prompt", text: "", dropped: true,
@@ -144,9 +198,18 @@ function analyzePromptSections(
 	}
 	for (const section of sections) {
 		const body = prompt.slice(section.body.start + 1, section.body.end);
-		if (measureGeneratedSection(section.name, body, options, items)) continue;
-		parts.push(measureSectionPart(prompt, section, spans, lines.carved,
-			blocks.find((candidate) => candidate.start === section.body.start)?.moved));
+		const change = changes.sections?.get(section.name);
+		if (measureGeneratedSection(section.name, body, options, items, change)) continue;
+		parts.push({
+			...measureSectionPart(prompt, section, spans, lines.carved,
+				blocks.find((candidate) => candidate.start === section.body.start)?.moved),
+			...changeField(change),
+		});
+	}
+	for (const deleted of changes.deleted ?? []) {
+		const part = deletedSectionPart(deleted);
+		// A dropped part already stands for a block the request lacks
+		if (!parts.some((existing) => existing.id === part.id)) parts.push(part);
 	}
 	// Only unwrapped gaps are additions. Sections after cwd still belong to the
 	// prompt, even when an earlier handler never saw them or cwd was removed.
@@ -167,7 +230,8 @@ function measureSectionPart(
 	moved: boolean | undefined,
 ): PromptPart {
 	const block = SECTION_PARTS[section.name] ?? { id: `base-prompt:section:${section.name}`, label: section.name };
-	const start = section.name === "tools" || section.name === "rules" ? section.body.start : section.body.start + 1;
+	const toolSurface = section.name === "tools" || section.name === "rules";
+	const start = toolSurface && prompt[section.body.start] === "\n" ? section.body.start : section.body.start + 1;
 	const localSpans = spans.filter((span) => span.start >= start && span.end <= section.body.end)
 		.map((span) => ({ start: span.start - start, end: span.end - start }));
 	const text = carve(prompt.slice(start, section.body.end), localSpans);
@@ -183,16 +247,38 @@ function measureSectionPart(
 	};
 }
 
+/**
+ * Uncounted part for a section the request deleted, keeping the session text
+ * without its XML wrapper for the preview.
+ */
+function deletedSectionPart(section: DeletedSection): PromptPart {
+	const block = SECTION_PARTS[section.name] ??
+		(section.name === "preamble" ? PREAMBLE_BLOCK : { id: `base-prompt:section:${section.name}`, label: section.name });
+	const open = `<${section.name}>`;
+	const close = `</${section.name}>`;
+	const wrapped = section.text.startsWith(open) && section.text.endsWith(close);
+	return {
+		id: block.id,
+		kind: section.name === "addendum" ? "append-prompt" : "base-prompt",
+		label: block.label,
+		text: wrapped ? section.text.slice(open.length, section.text.length - close.length).replace(/^\n|\n$/g, "") : section.text,
+		change: "deleted",
+	};
+}
+
 /** Split generated records only when present; overridden or unknown content stays visible. */
 function measureGeneratedSection(
 	name: string,
 	body: string,
 	options: PromptOptionsSlice,
 	items: InjectionItem[],
+	change: RequestChange | undefined,
 ): boolean {
 	if (options.sections?.[name]) return false;
 	if (name === "project_context" && body.includes("<project_instructions path=")) {
+		const before = items.length;
 		measureContextFiles(body, options.homeDir, items);
+		if (change !== undefined && items.length > before) items[items.length - 1] = { ...items[items.length - 1], change };
 		return true;
 	}
 	if (name === "skills" && body.includes("<available_skills>")) {
@@ -205,7 +291,8 @@ function measureGeneratedSection(
 		if (skills.length === 0) return false;
 		const children = skills.map((skill) => createItem(`skill:${skill.name}`, "skills", PI_SOURCE, skill.name,
 			[skill.name, skill.description, skill.filePath].join("\n"))).sort((a, b) => b.tokens - a.tokens);
-		items.push(createAggregateItem("skills", "skills", PI_SOURCE, `${SKILLS_LABEL} (${children.length})`, children));
+		const aggregate = createAggregateItem("skills", "skills", PI_SOURCE, `${SKILLS_LABEL} (${children.length})`, children);
+		items.push(change === undefined ? aggregate : { ...aggregate, change });
 		return true;
 	}
 	return false;
@@ -294,21 +381,28 @@ function measureTools(
 	blocks: readonly LocatedPromptBlock[],
 ): ToolPromptLines {
 	const carver = createPromptCarver(base, carvedSpans, blocks);
-	const claimedGuidelines = new Set(piOwnedGuidelines(tools));
+	const claimedGuidelines = new Set(piOwnedGuidelines(tools.filter((tool) => tool.change !== "deleted")));
 	const dropped = new Map<string, InjectedReference[]>();
 	const builtinChildren: InjectionItem[] = [];
 	for (const tool of tools) {
+		if (tool.change === "deleted") {
+			const deleted = createDeletedToolItem(tool);
+			if (tool.source === "builtin") builtinChildren.push(deleted);
+			else items.push(deleted);
+			continue;
+		}
 		// Built-in tools claim their bullets without carving them, so a later
 		// extension tool repeating one cannot take a line pi already renders for
 		// pi itself or for a built-in tool.
 		const ownedGuidelines = claimGuidelines(tool, claimedGuidelines);
-		const definition = createDefinitionSection(tool);
+		const definition = { ...createDefinitionSection(tool), ...changeField(tool.change) };
 		const droppedLines = droppedPromptLines(tool, ownedGuidelines)
 			.filter((line) => droppedPartIds.includes(line.partId));
 		if (tool.source === "builtin") {
 			// Pi renders built-in lines on its own behalf, so they become visible here only once dropped.
 			const sections = [...droppedSections(droppedLines), definition];
-			builtinChildren.push(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, sections));
+			builtinChildren.push(withChange(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, sections),
+				tool.change));
 			continue;
 		}
 		const owner: InjectedOwner = {
@@ -321,14 +415,38 @@ function measureTools(
 			...droppedSections(droppedLines),
 			...carveToolPromptSections(carver, tool, ownedGuidelines, owner),
 		];
-		items.push(createToolItem(owner.itemId, owner.source, tool.name, [...promptSections, definition]));
+		items.push(withChange(createToolItem(owner.itemId, owner.source, tool.name, [...promptSections, definition]),
+			tool.change));
 	}
 	if (builtinChildren.length > 0) {
 		builtinChildren.sort((a, b) => b.tokens - a.tokens);
-		const label = `${BUILT_IN_TOOLS_LABEL} (${builtinChildren.length})`;
+		// The count names the tools the request declared, not the deleted ones listed with them
+		const declared = builtinChildren.filter((child) => child.change !== "deleted").length;
+		const label = `${BUILT_IN_TOOLS_LABEL} (${declared})`;
 		items.push(createAggregateItem("tool:builtin", "tool", PI_SOURCE, label, builtinChildren));
 	}
 	return { carved: carver.injectedSpans, dropped };
+}
+
+/**
+ * A tool the request no longer declared: its session definition only, for the
+ * preview, at 0 tokens. Its prompt lines stay with whatever text still holds them.
+ */
+function createDeletedToolItem(tool: ToolSlice): InjectionItem {
+	const source = tool.source === "builtin" ? PI_SOURCE : extensionSource(tool.source);
+	const id = tool.source === "builtin" ? `tool:builtin:${tool.name}` : `tool:${tool.source}:${tool.name}`;
+	const definition: SectionDraft = { ...createDefinitionSection(tool), change: "deleted" };
+	return { ...createToolItem(id, source, tool.name, [definition]), change: "deleted" };
+}
+
+/** The item with a request-only change, or unchanged when there is none. */
+function withChange(item: InjectionItem, change: RequestChange | undefined): InjectionItem {
+	return change === undefined ? item : { ...item, change };
+}
+
+/** `{ change }` when there is one, so unchanged parts carry no extra key. */
+function changeField(change: RequestChange | undefined): { readonly change?: RequestChange } {
+	return change === undefined ? {} : { change };
 }
 
 /** One prompt line a replacement suppressed, and the System Prompt part pi would have rendered it into. */
@@ -398,6 +516,8 @@ interface SectionDraft {
 	readonly dropped?: boolean;
 	/** True for a block an extension moved out of the region pi rendered it into. */
 	readonly moved?: boolean;
+	/** Request-only change; a deleted section is shown for reference, never counted. */
+	readonly change?: RequestChange;
 	/** Serialized JSON inside `text`; marked here rather than detected in the preview. */
 	readonly jsonSpan?: JsonSpan;
 	/** Prompt-line insertions that affect only the preview, never this section's estimate. */
@@ -599,17 +719,20 @@ interface PromptPart {
 	readonly dropped?: boolean;
 	/** True for a block an extension moved out of the region pi rendered it into. */
 	readonly moved?: boolean;
+	/** Request-only change; a deleted part keeps its session text but no tokens. */
+	readonly change?: RequestChange;
 	readonly injectedReferences?: readonly InjectedReference[];
 }
 
 /** Record one pi-authored part, skipping a block pi rendered no text into. */
 function appendPromptPart(
 	parts: PromptPart[],
-	block: Pick<PromptPart, "id" | "label" | "moved">,
+	block: Pick<PromptPart, "id" | "label" | "moved" | "change">,
 	text: string,
 ): void {
-	if (text.length === 0) return;
-	parts.push({ id: block.id, kind: "base-prompt", label: block.label, text, moved: block.moved });
+	if (text.length === 0 && block.change === undefined) return;
+	parts.push({ id: block.id, kind: "base-prompt", label: block.label, text, moved: block.moved,
+		...changeField(block.change) });
 }
 
 /**
@@ -620,12 +743,16 @@ function appendPromptPart(
 function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 	const text = countedText(parts);
 	const item = createItem("base-prompt", "base-prompt", PI_SOURCE, SYSTEM_PROMPT_LABEL, text);
-	if (parts.length === 0 || (parts.length === 1 && parts[0].id === PREAMBLE_BLOCK.id)) return item;
+	if (parts.length === 0) return item;
+	if (parts.length === 1 && parts[0].id === PREAMBLE_BLOCK.id && parts[0].change !== "deleted") {
+		return withChange(item, parts[0].change);
+	}
 	const sections = allocateSectionTokens(parts.map((part) => ({
 		label: part.label,
 		text: part.text,
 		dropped: part.dropped,
 		moved: part.moved,
+		...changeField(part.change),
 		injectedReferences: part.injectedReferences,
 	})));
 	return {
@@ -633,9 +760,11 @@ function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 		sections,
 		children: parts.map((part, index) => ({
 			...createItem(part.id, part.kind, PI_SOURCE, part.label, part.text),
+			chars: isUncounted(part) ? 0 : part.text.length,
 			tokens: sections[index]?.tokens ?? 0,
 			dropped: part.dropped,
 			moved: part.moved,
+			...changeField(part.change),
 			injectedReferences: part.injectedReferences,
 		})),
 	};
@@ -672,22 +801,34 @@ function createToolItem(
 	return { ...createItem(id, "tool", source, label, text), sections: allocateSectionTokens(sections) };
 }
 
-/** Text an item actually sends: everything but the parts a prompt replacement dropped. */
-function countedText(parts: readonly { readonly text: string; readonly dropped?: boolean }[]): string {
-	return parts.filter((part) => part.dropped !== true).map((part) => part.text).join("");
+/** Text an item actually sends: everything but dropped and deleted parts. */
+function countedText(parts: readonly UncountablePart[]): string {
+	return parts.filter((part) => !isUncounted(part)).map((part) => part.text).join("");
+}
+
+/** A part that may carry text the request never sent. */
+interface UncountablePart {
+	readonly text: string;
+	readonly dropped?: boolean;
+	readonly change?: RequestChange;
+}
+
+/** Whether a part's text is shown for reference only: a replacement dropped it or the request deleted it. */
+function isUncounted(part: UncountablePart): boolean {
+	return part.dropped === true || part.change === "deleted";
 }
 
 /**
  * Give each section its share of the item estimate. Shares are cumulative
  * differences rather than independently rounded counts, so they always sum to
- * the item total. A dropped section reads 0 tokens and leaves the shares of
- * the sections pi did send unchanged.
+ * the item total. A dropped or deleted section reads 0 tokens and leaves the
+ * shares of the sections pi did send unchanged.
  */
 function allocateSectionTokens(sections: SectionDraft[]): InjectionSection[] {
 	let chars = 0;
 	let allocated = 0;
 	return sections.map((section) => {
-		if (section.dropped === true) return { ...section, tokens: 0 };
+		if (isUncounted(section)) return { ...section, tokens: 0 };
 		chars += section.text.length;
 		const cumulative = charTokens(chars);
 		const tokens = cumulative - allocated;
@@ -728,10 +869,12 @@ function createAggregateItem(
  */
 function childSection(child: InjectionItem, separator: string): InjectionSection {
 	const span = childJsonSpan(child);
+	const text = child.change === "deleted" ? child.sections?.[0]?.text ?? child.text : child.text;
 	return {
 		label: child.label,
-		text: `${separator}${child.text}`,
+		text: `${separator}${text}`,
 		tokens: child.tokens,
+		...changeField(child.change),
 		jsonSpan: span === undefined
 			? undefined
 			: { start: span.start + separator.length, end: span.end + separator.length },
