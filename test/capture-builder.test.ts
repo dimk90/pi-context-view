@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { attributeMessage } from "../src/capture/attribution.ts";
 import { buildRequestSnapshot, SnapshotBuilder } from "../src/capture/builder.ts";
 import { redactMessage } from "../src/capture/redact.ts";
-import { type BaselineMessage, type CapturedRequest, detectForcedPrompt } from "../src/capture/request.ts";
+import { type BaselineMessage, type CapturedRequest, copyRequest, detectForcedPrompt } from "../src/capture/request.ts";
 import type { RequestMessage, RequestSnapshot } from "../src/snapshot.ts";
 
 const IMAGE_DATA = "A".repeat(2_048);
@@ -12,10 +12,11 @@ const SIGNATURE = "OPAQUE_SIGNATURE_BYTES";
 
 /** A capture with one user baseline message and the given request messages. */
 function request(id: number, messages: RequestMessage[]): CapturedRequest {
+	const baseline: BaselineMessage[] = [{ entryId: "u1", message: { role: "user", content: "hello", timestamp: 1 } }];
 	return {
 		id, origin: "real-turn", capturedAt: 1_000,
-		baseline: { leafId: "leaf", messages: [{ entryId: "u1", message: { role: "user", content: "hello", timestamp: 1 } }] },
-		messages,
+		baseline: { leafId: "leaf", messages: baseline },
+		...copyRequest(baseline, messages),
 	};
 }
 
@@ -92,6 +93,42 @@ test("a snapshot keeps redacted, attributed changes and entry references", () =>
 	assert.ok(modified.type === "modified");
 	assert.equal(modified.entryId, "u1");
 	assert.doesNotMatch(JSON.stringify(snapshot), /AAAA/);
+});
+
+test("a request copy keeps only the differing messages and the replayed system state, as owned copies", () => {
+	const tool = { name: "read", description: "Read a file", parameters: { type: "object", properties: {} } };
+	const system: RequestMessage = { role: "system", content: "Prompt", toolsAdded: [tool], timestamp: 0 };
+	const baseline: BaselineMessage[] = [
+		{ entryId: "s", message: system },
+		{ entryId: "u1", message: { role: "user", content: "one", timestamp: 1 } },
+		{ entryId: "u2", message: { role: "user", content: "two", timestamp: 2 } },
+	];
+	const unchanged = copyRequest(baseline, structuredClone(baseline.map(({ message }) => message)));
+	assert.deepEqual(unchanged.conversation, { baseline: [], request: [] }, "an unchanged request copies no message");
+
+	const messages: RequestMessage[] = [
+		structuredClone(system),
+		{ role: "user", content: "one", timestamp: 1 },
+		{ role: "user", content: "two, edited", timestamp: 2 },
+	];
+	const copy = copyRequest(baseline, messages);
+	assert.deepEqual(copy.conversation.baseline.map(({ entryId }) => entryId), ["u2"]);
+	assert.deepEqual(copy.conversation.request, [messages[2]]);
+
+	// Later handlers may edit the shared request objects in place
+	const [requestSystem, , edited] = messages;
+	assert.ok(requestSystem.role === "system" && edited.role === "user");
+	edited.content = "changed after capture";
+	const schema = requestSystem.toolsAdded?.[0].parameters as { properties: Record<string, unknown> } | undefined;
+	assert.ok(schema);
+	schema.properties.path = { type: "string" };
+	const snapshot = buildRequestSnapshot({
+		id: 1, origin: "real-turn", capturedAt: 1, baseline: { leafId: "leaf", messages: baseline }, ...copy,
+	}, { status: "pending" });
+	assert.deepEqual(snapshot.changes.system, [], "the copied tool schema is unchanged");
+	const [modified] = snapshot.changes.conversation;
+	assert.ok(modified.type === "modified" && modified.message.role === "user");
+	assert.equal(modified.message.content, "two, edited");
 });
 
 test("the builder publishes after the handler returns, then publishes the settled guard", async () => {

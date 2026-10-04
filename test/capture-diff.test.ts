@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 
-import { diffConversation, diffSystemState, messageKey } from "../src/capture/diff.ts";
+import { diffConversation, diffSystemState, messageKey, sameMessage, trimMatchedEnds } from "../src/capture/diff.ts";
 import type { BaselineMessage } from "../src/capture/request.ts";
 import type { RequestMessage } from "../src/snapshot.ts";
 import type { SystemMessage } from "../src/transcript.ts";
@@ -108,6 +108,66 @@ test("alignment keeps a longest common subsequence", () => {
 		assert.equal(before.length - unmatched, lcsLength(before, after), `${before} vs ${after}`);
 		assert.equal(edits.filter((edit) => edit.type !== "deleted").length, after.length - lcsLength(before, after));
 	}
+});
+
+test("comparing in place agrees with message keys", () => {
+	const toolResult = (content: unknown, extra: object = {}): RequestMessage => ({
+		role: "toolResult", toolCallId: "c", toolName: "read", isError: false, timestamp: 1,
+		content: content as [], ...extra,
+	});
+	const custom = (customType: string, content: unknown): RequestMessage => ({
+		role: "custom", customType, content: content as string, display: true, timestamp: 1,
+	});
+	const bash = (output: string, timestamp: number): RequestMessage => ({
+		role: "bashExecution", command: "ls", output, exitCode: 0, cancelled: false, truncated: false, timestamp,
+	});
+	class Box {
+		public readonly value = 1;
+	}
+	const pairs: Array<[string, RequestMessage, RequestMessage]> = [
+		["key order", custom("n", [{ a: 1, b: "x" }]), custom("n", [{ b: "x", a: 1 }])],
+		["undefined property", custom("n", [{ a: 1, b: undefined }]), custom("n", [{ a: 1 }])],
+		["function property", custom("n", [{ a: 1, f: () => 1 }]), custom("n", [{ a: 1 }])],
+		["function only on the right", custom("n", [{ a: 1 }]), custom("n", [{ a: 1, f: () => 1 }])],
+		["extra property", custom("n", [{ a: 1 }]), custom("n", [{ a: 1, b: 2 }])],
+		["non-finite number", custom("n", [Number.NaN]), custom("n", [null])],
+		["negative zero", custom("n", [-0]), custom("n", [0])],
+		["undefined array item", custom("n", [undefined]), custom("n", [null])],
+		["toJSON", custom("n", [{ toJSON: () => "x" }]), custom("n", ["x"])],
+		["date", custom("n", [new Date(0)]), custom("n", [new Date(0).toJSON()])],
+		["class instance", custom("n", [new Box()]), custom("n", [{ value: 1 }])],
+		["number and string", custom("n", [1]), custom("n", ["1"])],
+		["array length", custom("n", [1, 2]), custom("n", [1])],
+		["custom type", custom("a", "x"), custom("b", "x")],
+		["role", user("x"), custom("n", "x")],
+		["tool result fields", toolResult([]), toolResult([], { toolName: "write" })],
+		["tool result details", toolResult([], { details: { a: 1 } }), toolResult([])],
+		["unknown role timestamp", bash("out", 1), bash("out", 2)],
+		["unknown role output", bash("out", 1), bash("other", 1)],
+		["assistant metadata", assistant("x"), { ...assistant("x"), timestamp: 9, model: "other" }],
+	];
+	for (const [name, a, b] of pairs) {
+		const expected = messageKey(a) === messageKey(b);
+		assert.equal(sameMessage(a, b), expected, name);
+		assert.equal(sameMessage(b, a), expected, `${name}, reversed`);
+	}
+});
+
+test("diffing the unmatched rest gives the same edits as diffing both whole sides", () => {
+	let seed = 11;
+	const next = () => {
+		seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+		return seed;
+	};
+	const system: RequestMessage = { role: "system", content: "base", timestamp: 0 };
+	for (let round = 0; round < 200; round++) {
+		const before = baseline(system, ...Array.from({ length: next() % 10 }, () => user(`m${next() % 3}`)));
+		const after: RequestMessage[] = [system, ...Array.from({ length: next() % 10 }, () => user(`m${next() % 3}`))];
+		const unmatched = trimMatchedEnds(before, after);
+		assert.deepEqual(diffConversation(unmatched.baseline, unmatched.request), diffConversation(before, after));
+	}
+	const unchanged = [user("one"), assistant("two")];
+	assert.deepEqual(trimMatchedEnds(baseline(system, ...unchanged), [system, ...unchanged]), { baseline: [], request: [] });
 });
 
 test("a collapsed system message equals the sequence it replaced", () => {

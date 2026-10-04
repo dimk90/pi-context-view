@@ -14,7 +14,7 @@ import { NO_PAYLOAD_REASON, RequestTracker } from "./tracker.ts";
 /**
  * Register RequestTracker, ProjectionReader, and TranscriptCapture. Register
  * after ProbeFilter: its `context_with_system` handler must remove probe
- * messages before this one clones the transcript.
+ * messages before this one compares and copies the transcript.
  */
 export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: SnapshotBuilder): void {
 	const tracker = new RequestTracker();
@@ -38,7 +38,7 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 				probe,
 			});
 		} catch {
-			// A transcript that cannot be cloned is not captured; the request itself proceeds unchanged
+			// A request whose changes cannot be cloned is not captured; the request itself proceeds unchanged
 			tracker.takeUnpaired();
 			return;
 		}

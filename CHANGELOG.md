@@ -4,7 +4,7 @@
 ## Unreleased
 
 ### New
-* `[injections]` Show Added, Modified, and Deleted contributions (first request only).
+* `[injections]` Show Added, Modified, and Deleted contributions.
 
 ### Changed
 * `[usage]` Apply the latest request's added/modified/deleted messages instead of first-turn copies.

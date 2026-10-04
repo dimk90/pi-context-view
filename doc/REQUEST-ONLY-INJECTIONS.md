@@ -112,7 +112,9 @@ With no request-only changes, the structured diff must be empty, including after
 
 ### D3. Primary capture on `context_with_system`
 
-Synchronously clone `event.messages` with `structuredClone`, then defer the diff. The capture handler runs after ProbeFilter's handler, so the clone never contains probe messages. This captures all `context` contributions and earlier `context_with_system` contributions while roles, `customType`, `details` and system sections remain intact. Later handlers share the same message array and may mutate it in place, so retaining references is unsafe.
+Synchronously compare `event.messages` with the baseline, then defer the diff. Non-system messages equal to the baseline at both ends are compared in place and never copied; `structuredClone` copies only the rest and the request's replayed system state. An unchanged request therefore copies no conversation message. The capture handler runs after ProbeFilter's handler, so the request never contains probe messages. This captures all `context` contributions and earlier `context_with_system` contributions while roles, `customType`, `details` and system sections remain intact. Later handlers share the same message array, content blocks and tool schemas and may mutate them in place, so retaining references is unsafe.
+
+The copy does not keep the positions of system messages or unchanged messages. The payload guard can rebuild the compared request from the baseline ends and the copied rest; if it needs system-message positions, the copy must record them.
 
 Compare replayed system state rather than individual system messages: Pi's collapse after a changing `context` handler must not appear as an extension edit.
 
@@ -179,7 +181,7 @@ The cleanest upstream improvement is to forward the full model into `before_prov
 
 ### D5. Observe only, stay off the critical path
 
-Capture handlers return no value and never mutate provider-bound data. Clone synchronously because later handlers may mutate shared objects; defer diffing, attribution, parsing and snapshot assembly. Awaited stream handlers must also return quickly.
+Capture handlers return no value and never mutate provider-bound data. Copy synchronously because later handlers may mutate shared objects. Removing the ends equal to the baseline happens in the handler too: it is cheaper than copying them. Defer alignment, attribution, parsing and snapshot assembly. Awaited stream handlers must also return quickly.
 
 Only the probe layer changes requests, and only within fixed limits: ProbeFilter removes recorded probe messages from every request, and SilentProbe changes only the run it owns (D10).
 
@@ -303,7 +305,7 @@ interface SnapshotReader {
 }
 ```
 
-- **Contents.** A snapshot keeps the findings and the data consumers need to count them: changed message content, system patches, forced prompt text, guard findings, loadout candidates and tool names. Release the transcript clone, baseline and payload clone once processing ends. Session entries are append-only, so `buildSessionProjection(entries, leafId)` rebuilds the same baseline later.
+- **Contents.** A snapshot keeps the findings and the data consumers need to count them: changed message content, system patches, forced prompt text, guard findings, loadout candidates and tool names. Release the request copy, baseline and payload clone once processing ends. Session entries are append-only, so `buildSessionProjection(entries, leafId)` rebuilds the same baseline later.
 - **Publication.** Publish a snapshot when its structured diff is ready, with guard `pending`. When the guard settles, publish a new object with the same ID; the store replaces its retained copy. Warm refreshes publish nothing.
 - **Retention.** Keep the first and the latest snapshot for each origin, so at most four. The first snapshot of an origin stays until `session_shutdown`. Without an origin, `first()` and `latest()` choose by ID across both origins.
 - **Updates.** `subscribe()` reports every publication, so a consumer can follow each request.
@@ -337,7 +339,7 @@ Counts the replayed projection and applies the selected snapshot's conversation 
 | Probe     | SilentProbe       | `input`, `before_agent_start`, `turn_start`, `message_start`, `message_end`, `turn_end`, `agent_settled`, `session_shutdown` | Claim, abort, blank and omit its own run; record identities in ProbeFilter and persist them         |
 | Capture   | RequestTracker    | `context_with_system`, `cache_warming_decision`, `before_provider_request`, `agent_settled`, `session_shutdown`              | Number captures, set origin, pair payloads, mark warm refreshes, settle unpaired captures, clean up |
 | Capture   | ProjectionReader  | Inside `context_with_system`                                                                                                 | Read filtered baseline messages, their source entries and the leaf ID                               |
-| Capture   | TranscriptCapture | `context_with_system`                                                                                                        | Clone the filtered messages; record a forced prompt and the request model                           |
+| Capture   | TranscriptCapture | `context_with_system`                                                                                                        | Trim equal ends against the baseline; copy the rest; record a forced prompt and the request model   |
 | Capture   | Differ            | Deferred                                                                                                                     | Compare system state and align conversation messages                                                |
 | Capture   | Attributor        | Deferred                                                                                                                     | Label changes from `customType` and cooperative provenance                                          |
 | Capture   | PayloadParser     | Deferred                                                                                                                     | Select the parser by API; extract message and tool-declaration channels                             |
@@ -345,7 +347,7 @@ Counts the replayed projection and applies the selected snapshot's conversation 
 | Capture   | LoadoutAttributor | Deferred                                                                                                                     | Explain missing declarations with active `model-only` candidates                                    |
 | Capture   | DeclaredTools     | Deferred, after PayloadGuard                                                                                                 | Record the declared and baseline tool names (D9)                                                    |
 | Capture   | DispatchConfirmer | Assistant `message_start`, `provider_stream_event`, assistant `message_end`                                                  | Record identity once per paired request; confirm the request model or supply the virtual route      |
-| Capture   | SnapshotBuilder   | Deferred                                                                                                                     | Assemble snapshots, publish them and their guard updates, release clones                            |
+| Capture   | SnapshotBuilder   | Deferred                                                                                                                     | Assemble snapshots, publish them and their guard updates, release copies                            |
 | Store     | SnapshotStore     | None; the wiring clears it on `session_shutdown`                                                                             | Retain the first and latest snapshot per origin; notify subscribers                                 |
 | Trigger   | ProbeTrigger      | Called by consumers or commands                                                                                              | Apply the automatic or manual policy and preconditions; start SilentProbe; wait for its snapshot    |
 | Consumers | Views             | `/context` command                                                                                                           | Read snapshots; sanitize, render and count                                                          |
@@ -358,7 +360,7 @@ Request messages have no stable IDs. Compare system state and conversation separ
 
 **System state.** Replay each side with `getCurrentSystemMessage()`: append plain `content`, patch named `sections` (`null` removes one), and apply `toolsRemoved` before `toolsAdded`. Compare sections and declarations separately. Replay makes Pi's collapsed leading system message equivalent to the sequence it replaced. It loses system-message placement; a position change needs a separate finding if relevant. Compare a forced prompt from its captured effective text, not replayed sections.
 
-**Conversation.** Exclude system messages. Key each remaining message by role, `customType` when present, and canonical JSON of model-facing content, ignoring volatile metadata. Align the sequences with an LCS (Myers) diff. Unmatched capture messages are additions; unmatched baseline messages are deletions. Pair a deletion and addition with the same role at the same aligned position as a modification with a content-level diff. Reordering appears as deletion plus addition. Modifications and deletions keep a reference to their baseline message's source entry, so consumers can apply them to a later projection (D11).
+**Conversation.** Exclude system messages. Key each remaining message by role, `customType` when present, and canonical JSON of model-facing content, ignoring volatile metadata. Remove the common prefix and suffix with a direct comparison that agrees with these keys, then align the rest with an LCS (Myers) diff; the result equals a diff of both whole sequences. Unmatched capture messages are additions; unmatched baseline messages are deletions. Pair a deletion and addition with the same role at the same aligned position as a modification with a content-level diff. Reordering appears as deletion plus addition. Modifications and deletions keep a reference to their baseline message's source entry, so consumers can apply them to a later projection (D11).
 
 ## Code skeleton
 
@@ -420,8 +422,8 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, snapshots: S
       id: ++captureCount,
       origin: probe.isCurrentRun ? "synthetic-probe" : "real-turn",
       leafId: ctx.sessionManager.getLeafId(),
-      // later handlers can edit these objects in place, so clone now
-      messages: structuredClone(event.messages),
+      // later handlers can edit these objects in place, so copy what differs now
+      ...copyRequest(baseline, event.messages),
       baseline,
       forcedPrompt: effectivePrompt === getCurrentSystemPrompt(baseline) ? undefined : effectivePrompt,
     };

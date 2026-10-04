@@ -22,8 +22,8 @@ interface ScheduledBuild {
 /**
  * Defers each capture's diff, publishes its snapshot with guard `pending`, and
  * publishes a copy with the same ID once the guard settles. A guard that
- * settles before the diff ran is published with the snapshot instead. Captured
- * transcripts and baselines are released when their snapshot is built.
+ * settles before the diff ran is published with the snapshot instead. Request
+ * copies and baselines are released when their snapshot is built.
  */
 export class SnapshotBuilder {
 	private readonly publisher: SnapshotPublisher;
@@ -82,8 +82,10 @@ export class SnapshotBuilder {
 export function buildRequestSnapshot(request: CapturedRequest, guard: GuardResult): RequestSnapshot {
 	const baseline = request.baseline.messages.map(({ message }) => message);
 	const changes: StructuredChanges = {
-		conversation: diffConversation(request.baseline.messages, request.messages).map(toConversationChange),
-		system: diffSystemState(baseline, request.messages),
+		conversation: diffConversation(request.conversation.baseline, request.conversation.request)
+			.map(toConversationChange),
+		// Replaying an already replayed system state returns it unchanged
+		system: diffSystemState(baseline, request.system === undefined ? [] : [request.system]),
 	};
 	return {
 		id: request.id,

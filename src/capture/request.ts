@@ -3,11 +3,12 @@
  * capture in `context_with_system` (D2, D3). Everything here runs inside the
  * handler, before later handlers can mutate the shared request messages.
  */
-import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
+import { getCurrentSystemMessage, getCurrentSystemPrompt, type SystemMessage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { ProbeView } from "../probe/view.ts";
 import type { CaptureOrigin, RequestMessage } from "../snapshot.ts";
+import { trimMatchedEnds, type UnmatchedMessages } from "./diff.ts";
 
 /** A baseline message with the session entry that owns it. */
 export interface BaselineMessage {
@@ -23,17 +24,29 @@ export interface Baseline {
 }
 
 /**
+ * The parts of a request the deferred diff needs, as this extension's handler
+ * saw them. Request-side values are owned copies.
+ */
+export interface RequestCopy {
+	/** The request's replayed system state; undefined when it has none. */
+	readonly system?: SystemMessage;
+	/**
+	 * Non-system messages left after removing the ends both sides share: session
+	 * originals on the baseline side, copies on the request side.
+	 */
+	readonly conversation: UnmatchedMessages;
+}
+
+/**
  * Everything the deferred diff needs from one request. Process-local: it holds
  * raw content and is released once its snapshot is built.
  */
-export interface CapturedRequest {
+export interface CapturedRequest extends RequestCopy {
 	readonly id: number;
 	readonly origin: CaptureOrigin;
 	/** Capture time in epoch milliseconds. */
 	readonly capturedAt: number;
 	readonly baseline: Baseline;
-	/** Owned copy of the request transcript as this extension's handler saw it. */
-	readonly messages: readonly RequestMessage[];
 	readonly forcedPrompt?: string;
 }
 
@@ -50,21 +63,34 @@ export interface CaptureInput {
 }
 
 /**
- * Read the baseline, clone the transcript, and detect a forced prompt. Throws
- * when the transcript cannot be cloned, for example when a handler added a
- * function value to a message.
+ * Read the baseline, copy what differs from it, and detect a forced prompt.
+ * Throws when a differing message cannot be cloned, for example when a handler
+ * added a function value to it.
  */
 export function captureRequest(input: CaptureInput): CapturedRequest {
-	// Later handlers share these message objects and may edit them in place
-	const messages = structuredClone(input.messages);
 	const baseline = readBaseline(input.sessionManager, input.probe);
 	return {
 		id: input.id,
 		origin: input.origin,
 		capturedAt: input.capturedAt ?? Date.now(),
 		baseline,
-		messages,
+		...copyRequest(baseline.messages, input.messages),
 		forcedPrompt: detectForcedPrompt(input.effectivePrompt, baseline.messages),
+	};
+}
+
+/**
+ * Copy the request's replayed system state and the messages that differ from
+ * the baseline. Messages equal to the baseline at both ends are compared in
+ * place and never copied, so an unchanged request copies only its system state.
+ */
+export function copyRequest(baseline: readonly BaselineMessage[], messages: readonly RequestMessage[]): RequestCopy {
+	const unmatched = trimMatchedEnds(baseline, messages);
+	// Later handlers share these objects, tool schemas included, and may edit them in place
+	const copy = structuredClone({ system: getCurrentSystemMessage(messages), request: unmatched.request });
+	return {
+		...(copy.system === undefined ? {} : { system: copy.system }),
+		conversation: { baseline: unmatched.baseline, request: copy.request },
 	};
 }
 

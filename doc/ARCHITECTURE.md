@@ -215,26 +215,31 @@ projection, for any consumer, in every run mode.
 context_with_system, after ProbeFilter's handler     every request: prompts,
   Settle the previous unpaired capture's guard         tool follow-ups, probes
   Number the capture; origin from ProbeView
-  Clone event.messages (structuredClone)
   Read buildSessionProjection(), filter probe messages per entry,
   keep each message's source entry ID and the leaf ID
+  Compare in place: drop non-system messages equal at both ends
+  structuredClone the rest and the request's replayed system state
   Forced prompt: ctx.getSystemPrompt() differs from
   getCurrentSystemPrompt(baseline)
   Return nothing
   |
   v  setImmediate, off the request's critical path
-Diff, attribute, redact, publish with guard "pending"
+Align the rest, diff system state, attribute, redact,
+publish with guard "pending"
   |
   v  next capture or agent_settled
 Guard "incomplete": no payload was observed
 ```
 
 - **Observe only.** The handler returns nothing and changes no event data.
-  It clones synchronously because later handlers share and may edit the same
-  message objects. A transcript that cannot be cloned is not captured.
+  It compares and copies synchronously because later handlers share and may
+  edit the same message objects, tool schemas included. Messages equal to the
+  baseline at both ends of the conversation are compared in place and never
+  copied, so an unchanged request copies only its replayed system state. A
+  request whose differing messages cannot be cloned is not captured.
   `session_shutdown` cancels scheduled diffs.
 
-- **Coverage.** The clone holds every `context` change and the
+- **Coverage.** The compared request holds every `context` change and the
   `context_with_system` changes of extensions loaded before this one. Later
   `context_with_system` handlers and payload rewrites are not visible here; the
   payload guard is a later step. Until it exists, every guard settles
@@ -249,7 +254,10 @@ Guard "incomplete": no payload was observed
 
 - **Conversation.** System messages are excluded. Each message is keyed by role,
   `customType`, and canonical JSON of its model-facing part; timestamps,
-  `details`, `display`, and usage are ignored. A Myers diff aligns the keys.
+  `details`, `display`, and usage are ignored. The handler removes the equal
+  ends with a direct comparison that agrees with these keys; anything outside
+  plain JSON data falls back to comparing the keys. A Myers diff aligns the
+  keys of the rest, so the edits match a diff of both whole sides.
   An unmatched request message is an addition and an unmatched baseline message
   a deletion. A deletion and an addition with the same role between the same
   aligned messages are a modification. A message whose exact copy is deleted
@@ -263,7 +271,7 @@ Guard "incomplete": no payload was observed
 
 - **Retention.** A snapshot keeps changed request messages, entry IDs, system
   changes, and the forced prompt, with the [redaction](#images-and-provider-signatures)
-  below. The transcript clone and the baseline are released once the snapshot
+  below. The request copy and the baseline are released once the snapshot
   is built; consumers rebuild the baseline with
   `buildSessionProjection(entries, leafId)`.
 
@@ -941,8 +949,10 @@ consumer receives these bytes: image `data` becomes the same
 and `thoughtSignature` become filler of the same length. Only that length
 remains, for the [signature-size proxy](THINKING.md#counting-architecture).
 Token estimates do not change: Pi counts images by a fixed proxy and never
-counts signatures. The short-lived transcript clone used for the diff is raw
-and released after the snapshot is built.
+counts signatures. The short-lived request copy used for the diff is raw and
+released after the snapshot is built. It holds only the replayed system state
+and the messages that differ from the baseline, so unchanged history, its
+images and signatures included, is never copied.
 
 Persisted probe records contain only role and timestamp identities, plus
 `context_edit` target entry IDs with null replacements.
@@ -957,11 +967,11 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
 | `src/capture/register.ts`    | Capture layer wiring: observe every request in `context_with_system`; settle unpaired guards. |
 | `src/capture/tracker.ts`     | RequestTracker: number captures and remember the latest unpaired one.                         |
-| `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline with entry IDs, clone, forced prompt.        |
-| `src/capture/diff.ts`        | Differ: compare replayed system state; align conversation messages with a Myers diff.         |
+| `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline with entry IDs, request copy, forced prompt. |
+| `src/capture/diff.ts`        | Differ: compare system state; trim equal ends in place, align the rest with a Myers diff.     |
 | `src/capture/attribution.ts` | Attributor: `customType` and cooperative `details` provenance of custom messages.             |
 | `src/capture/redact.ts`      | Redact image payloads and signatures from messages a snapshot retains.                        |
-| `src/capture/builder.ts`     | SnapshotBuilder: defer the diff, publish snapshots and guard updates, release clones.         |
+| `src/capture/builder.ts`     | SnapshotBuilder: defer the diff, publish snapshots and guard updates, release copies.         |
 | `src/compaction.ts`          | Track the compaction lifecycle for the probe preconditions and the command refusal.           |
 | `src/snapshot.ts`            | Define request snapshots; SnapshotStore retains the first and latest per origin.              |
 | `src/probe/filter.ts`        | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.     |
@@ -970,10 +980,10 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and the probe snapshot from the store.    |
 | `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                 |
 | `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                            |
-| `src/injections.ts`          | Rebuild the first snapshot's baseline and measure its composition with marked changes.       |
+| `src/injections.ts`          | Rebuild the first snapshot's baseline and measure its composition with marked changes.        |
 | `src/projection.ts`          | Rebuild filtered projections; apply the latest snapshot's changes to the branch for Usage.    |
 | `src/replay.ts`              | Replay recorded system state and changes; Usage prompt/tools and the live fallback.           |
-| `src/message-preview.ts`     | Content-only message previews, redacting session images and omitting opaque signatures.      |
+| `src/message-preview.ts`     | Content-only message previews, redacting session images and omitting opaque signatures.       |
 | `src/measure.ts`             | Split and estimate prompt/tool contributions without pi API access.                           |
 | `src/prompt-blocks.ts`       | Locate XML sections and moved tool surfaces, excluding nested/fenced examples.                |
 | `src/transcript.ts`          | Render system messages; replay itself uses Pi's `getCurrentSystemMessage()`.                  |
@@ -1006,6 +1016,9 @@ probe request isolation and message ownership, not a relaxation of those goals.
 
 - Normal turns are unchanged when inspection is not invoked. Capture handlers
   return nothing and never change provider-bound data.
+- Per-request overhead stays as small as possible: capture runs on every
+  request, even if `/context` is never opened. Compare in place, copy only what
+  differs, and defer the rest.
 - On a Pi version older than `MIN_PI_VERSION`, no lifecycle handler is registered.
 - Probes make no provider request, and their messages are blanked in agent
   state, in every later model context, and in the saved session.
