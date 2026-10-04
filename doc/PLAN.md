@@ -102,11 +102,12 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
   - Add a test that `src/ui/` and `src/usage.ts` import no capture or probe module.
     Verified on Pi 1.0.2: `pnpm check`; mock-provider real-PTY runs with `context` modify/delete/add and section-patch fixtures in both orders, fullscreen and regular, where Usage matched the logged payload; marker/forced-prompt/input-transform probes in both orders kept the `after_provider_response` sentinel silent. The #6 known limitation in `doc/ARCHITECTURE.md` is replaced by the limits of applying one request's changes.
 
-- [ ] **Verify the fix for [#6](https://github.com/dimk90/pi-context-view/issues/6)**:
+- [x] **Verify the fix for [#6](https://github.com/dimk90/pi-context-view/issues/6)**:
   - Unit test the issue's reproduction on the new path: the baseline has a 40,000-character user message, and an earlier `context` handler replaced it with `bbbb`. Differ reports one modification that references the baseline entry; Usage estimates 1 token for it, not 10,001.
   - Unit test a removal (the original is no longer counted), a reorder (counted once), and a stale modification after branch navigation or compaction (dropped; the current message is counted).
   - Verify in a real session: a fixture `context` handler replaces one user message and removes another; load it in both orders and compare Usage with the observed request.
   - Remove the known limitation from `doc/ARCHITECTURE.md`. Add a `Fixed` entry to `CHANGELOG.md` that links #6 and credits the reporter, as for #5.
+    Verified on Pi 1.0.2: `pnpm check` (398 tests); `test/usage-request.test.ts` covers the full capture-to-Usage path, including branch navigation and compaction. `test/fixtures/context-replace-remove.ts` replaces the 40,000-character original with `bbbb` and removes a second user message; runtime tests and mock-provider real-PTY runs in both extension orders showed 1 User Messages token and only `bbbb` in its preview and the outgoing request. Fullscreen/dark and regular/system runs also passed preview/back, 24/60/80/120-column and height resizing, both views, and reload. Opening the views made no extra provider request. No production-code change was needed; the old #6 limitation was already removed by the previous step, while the separate one-request limitations remain.
 
 - [ ] **Choose the payload-parsing strategy** (D4):
   - Spike on the harness: dispatch-event order per adapter, `ctx.modelRegistry.find()` results for routed models, payload clone size, and shape ambiguity between OpenAI Completions, OpenAI Responses, and Anthropic.

@@ -15,6 +15,7 @@
 * `[package]` Require Pi 1.0 and report older versions, drop the pre-0.86 prompt parser.
 
 ### Fixed
+* `[usage]` Count request replacements once and exclude removals ([#6](https://github.com/dimk90/pi-context-view/issues/6) by [@MDGChamomile](https://github.com/MDGChamomile)).
 * `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).
 * `[probe]` Preserve system-message positions when filtering and persist probe context omissions.
 

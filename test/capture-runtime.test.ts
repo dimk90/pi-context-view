@@ -22,14 +22,20 @@ import {
 
 import registerExtension from "../src/index.ts";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
+import { applyRequestSnapshot } from "../src/projection.ts";
+import { buildUsageSnapshot } from "../src/replay.ts";
 import type { ConversationChange, RequestSnapshot, SystemChange } from "../src/snapshot.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
+import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
 import contextAdd, { CONTEXT_ADD_TEXT, CONTEXT_ADD_TYPE } from "./fixtures/context-add.ts";
 import contextAddUser, { CONTEXT_ADD_USER_TEXT } from "./fixtures/context-add-user.ts";
 import contextDelete, { CONTEXT_DELETE_MARKER } from "./fixtures/context-delete.ts";
 import contextInPlace, { CONTEXT_IN_PLACE_SUFFIX } from "./fixtures/context-in-place.ts";
 import contextModify, { CONTEXT_MODIFY_PREFIX } from "./fixtures/context-modify.ts";
 import contextReorder, { CONTEXT_REORDER_MARKER } from "./fixtures/context-reorder.ts";
+import contextReplaceRemove, {
+	CONTEXT_REMOVE_TEXT, CONTEXT_REPLACE_ORIGINAL, CONTEXT_REPLACE_TEXT,
+} from "./fixtures/context-replace-remove.ts";
 import forcedPrompt, { FORCED_SYSTEM_PROMPT } from "./fixtures/forced-prompt.ts";
 import inPlaceMutation, { IN_PLACE_SUFFIX } from "./fixtures/in-place-mutation.ts";
 import inputTransform from "./fixtures/input-transform.ts";
@@ -165,6 +171,44 @@ suite("structured edits", { concurrency: true }, () => {
 			assert.deepEqual(snapshot.changes.conversation.map(describeChange),
 				[`modified user: ${CONTEXT_MODIFY_PREFIX} original text`]);
 			assertReferencesUserEntry(runtime, snapshot.changes.conversation[0], "original text");
+		});
+
+		test(`#6: Usage counts only the replacement and matches the request (fixture ${position})`, async (t) => {
+			const provider = await startProvider(t);
+			const factories = position === "before"
+				? [contextReplaceRemove, monitorSlot] : [monitorSlot, contextReplaceRemove];
+			const runtime = await createRuntime(t, provider, { factories });
+			await runtime.session.prompt(CONTEXT_REPLACE_ORIGINAL);
+			await runtime.session.prompt(CONTEXT_REMOVE_TEXT);
+			const snapshots = await runtime.settled();
+			assert.equal(snapshots.length, 2);
+			const latest = snapshots[1];
+			assert.deepEqual(latest.changes.conversation.map(describeChange), ["modified user: bbbb", "deleted"]);
+			assertReferencesUserEntry(runtime, latest.changes.conversation[0], CONTEXT_REPLACE_ORIGINAL);
+			assertReferencesUserEntry(runtime, latest.changes.conversation[1], CONTEXT_REMOVE_TEXT);
+
+			const session = runtime.session.sessionManager;
+			const applied = applyRequestSnapshot({
+				snapshot: latest, entries: session.getEntries(), leafId: session.getLeafId(),
+				filterMessages: (messages) => messages,
+			});
+			const usage = computeUsage({
+				messages: applied.messages,
+				snapshot: buildUsageSnapshot({
+					...applied, systemPrompt: "", options: { cwd: "/" }, allTools: [], activeToolNames: [],
+				}),
+			});
+			const users = usage.categories.find((category) => category.id === "user-messages");
+			assert.ok(users);
+			assert.equal(users.tokens, 1);
+			const texts = collectPreviewEntries(users).map((entry) => entry.text);
+			assert.deepEqual(texts, [CONTEXT_REPLACE_TEXT]);
+			assert.equal(provider.requests.length, 2);
+			for (const request of provider.requests) {
+				const messages = request.body.messages as Array<{ role: string; content: string }>;
+				assert.deepEqual(messages.filter((message) => message.role === "user").map((message) => message.content), texts);
+			}
+			assert.deepEqual(runtime.errors, []);
 		});
 
 		test(`context in-place edit is a modification (fixture ${position})`, async (t) => {

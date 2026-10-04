@@ -417,11 +417,12 @@ turn supplies the changes. `src/projection.ts` applies them when the view opens:
 - **Conversation changes, by baseline entry.** A modification replaces the
   first unchanged conversation message of its source entry with the request
   version; a deletion removes it; an addition is appended and classified like
-  any other message by role or `customType`. A reorder, captured as a deletion
-  plus an addition, is counted once. A modification or deletion whose entry is
-  no longer in the current projection, after compaction or branch navigation,
-  is stale and dropped: the current message is counted instead. Additions have
-  no entry and always apply.
+  any other message by role or `customType`. The replaced or deleted session
+  original contributes neither tokens nor a Usage preview. A reorder, captured
+  as a deletion plus an addition, is counted once. A modification or deletion
+  whose entry is no longer in the current projection, after compaction or
+  branch navigation, is stale and dropped: the current message is counted
+  instead. Additions have no entry and always apply.
 - **System changes, while fresh.** Content, section, and tool changes are
   deltas against the snapshot's replayed system state. They apply after the
   branch replay only while the current replayed state equals the state rebuilt
