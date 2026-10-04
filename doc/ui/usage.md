@@ -227,6 +227,20 @@ defining `≈`, `~`, and `Encoded`; the per-block cap shrinks around it. Never
 render, preview, or log raw signature bytes. [THINKING.md](../THINKING.md) owns
 the estimate.
 
+### Forced prompt
+
+When System Prompt measures the latest request's
+[forced prompt](../ARCHITECTURE.md#usage-and-attribution), every System Prompt
+preview level opens its [marker legend](previews.md#marker-legend) with one dim
+note bullet, before any marker bullets:
+
+> - Forced: an extension replaced the system prompt of the latest request. This
+>   preview shows and counts that text, assuming the next request uses it too.
+
+The note is not a marker: no row or subheader carries `Forced`, and other
+categories never show it. It belongs to the legend block, so it collapses and
+returns with it.
+
 ### Single-entry categories
 
 When the selected category contains exactly one preview entry, including across

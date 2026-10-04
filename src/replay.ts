@@ -34,6 +34,8 @@ export interface UsageSnapshotInput extends NativeSnapshotInput {
 	messages: readonly RequestMessage[];
 	/** Request-only system changes of the latest request, applied after the replayed state. */
 	systemChanges?: readonly SystemChange[];
+	/** Forced prompt of the latest request, measured instead of the prompt; tool changes still apply. */
+	forcedPrompt?: string;
 }
 
 /** System state a request carried, with what its changes touched. */
@@ -55,22 +57,24 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot
 
 /**
  * Measure the branch's replayed prompt and tools instead of today's loader
- * prompt/tools, with the latest request's system changes applied once. Only a
- * branch with no recorded system message yet uses the live fallback.
+ * prompt/tools, with the latest request's system changes applied once. A forced
+ * prompt replaces every section, so only tool changes reach it. Only a branch
+ * with no recorded system message yet uses the live fallback.
  */
 export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
+	const forced = input.forcedPrompt;
 	const base = getCurrentSystemMessage(input.messages);
 	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
-	if (base === undefined) return buildNativeSnapshot(input);
+	if (base === undefined) return buildNativeSnapshot({ ...input, systemPrompt: forced ?? input.systemPrompt });
 	const request = applySystemChanges(base, input.systemChanges ?? []);
 	const tools = replayedToolSlices(request.state, request.declarations, input.allTools);
 	const options = copyPromptOptions(input.options);
-	const items = analyzeSystemPrompt(systemMessageText(request.state), {
+	const items = analyzeSystemPrompt(forced ?? systemMessageText(request.state), {
 		...options,
 		// Current loader overrides are not evidence of what this branch recorded.
 		customPrompt: undefined, sections: undefined,
 		// The replayed layout locates inline or unwrapped request sections; Usage marks no changes
-	}, tools, { sources: input.promptSources }, { replayed: request.prompt.replayed });
+	}, tools, { sources: input.promptSources }, forced === undefined ? { replayed: request.prompt.replayed } : {});
 	return buildSnapshot(items, "synthetic-probe", input.capturedAt ?? new Date());
 }
 

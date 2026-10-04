@@ -68,6 +68,8 @@ const LEGEND: Record<ContextMarker, { keyword: string; color: ThemeColor; senten
 	},
 };
 const DESCRIPTION = `- ${LEGEND.highlighted.keyword} ${LEGEND.highlighted.sentence}`;
+const FORCED_PROMPT_NOTE = "Forced: an extension replaced the system prompt of the latest request. " +
+	"This preview shows and counts that text, assuming the next request uses it too.";
 
 /** Distinct colors make attribution and theme invalidation observable without a terminal. */
 function createTheme(): Theme {
@@ -440,8 +442,13 @@ test("attribution wraps the preceding word and label together unless wider than 
 /** All preview levels that can render attributed System Prompt text. */
 type PreviewTarget = "injections-parent" | "injections-child" | "usage-single" | "usage-stream" | "usage-full";
 
-/** Open a synthetic long preview through the same Enter gates as a user. */
-function createPreview(target: PreviewTarget, theme: Theme, getRows: () => number): InjectionsView | UsageView {
+/** Open a synthetic long preview through the same Enter gates as a user; `forcedPrompt` applies to Usage only. */
+function createPreview(
+	target: PreviewTarget,
+	theme: Theme,
+	getRows: () => number,
+	forcedPrompt = false,
+): InjectionsView | UsageView {
 	const snapshot = createSnapshot(80);
 	if (target === "injections-parent" || target === "injections-child") {
 		const view = new InjectionsView(theme, { snapshot }, () => {}, getRows);
@@ -462,6 +469,7 @@ function createPreview(target: PreviewTarget, theme: Theme, getRows: () => numbe
 		usage: { ...usage, categories, estimatedTokens: usage.estimatedTokens + (target === "usage-single" ? 0 : 1) },
 		categoryColors: new Map(DEFAULT_CATEGORY_COLORS).set("system-prompt", "error"),
 		mapSize: DEFAULT_MAP_SIZE,
+		forcedPrompt,
 	}, () => {}, getRows);
 	view.render(120);
 	view.handleInput("\r");
@@ -734,6 +742,46 @@ test("Usage explains markers in categories beyond the System Prompt, at both pre
 		entries: [...collectPreviewEntries(tools), { breadcrumb: ["Other"], tokens: 1, text: "More" }],
 	}]);
 	assertLegend(stream, theme, ["dropped"]);
+});
+
+for (const target of ["usage-single", "usage-stream", "usage-full"] as const) {
+	test(`${target} System Prompt preview opens its legend with the dim forced-prompt note`, () => {
+		let height = 40;
+		const theme = createTheme();
+		const lines = createPreview(target, theme, () => height, true).render(120);
+		const rendered = plain(lines).split("\n");
+		const start = rendered.findIndex((line) => line.trim().startsWith("- Forced:"));
+		const legend = rendered.findIndex((line) => line.trim().startsWith("- Highlighted"));
+		assert.ok(start > 0 && legend > start);
+		assert.equal(rendered[start - 1], "");
+		assert.equal(
+			rendered.slice(start, legend).map((line) => line.trim()).join(" "),
+			`- ${FORCED_PROMPT_NOTE}`,
+		);
+		assert.ok(lines[start]?.includes(`${theme.getFgAnsi("dim")}Forced: an extension`));
+		assertLegendBullets(lines, theme, ["highlighted"]);
+
+		// The note collapses with the legend instead of claiming rows on its own
+		height = 12;
+		assert.doesNotMatch(plain(createPreview(target, theme, () => height, true).render(120)), /Forced:|Highlighted/);
+		height = 40;
+		assert.doesNotMatch(plain(createPreview(target, theme, () => height).render(120)), /Forced:/);
+	});
+}
+
+test("the forced-prompt note stays out of previews other than System Prompt", () => {
+	const theme = createTheme();
+	const view = new UsageView(theme, {
+		usage: computeUsage({ snapshot: createSnapshot(), messages: [] }),
+		categoryColors: DEFAULT_CATEGORY_COLORS,
+		mapSize: DEFAULT_MAP_SIZE,
+		forcedPrompt: true,
+	}, () => {}, () => 40);
+	view.handleInput("j"); // Custom Tools
+	view.handleInput("\r");
+	const preview = plain(view.render(120));
+	assert.match(preview, /Custom Tools/);
+	assert.doesNotMatch(preview, /Forced:/);
 });
 
 test("native-only System Prompt and sibling previews do not claim extension injection", () => {

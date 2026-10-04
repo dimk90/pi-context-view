@@ -104,6 +104,10 @@ reads as the exception to the `Highlighted` one wherever a preview shows both.
 The `(guess)` bullet covers a guessed `:<tool>` qualifier as well, which is
 inferred the same way and never gets a marker of its own.
 
+A view may open the legend with dim note bullets that explain no mark, such as
+Usage's [forced-prompt note](usage.md#forced-prompt). They come before the
+marker bullets and collapse with them.
+
 A bullet renders only where its mark is visible on that frame:
 
 - `Highlighted` and `(guess)` follow injected-reference metadata, so native-only

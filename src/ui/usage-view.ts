@@ -51,6 +51,9 @@ const INVISIBLE_REASONING_DESCRIPTION =
 	"≈ is a provider-reported count; ~ is a rough approximation when no breakdown " +
 	"is reported and excluded from category totals. " +
 	"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.";
+/** First legend bullet of the System Prompt preview while it shows the latest request's forced prompt. */
+const FORCED_PROMPT_NOTE = "Forced: an extension replaced the system prompt of the latest request. " +
+	"This preview shows and counts that text, assuming the next request uses it too.";
 /** Dashboard rows below the content, excluding the collapsible description: blank, hints, blank, border. */
 const USAGE_TAIL_FIXED_LINE_COUNT = 4;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
@@ -96,6 +99,8 @@ const MAP_KEY_COMPACT_SPARE_ROWS = 2;
 export interface UsageViewInput {
 	readonly usage: ContextUsageSnapshot;
 	readonly degradedReason?: string;
+	/** True when System Prompt measures the latest request's forced prompt instead of the recorded one. */
+	readonly forcedPrompt?: boolean;
 	/** Non-fatal problems shown under the header, such as ignored configuration entries. */
 	readonly notices?: readonly string[];
 	/** Category colors resolved from user overrides, or `DEFAULT_CATEGORY_COLORS`. */
@@ -893,7 +898,7 @@ export class UsageView {
 				width,
 				availableRows: terminalRows - fixedLineCount,
 				contentLineCount: body.length,
-			});
+			}, this.previewNotes(row));
 		const viewport = calculateViewport(
 			body.length, terminalRows, fixedLineCount, descriptionBlockRows(descriptionLines),
 		);
@@ -1092,7 +1097,12 @@ export class UsageView {
 			width,
 			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
 			contentLineCount: Math.max(1, contentLineCount),
-		});
+		}, this.previewNotes(row));
+	}
+
+	/** Note bullets opening a category's legend: the forced-prompt note on System Prompt. */
+	private previewNotes(row: CategoryLegendRow): string[] {
+		return row.rootId === "system-prompt" && this.input.forcedPrompt === true ? [FORCED_PROMPT_NOTE] : [];
 	}
 
 	/** Keep reasoning notation visible when the category opens as blocks or direct full content. */

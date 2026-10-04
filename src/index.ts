@@ -100,7 +100,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 		}
 		// Loaded only for the Usage view, the sole consumer of configured colors.
 		const loadedConfig = configStore.load();
-		const { messages, systemChanges } = applyRequestSnapshot({
+		const { messages, systemChanges, forcedPrompt } = applyRequestSnapshot({
 			snapshot: latest.type === "snapshot" ? latest.snapshot : undefined,
 			entries: ctx.sessionManager.getEntries(),
 			leafId: ctx.sessionManager.getLeafId(),
@@ -109,6 +109,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 		const current = buildUsageSnapshot({
 			messages,
 			systemChanges,
+			forcedPrompt,
 			systemPrompt: ctx.getSystemPrompt(),
 			options: ctx.getSystemPromptOptions(),
 			allTools: pi.getAllTools(),
@@ -124,6 +125,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 				autoCompactReserveTokens: readAutoCompactReserveTokens(pi, ctx.model),
 			}),
 			degradedReason: latest.type === "missing" ? latest.degradedReason : undefined,
+			forcedPrompt: forcedPrompt !== undefined,
 			// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
 			notices: loadedConfig.warnings,
 			categoryColors: loadedConfig.config.categoryColors,

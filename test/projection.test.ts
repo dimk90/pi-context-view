@@ -1,6 +1,7 @@
 /**
  * The latest request snapshot applied to the current projection for Usage:
- * conversation changes by baseline entry, system changes only while fresh.
+ * conversation changes by baseline entry, system changes and the forced prompt
+ * only while fresh.
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -124,4 +125,13 @@ test("system changes apply only while the replayed system state is unchanged sin
 
 	session.appendMessage({ role: "system", content: "", sections: { cwd: "<cwd>\n/new\n</cwd>" }, timestamp: 6 });
 	assert.deepEqual(apply(session, snapshot).systemChanges, [], "a recorded system change makes them stale");
+});
+
+test("a forced prompt applies under the same freshness rule as system changes", () => {
+	const { session } = createSession();
+	const snapshot = { ...snapshotAt(session), forcedPrompt: "Forced prompt" };
+	assert.equal(apply(session, snapshot).forcedPrompt, "Forced prompt");
+
+	session.appendMessage({ role: "system", content: "", sections: { cwd: "<cwd>\n/new\n</cwd>" }, timestamp: 6 });
+	assert.equal(apply(session, snapshot).forcedPrompt, undefined);
 });

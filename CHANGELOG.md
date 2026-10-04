@@ -8,14 +8,15 @@
 
 ### Changed
 * `[usage]` Apply the latest request's added/modified/deleted messages instead of first-turn copies.
+* `[usage]` Count the latest request's forced system prompt and note it in the System Prompt preview.
 * `[probe]` Skip probing for queued input, virtual models, and idle warming.
 * `[probe]` Skip probing above the auto-compaction threshold or when settings cannot be checked.
 * `[context]` Refuse both views with a warning while compaction is in progress.
 * `[package]` Require Pi 1.0 and report older versions, drop the pre-0.86 prompt parser.
 
 ### Fixed
-* `[probe]` Preserve system-message positions when filtering and persist probe context omissions.
 * `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).
+* `[probe]` Preserve system-message positions when filtering and persist probe context omissions.
 
 
 ## `[v0.6.0]` - 20.09.2026

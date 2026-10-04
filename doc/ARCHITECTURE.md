@@ -353,14 +353,16 @@ Live prompt/tool fallback   Latest snapshot           Current session branch
          |                                     v
          |                           applyRequestSnapshot()
          |                  Conversation changes by entry; drop stale ones
-         |                  System changes only while still fresh
+         |                  System changes and forced prompt
+         |                  only while still fresh
          |                                     |
          +-------------------------------------+
                                  |
                                  v
                        buildUsageSnapshot()
                   Replay system sections and tool deltas,
-                  then the fresh request-only system changes
+                  then the fresh request-only system changes;
+                  a fresh forced prompt replaces the prompt text
                   (live fallback only without system state)
                                  |
                                  v
@@ -416,6 +418,18 @@ turn supplies the changes. `src/projection.ts` applies them when the view opens:
   branch replay only while the current replayed state equals the state rebuilt
   at the snapshot's `leafId`; any recorded system change since capture drops
   them until the next request. Usage marks none of these changes.
+- **Forced prompt, while fresh.** Pi 1.0 turns every `systemPrompt` returned
+  from `before_agent_start` into a forced prompt, including the common
+  `event.systemPrompt` plus appended text. Pi never records that text, and an
+  idle read of the prompt returns the structured one, so only the snapshot
+  holds it. The forced text renders the snapshot's system state, so it follows
+  the same freshness rule as system changes. While it applies, Usage measures
+  it in place of the replayed prompt, also in the live fallback. As Pi does,
+  section and content changes do not apply to it, and tool changes still do.
+  Pi's sections inside it are
+  [measured as usual](#prompt-parts-and-moved-blocks), so appended text counts
+  as an extension addition. The System Prompt preview
+  [notes the forced prompt](ui/usage.md#forced-prompt) instead of marking it.
 
 Without a snapshot, after a failed or skipped probe, Usage counts the current
 branch alone and shows the degraded reason. Session-backed custom messages
@@ -425,12 +439,7 @@ because the prompt/tool snapshot already accounts for them.
 This is a provider-independent semantic estimate, not a wire-size estimate.
 Some providers keep earlier section versions or tool declarations in the cached
 transcript; others collapse them. Usage deliberately does not count that history,
-patch framing, or provider-specific serialization. A forced prompt is likewise
-out of scope for Usage: Pi never records that text, and the per-run options are
-cleared on settlement, so both the replayed transcript and the idle live
-fallback describe the structured prompt, not the forced projection of the last
-request. A snapshot's forced prompt is not applied, because it describes one
-past run; its system changes still apply to the structured prompt Usage shows.
+patch framing, or provider-specific serialization.
 
 The UI receives `ctx.getContextUsage()` separately. Its reported total is not
 used to force category estimates to match. Map rendering rules belong to
@@ -438,9 +447,10 @@ used to force category estimates to match. Map rendering rules belong to
 
 ### Known Limitation: One Request's Changes
 
-Usage assumes the next request repeats the latest request's changes. A change
-that an extension makes only once, or only for a particular prompt, therefore
-stays counted until the next request replaces the snapshot. Additions carry no
+Usage assumes the next request repeats the latest request's changes, the forced
+prompt included. A change that an extension makes only once, or only for a
+particular prompt, therefore stays counted until the next request replaces the
+snapshot. Additions carry no
 entry reference, so they remain after branch navigation or compaction. A
 modification whose entry is still projected replaces that entry's current
 message even if a later `context_edit` changed it. Changes from later
@@ -1010,7 +1020,8 @@ probe request isolation and message ownership, not a relaxation of those goals.
   keep its ID. A fallback never enters the store.
 - Usage applies the latest snapshot's conversation changes by baseline entry,
   drops changes whose entry left the projection, and applies system changes
-  only while the replayed system state is unchanged since capture.
+  and the forced prompt only while the replayed system state is unchanged
+  since capture.
 - Raw content appears only after Enter and is never logged or newly persisted.
 - Parent and child contributions are never double-counted.
 - Usage counts the replayed branch prompt/tool state once, never again as system

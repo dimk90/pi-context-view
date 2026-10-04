@@ -11,7 +11,14 @@ import type { InjectedReference, InjectionSection, JsonSpan, RequestChange } fro
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { shiftJsonSpan } from "./json-preview.ts";
 import { BODY_INDENT, calculateViewport, descriptionBlockRows } from "./layout.ts";
-import { type ContextMarker, guessMarker, markerLegendLines, partMarkers, stateMarkers } from "./markers.ts";
+import {
+	type ContextMarker,
+	guessMarker,
+	markerLegendLines,
+	noteBulletLines,
+	partMarkers,
+	stateMarkers,
+} from "./markers.ts";
 
 /**
  * Arrow introducing a restored line's source label. Non-breaking spaces bind
@@ -46,8 +53,8 @@ export interface PreviewDescriptionLayout {
 }
 
 /**
- * One fixed legend for the markers a preview shows, never part of its raw
- * content. Collapse it whole when fewer than `DESCRIPTION_MIN_CONTENT_ROWS`
+ * One fixed legend for the markers a preview shows, after any dim note bullets
+ * the caller adds, never part of its raw content. Collapse it whole when fewer than `DESCRIPTION_MIN_CONTENT_ROWS`
  * content rows would remain, or when a shorter preview would no longer fit in
  * full. Uncapped line counts keep the collapse decision independent of the
  * Usage cap it helps determine.
@@ -56,10 +63,13 @@ export function previewLegendLines(
 	theme: Theme,
 	contents: readonly SectionedContent[],
 	layout: PreviewDescriptionLayout,
+	notes: readonly string[] = [],
 ): string[] {
-	const markers = previewMarkers(contents);
-	if (markers.length === 0) return [];
-	const lines = markerLegendLines(theme, markers, layout.width);
+	const lines = [
+		...notes.flatMap((note) => noteBulletLines(theme, note, layout.width)),
+		...markerLegendLines(theme, previewMarkers(contents), layout.width),
+	];
+	if (lines.length === 0) return [];
 	const availableRows = layout.availableRows - descriptionBlockRows(lines);
 	const viewport = calculateViewport(layout.contentLineCount, availableRows, 0);
 	const floor = Math.min(DESCRIPTION_MIN_CONTENT_ROWS, layout.contentLineCount);

@@ -1,8 +1,9 @@
 /**
  * Session projections for the views: the filtered projection at a leaf with
- * each message's source entry, and the latest request snapshot applied to the
- * current projection for Usage (D11 in REQUEST-ONLY-INJECTIONS.md). Reads
- * snapshots and Pi data only; imports no capture or probe module.
+ * each message's source entry, and the latest request snapshot, forced prompt
+ * included, applied to the current projection for Usage (D11 in
+ * REQUEST-ONLY-INJECTIONS.md). Reads snapshots and Pi data only; imports no
+ * capture or probe module.
  */
 import { declarationsEqual, getCurrentSystemMessage, type SystemMessage } from "@earendil-works/pi-ai";
 import { buildSessionProjection, type SessionEntry } from "@earendil-works/pi-coding-agent";
@@ -35,6 +36,8 @@ export interface AppliedRequest {
 	readonly messages: RequestMessage[];
 	/** Request-only system changes; empty unless the recorded system state is unchanged since capture. */
 	readonly systemChanges: readonly SystemChange[];
+	/** The request's forced prompt, under the same freshness rule as `systemChanges`. */
+	readonly forcedPrompt?: string;
 }
 
 /** The filtered session projection at `leafId`, keeping each message's source entry. */
@@ -52,14 +55,14 @@ export function readProjection(
  * apply by baseline entry: additions are appended, a modification replaces its
  * entry's message, and a deletion removes it. A change whose entry has left the
  * projection is stale and dropped. System changes are deltas against the
- * snapshot's replayed system state, so they apply only while the current
- * replayed state still equals it.
+ * snapshot's replayed system state, and a forced prompt is a rendering of it,
+ * so both apply only while the current replayed state still equals it.
  */
 export function applyRequestSnapshot(input: SnapshotApplicationInput): AppliedRequest {
 	const current = readProjection(input.entries, input.leafId, input.filterMessages);
 	if (input.snapshot === undefined) return { messages: current.map(({ message }) => message), systemChanges: [] };
 	const messages = applyConversationChanges(current, input.snapshot.changes.conversation);
-	return { messages, systemChanges: freshSystemChanges(input.snapshot, input.entries, messages) };
+	return { messages, ...freshSystemState(input.snapshot, input.entries, messages) };
 }
 
 /** Current messages with modifications and deletions applied in place, then additions appended. */
@@ -90,15 +93,17 @@ function applyConversationChanges(
 	return [...applied, ...additions];
 }
 
-/** The snapshot's system changes, or none once the replayed system state changed since capture. */
-function freshSystemChanges(
+/** The snapshot's system changes and forced prompt, or neither once the replayed state changed since capture. */
+function freshSystemState(
 	snapshot: RequestSnapshot,
 	entries: SessionEntry[],
 	messages: readonly RequestMessage[],
-): readonly SystemChange[] {
-	if (snapshot.changes.system.length === 0) return [];
+): Omit<AppliedRequest, "messages"> {
+	const { changes: { system }, forcedPrompt } = snapshot;
+	if (system.length === 0 && forcedPrompt === undefined) return { systemChanges: [] };
 	const baseline = getCurrentSystemMessage(buildSessionProjection(entries, snapshot.leafId).messages);
-	return sameSystemState(baseline, getCurrentSystemMessage(messages)) ? snapshot.changes.system : [];
+	if (!sameSystemState(baseline, getCurrentSystemMessage(messages))) return { systemChanges: [] };
+	return { systemChanges: system, forcedPrompt };
 }
 
 /** Whether two replayed system states have the same content, sections in order, and declarations. */
