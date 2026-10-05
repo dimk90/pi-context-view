@@ -46,10 +46,10 @@
 		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-agent-core": "1.0.2",
-		"@earendil-works/pi-ai": "1.0.2",
-		"@earendil-works/pi-coding-agent": "1.0.2",
-		"@earendil-works/pi-tui": "1.0.2",
+		"@earendil-works/pi-agent-core": "1.0.3",
+		"@earendil-works/pi-ai": "1.0.3",
+		"@earendil-works/pi-coding-agent": "1.0.3",
+		"@earendil-works/pi-tui": "1.0.3",
 		"@types/node": "^22.20.1",
 		"typescript": "^7.0.2"
 	}
