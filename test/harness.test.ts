@@ -1,6 +1,6 @@
 /**
- * Self-tests for the validation harness: the mock provider speaks both
- * streaming formats through a real Pi RPC process, and each harness fixture
+ * Self-tests for the validation harness: the mock provider speaks every
+ * streaming format through a real Pi RPC process, and each harness fixture
  * makes its change visible in the provider request.
  */
 import assert from "node:assert/strict";
@@ -32,7 +32,7 @@ import { SYSTEM_APPEND_TEXT } from "./fixtures/system-append.ts";
 const PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 suite("mock provider through Pi RPC", { concurrency: true }, () => {
-	for (const api of ["openai-completions", "anthropic-messages"] as const) {
+	for (const api of ["openai-completions", "openai-responses", "anthropic-messages"] as const) {
 		test(`${api}: text reply, tool call and follow-up`, async (t) => {
 			const { provider, client } = await startHarness(t, { model: `${MOCK_PROVIDERS[api]}/vision` });
 			await client.promptAndWait("first prompt");

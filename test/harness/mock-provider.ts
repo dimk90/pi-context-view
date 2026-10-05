@@ -1,6 +1,6 @@
 /**
  * Loopback-only mock provider for the validation harness. It serves OpenAI
- * Completions and Anthropic Messages streaming from one HTTP server, records
+ * Completions, OpenAI Responses and Anthropic Messages streaming from one HTTP server, records
  * every request body, and answers with scripted replies: text, tool calls,
  * delayed stream events, or HTTP failures before streaming.
  */
@@ -8,7 +8,7 @@ import { once } from "node:events";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 /** Provider APIs the mock serves; each has its own base URL. */
-export type MockApi = "openai-completions" | "anthropic-messages";
+export type MockApi = "openai-completions" | "openai-responses" | "anthropic-messages";
 
 /** One scripted answer; the queue falls back to `DEFAULT_REPLY` when empty. */
 export type MockReply =
@@ -77,10 +77,7 @@ export async function startMockProvider(): Promise<MockProvider> {
 		response.flushHeaders();
 		if (reply.delayMs) await sleep(reply.delayMs);
 		const model = typeof body.model === "string" ? body.model : "mock";
-		const events = api === "openai-completions"
-			? openAiEvents(reply, model, replyCount)
-			: anthropicEvents(reply, model, replyCount);
-		response.end(events.join(""));
+		response.end(streamEvents(api, reply, model, replyCount).join(""));
 	}
 
 	server.listen(0, "127.0.0.1");
@@ -90,7 +87,7 @@ export async function startMockProvider(): Promise<MockProvider> {
 	const origin = `http://127.0.0.1:${address.port}`;
 
 	return {
-		baseUrls: { "openai-completions": `${origin}/v1`, "anthropic-messages": origin },
+		baseUrls: { "openai-completions": `${origin}/v1`, "openai-responses": `${origin}/v1`, "anthropic-messages": origin },
 		requests,
 		enqueue: (...next) => { replies.push(...next); },
 		waitForRequests: (count, timeoutMs = DEFAULT_WAIT_MS) => new Promise((resolve, reject) => {
@@ -118,6 +115,7 @@ export async function startMockProvider(): Promise<MockProvider> {
 function apiForPath(path: string): MockApi | undefined {
 	const pathname = path.split("?")[0];
 	if (pathname === "/v1/chat/completions") return "openai-completions";
+	if (pathname === "/v1/responses") return "openai-responses";
 	if (pathname === "/v1/messages") return "anthropic-messages";
 	return undefined;
 }
@@ -131,9 +129,18 @@ async function readBody(request: IncomingMessage): Promise<string> {
 
 /** Error body in the shape each SDK reports as the error message. */
 function errorBody(api: MockApi, message: string): unknown {
-	return api === "openai-completions"
-		? { error: { message, type: "server_error" } }
-		: { type: "error", error: { type: "api_error", message } };
+	return api === "anthropic-messages"
+		? { type: "error", error: { type: "api_error", message } }
+		: { error: { message, type: "server_error" } };
+}
+
+/** SSE frames of a text or tool-call reply in the API's streaming format. */
+function streamEvents(api: MockApi, reply: Exclude<MockReply, { type: "error" }>, model: string, sequence: number): string[] {
+	switch (api) {
+		case "openai-completions": return openAiEvents(reply, model, sequence);
+		case "openai-responses": return responsesEvents(reply, model, sequence);
+		case "anthropic-messages": return anthropicEvents(reply, model, sequence);
+	}
 }
 
 /** OpenAI Completions SSE frames for a text or tool-call reply. */
@@ -155,6 +162,43 @@ function openAiEvents(reply: Exclude<MockReply, { type: "error" }>, model: strin
 		}, null);
 	const last = chunk({}, reply.type === "text" ? "stop" : "tool_calls", usage);
 	return [first, last].map((data) => `data: ${JSON.stringify(data)}\n\n`).concat("data: [DONE]\n\n");
+}
+
+/** OpenAI Responses SSE frames for a text or tool-call reply. */
+function responsesEvents(reply: Exclude<MockReply, { type: "error" }>, model: string, sequence: number): string[] {
+	const args = reply.type === "tool-call" ? JSON.stringify(reply.arguments) : "";
+	const item = reply.type === "text"
+		? {
+			added: { type: "message", id: `msg_${sequence}`, role: "assistant", status: "in_progress", content: [] },
+			delta: { type: "response.output_text.delta", output_index: 0, content_index: 0, delta: reply.text },
+			done: {
+				type: "message", id: `msg_${sequence}`, role: "assistant", status: "completed",
+				content: [{ type: "output_text", text: reply.text, annotations: [] }],
+			},
+		}
+		: {
+			added: { type: "function_call", id: `fc_${sequence}`, call_id: `call_${sequence}`, name: reply.name, arguments: "" },
+			delta: { type: "response.function_call_arguments.delta", output_index: 0, delta: args },
+			done: {
+				type: "function_call", id: `fc_${sequence}`, call_id: `call_${sequence}`, name: reply.name, arguments: args,
+				status: "completed",
+			},
+		};
+	const response = { id: `resp_${sequence}`, object: "response", model, output: [] as unknown[] };
+	const events = [
+		{ type: "response.created", response: { ...response, status: "in_progress" } },
+		{ type: "response.output_item.added", output_index: 0, item: item.added },
+		item.delta,
+		{ type: "response.output_item.done", output_index: 0, item: item.done },
+		{
+			type: "response.completed",
+			response: {
+				...response, status: "completed", output: [item.done],
+				usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 },
+			},
+		},
+	];
+	return events.map((data) => `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 /** Anthropic Messages SSE frames for a text or tool-call reply. */

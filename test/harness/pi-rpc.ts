@@ -16,6 +16,7 @@ import type { MockApi, MockProvider } from "./mock-provider.ts";
 /** Providers in `models.json`, one per mock API. */
 export const MOCK_PROVIDERS = {
 	"openai-completions": "mock-openai",
+	"openai-responses": "mock-responses",
 	"anthropic-messages": "mock-anthropic",
 } as const satisfies Record<MockApi, string>;
 
