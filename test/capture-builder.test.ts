@@ -141,10 +141,11 @@ test("the builder publishes after the handler returns, then publishes the settle
 	assert.deepEqual(published[0].changes, { conversation: [], system: [] });
 
 	builder.settleGuard(1, { status: "incomplete", reason: "none" });
+	builder.release(1);
 	builder.settleGuard(1, { status: "incomplete", reason: "again" });
 	builder.settleGuard(7, { status: "incomplete", reason: "unknown" });
 	assert.deepEqual(published.map((snapshot) => [snapshot.id, snapshot.guard.status]),
-		[[1, "pending"], [1, "incomplete"]], "one guard update per capture");
+		[[1, "pending"], [1, "incomplete"]], "released captures accept no later updates");
 	assert.equal(published[1].changes, published[0].changes);
 });
 
@@ -168,6 +169,32 @@ test("clear cancels scheduled diffs and pending guards", async () => {
 	await flushImmediates();
 	builder.settleGuard(1, { status: "incomplete", reason: "none" });
 	assert.deepEqual(published.map((snapshot) => snapshot.id), [1]);
+});
+
+test("a dispatch mismatch replaces an already settled guard and removes declared names", async () => {
+	const published: RequestSnapshot[] = [];
+	const builder = new SnapshotBuilder({ publish: (snapshot) => published.push(snapshot) });
+	builder.build(request(1, []));
+	await flushImmediates();
+	builder.settleGuard(1, { status: "complete", dispatch: { provider: "mock", api: "api", model: "m" }, findings: [] },
+		{ declared: ["read"], baseline: ["read", "write"] });
+	assert.ok(published.at(-1)?.declaredTools);
+	builder.settleGuard(1, { status: "incomplete", reason: "Dispatch mismatch." });
+	builder.release(1);
+	assert.equal(published.at(-1)?.declaredTools, undefined);
+	assert.deepEqual(published.at(-1)?.guard, { status: "incomplete", reason: "Dispatch mismatch." });
+});
+
+test("release before a scheduled build keeps its final guard and names but ignores later updates", async () => {
+	const published: RequestSnapshot[] = [];
+	const builder = new SnapshotBuilder({ publish: (snapshot) => published.push(snapshot) });
+	builder.build(request(1, []));
+	builder.settleGuard(1, { status: "incomplete", reason: "Only tools." }, { declared: [], baseline: ["read"] });
+	builder.release(1);
+	builder.settleGuard(1, { status: "incomplete", reason: "Too late." });
+	await flushImmediates();
+	assert.deepEqual(published[0].guard, { status: "incomplete", reason: "Only tools." });
+	assert.deepEqual(published[0].declaredTools, { declared: [], baseline: ["read"] });
 });
 
 test("a forced prompt is the effective prompt only when it differs from the replay", () => {

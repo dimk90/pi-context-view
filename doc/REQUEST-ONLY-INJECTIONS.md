@@ -122,6 +122,16 @@ A forced prompt is not in this capture. Detect it by comparing `ctx.getSystemPro
 
 ### D4. Payload guard on `before_provider_request`
 
+Implementation is split into two plan items: pairing and tool declarations,
+then the message channel. The first part is implemented. It records tool
+findings and declared names under an `incomplete` guard until the message
+channel is available; the views consume them in a later step.
+
+The chosen message comparison uses text units (system, user, assistant, tool
+call, tool result), whitespace-insensitive keys, and LCS alignment, with changed
+lines in findings. Normalize only adjustments supported by the selected
+model's capabilities; do not reconstruct each provider's full serializer.
+
 Copy the payload synchronously, then parse and compare two channels off the critical path. The copy duplicates arrays and objects and shares strings: later handlers can replace a string but cannot change it in place, and a full clone of a large payload costs milliseconds and its whole size (see Spike results).
 
 - **Messages:** model-facing message and system text, excluding `details` and other unsent metadata.
@@ -135,12 +145,12 @@ Number captures locally; `turnIndex` restarts at zero for every agent run and ca
 
 - An agent-level retry (`retry.enabled`) starts a new run, repeats routing and context capture, and can choose a different physical model. A failure before streaming still produces an assistant message naming the model.
 - A provider-level retry (`retry.provider.maxRetries`) resends the same payload without repeating `before_provider_request`.
-- A cache-warm refresh fires `before_provider_request` without a new capture. Mark it when `cache_warming_decision` occurred after the latest capture and the payload has a one-token output limit. Skip its comparison while consuming its provider events.
+- A cache-warm refresh fires `before_provider_request` without a new capture. Mark it when `cache_warming_decision` occurred after the latest capture and the payload has a one-token output limit. OpenAI Responses raises that limit to 16, which also marks a refresh. Skip its comparison while consuming its provider events. A payload with no unpaired capture is ignored even when its adapter omits the limit; a decision alone is not enough to skip an agent payload.
 - A capture can end without a payload, as Pi 1.0's standard silent probe does when authentication rejects the aborted signal (D10), or when a provider does not call `onPayload`. A new capture or the run's `agent_settled` settles a capture that is still unpaired as incomplete.
 
 The cache-warming decision alone is insufficient: handler results do not update `event.action`, so the monitor cannot see whether a later handler changed it. Failed warm refreshes have no assistant-message fallback and do not need one because their comparison is skipped.
 
-Release pending data on settlement and shutdown. Missing dispatch/model metadata or unsupported payload formats produce an incomplete guard result, not an empty diff.
+Release pending data on settlement and shutdown. Missing dispatch/model metadata or unsupported payload formats produce an incomplete guard result, not an empty diff. A physical result published before dispatch is provisional: an identity mismatch or missing confirmation replaces it and removes its findings and declared names. SnapshotBuilder accepts these replacements until the guard explicitly releases that ID.
 
 #### Pi's own adjustments
 
@@ -154,6 +164,7 @@ Pi changes the request after the capture. None of these changes are **edited aft
 - Anthropic's native mid-conversation tool changes (`compat.supportsMidConvoToolChanges` with an initial tool set): the request-level `tools` list holds only the initial tools and `__pi_deferred_placeholder__`, and never changes. Later system messages define added tools inline in `tool_addition` blocks with a `tool_definition` and withdraw removed tools in `tool_removal` blocks. A redefinition under the same name has no `tool_removal`. The extractor removes these blocks from the message channel and replays them, in order, on the initial list to get the declared tools; a later definition with the same name wins.
 - OpenAI Responses tool additions (`compat.supportsMidConvoSystemMessages` with `supportsAdditionalTools` or `supportsToolSearch`): while the tool history only adds tools, the request-level `tools` list holds the initial tools, and each later addition appears inline at its system message, as an `additional_tools` developer item or as a `tool_search_call` and `tool_search_output` pair. After a removal or a redefinition under the same name, the request-level list holds the current tool set and nothing is inline. The extractor removes these items from the message channel and adds their tools to the declared tools.
 - With an Anthropic OAuth token, tool names that match Claude Code tools change case, such as `read` to `Read`. Match such names case-insensitively, as Pi does when it maps tool calls back.
+- OpenAI Completions with `supportsMidConvoSystemMessages` and `supportsMidConvoToolAdditions` can also declare later tools in a system message's `tools` list. Replay those additions in the declaration channel.
 
 Use `convertToLlm` from `@earendil-works/pi-coding-agent` and the exported `getCurrentSystemMessage`, `getCurrentSystemPrompt` and `resolveTranscript` helpers from `@earendil-works/pi-ai`. Per-model message transforms are not exported; extractors must account for them without treating uncertain differences as proven Pi adjustments.
 
@@ -192,6 +203,25 @@ Checked on Pi 1.0.2 against the mock provider for OpenAI Completions, OpenAI Res
 - **Payload copy.** A payload's JSON is about as large as its context: about 0.8 MB at 200k tokens and 4 MB at 1M tokens, plus base64 images. On an i7-8650U with Node.js 26, `structuredClone` took 1–13 ms and kept a full copy. A copy of only arrays and objects that shares strings took 0.2–3 ms and kept 2–5% of the JSON size. A payload with other objects, such as Bedrock's image bytes, is not a supported format and settles incomplete. The virtual path keeps its copy until the HTTP response, including provider-level retries and their delays. One request is in flight per run, plus at most one warm refresh, so this retention is small.
 - **Payload shapes.** Payloads with tools, a tool call and result, and a mid-conversation system message each passed only their own API's structural check. OpenAI Responses sends `input` items instead of `messages`. OpenAI Completions keeps the system prompt in `messages`, sends tool results with role `tool` and nests declarations under `function`. Anthropic sends the prompt in a top-level `system` and declarations with a top-level `name`. Roles alone do not separate Completions from Anthropic: with `supportsMidConvoSystemMessages`, Anthropic payloads contain `role: "system"` messages. A payload without a system prompt, tools or tool history can pass both checks; the check only rejects clear mismatches, and the parser still comes from the API.
 - **Inline tool additions.** OpenAI Responses also declares later tools inline, as described in Pi's own adjustments. The plan named only Anthropic's format.
+
+#### Tool-channel validation on Pi 1.0.3
+
+`test/payload-runtime.test.ts` exercises all three adapters: ordinary prompts,
+tool follow-ups, payload edits in both orders, codemode `on` and `only`,
+tool-search, a direct-tool MCP server, virtual routing, and both retry levels.
+It also checks Anthropic inline additions/removals/redefinitions with API-key
+and OAuth casing, and Responses inline additions followed by removal or
+redefinition. Physical results publish before a response; a model change
+during preparation invalidates them. Successful and failed idle warm refreshes
+publish nothing. The Responses adapter's 16-token floor is covered explicitly.
+
+The parser compares names and descriptions, not schemas. It supports OpenAI
+function and grammar tools; unknown provider-native Responses tool types make
+the tool channel incomplete rather than inventing declared names. Candidate
+`model-only` tool names are copied at payload time so later loadout changes do
+not change attribution while a virtual response is pending. Deferred work
+reduces the capture to expected names/descriptions and baseline names, dropping
+transcript references before waiting for virtual dispatch.
 
 ### D5. Observe only, stay off the critical path
 
@@ -310,7 +340,12 @@ interface RequestSnapshot {
 type GuardResult =
   | { readonly status: "pending" }
   | { readonly status: "complete"; readonly dispatch: Dispatch; readonly findings: readonly GuardFinding[] }
-  | { readonly status: "incomplete"; readonly reason: string };
+  | {
+      readonly status: "incomplete";
+      readonly reason: string;
+      readonly dispatch?: Dispatch;
+      readonly findings?: readonly GuardFinding[]; // findings from channels that were compared
+    };
 
 interface SnapshotReader {
   first(origin?: CaptureOrigin): RequestSnapshot | undefined;

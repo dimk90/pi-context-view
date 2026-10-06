@@ -117,16 +117,24 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
     Decided: copy JSON payloads by duplicating arrays and objects and sharing strings, instead of `structuredClone`. The `turn_start` check that removes the short window after `pi.setModel()` during preparation stays an option in D4.
     Verified on Pi 1.0.2: `pnpm check` (412 tests). The mock provider now also serves OpenAI Responses. `test/dispatch-runtime.test.ts` confirmed every assumption; D4's Spike results record the details. The first identity-bearing event is either `message_start` or `provider_stream_event` on all three adapters, so the guard must accept both. OpenAI Responses also declares later tools inline (`additional_tools` and tool search items), which D4 now lists among Pi's own adjustments.
 
-- [ ] **Payload guard** (D4, D7, D9):
+- [x] **Payload guard: pairing and tool declarations** (D4, D7, D9):
   - RequestTracker pairing: latest unpaired capture; agent-level and provider-level retries; warm refreshes marked by `cache_warming_decision` plus a one-token output limit and skipped; release pending data on settlement and shutdown.
   - TranscriptCapture: record `ctx.model` as the request model.
   - DispatchConfirmer: assistant `message_start`, `provider_stream_event`, assistant `message_end` as fallback; once per paired request; return quickly and treat `event.data` as read-only. On a physical selection, confirm the request model: a different provider, API, or model replaces the guard with an incomplete result, without parsing again. On a virtual selection, supply the dispatched model.
-  - PayloadParser: copy the payload's arrays and objects and share its strings. Select the parser by API, never by payload shape. On a physical selection, use the request model and parse right after the copy, then release it; on a virtual selection, keep the copy until dispatch and use the dispatched model. Extract message and tool-declaration channels, including inline tool changes of Anthropic and OpenAI Responses; an unsupported API or a payload that does not match its API's representation settles `incomplete`. Move the shape checks from `test/dispatch-runtime.test.ts` into the parser.
-  - PayloadGuard: normalize every Pi adjustment listed in D4 with the selected model's capabilities, such as `input` and `compat`; report the rest as **edited after monitor**.
+  - PayloadParser: copy the payload's arrays and objects and share its strings. Select the parser by API, never by payload shape. On a physical selection, use the request model and parse right after the copy, then release it; on a virtual selection, keep the copy until dispatch and use the dispatched model. Extract the tool-declaration channel, including inline tool changes of Anthropic and OpenAI Responses; an unsupported API or a payload that does not match its API's representation settles `incomplete`. Move the shape checks from `test/dispatch-runtime.test.ts` into the parser.
+  - PayloadGuard, tool channel: report added declarations and changed descriptions as **edited after monitor**. Until the message channel exists, a compared tool channel settles the guard `incomplete` with its findings, never as "no edits".
   - LoadoutAttributor: explain missing declarations with active `model-only` candidates from `pi.getAllTools()`.
   - DeclaredTools: record declared and baseline tool names when the tool-declaration channel is complete.
   - Standard Pi 1.0 probes have no payload: settle their guards incomplete on settlement. Pair any payload from a nonstandard host normally; blanking keeps the assistant message's provider, API, and model.
-  - Test late edits, built-ins (codemode normal and `only`, tool-search, MCP), routing and normalization directly and through a virtual model, retries, cache warming, dispatch timing (a physical guard settles before the response; `pi.setModel()` during preparation leaves it incomplete), format selection, inline tool additions on OpenAI Responses, incomplete comparison, and probe payloads.
+  - Test tool late edits, built-ins (codemode normal and `only`, tool-search, MCP), routing directly and through a virtual model, retries, cache warming, dispatch timing (a physical guard settles before the response; `pi.setModel()` during preparation leaves it incomplete), format selection, inline tool changes on Anthropic and OpenAI Responses, incomplete comparison, and probe payloads.
+    Decided: tools are compared by name and description, not schema; Anthropic names match case-insensitively for OAuth casing. Unknown provider-native Responses tools leave the tool channel incomplete. OpenAI Responses raises the warm-refresh output limit to 16, so 16 also marks a refresh.
+    Verified on Pi 1.0.3: `pnpm check` (467 tests). `test/payload-runtime.test.ts` runs the real adapters of all three APIs against the mock provider, including codemode `on`/`only`, tool-search, a stdio MCP server, virtual routing, both retry levels, and idle cache warming. Mock-provider real-PTY runs in fullscreen/dark and regular/system modes, both extension orders, 24/60/80/120 columns, height changes, preview/back, both views, and reload showed the expected incomplete-guard reasons. Marker/forced-prompt/input-transform probes kept the `after_provider_response` sentinel silent, and each real prompt made one provider request.
+
+- [ ] **Payload guard: message channel** (D4):
+  - PayloadParser: extract the message channel as text units per message part: system, user, assistant, tool call, and tool result.
+  - PayloadGuard: normalize the Pi adjustments listed in D4 that the selected model's capabilities, such as `input` and `compat`, determine. Compare whitespace-insensitive unit keys with an LCS alignment; report the rest as **edited after monitor** with the changed lines.
+  - A compared message channel and tool channel settle the guard `complete`.
+  - Test late edits before and after the monitor, every normalized adjustment, image placeholders only with model evidence, and incomplete comparison.
 
 - [ ] **Guard results in the views** (D7, D9, D11):
   - Injections: late edits without structure or attribution, hidden declarations with their candidates, guard status. Update `doc/ui/injections.md`.
@@ -156,6 +164,7 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
   - Rewrite `doc/ARCHITECTURE.md` to describe the implemented design: lifecycle, module boundaries, privacy, and required invariants (snapshot retention replaces "Initial freezes exactly once"). Reduce `doc/REQUEST-ONLY-INJECTIONS.md` to open alternatives and rationale, or remove it.
   - Update `AGENTS.md` sources of truth and lifecycle verification, `README.md`, and `CHANGELOG.md`.
   - Run the full Validation matrix, the real-PTY and provider smoke tests from the `pi-extension` skill, and the `doc/UI.md` rendering matrix.
+  - Split `doc/ARCHITECTURE.md` to multiple files to reduce context overhead for agents and follow progressive disclosure approach.
 
 ## `Backlog`
 

@@ -68,22 +68,37 @@ export interface Dispatch {
 
 /**
  * A payload difference the structured capture cannot explain:
- *   late-edit            text changed after the monitor, without structure or attribution
+ *   late-edit            message text changed after the monitor, without structure or attribution
+ *   late-tool-edit       a declaration the payload adds, or describes differently, after the monitor
  *   hidden-declaration   a captured tool declaration missing from the payload, with
- *                        active `model-only` tools as candidate sources
+ *                        active `model-only` tools as candidate sources; it can also be a late removal
  */
 export type GuardFinding =
 	| { readonly type: "late-edit"; readonly text: string }
+	| {
+		readonly type: "late-tool-edit";
+		readonly change: "added" | "modified";
+		readonly name: string;
+		/** The description the payload declares; undefined when it declares none. */
+		readonly description?: string;
+	}
 	| { readonly type: "hidden-declaration"; readonly name: string; readonly candidates: readonly string[] };
 
 /**
  * Payload comparison state. Pending and incomplete mean the comparison is
- * unavailable, never that the request had no late edits.
+ * unavailable, never that the request had no late edits. An incomplete result
+ * with `findings` compared only some channels: the findings hold, and `reason`
+ * names what was not compared.
  */
 export type GuardResult =
 	| { readonly status: "pending" }
 	| { readonly status: "complete"; readonly dispatch: Dispatch; readonly findings: readonly GuardFinding[] }
-	| { readonly status: "incomplete"; readonly reason: string };
+	| {
+		readonly status: "incomplete";
+		readonly reason: string;
+		readonly dispatch?: Dispatch;
+		readonly findings?: readonly GuardFinding[];
+	};
 
 /** Tool names from a complete tool-declaration channel and from the capture's baseline replay. */
 export interface DeclaredTools {

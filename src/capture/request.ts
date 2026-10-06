@@ -9,6 +9,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ProbeView } from "../probe/view.ts";
 import type { CaptureOrigin, RequestMessage } from "../snapshot.ts";
 import { trimMatchedEnds, type UnmatchedMessages } from "./diff.ts";
+import type { GuardModel } from "./guard.ts";
 
 /** A baseline message with the session entry that owns it. */
 export interface BaselineMessage {
@@ -48,6 +49,8 @@ export interface CapturedRequest extends RequestCopy {
 	readonly capturedAt: number;
 	readonly baseline: Baseline;
 	readonly forcedPrompt?: string;
+	/** `ctx.model` at capture: the dispatched model on a physical selection, the virtual one otherwise. */
+	readonly requestModel?: GuardModel;
 }
 
 /** Inputs of one capture, read from the `context_with_system` event and its context. */
@@ -59,6 +62,8 @@ export interface CaptureInput {
 	/** `ctx.getSystemPrompt()`: Pi's effective prompt for the current run. */
 	readonly effectivePrompt: string;
 	readonly probe: Pick<ProbeView, "filterMessages">;
+	/** `ctx.model`; its identity is copied before later handlers can change it. */
+	readonly requestModel?: GuardModel;
 	readonly capturedAt?: number;
 }
 
@@ -76,6 +81,11 @@ export function captureRequest(input: CaptureInput): CapturedRequest {
 		baseline,
 		...copyRequest(baseline.messages, input.messages),
 		forcedPrompt: detectForcedPrompt(input.effectivePrompt, baseline.messages),
+		...(input.requestModel === undefined ? {} : {
+			requestModel: {
+				provider: input.requestModel.provider, api: input.requestModel.api, id: input.requestModel.id,
+			},
+		}),
 	};
 }
 

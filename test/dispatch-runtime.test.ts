@@ -23,6 +23,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
+import { PAYLOAD_SHAPE_CHECKS } from "../src/capture/payload.ts";
 import { type MockApi, type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
 
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const satisfies readonly MockApi[];
@@ -32,10 +33,6 @@ const PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z
 
 /** Selection of the test router; `router/pi-virtual/auto` in identities. */
 const VIRTUAL = { provider: "router", id: "auto" } as const;
-
-/** Message roles each API's serializer emits. */
-const COMPLETIONS_ROLES = ["system", "developer", "user", "assistant", "tool"];
-const ANTHROPIC_ROLES = ["system", "user", "assistant"];
 
 /**
  * Models of every mock provider `mock-<api>`:
@@ -379,7 +376,7 @@ function capabilities(model: Model | undefined): Capabilities {
 }
 
 // ============================================================================
-// Spike shape checks
+// Guard shape checks against real provider payloads
 // ============================================================================
 
 /**
@@ -388,26 +385,8 @@ function capabilities(model: Model | undefined): Capabilities {
  */
 function matchingApis(payload: Item | undefined): MockApi[] {
 	if (!payload) return [];
-	return APIS.filter((api) => SHAPE_CHECKS[api](payload));
+	return APIS.filter((api) => PAYLOAD_SHAPE_CHECKS[api](payload));
 }
-
-const SHAPE_CHECKS: Record<MockApi, (payload: Item) => boolean> = {
-	/** System prompt in `messages`, `tool` results, nested `function` declarations. */
-	"openai-completions": (payload) => isItemList(payload.messages) && !("input" in payload) && !("system" in payload)
-		&& payload.messages.every((message) => COMPLETIONS_ROLES.includes(String(message.role)))
-		&& optionalItems(payload.tools)?.every((tool) => tool.type === "function" && isItem(tool.function)
-			&& typeof tool.function.name === "string") === true,
-	/** `input` items instead of messages, flat declarations. */
-	"openai-responses": (payload) => isItemList(payload.input) && !("messages" in payload)
-		&& payload.input.every((item) => typeof item.role === "string" || typeof item.type === "string")
-		&& optionalItems(payload.tools)?.every((tool) => typeof tool.type === "string"
-			&& (tool.type !== "function" || typeof tool.name === "string")) === true,
-	/** Top-level `system`, declarations with a name and no `function`. */
-	"anthropic-messages": (payload) => isItemList(payload.messages) && !("input" in payload)
-		&& (payload.system === undefined || typeof payload.system === "string" || isItemList(payload.system))
-		&& payload.messages.every((message) => ANTHROPIC_ROLES.includes(String(message.role)))
-		&& optionalItems(payload.tools)?.every((tool) => typeof tool.name === "string" && !("function" in tool)) === true,
-};
 
 /** Whether `value` is a plain object. */
 function isItem(value: unknown): value is Item {

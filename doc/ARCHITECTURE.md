@@ -84,13 +84,13 @@ Settings-specific conversion                    NOT used
 Messages + effective prompt + active tools      READ: forced prompt, tool APIs
   |
   v
-Provider-specific serialization                 NOT used
+Provider-specific serialization                 READ: tool declarations below
   Convert messages, system prompt, and tools
   into the provider's request format
   |
   v
-before_provider_request handlers                NOT used for capture
-  May replace the outgoing payload
+before_provider_request handlers                OBSERVE: paired payload copy,
+  May replace the outgoing payload                compare tool declarations
   |
   v
 Send to provider
@@ -227,8 +227,9 @@ context_with_system, after ProbeFilter's handler     every request: prompts,
 Align the rest, diff system state, attribute, redact,
 publish with guard "pending"
   |
-  v  next capture or agent_settled
-Guard "incomplete": no payload was observed
+  v  before_provider_request, or next capture / agent_settled
+Pair the payload and compare tool declarations (below),
+or settle incomplete when no payload was observed
 ```
 
 - **Observe only.** The handler returns nothing and changes no event data.
@@ -241,9 +242,9 @@ Guard "incomplete": no payload was observed
 
 - **Coverage.** The compared request holds every `context` change and the
   `context_with_system` changes of extensions loaded before this one. Later
-  `context_with_system` handlers and payload rewrites are not visible here; the
-  payload guard is a later step. Until it exists, every guard settles
-  `incomplete`, never as "no edits".
+  `context_with_system` handlers and payload rewrites are not visible in the
+  structured diff. The payload guard currently compares their tool declarations
+  only; message comparison remains a later step.
 
 - **System state.** Both sides are replayed with Pi's
   `getCurrentSystemMessage()`, so Pi's collapse of system messages after a
@@ -271,12 +272,80 @@ Guard "incomplete": no payload was observed
 
 - **Retention.** A snapshot keeps changed request messages, entry IDs, system
   changes, and the forced prompt, with the [redaction](#images-and-provider-signatures)
-  below. The request copy and the baseline are released once the snapshot
-  is built; consumers rebuild the baseline with
-  `buildSessionProjection(entries, leafId)`.
+  below. The builder releases its request copy after building. RequestTracker
+  holds the unpaired capture until a payload or settlement; the guard's first
+  deferred job reduces it to tool names and descriptions and baseline names,
+  releasing transcript references even while a virtual request waits for dispatch.
+  Consumers rebuild the baseline with `buildSessionProjection(entries, leafId)`.
 
 With no request-only changes, a snapshot is empty after first and later
 prompts, tool follow-ups, resume with another model, compaction, and probes.
+
+## Payload Guard: Tool Declarations
+
+The first payload-guard part implements D4, D7, and D9 of
+[REQUEST-ONLY-INJECTIONS.md](REQUEST-ONLY-INJECTIONS.md). It runs in every mode
+and publishes through the same SnapshotBuilder. **Message comparison is not
+implemented yet.** A successfully compared tool channel therefore settles the
+guard `incomplete`, with `Message edits after the monitor are not compared yet.`
+as its reason, plus its tool findings and `declaredTools`. It never claims that
+there were no late message edits.
+
+- **Pairing.** RequestTracker pairs each payload with the latest unpaired local
+  capture ID, not `turnIndex`. Agent retries produce new captures; provider
+  retries resend one payload without another payload hook. A capture left
+  unpaired at the next capture or `agent_settled` settles incomplete.
+- **Warm refreshes.** A `cache_warming_decision` after the latest capture plus
+  a one-token output limit identifies a refresh. OpenAI Responses raises that
+  limit to 16, which is accepted too. No payload copy, comparison, findings, or
+  declared names are produced. Its stream events cannot confirm the waiting
+  agent request; assistant events can. A payload without a waiting capture is
+  ignored even if its adapter omits or changes the limit. The marker is a
+  heuristic: a warm decision alone cannot reveal a later handler's action.
+- **Observe only.** The payload hook synchronously copies arrays and plain
+  objects, sharing immutable strings. It returns nothing and changes no event
+  data. Copy failures use a fixed reason, never exception text containing raw
+  payload content. Parsing and publication run in `setImmediate` jobs.
+- **Physical selections.** Capture copies `ctx.model`'s provider/API/model
+  identity. The guard parses with that API right after copying, without waiting
+  for a response. Assistant `message_start` or `provider_stream_event`, whichever
+  comes first, confirms the identity; assistant `message_end` is the fallback.
+  A mismatch replaces the guard with an incomplete result and drops provisional
+  findings and declared names, without reparsing. This detects `pi.setModel()`
+  during preparation. Missing dispatch metadata also invalidates the result.
+- **Virtual selections.** The guard retains the payload copy until dispatch
+  supplies an identity, then looks up the physical model with
+  `ctx.modelRegistry.find()`. Missing or mismatched catalog metadata settles
+  incomplete. The stream handler reads only identity fields, never `event.data`,
+  and returns without parsing.
+- **Parsing.** Supported APIs are `openai-completions`, `openai-responses`, and
+  `anthropic-messages`. The selected API chooses the parser; shape checks only
+  reject mismatches. Unsupported APIs or malformed declarations leave the tool
+  channel incomplete and record no names. Function and grammar declarations are
+  supported for OpenAI; unknown provider-native Responses tools are incomplete.
+  Anthropic inline `tool_addition` / `tool_removal` blocks are replayed in order,
+  with later definitions winning. Responses `additional_tools` and
+  `tool_search_output` declarations, and Completions system-message tool
+  additions, are folded into the same channel. `__pi_deferred_placeholder__`
+  is excluded. Anthropic names match case-insensitively, as for OAuth casing.
+- **Findings.** Compare names and descriptions, not schemas that Pi adapts for
+  each provider. Added declarations and changed descriptions are late tool
+  edits. Missing declarations carry the active `model-only` tools at payload
+  time as candidates, not confirmed sources. An empty candidate list remains
+  a missing declaration; it may have been removed by a later handler.
+- **DeclaredTools.** Record the parsed names and the names replayed from the
+  capture's baseline whenever the tool channel is complete, independently of
+  message comparison. A standard probe observes no payload and records none;
+  a nonstandard host that reaches the hook pairs a probe payload normally.
+- **Retention.** Physical payload copies are released after parsing; only the
+  snapshot and identity wait for confirmation. Virtual copies are released after
+  dispatch parsing or settlement. SnapshotBuilder allows guard replacements
+  until dispatch finishes, then releases its copy. Shutdown cancels deferred
+  work and drops all pending data. Neither payload copies nor guard findings
+  are logged or persisted.
+
+The views do not yet consume tool findings or filter tools by `declaredTools`;
+that is the separate **Guard results in the views** plan item.
 
 ## Injections on Snapshots
 
@@ -464,7 +533,7 @@ snapshot. Additions carry no
 entry reference, so they remain after branch navigation or compaction. A
 modification whose entry is still projected replaces that entry's current
 message even if a later `context_edit` changed it. Changes from later
-`context_with_system` handlers and payload rewrites are not visible yet. Usage
+`context_with_system` handlers and payload rewrites are not applied to Usage yet. Usage
 is not an exact view of the last or next provider request.
 
 ## On-demand Silent Probe
@@ -951,9 +1020,11 @@ and `thoughtSignature` become filler of the same length. Only that length
 remains, for the [signature-size proxy](THINKING.md#counting-architecture).
 Token estimates do not change: Pi counts images by a fixed proxy and never
 counts signatures. The short-lived request copy used for the diff is raw and
-released after the snapshot is built. It holds only the replayed system state
-and the messages that differ from the baseline, so unchanged history, its
-images and signatures included, is never copied.
+released after building and payload pairing or settlement. It holds only the
+replayed system state and messages that differ from the baseline. Payload
+copies duplicate arrays and objects, sharing string values (including image and
+signature strings) until parsing. The tool parser retains only declared names
+and descriptions, never message content, image data, or opaque signature bytes.
 
 Persisted probe records contain only role and timestamp identities, plus
 `context_edit` target entry IDs with null replacements.
@@ -966,9 +1037,13 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/command.ts`             | Parse commands; resolve the first or latest snapshot through the store and ProbeTrigger.      |
 | `src/config.ts`              | Load, validate, cache, and explicitly create configuration.                                   |
 | `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
-| `src/capture/register.ts`    | Capture layer wiring: observe every request in `context_with_system`; settle unpaired guards. |
-| `src/capture/tracker.ts`     | RequestTracker: number captures and remember the latest unpaired one.                         |
-| `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline with entry IDs, request copy, forced prompt. |
+| `src/capture/register.ts`    | Capture wiring: structured capture, payload pairing, dispatch events, and cleanup.            |
+| `src/capture/tracker.ts`     | RequestTracker: number captures, pair payloads, and mark warm refreshes.                       |
+| `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline, request copy, forced prompt, model identity. |
+| `src/capture/dispatch.ts`    | DispatchConfirmer: accept one identity per paired request, consuming warm stream events.       |
+| `src/capture/payload.ts`     | Copy payloads, select parsers by API, and replay tool declarations including inline changes.   |
+| `src/capture/tools.ts`       | Compare declaration names/descriptions; loadout candidates and DeclaredTools.                  |
+| `src/capture/guard.ts`       | Defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.   |
 | `src/capture/diff.ts`        | Differ: compare system state; trim equal ends in place, align the rest with a Myers diff.     |
 | `src/capture/attribution.ts` | Attributor: `customType` and cooperative `details` provenance of custom messages.             |
 | `src/capture/redact.ts`      | Redact image payloads and signatures from messages a snapshot retains.                        |
@@ -1020,6 +1095,9 @@ probe request isolation and message ownership, not a relaxation of those goals.
 - Per-request overhead stays as small as possible: capture runs on every
   request, even if `/context` is never opened. Compare in place, copy only what
   differs, and defer the rest.
+- Payload parsers are selected by API, never shape. Dispatch mismatches and
+  incomplete channels never report "no edits" or leave provisional declared names.
+- Warm refreshes publish nothing. Standard probes have no payload or declared names.
 - On a Pi version older than `MIN_PI_VERSION`, no lifecycle handler is registered.
 - Probes make no provider request, and their messages are blanked in agent
   state, in every later model context, and in the saved session.

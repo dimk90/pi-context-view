@@ -21,6 +21,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import registerExtension from "../src/index.ts";
+import { MESSAGES_NOT_COMPARED_REASON } from "../src/capture/guard.ts";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import { applyRequestSnapshot } from "../src/projection.ts";
 import { buildUsageSnapshot } from "../src/replay.ts";
@@ -404,7 +405,15 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 			await new Promise((resolve) => setImmediate(resolve));
 			const latest = new Map(published.map((snapshot) => [snapshot.id, snapshot]));
 			const snapshots = [...latest.values()].sort((a, b) => a.id - b.id);
-			for (const snapshot of snapshots) assert.deepEqual(snapshot.guard, NO_PAYLOAD);
+			for (const snapshot of snapshots) {
+				if (snapshot.origin === "synthetic-probe") assert.deepEqual(snapshot.guard, NO_PAYLOAD);
+				else {
+					assert.ok(snapshot.guard.status === "incomplete");
+					assert.equal(snapshot.guard.reason, MESSAGES_NOT_COMPARED_REASON);
+					assert.deepEqual(snapshot.guard.findings, []);
+					assert.ok(snapshot.declaredTools);
+				}
+			}
 			return snapshots;
 		},
 	};
