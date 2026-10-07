@@ -5,7 +5,7 @@
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { InitialSnapshot, InjectionItem } from "../model.ts";
+import { type InitialSnapshot, type InjectionItem, LATE_EDITS_SOURCE_ID } from "../model.ts";
 import type { GuardResult } from "../snapshot.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import {
@@ -44,6 +44,8 @@ import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines }
 const LIST_FIXED_LINE_COUNT = 8;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const LIST_DESCRIPTION = "Injections into the model context for the first turn, with token estimates.";
+const LATE_EDITS_NOTE = "Late edits were made after pi-context-view captured the request. Their sources are" +
+	" unknown; only changed lines are known, and estimates count the added lines.";
 /** List rows that must stay visible for the description to keep its own rows. */
 const LIST_DESCRIPTION_MIN_ROWS = 26;
 const CURSOR_COLUMN_WIDTH = 2;
@@ -274,7 +276,7 @@ export class InjectionsView {
 			width,
 			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
 			contentLineCount: wrapped.length,
-		});
+		}, findingNotes([item, ...(item.children ?? [])]));
 		const viewport = calculateViewport(
 			wrapped.length, terminalRows, PREVIEW_FIXED_LINE_COUNT, descriptionBlockRows(descriptionLines),
 		);
@@ -492,7 +494,8 @@ export class InjectionsView {
 
 	/**
 	 * Wrapped dialog description: the list sentence, the degraded-capture
-	 * indicator, request notes, and one legend bullet per marker the rows show.
+	 * indicator, request notes, one legend bullet per marker the rows show, and
+	 * the notes that explain late edits and hidden tools further.
 	 */
 	private descriptionLines(width: number): string[] {
 		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "dim", width);
@@ -513,6 +516,9 @@ export class InjectionsView {
 		const guardNote = lateEditNote(this.input.guard);
 		if (guardNote !== undefined) lines.push(...noteBulletLines(this.theme, guardNote, width));
 		lines.push(...markerLegendLines(this.theme, this.rowMarkers(), width));
+		for (const note of findingNotes([...this.itemsById.values()])) {
+			lines.push(...noteBulletLines(this.theme, note, width));
+		}
 		return lines;
 	}
 
@@ -537,16 +543,48 @@ export class InjectionsView {
 }
 
 /**
- * Description note for a payload comparison that is unavailable, so a missing
- * comparison never reads as "no late edits". A complete comparison has none.
+ * Description note for a payload comparison that is unavailable or partial, so
+ * a missing comparison never reads as "no late edits". A complete comparison
+ * has none: its findings render as rows.
  */
 function lateEditNote(guard: GuardResult | undefined): string | undefined {
 	switch (guard?.status) {
 		case "pending":
 			return "Late edits are not checked yet: the payload comparison is pending.";
-		case "incomplete":
-			return `Late edits were not checked: ${normalizeInlineText(guard.reason)}`;
+		case "incomplete": {
+			const reason = normalizeInlineText(guard.reason);
+			// Findings, even none, mean one channel was compared
+			return guard.findings === undefined
+				? `Late edits were not checked: ${reason}`
+				: `Late edits were checked only in part: ${reason}`;
+		}
 		default:
 			return undefined;
 	}
+}
+
+/**
+ * Notes that explain late-edit and hidden-tool items further, after the
+ * marker legend: what late edits are, the `model-only` candidates of the
+ * hidden tools, and the hidden tools no candidate explains.
+ */
+function findingNotes(items: readonly InjectionItem[]): string[] {
+	const notes: string[] = [];
+	if (items.some((item) => item.source.id === LATE_EDITS_SOURCE_ID)) notes.push(LATE_EDITS_NOTE);
+	const hidden = items.filter((item) => item.change === "hidden");
+	const candidates = [...new Set(hidden.flatMap((item) => item.candidates ?? []))];
+	if (candidates.length > 0) {
+		notes.push(`Hidden tools may come from active model-only tools: ${inlineList(candidates)}.`);
+	}
+	const unexplained = hidden.filter((item) => (item.candidates ?? []).length === 0).map((item) => item.label);
+	if (unexplained.length > 0) {
+		notes.push("Hidden tools without an active model-only candidate may have been removed by a later handler: " +
+			`${inlineList(unexplained)}.`);
+	}
+	return notes;
+}
+
+/** Sanitized names joined for one description sentence. */
+function inlineList(names: readonly string[]): string {
+	return names.map(normalizeInlineText).join(", ");
 }

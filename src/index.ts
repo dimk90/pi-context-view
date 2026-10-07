@@ -31,7 +31,7 @@ import { ProbeFilter, registerProbeFilter } from "./probe/filter.ts";
 import { registerSilentProbe, SilentProbe } from "./probe/silent-probe.ts";
 import { ProbeTrigger } from "./probe/trigger.ts";
 import { createProbeView } from "./probe/view.ts";
-import { applyRequestSnapshot } from "./projection.ts";
+import { applyRequestSnapshot, latestDeclaredTools } from "./projection.ts";
 import { collectPromptSources } from "./prompt-additions.ts";
 import { buildNativeSnapshot, buildUsageSnapshot } from "./replay.ts";
 import { readAutoCompactReserveTokens } from "./settings.ts";
@@ -100,16 +100,18 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 		}
 		// Loaded only for the Usage view, the sole consumer of configured colors.
 		const loadedConfig = configStore.load();
-		const { messages, systemChanges, forcedPrompt } = applyRequestSnapshot({
+		const { messages, systemChanges, forcedPrompt, declaredToolNames } = applyRequestSnapshot({
 			snapshot: latest.type === "snapshot" ? latest.snapshot : undefined,
 			entries: ctx.sessionManager.getEntries(),
 			leafId: ctx.sessionManager.getLeafId(),
 			filterMessages: (projected) => probeView.filterMessages(projected),
+			declaredTools: latestDeclaredTools(snapshots),
 		});
 		const current = buildUsageSnapshot({
 			messages,
 			systemChanges,
 			forcedPrompt,
+			declaredToolNames,
 			systemPrompt: ctx.getSystemPrompt(),
 			options: ctx.getSystemPromptOptions(),
 			allTools: pi.getAllTools(),

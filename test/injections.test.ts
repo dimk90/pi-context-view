@@ -10,7 +10,14 @@ import { SessionManager, type ToolInfo } from "@earendil-works/pi-coding-agent";
 
 import { buildInjectionsSnapshot, type InjectionsInput } from "../src/injections.ts";
 import type { InitialSnapshot, InjectionItem } from "../src/model.ts";
-import type { ConversationChange, RequestMessage, RequestSnapshot, SystemChange } from "../src/snapshot.ts";
+import type {
+	ConversationChange,
+	GuardFinding,
+	GuardResult,
+	RequestMessage,
+	RequestSnapshot,
+	SystemChange,
+} from "../src/snapshot.ts";
 
 const READ: Tool = { name: "read", description: "Read files", parameters: { type: "object", properties: {} } } as Tool;
 const BASH: Tool = { name: "bash", description: "Run commands", parameters: { type: "object", properties: {} } } as Tool;
@@ -272,4 +279,83 @@ test("raw session and redacted request images keep their original size markers i
 	assert.ok(Array.isArray(raw.content));
 	assert.ok(raw.content[0]?.type === "image");
 	assert.equal(raw.content[0].data.length, 1_000, "the source message is unchanged");
+});
+
+/** A complete guard with the given findings. */
+function complete(findings: GuardFinding[]): { guard: GuardResult } {
+	const dispatch = { provider: "mock", api: "openai-completions", model: "m" };
+	return { guard: { status: "complete", dispatch, findings } };
+}
+
+test("late edits form the last group and count only the lines the payload added", () => {
+	const { session } = createSession();
+	const snapshot = buildInjectionsSnapshot(input(session, {
+		conversation: [{ type: "added", message: user("added user text"), attribution: {} }],
+	}, complete([
+		{ type: "late-edit", change: "added", part: "user", lines: [
+			{ type: "added", text: "XYZZY late line" }, { type: "added", text: "second" },
+		] },
+		{ type: "late-edit", change: "modified", part: "system", lines: [
+			{ type: "removed", text: "old rule" }, { type: "added", text: "new rule!" },
+		] },
+		{ type: "late-edit", change: "deleted", part: "tool-result", lines: [{ type: "removed", text: "gone" }] },
+		{ type: "late-tool-edit", change: "added", name: "late_tool", lines: [{ type: "added", text: "Late tool." }] },
+	])));
+
+	assert.deepEqual(snapshot.groups.map((group) => group.source.label),
+		["pi", "fixture-notes", "unattributed", "late edits"]);
+	const late = snapshot.groups.at(-1);
+	assert.deepEqual(late?.items.map((item) => [item.label, item.kind, item.tokens, item.change]), [
+		["late_tool", "tool", 3, "added"],
+		["user message", "message", 6, "added"],
+		["system message", "message", 3, "modified"],
+		["tool result", "message", 0, "deleted"],
+	], "tools come first, then messages by size");
+	assert.equal(late?.totalTokens, 12);
+	const modified = late?.items.find((item) => item.change === "modified");
+	assert.equal(modified?.text, "new rule!", "the counted text holds only the added lines");
+	assert.deepEqual(modified?.changedLines, [
+		{ type: "removed", text: "old rule" }, { type: "added", text: "new rule!" },
+	]);
+	assert.equal(snapshot.totalTokens, snapshot.groups.reduce((sum, group) => sum + group.totalTokens, 0));
+});
+
+test("hidden declarations stay in place at 0 tokens with their candidates", () => {
+	const { session } = createSession();
+	const grep: Tool = { name: "grep", description: "Search files", parameters: { type: "object" } } as Tool;
+	const snapshot = buildInjectionsSnapshot(input(session, {
+		system: [{ type: "tool", name: "grep", declaration: grep }, { type: "tool", name: "read", declaration: null }],
+	}, complete([
+		{ type: "hidden-declaration", name: "bash", candidates: ["codemode"] },
+		{ type: "hidden-declaration", name: "grep", candidates: [] },
+	])));
+	const items = itemsById(snapshot);
+
+	assert.equal(items.get("tool:builtin")?.label, "Built-in Tools (0)", "the count names declared tools only");
+	const bash = items.get("tool:builtin:bash");
+	assert.deepEqual([bash?.change, bash?.tokens, bash?.candidates], ["hidden", 0, ["codemode"]]);
+	assert.match(bash?.sections?.[0]?.text ?? "", /^bash: Run commands/, "a hidden tool previews its definition");
+	assert.equal(bash?.sections?.[0]?.change, "hidden");
+	assert.equal(items.get("tool:builtin:read")?.change, "deleted");
+	const builtin = items.get("tool:builtin");
+	assert.deepEqual(builtin?.sections?.map((part) => [part.label, part.change, part.tokens]), [
+		["bash", "hidden", 0], ["read", "deleted", 0],
+	]);
+	const hiddenGrep = items.get("tool:unattributed:grep");
+	assert.deepEqual([hiddenGrep?.change, hiddenGrep?.tokens, hiddenGrep?.candidates], ["hidden", 0, []],
+		"hidden wins over the structured addition; an empty candidate list stays defined");
+	assert.ok(snapshot.groups.every((group) => group.source.label !== "late edits"));
+});
+
+test("only compared channels contribute findings; a pending guard has none", () => {
+	const { session } = createSession();
+	const finding: GuardFinding = {
+		type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "x" }],
+	};
+	const partial = buildInjectionsSnapshot(input(session, {}, {
+		guard: { status: "incomplete", reason: "Message channel failed.", findings: [finding] },
+	}));
+	assert.equal(partial.groups.at(-1)?.source.label, "late edits");
+	const pending = buildInjectionsSnapshot(input(session, {}, { guard: { status: "pending" } }));
+	assert.ok(pending.groups.every((group) => group.source.label !== "late edits"));
 });

@@ -136,18 +136,38 @@ test("malformed declarations and inline changes cannot produce a complete tool c
 
 test("tool comparison reports additions, changed descriptions, and missing declarations with candidates", () => {
 	const result = compareToolDeclarations({
-		expected: [READ, WRITE], baselineNames: ["read", "write", "old"],
-		declarations: [{ ...READ, description: "changed" }, { name: "late", description: "Added later." }],
+		expected: [{ ...READ, description: "Read a file.\nKeep this line." }, WRITE],
+		baselineNames: ["read", "write", "old"],
+		declarations: [
+			{ ...READ, description: "Read any file.\nKeep  this line." },
+			{ name: "late", description: "Added later.\n\nSecond line." },
+			{ name: "bare" },
+		],
 		ignoreNameCase: false, loadoutCandidates: () => ["codemode", "tool_search"],
 	});
 	assert.deepEqual(result, {
 		findings: [
 			{ type: "hidden-declaration", name: "write", candidates: ["codemode", "tool_search"] },
-			{ type: "late-tool-edit", change: "modified", name: "read", description: "changed" },
-			{ type: "late-tool-edit", change: "added", name: "late", description: "Added later." },
+			{
+				type: "late-tool-edit", change: "modified", name: "read",
+				lines: [{ type: "removed", text: "Read a file." }, { type: "added", text: "Read any file." }],
+			},
+			{
+				type: "late-tool-edit", change: "added", name: "late",
+				lines: [{ type: "added", text: "Added later." }, { type: "added", text: "Second line." }],
+			},
+			{ type: "late-tool-edit", change: "added", name: "bare", lines: [] },
 		],
-		declaredTools: { declared: ["read", "late"], baseline: ["read", "write", "old"] },
+		declaredTools: { declared: ["read", "late", "bare"], baseline: ["read", "write", "old"] },
 	});
+});
+
+test("tool comparison ignores whitespace-only description changes, as message text does", () => {
+	const result = compareToolDeclarations({
+		expected: [READ], baselineNames: ["read"], declarations: [{ ...READ, description: "  Read a\nfile. " }],
+		ignoreNameCase: false, loadoutCandidates: () => [],
+	});
+	assert.deepEqual(result.findings, []);
 });
 
 test("Anthropic OAuth names map back to captured spelling; other APIs retain case changes", () => {

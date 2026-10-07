@@ -169,3 +169,35 @@ Built-in Tools therefore stays in both views.
 
 The conversation demos still reached the request and appeared in Injections
 as `Added`, `Modified`, and `Deleted` user messages.
+
+## Late edits and hidden tools
+
+Checked with Pi 1.0.4 after the payload guard results reached the views, with
+the expanded fixtures above and the setup and prompts of
+[How the results were checked](#how-the-results-were-checked), in tmux at
+180×70. The payload log had four requests per order; opening the views added
+none. Only results that changed are listed.
+
+| Demo extension                                                       | Target: before       | Target: after        | Guard results: before   | Guard results: after |
+| -------------------------------------------------------------------- | -------------------- | -------------------- | ----------------------- | -------------------- |
+| `system-append`, `section-patch`, `section-modify`, `section-delete` | system change        | edited after monitor | ✅ structured, as before | ✅ late edit ⁹        |
+| `in-place-mutation`                                                  | modification         | edited after monitor | ⚠️³, as before          | ✅ late edit          |
+| `payload-modify`                                                     | edited after monitor | not visible          | ✅ late edit             | ➖                    |
+| `payload-delete`                                                     | edited after monitor | not visible          | ✅ late edit             | ➖                    |
+| `payload-remove-tool`                                                | edited after monitor | not visible          | ✅ `Hidden` ¹⁰           | ➖                    |
+| `payload-rewrite`                                                    | edited after monitor | not visible          | ✅ late edit             | ➖                    |
+| Usage: `write` removed by `payload-remove-tool`                      | not counted          | counted              | ✅ not counted           | ✅ counted            |
+
+9. The system prompt is one message unit in the payload, so these demos
+   appear together as the changed lines of one `system message` row
+   (`Modified`) in the `late edits` group.
+10. `write` stays under Built-in Tools as `Hidden`, at 0 tokens, and the
+    description names it as a hidden tool without a `model-only` candidate,
+    which a later handler may have removed.
+
+Before the monitor, the `late edits` group shows `payload-modify` as a
+`Modified` user message with its `+` marker line, `payload-rewrite` as an
+`Added` one, and `payload-delete` as a `Deleted` one at 0 tokens with `-` and
+prompt `three`. After the monitor, `in-place-mutation` is a `Modified` user
+message with its marker line. Payload edits are still not applied to Usage;
+only the declared tool names are.

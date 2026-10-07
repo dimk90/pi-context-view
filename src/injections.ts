@@ -1,8 +1,9 @@
 /**
  * Injections composition from a request snapshot: the session projection at
  * the snapshot's leaf, rebuilt when the view opens, with the snapshot's
- * request-only changes applied and marked. Reads the snapshot and current Pi
- * data only; imports no capture or probe module.
+ * request-only changes applied and marked, plus the payload guard's late edits
+ * and hidden tools. Reads the snapshot and current Pi data only; imports no
+ * capture or probe module.
  */
 import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import {
@@ -12,7 +13,7 @@ import {
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
-import { analyzeSystemPrompt, type ToolSlice } from "./measure.ts";
+import { analyzeSystemPrompt, textTokens, type ToolSlice } from "./measure.ts";
 import { messagePreview } from "./message-preview.ts";
 import {
 	AGGREGATE_SOURCE,
@@ -20,14 +21,31 @@ import {
 	type InitialSnapshot,
 	type InjectionItem,
 	type InjectionSource,
+	LATE_EDITS_SOURCE,
 	messageTypeSource,
 	type RequestChange,
 } from "./model.ts";
 import { type MessageFilter, type ProjectedMessage, readProjection } from "./projection.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
 import { applySystemChanges, buildNativeSnapshot, markForcedPrompt, replayedToolSlices } from "./replay.ts";
-import type { ConversationChange, RequestMessage, RequestSnapshot } from "./snapshot.ts";
+import type {
+	ConversationChange,
+	GuardFinding,
+	GuardResult,
+	MessagePart,
+	RequestMessage,
+	RequestSnapshot,
+} from "./snapshot.ts";
 import { systemMessageText } from "./transcript.ts";
+
+/** Row label of a late edit, by the message part it changed. */
+const LATE_EDIT_LABELS: Readonly<Record<MessagePart, string>> = {
+	system: "system message",
+	user: "user message",
+	assistant: "assistant message",
+	"tool-call": "tool call",
+	"tool-result": "tool result",
+};
 
 /** Everything the composition reads besides the snapshot itself. */
 export interface InjectionsInput {
@@ -46,14 +64,25 @@ export interface InjectionsInput {
 	readonly activeToolNames: readonly string[];
 }
 
-/** Build the Injections tree of one request: its replayed prompt and tools, custom messages, and changes. */
+/**
+ * Build the Injections tree of one request: its replayed prompt and tools,
+ * custom messages, and changes, with the guard's hidden tools marked in place
+ * and its late edits in their own group.
+ */
 export function buildInjectionsSnapshot(input: InjectionsInput): InitialSnapshot {
 	const baseline = readProjection(input.entries, input.snapshot.leafId, input.filterMessages);
+	const findings = guardFindings(input.snapshot.guard);
 	const items = [
-		...measureRequestPrompt(input, baseline.map(({ message }) => message)),
+		...measureRequestPrompt(input, baseline.map(({ message }) => message), hiddenTools(findings)),
 		...measureMessages(input.snapshot.changes.conversation, baseline),
+		...measureLateEdits(findings),
 	];
 	return buildSnapshot(items, input.snapshot.origin, new Date(input.snapshot.capturedAt));
+}
+
+/** Findings of every compared channel; a pending guard has none yet. */
+function guardFindings(guard: GuardResult): readonly GuardFinding[] {
+	return guard.status === "pending" ? [] : guard.findings ?? [];
 }
 
 // ============================================================================
@@ -63,9 +92,14 @@ export function buildInjectionsSnapshot(input: InjectionsInput): InitialSnapshot
 /**
  * Measure the replayed prompt and tools with the request's system changes
  * applied. A forced prompt replaces every section, so only tool changes reach
- * it. A branch with no recorded system state uses the live prompt and tools.
+ * it. A tool the payload did not declare is hidden, whatever structured change
+ * it had. A branch with no recorded system state uses the live prompt and tools.
  */
-function measureRequestPrompt(input: InjectionsInput, baseline: readonly RequestMessage[]): InjectionItem[] {
+function measureRequestPrompt(
+	input: InjectionsInput,
+	baseline: readonly RequestMessage[],
+	hidden: ReadonlyMap<string, readonly string[]>,
+): InjectionItem[] {
 	const base = getCurrentSystemMessage(baseline);
 	if (base === undefined) {
 		const native = buildNativeSnapshot({ ...input, forcedPrompt: input.snapshot.forcedPrompt });
@@ -75,17 +109,33 @@ function measureRequestPrompt(input: InjectionsInput, baseline: readonly Request
 	const forced = input.snapshot.forcedPrompt;
 	const tools: ToolSlice[] = [
 		...replayedToolSlices(request.state, request.declarations, input.allTools)
-			.map((tool) => withToolChange(tool, request.tools.get(tool.name))),
+			.map((tool) => withToolChange(tool, hidden.has(tool.name) ? "hidden" : request.tools.get(tool.name))),
 		...replayedToolSlices(base, request.deletedTools, input.allTools)
 			.map((tool) => withToolChange(tool, "deleted")),
 	];
-	return markForcedPrompt(analyzeSystemPrompt(
+	const items = markForcedPrompt(analyzeSystemPrompt(
 		forced ?? systemMessageText(request.state),
 		{ homeDir: process.env.HOME, customPrompt: input.options.customPrompt },
 		tools,
 		{ sources: input.promptSources },
 		forced === undefined ? request.prompt : {},
 	), forced);
+	return items.map((item) => withCandidates(item, hidden));
+}
+
+/** Hidden declarations by tool name, with their candidates. */
+function hiddenTools(findings: readonly GuardFinding[]): Map<string, readonly string[]> {
+	return new Map(findings.flatMap((finding) =>
+		finding.type === "hidden-declaration" ? [[finding.name, finding.candidates] as const] : []));
+}
+
+/** A hidden tool item, or a tool aggregate's hidden children, with their candidates. */
+function withCandidates(item: InjectionItem, hidden: ReadonlyMap<string, readonly string[]>): InjectionItem {
+	if (item.children !== undefined) {
+		return { ...item, children: item.children.map((child) => withCandidates(child, hidden)) };
+	}
+	const candidates = item.kind === "tool" && item.change === "hidden" ? hidden.get(item.label) : undefined;
+	return candidates === undefined ? item : { ...item, candidates };
 }
 
 /** The slice with a request-only change, or unchanged when there is none. */
@@ -162,6 +212,34 @@ function changeItem(
 			return { ...messageItem(id, original, source), chars: 0, tokens: 0, change: "deleted" };
 		}
 	}
+}
+
+// ============================================================================
+// Late edits
+// ============================================================================
+
+/**
+ * One item per late edit, in the late-edits group. The guard keeps only the
+ * changed lines, so each item counts the lines the payload added; a deletion
+ * reads 0 tokens.
+ */
+function measureLateEdits(findings: readonly GuardFinding[]): InjectionItem[] {
+	return findings.flatMap((finding, index): InjectionItem[] => {
+		if (finding.type === "hidden-declaration") return [];
+		const text = finding.lines.filter((line) => line.type === "added").map((line) => line.text).join("\n");
+		return [{
+			id: `late:${index}`,
+			phase: "initial",
+			kind: finding.type === "late-edit" ? "message" : "tool",
+			source: LATE_EDITS_SOURCE,
+			label: finding.type === "late-edit" ? LATE_EDIT_LABELS[finding.part] : finding.name,
+			chars: text.length,
+			tokens: textTokens(text),
+			text,
+			change: finding.change,
+			changedLines: finding.lines,
+		}];
+	});
 }
 
 /** A measured message with its content-only preview. */

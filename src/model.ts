@@ -4,10 +4,11 @@
  * never parse labels to recover source, kind, or parent/child relationships.
  */
 
-import type { CaptureOrigin } from "./snapshot.ts";
+import type { CaptureOrigin, LateEditLine } from "./snapshot.ts";
 
 export const PI_SOURCE_ID = "pi";
 export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
+export const LATE_EDITS_SOURCE_ID = "late-edits";
 
 /** Everything pi itself assembles: its prompt, context files, skills, and built-in tools. */
 export const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", native: true };
@@ -16,6 +17,16 @@ export const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", nativ
 export const AGGREGATE_SOURCE: InjectionSource = {
 	id: AGGREGATE_SOURCE_ID,
 	label: "unattributed",
+	native: false,
+};
+
+/**
+ * Payload differences the structured capture cannot explain: no structure and
+ * no source, so they are grouped instead of staying in place.
+ */
+export const LATE_EDITS_SOURCE: InjectionSource = {
+	id: LATE_EDITS_SOURCE_ID,
+	label: "late edits",
 	native: false,
 };
 
@@ -47,8 +58,9 @@ export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
  *   modified   the request version differs from the session; the request version is counted
  *   deleted    the request removed it; reads 0 tokens, text is the session original
  *   forced     the request carried an extension's forced system prompt instead of pi's; counted
+ *   hidden     the request kept a tool active but did not declare it to the model; reads 0 tokens
  */
-export type RequestChange = "added" | "modified" | "deleted" | "forced";
+export type RequestChange = "added" | "modified" | "deleted" | "forced" | "hidden";
 
 /** The frozen lifecycle phase represented by the v0.2.0 injection model. */
 export type InjectionPhase = "initial";
@@ -160,8 +172,15 @@ export interface InjectionItem {
 	readonly dropped?: boolean;
 	/** True when an extension moved this part out of the region pi renders it into. */
 	readonly moved?: boolean;
-	/** Request-only change of this contribution; a deleted one reads 0 tokens. */
+	/** Request-only change of this contribution; a deleted or hidden one reads 0 tokens. */
 	readonly change?: RequestChange;
+	/**
+	 * Changed lines of a late edit, in payload order. `text` holds only the
+	 * added lines, which the estimate counts.
+	 */
+	readonly changedLines?: readonly LateEditLine[];
+	/** Active `model-only` tools that may have hidden this tool; not confirmed sources. */
+	readonly candidates?: readonly string[];
 	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
 	readonly injectedReferences?: readonly InjectedReference[];
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
@@ -249,7 +268,8 @@ export interface ContextUsageSnapshot {
 
 /**
  * Group measured items by source. Pi-native components come first, extension
- * sources follow by total size, and the unattributable aggregate comes last.
+ * sources follow by total size, then the unattributable aggregate, and late
+ * edits come last.
  * Items inside each group follow the order pi assembles them into a request
  * (base prompt, appended prompt, context files, skills, built-in tools, other
  * tools, then everything else by size). Returned objects own all nested data;
@@ -302,6 +322,8 @@ function copyItem(item: InjectionItem): InjectionItem {
 		source: { ...item.source },
 		jsonSpan: copyJsonSpan(item.jsonSpan),
 		injectedReferences: copyInjectedReferences(item.injectedReferences),
+		changedLines: item.changedLines?.map((line) => ({ ...line })),
+		candidates: item.candidates === undefined ? undefined : [...item.candidates],
 		sections: item.sections?.map((section) => ({
 			...section,
 			jsonSpan: copyJsonSpan(section.jsonSpan),
@@ -352,11 +374,16 @@ function itemRank(item: InjectionItem): number {
 	}
 }
 
-/** Order groups: pi-native first, then extensions by size, aggregate last. */
+/** Order groups: pi-native first, then extensions by size, the aggregate, and late edits last. */
 function compareGroups(a: InjectionGroup, b: InjectionGroup): number {
-	if (a.source.native !== b.source.native) return a.source.native ? -1 : 1;
-	const aAggregate = a.source.id === AGGREGATE_SOURCE_ID;
-	const bAggregate = b.source.id === AGGREGATE_SOURCE_ID;
-	if (aAggregate !== bAggregate) return aAggregate ? 1 : -1;
+	const rankDelta = groupRank(a.source) - groupRank(b.source);
+	if (rankDelta !== 0) return rankDelta;
 	return b.totalTokens - a.totalTokens;
+}
+
+/** Fixed display rank by source kind; extension sources share one rank. */
+function groupRank(source: InjectionSource): number {
+	if (source.native) return 0;
+	if (source.id === AGGREGATE_SOURCE_ID) return 2;
+	return source.id === LATE_EDITS_SOURCE_ID ? 3 : 1;
 }

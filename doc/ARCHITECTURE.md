@@ -6,10 +6,10 @@ extension can read, and how that data reaches the two views.
 
 ## Views and Data Sources
 
-| View       | What it shows                                                                    | When its data changes                                       |
-| ---------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Injections | First request's prompt, tools, custom messages, and marked request-only changes. | First snapshot's content stays fixed; its guard may settle. |
-| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes.    | Rebuilt from the current branch and store when it opens.    |
+| View       | What it shows                                                                                          | When its data changes                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Injections | First request's prompt, tools, custom messages, marked request-only changes, late edits, hidden tools. | First snapshot's content stays fixed                     |
+| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes and declared tools.       | Rebuilt from the current branch and store when it opens. |
 
 Both views read request snapshots that
 [structured request capture](#structured-request-capture) publishes to
@@ -336,9 +336,10 @@ Declared names require only a compared tool channel.
   `tool_search_output` declarations, and Completions system-message tool
   additions, are folded into the same channel. `__pi_deferred_placeholder__`
   is excluded. Anthropic names match case-insensitively, as for OAuth casing.
-- **Findings.** Compare names and descriptions, not schemas that Pi adapts for
-  each provider. Added declarations and changed descriptions are late tool
-  edits. Missing declarations carry the active `model-only` tools at payload
+- **Findings.** Compare names and whitespace-insensitive descriptions, not
+  schemas that Pi adapts for each provider. Added declarations and changed
+  descriptions are late tool edits; they keep the changed description lines,
+  like message findings. Missing declarations carry the active `model-only` tools at payload
   time as candidates, not confirmed sources. An empty candidate list remains
   a missing declaration; it may have been removed by a later handler.
 - **DeclaredTools.** Record the parsed names and the names replayed from the
@@ -401,11 +402,10 @@ Blank lines and whitespace-only differences are ignored. Anthropic tool-call
 names match case-insensitively for OAuth casing. Image and opaque signature
 changes alone are deliberately outside this text-only comparison.
 
-The views stay unchanged in this step: pending/incomplete guards still show
-their reason, while complete guards show no late-edit bullet. They do not yet
-render findings or filter tools by `declaredTools`; that is the separate
-**Guard results in the views** plan item. An absent bullet therefore does not
-prove there were no late edits.
+Injections renders the findings of the first snapshot
+([Injections on Snapshots](#injections-on-snapshots)); Usage filters tools by
+the declared names of the latest snapshot that records them
+([Usage and Attribution](#usage-and-attribution)).
 
 ## Injections on Snapshots
 
@@ -456,11 +456,27 @@ structured edits already belong to the baseline, and the forced prompt is
 captured as final text. Unwrapped additions split at blank lines and section
 boundaries; adjacent additions with no separator may share an attribution guess.
 
+The [payload guard](#payload-guard-tool-declarations-and-messages) findings of
+a complete guard, or of the compared channel of an incomplete one, are added
+when the view opens:
+
+- **Hidden declarations.** The tool stays in place, marked `hidden`, at zero
+  tokens with its definition, like a deleted tool. Hidden wins over a
+  structured change of the same tool: the model never received either version.
+  The item keeps the finding's `model-only` candidates for the description;
+  they are never shown as its source.
+- **Late edits.** Message and tool findings have no entry reference or
+  attribution, so they form a separate `late edits` group after `unattributed`.
+  An item keeps the finding's changed lines for its preview; its text and
+  estimate hold only the added lines, so a deletion counts zero. Item kinds are
+  `message` and `tool`, so the group sorts like other sources.
+
 Probe snapshots carry the warning specified in [ui/injections.md](ui/injections.md).
-Pending and incomplete guards appear as an unavailable late-edit comparison in
-the description, never as "no edits". The view is fixed while open; reopening
-reads a guard update with the same snapshot ID. Payload findings and hidden
-declarations are later roadmap steps; this step reports only structured edits.
+Pending and incomplete guards appear as an unavailable or partial late-edit
+comparison in the description, never as "no edits". A complete guard adds no
+note; without findings, the payload matched the captured request up to this
+extension's own payload handler. The view is fixed while open; reopening reads
+a guard update with the same snapshot ID.
 
 ## Usage and Attribution
 
@@ -479,8 +495,8 @@ new transformed request on each open.
          +-----------------------+---------------------------+
          |                       |                           |
          v                       v                           v
-Live prompt/tool fallback   Latest snapshot           Current session branch
-         |                       |                           |
+Live prompt/tool fallback   Latest snapshot,          Current session branch
+         |                  latest declared names            |
          |                       |                           v
          |                       |                  buildSessionProjection()
          |                       |                  Filter probe messages,
@@ -492,7 +508,8 @@ Live prompt/tool fallback   Latest snapshot           Current session branch
          |                           applyRequestSnapshot()
          |                  Conversation changes by entry; drop stale ones
          |                  System changes and forced prompt
-         |                  only while still fresh
+         |                  only while still fresh; declared names
+         |                  only while the replayed tool names match
          |                                     |
          +-------------------------------------+
                                  |
@@ -500,7 +517,8 @@ Live prompt/tool fallback   Latest snapshot           Current session branch
                        buildUsageSnapshot()
                   Replay system sections and tool deltas,
                   then the fresh request-only system changes;
-                  a fresh forced prompt replaces the prompt text
+                  a fresh forced prompt replaces the prompt text;
+                  fresh declared names leave out hidden tools
                   (live fallback only without system state)
                                  |
                                  v
@@ -569,6 +587,21 @@ turn supplies the changes. `src/projection.ts` applies them when the view opens:
   [measured as usual](#prompt-parts-and-moved-blocks), so appended text counts
   as an extension addition. Like Injections, Usage marks the System Prompt item
   `forced`, and its previews [show the marker](ui/usage.md#forced-prompt).
+- **Declared tools, while fresh.** Replayed declarations include
+  [hidden](#payload-guard-tool-declarations-and-messages) tools, which stay
+  active although the model never receives them. Usage takes `declaredTools`
+  from the latest retained snapshot of either origin that records them: a
+  standard probe records none and does not replace an earlier turn's names,
+  while a later turn with an incomplete tool channel or a pending guard leaves
+  none. The names apply only while the current replayed tool names, as a set,
+  equal the snapshot's baseline names; an active-tool change, branch
+  navigation, or resume that changes them drops the names until a newer
+  snapshot. While they apply, a replayed tool counts only if the payload
+  declared its name, after any fresh request-only tool changes; other tools are
+  neither listed nor counted, and Usage marks nothing. Declared names missing
+  from the replay are not Usage tools. Counted tools keep their replayed
+  definitions, not payload text. Without usable names, and in the live
+  fallback, every tool counts.
 
 Without a snapshot, after a failed or skipped probe, Usage counts the current
 branch alone and shows the degraded reason. Session-backed custom messages
@@ -592,9 +625,10 @@ particular prompt, therefore stays counted until the next request replaces the
 snapshot. Additions carry no
 entry reference, so they remain after branch navigation or compaction. A
 modification whose entry is still projected replaces that entry's current
-message even if a later `context_edit` changed it. Changes from later
-`context_with_system` handlers and payload rewrites are not applied to Usage yet. Usage
-is not an exact view of the last or next provider request.
+message even if a later `context_edit` changed it. Late edits from later
+`context_with_system` handlers and payload rewrites are not applied to Usage;
+only the declared tool names reach it. Usage is not an exact view of the last or
+next provider request.
 
 ## On-demand Silent Probe
 
@@ -1098,46 +1132,46 @@ Persisted probe records contain only role and timestamp identities, plus
 
 ## Module Boundaries
 
-| Path                         | Responsibility                                                                                |
-| ---------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/index.ts`               | Create the layers, register them in order, and register the command; assemble view inputs.    |
-| `src/command.ts`             | Parse commands; resolve the first or latest snapshot through the store and ProbeTrigger.      |
-| `src/config.ts`              | Load, validate, cache, and explicitly create configuration.                                   |
-| `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
-| `src/capture/register.ts`    | Capture wiring: structured capture, payload pairing, dispatch events, and cleanup.            |
-| `src/capture/tracker.ts`     | RequestTracker: number captures, pair payloads, and mark warm refreshes.                       |
+| Path                         | Responsibility                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `src/index.ts`               | Create the layers, register them in order, and register the command; assemble view inputs.                    |
+| `src/command.ts`             | Parse commands; resolve the first or latest snapshot through the store and ProbeTrigger.                      |
+| `src/config.ts`              | Load, validate, cache, and explicitly create configuration.                                                   |
+| `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.                       |
+| `src/capture/register.ts`    | Capture wiring: structured capture, payload pairing, dispatch events, and cleanup.                            |
+| `src/capture/tracker.ts`     | RequestTracker: number captures, pair payloads, and mark warm refreshes.                                      |
 | `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline, positioned request copy, forced prompt, model capabilities. |
-| `src/capture/dispatch.ts`    | DispatchConfirmer: accept one identity per paired request, consuming warm stream events.       |
-| `src/capture/payload.ts`     | Copy payloads, select parsers by API, extract message units and replay tool declarations.      |
-| `src/capture/adjustments.ts` | Rebuild/convert the captured request and render Pi's model-dependent text adjustments.        |
-| `src/capture/messages.ts`    | Collect message units, align whitespace-insensitive keys, and retain changed lines.           |
-| `src/capture/tools.ts`       | Compare declaration names/descriptions; loadout candidates and DeclaredTools.                  |
-| `src/capture/guard.ts`       | Defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.   |
-| `src/capture/diff.ts`        | Differ: compare system state; trim equal ends in place, align the rest with a Myers diff.     |
-| `src/capture/attribution.ts` | Attributor: `customType` and cooperative `details` provenance of custom messages.             |
-| `src/capture/redact.ts`      | Redact image payloads and signatures from messages a snapshot retains.                        |
-| `src/capture/builder.ts`     | SnapshotBuilder: defer the diff, publish snapshots and guard updates, release copies.         |
-| `src/compaction.ts`          | Track the compaction lifecycle for the probe preconditions and the command refusal.           |
-| `src/snapshot.ts`            | Define request snapshots; SnapshotStore retains the first and latest per origin.              |
-| `src/probe/filter.ts`        | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.     |
-| `src/probe/silent-probe.ts`  | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.             |
-| `src/probe/view.ts`          | ProbeView: the run origin and probe-message filter that capture reads.                        |
-| `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and the probe snapshot from the store.    |
-| `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                 |
-| `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                            |
-| `src/injections.ts`          | Rebuild the first snapshot's baseline and measure its composition with marked changes.        |
-| `src/projection.ts`          | Rebuild filtered projections; apply the latest snapshot's changes to the branch for Usage.    |
-| `src/replay.ts`              | Replay recorded system state and changes; Usage prompt/tools and the live fallback.           |
-| `src/message-preview.ts`     | Content-only message previews, redacting session images and omitting opaque signatures.       |
-| `src/measure.ts`             | Split and estimate prompt/tool contributions without pi API access.                           |
-| `src/prompt-blocks.ts`       | Locate XML sections and moved tool surfaces, excluding nested/fenced examples.                |
-| `src/transcript.ts`          | Render system messages; replay itself uses Pi's `getCurrentSystemMessage()`.                  |
-| `src/prompt-additions.ts`    | Collect extension sources; identify prompt additions and make source-attribution guesses.     |
-| `src/usage.ts`               | Classify messages; build usage totals and previews.                                           |
-| `src/model.ts`               | Define types, ownership, hierarchy, and grouping.                                             |
-| `src/text.ts`                | Sanitize dynamic text before terminal display.                                                |
-| `src/ui/`                    | Handle navigation, layout, previews, and fullscreen rendering.                                |
-| `test/fixtures/`             | Test capture visibility, forced prompts, and extension load order.                            |
+| `src/capture/dispatch.ts`    | DispatchConfirmer: accept one identity per paired request, consuming warm stream events.                      |
+| `src/capture/payload.ts`     | Copy payloads, select parsers by API, extract message units and replay tool declarations.                     |
+| `src/capture/adjustments.ts` | Rebuild/convert the captured request and render Pi's model-dependent text adjustments.                        |
+| `src/capture/messages.ts`    | Collect message units, align whitespace-insensitive keys, and retain changed lines.                           |
+| `src/capture/tools.ts`       | Compare declaration names/descriptions; loadout candidates and DeclaredTools.                                 |
+| `src/capture/guard.ts`       | Defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.                   |
+| `src/capture/diff.ts`        | Differ: compare system state; trim equal ends in place, align the rest with a Myers diff.                     |
+| `src/capture/attribution.ts` | Attributor: `customType` and cooperative `details` provenance of custom messages.                             |
+| `src/capture/redact.ts`      | Redact image payloads and signatures from messages a snapshot retains.                                        |
+| `src/capture/builder.ts`     | SnapshotBuilder: defer the diff, publish snapshots and guard updates, release copies.                         |
+| `src/compaction.ts`          | Track the compaction lifecycle for the probe preconditions and the command refusal.                           |
+| `src/snapshot.ts`            | Define request snapshots; SnapshotStore retains the first and latest per origin.                              |
+| `src/probe/filter.ts`        | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.                     |
+| `src/probe/silent-probe.ts`  | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.                             |
+| `src/probe/view.ts`          | ProbeView: the run origin and probe-message filter that capture reads.                                        |
+| `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and the probe snapshot from the store.                    |
+| `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                                 |
+| `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                                            |
+| `src/injections.ts`          | Rebuild the first snapshot's baseline; measure it with marked changes and guard findings.                     |
+| `src/projection.ts`          | Rebuild filtered projections; apply the latest snapshot and declared tool names for Usage.                    |
+| `src/replay.ts`              | Replay recorded system state and changes; Usage prompt/tools and the live fallback.                           |
+| `src/message-preview.ts`     | Content-only message previews, redacting session images and omitting opaque signatures.                       |
+| `src/measure.ts`             | Split and estimate prompt/tool contributions without pi API access.                                           |
+| `src/prompt-blocks.ts`       | Locate XML sections and moved tool surfaces, excluding nested/fenced examples.                                |
+| `src/transcript.ts`          | Render system messages; replay itself uses Pi's `getCurrentSystemMessage()`.                                  |
+| `src/prompt-additions.ts`    | Collect extension sources; identify prompt additions and make source-attribution guesses.                     |
+| `src/usage.ts`               | Classify messages; build usage totals and previews.                                                           |
+| `src/model.ts`               | Define types, ownership, hierarchy, and grouping.                                                             |
+| `src/text.ts`                | Sanitize dynamic text before terminal display.                                                                |
+| `src/ui/`                    | Handle navigation, layout, previews, and fullscreen rendering.                                                |
+| `test/fixtures/`             | Test capture visibility, forced prompts, and extension load order.                                            |
 
 Each layer's module exports its state and a `register*()` function with its pi
 handlers; `src/index.ts` creates the layers and calls those functions.
@@ -1187,7 +1221,8 @@ probe request isolation and message ownership, not a relaxation of those goals.
 - Usage applies the latest snapshot's conversation changes by baseline entry,
   drops changes whose entry left the projection, and applies system changes
   and the forced prompt only while the replayed system state is unchanged
-  since capture.
+  since capture. It leaves out undeclared tools only while the replayed tool
+  names equal the baseline names of the latest snapshot that records them.
 - Raw content appears only after Enter and is never logged or newly persisted.
 - Parent and child contributions are never double-counted.
 - Usage counts the replayed branch prompt/tool state once, never again as system

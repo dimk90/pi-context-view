@@ -126,7 +126,8 @@ Implementation is split into two plan items: pairing and tool declarations,
 then the message channel. Both are implemented. A compared message channel
 and tool channel settle `complete`; otherwise, the guard stays `incomplete`
 while retaining findings from any compared channel. Declared names depend only
-on the tool channel. The views consume these findings in a later step.
+on the tool channel. Injections renders the findings, and Usage filters
+tools by declared names (D11).
 
 The chosen message comparison uses text units (system, user, assistant, tool
 call, tool result), whitespace-insensitive keys, and LCS alignment, with changed
@@ -220,7 +221,7 @@ redefinition. Physical results publish before a response; a model change
 during preparation invalidates them. Successful and failed idle warm refreshes
 publish nothing. The Responses adapter's 16-token floor is covered explicitly.
 
-The parser compares names and descriptions, not schemas. It supports OpenAI
+The parser compares names and whitespace-insensitive descriptions, not schemas. It supports OpenAI
 function and grammar tools; unknown provider-native Responses tool types make
 the tool channel incomplete rather than inventing declared names. Candidate
 `model-only` tool names are copied at payload time so later loadout changes do
@@ -249,9 +250,18 @@ from `context_with_system` handlers loaded after the monitor.
 changed lines, capability-gated image placeholders, and reconstruction from
 captured positions and tool declarations. Parser and guard tests cover unknown
 content blocks and independent channel failures: a compared channel keeps its
-findings when the other fails. The views remain unchanged until the next item;
-complete guards have no unavailable-comparison bullet, but findings are not yet
-rendered.
+findings when the other fails.
+
+#### Guard results in the views on Pi 1.0.4
+
+Injections shows hidden declarations in place with a `Hidden` marker, at zero
+tokens, and names their `model-only` candidates in its description. Late edits
+have no structure or source, so they form a `late edits` group that counts only
+the lines the payload added and previews the changed lines as a diff. Late tool
+edits keep changed description lines for the same reason. A complete guard adds
+no note; a partial one says which channel failed. Usage filters replayed tools
+by the latest recorded declared names while the replayed tool names match the
+snapshot's baseline names (D11).
 
 ### D5. Observe only, stay off the critical path
 

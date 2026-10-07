@@ -14,7 +14,9 @@ import { BODY_INDENT, fitLine } from "./layout.ts";
 const MARKER_SEPARATOR = " · ";
 
 /** Markers a frame can show, in the fixed order their legend bullets render. */
-const MARKER_ORDER = ["highlighted", "guess", "dropped", "moved", "forced", "added", "modified", "deleted"] as const;
+const MARKER_ORDER = [
+	"highlighted", "guess", "dropped", "moved", "forced", "added", "modified", "deleted", "hidden",
+] as const;
 
 /** One marked state a description bullet explains. */
 export type ContextMarker = (typeof MARKER_ORDER)[number];
@@ -76,6 +78,12 @@ const MARKER_LEGENDS: Record<ContextMarker, MarkerLegend> = {
 		keyword: "Deleted",
 		color: "toolDiffRemoved",
 		explanation: " parts were removed by an extension for this request only; the session keeps them." +
+			" They are counted nowhere.",
+	},
+	hidden: {
+		keyword: "Hidden",
+		color: "toolDiffRemoved",
+		explanation: " tools stay active and callable, but the request did not declare them to the model." +
 			" They are counted nowhere.",
 	},
 };

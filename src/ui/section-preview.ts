@@ -8,10 +8,18 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { InjectedReference, InjectionSection, JsonSpan, RequestChange } from "../model.ts";
+import type { LateEditLine } from "../snapshot.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { shiftJsonSpan } from "./json-preview.ts";
 import { BODY_INDENT, calculateViewport, descriptionBlockRows } from "./layout.ts";
-import { type ContextMarker, guessMarker, markerLegendLines, partMarkers, stateMarkers } from "./markers.ts";
+import {
+	type ContextMarker,
+	guessMarker,
+	markerLegendLines,
+	noteBulletLines,
+	partMarkers,
+	stateMarkers,
+} from "./markers.ts";
 
 /**
  * Arrow introducing a restored line's source label. Non-breaking spaces bind
@@ -21,6 +29,9 @@ import { type ContextMarker, guessMarker, markerLegendLines, partMarkers, stateM
 const SOURCE_ARROW = "\u00A0<-\u00A0";
 /** Keep a normal block's worth of content visible before making room for its explanation. */
 const DESCRIPTION_MIN_CONTENT_ROWS = 22;
+/** Prefix of a changed line, two columns wide: `+ ` only in the payload, `- ` only in the captured request. */
+const ADDED_LINE_PREFIX = "+ ";
+const REMOVED_LINE_PREFIX = "- ";
 
 /** Raw preview content plus the labeled parts it decomposes into, when known. */
 export interface SectionedContent {
@@ -34,6 +45,8 @@ export interface SectionedContent {
 	readonly moved?: boolean;
 	/** Request-only change of this content; Usage shows only `forced`. */
 	readonly change?: RequestChange;
+	/** Changed lines of a late edit; rendered as a diff instead of the text. */
+	readonly changedLines?: readonly LateEditLine[];
 }
 
 /** Space shared by uncapped preview content, its counter, and the marker legend. */
@@ -47,19 +60,24 @@ export interface PreviewDescriptionLayout {
 
 /**
  * One fixed legend for the markers a preview shows, never part of its raw
- * content. Collapse it whole when fewer than `DESCRIPTION_MIN_CONTENT_ROWS`
- * content rows would remain, or when a shorter preview would no longer fit in
- * full. Uncapped line counts keep the collapse decision independent of the
- * Usage cap it helps determine.
+ * content, followed by `notes` that explain the shown item further. Collapse it
+ * whole when fewer than `DESCRIPTION_MIN_CONTENT_ROWS` content rows would
+ * remain, or when a shorter preview would no longer fit in full. Uncapped line
+ * counts keep the collapse decision independent of the Usage cap it helps
+ * determine.
  */
 export function previewLegendLines(
 	theme: Theme,
 	contents: readonly SectionedContent[],
 	layout: PreviewDescriptionLayout,
+	notes: readonly string[] = [],
 ): string[] {
 	const markers = previewMarkers(contents);
-	if (markers.length === 0) return [];
-	const lines = markerLegendLines(theme, markers, layout.width);
+	if (markers.length === 0 && notes.length === 0) return [];
+	const lines = [
+		...markerLegendLines(theme, markers, layout.width),
+		...notes.flatMap((note) => noteBulletLines(theme, note, layout.width)),
+	];
 	const availableRows = layout.availableRows - descriptionBlockRows(lines);
 	const viewport = calculateViewport(layout.contentLineCount, availableRows, 0);
 	const floor = Math.min(DESCRIPTION_MIN_CONTENT_ROWS, layout.contentLineCount);
@@ -80,6 +98,7 @@ export function previewBodyLines(
 	wrapText: (text: string, jsonSpan: JsonSpan | undefined) => string[],
 	heading?: string,
 ): string[] {
+	if (content.changedLines !== undefined) return changedLineRows(theme, content.changedLines, wrapWidth);
 	const sections = content.sections ?? [];
 	if (sections.length === 0) return contentBodyLines(theme, content, wrapWidth, wrapText, heading);
 	const lines: string[] = [];
@@ -93,6 +112,25 @@ export function previewBodyLines(
 		lines.push(...contentBodyLines(theme, section, wrapWidth, wrapText, section.label));
 	}
 	return lines;
+}
+
+/**
+ * Changed lines in payload order, each wholly in its diff color after its
+ * prefix; wrapped continuation lines hang under the text.
+ */
+function changedLineRows(theme: Theme, lines: readonly LateEditLine[], wrapWidth: number): string[] {
+	return lines.flatMap((line) => {
+		const added = line.type === "added";
+		const prefix = added ? ADDED_LINE_PREFIX : REMOVED_LINE_PREFIX;
+		const color = added ? "toolDiffAdded" : "toolDiffRemoved";
+		// A lone carriage return would otherwise become a line break of its own
+		const text = normalizePreviewText(line.text).replaceAll("\n", " ");
+		const hanging = " ".repeat(prefix.length);
+		const wrapped = wrapTextWithAnsi(text, Math.max(1, wrapWidth - prefix.length));
+		return (wrapped.length === 0 ? [""] : wrapped).map((part, index) => index === 0
+			? `${BODY_INDENT}${theme.fg(color, `${prefix}${part}`)}`
+			: `${BODY_INDENT}${hanging}${theme.fg(color, part)}`);
+	});
 }
 
 /**

@@ -6,6 +6,7 @@
 ### New
 * `[injections]` Show Added, Modified, and Deleted contributions.
 * `[capture]` Compare payload message text and retain late-edit injections in request.
+* `[injections]` Show late edits and hidden tool declarations found in the provider payload.
 
 ### Changed
 * `[usage]` Apply the latest request's added/modified/deleted messages instead of first-turn copies.
@@ -16,6 +17,7 @@
 * `[package]` Require Pi 1.0 and report older versions, drop the pre-0.86 prompt parser.
 
 ### Fixed
+* `[usage]` Leave out tools the latest request did not declare to the model, such as with codemode `only`.
 * `[usage]` Count request replacements once and exclude removals ([#6](https://github.com/dimk90/pi-context-view/issues/6) by [@MDGChamomile](https://github.com/MDGChamomile)).
 * `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).
 * `[probe]` Preserve system-message positions when filtering and persist probe context omissions.

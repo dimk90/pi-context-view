@@ -102,8 +102,11 @@ export type GuardFinding =
 		readonly type: "late-tool-edit";
 		readonly change: "added" | "modified";
 		readonly name: string;
-		/** The description the payload declares; undefined when it declares none. */
-		readonly description?: string;
+		/**
+		 * Changed description lines: every line the payload declares for an addition,
+		 * only the lines that differ for a modification, ignoring whitespace.
+		 */
+		readonly lines: readonly LateEditLine[];
 	}
 	| { readonly type: "hidden-declaration"; readonly name: string; readonly candidates: readonly string[] };
 

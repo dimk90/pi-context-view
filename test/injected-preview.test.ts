@@ -72,6 +72,12 @@ const LEGEND: Record<ContextMarker, { keyword: string; color: ThemeColor; senten
 		sentence: "parts were removed by an extension for this request only; the session keeps them." +
 			" They are counted nowhere.",
 	},
+	hidden: {
+		keyword: "Hidden",
+		color: "toolDiffRemoved",
+		sentence: "tools stay active and callable, but the request did not declare them to the model." +
+			" They are counted nowhere.",
+	},
 };
 const DESCRIPTION = `- ${LEGEND.highlighted.keyword} ${LEGEND.highlighted.sentence}`;
 

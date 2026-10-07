@@ -86,7 +86,7 @@ export interface ToolSlice {
 	guidelines: string[];
 	/** Provenance, e.g. "builtin" or "npm:pi-web-providers". */
 	source: string;
-	/** Request-only change of the declaration; a deleted tool keeps only its uncounted definition. */
+	/** Request-only change of the declaration; a deleted or hidden tool keeps only its uncounted definition. */
 	change?: RequestChange;
 }
 
@@ -100,7 +100,7 @@ export interface DeletedSection {
 /** Request-only prompt changes and their replayed layout; a forced prompt ignores them. */
 export interface PromptChanges {
 	/** Added or changed sections by name; `preamble` also stands for changed plain content. */
-	readonly sections?: ReadonlyMap<string, Exclude<RequestChange, "deleted" | "forced">>;
+	readonly sections?: ReadonlyMap<string, Exclude<RequestChange, "deleted" | "forced" | "hidden">>;
 	/** Sections the request removed, in session order. */
 	readonly deleted?: readonly DeletedSection[];
 	/** Exact recorded layout, including sections without Pi's usual XML framing. */
@@ -384,14 +384,14 @@ function measureTools(
 	blocks: readonly LocatedPromptBlock[],
 ): ToolPromptLines {
 	const carver = createPromptCarver(base, carvedSpans, blocks);
-	const claimedGuidelines = new Set(piOwnedGuidelines(tools.filter((tool) => tool.change !== "deleted")));
+	const claimedGuidelines = new Set(piOwnedGuidelines(tools.filter((tool) => !isUnsent(tool.change))));
 	const dropped = new Map<string, InjectedReference[]>();
 	const builtinChildren: InjectionItem[] = [];
 	for (const tool of tools) {
-		if (tool.change === "deleted") {
-			const deleted = createDeletedToolItem(tool);
-			if (tool.source === "builtin") builtinChildren.push(deleted);
-			else items.push(deleted);
+		if (isUnsent(tool.change)) {
+			const unsent = createUnsentToolItem(tool, tool.change);
+			if (tool.source === "builtin") builtinChildren.push(unsent);
+			else items.push(unsent);
 			continue;
 		}
 		// Built-in tools claim their bullets without carving them, so a later
@@ -423,8 +423,8 @@ function measureTools(
 	}
 	if (builtinChildren.length > 0) {
 		builtinChildren.sort((a, b) => b.tokens - a.tokens);
-		// The count names the tools the request declared, not the deleted ones listed with them
-		const declared = builtinChildren.filter((child) => child.change !== "deleted").length;
+		// The count names the tools the request declared, not the deleted or hidden ones listed with them
+		const declared = builtinChildren.filter((child) => !isUnsent(child.change)).length;
 		const label = `${BUILT_IN_TOOLS_LABEL} (${declared})`;
 		items.push(createAggregateItem("tool:builtin", "tool", PI_SOURCE, label, builtinChildren));
 	}
@@ -432,14 +432,19 @@ function measureTools(
 }
 
 /**
- * A tool the request no longer declared: its session definition only, for the
+ * A tool the request deleted or hid: its session definition only, for the
  * preview, at 0 tokens. Its prompt lines stay with whatever text still holds them.
  */
-function createDeletedToolItem(tool: ToolSlice): InjectionItem {
+function createUnsentToolItem(tool: ToolSlice, change: "deleted" | "hidden"): InjectionItem {
 	const source = tool.source === "builtin" ? PI_SOURCE : extensionSource(tool.source);
 	const id = tool.source === "builtin" ? `tool:builtin:${tool.name}` : `tool:${tool.source}:${tool.name}`;
-	const definition: SectionDraft = { ...createDefinitionSection(tool), change: "deleted" };
-	return { ...createToolItem(id, source, tool.name, [definition]), change: "deleted" };
+	const definition: SectionDraft = { ...createDefinitionSection(tool), change };
+	return { ...createToolItem(id, source, tool.name, [definition]), change };
+}
+
+/** Whether a change kept the contribution out of the request: deleted, or a tool hidden from the model. */
+function isUnsent(change: RequestChange | undefined): change is "deleted" | "hidden" {
+	return change === "deleted" || change === "hidden";
 }
 
 /** The item with a request-only change, or unchanged when there is none. */
@@ -804,7 +809,7 @@ function createToolItem(
 	return { ...createItem(id, "tool", source, label, text), sections: allocateSectionTokens(sections) };
 }
 
-/** Text an item actually sends: everything but dropped and deleted parts. */
+/** Text an item actually sends: everything but dropped, deleted, and hidden parts. */
 function countedText(parts: readonly UncountablePart[]): string {
 	return parts.filter((part) => !isUncounted(part)).map((part) => part.text).join("");
 }
@@ -816,9 +821,9 @@ interface UncountablePart {
 	readonly change?: RequestChange;
 }
 
-/** Whether a part's text is shown for reference only: a replacement dropped it or the request deleted it. */
+/** Whether a part's text is shown for reference only: a replacement dropped it, or the request deleted or hid it. */
 function isUncounted(part: UncountablePart): boolean {
-	return part.dropped === true || part.change === "deleted";
+	return part.dropped === true || isUnsent(part.change);
 }
 
 /**
@@ -872,7 +877,7 @@ function createAggregateItem(
  */
 function childSection(child: InjectionItem, separator: string): InjectionSection {
 	const span = childJsonSpan(child);
-	const text = child.change === "deleted" ? child.sections?.[0]?.text ?? child.text : child.text;
+	const text = isUnsent(child.change) ? child.sections?.[0]?.text ?? child.text : child.text;
 	return {
 		label: child.label,
 		text: `${separator}${text}`,

@@ -181,6 +181,14 @@ Reorders count each message once. Usage marks none of these
 [request-only changes](../ARCHITECTURE.md#usage-and-attribution): Injections
 shows them for the first request.
 
+Tool categories list and count only the tools the latest request declared to
+the model. A tool that stays active but was hidden from the request, such as
+the tools codemode's `only` mode hides, is neither listed nor counted, and
+Usage marks nothing. Every replayed tool counts while no declared names are
+usable: before a request whose payload declarations were compared, after the
+active tools changed, and when that comparison was incomplete.
+[ARCHITECTURE.md](../ARCHITECTURE.md#usage-and-attribution) defines the rules.
+
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
 the smaller middle dot `·`. Keep aggregate breakdowns collapsed except Tool
 Output, whose per-tool results and bash executions appear directly and scroll

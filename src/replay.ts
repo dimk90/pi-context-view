@@ -37,6 +37,8 @@ export interface UsageSnapshotInput extends NativeSnapshotInput {
 	messages: readonly RequestMessage[];
 	/** Request-only system changes of the latest request, applied after the replayed state. */
 	systemChanges?: readonly SystemChange[];
+	/** Tool names the latest request declared; other replayed tools are neither listed nor counted. */
+	declaredToolNames?: ReadonlySet<string>;
 }
 
 /** System state a request carried, with what its changes touched. */
@@ -44,7 +46,7 @@ export interface RequestSystemState {
 	readonly state: Pick<SystemMessage, "content" | "sections">;
 	readonly declarations: readonly Tool[];
 	readonly prompt: PromptChanges;
-	readonly tools: ReadonlyMap<string, Exclude<RequestChange, "deleted" | "forced">>;
+	readonly tools: ReadonlyMap<string, Exclude<RequestChange, "deleted" | "forced" | "hidden">>;
 	readonly deletedTools: readonly Tool[];
 }
 
@@ -60,7 +62,8 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot
 /**
  * Measure the branch's replayed prompt and tools instead of today's loader
  * prompt/tools, with the latest request's system changes applied once. A forced
- * prompt replaces every section, so only tool changes reach it. Only a branch
+ * prompt replaces every section, so only tool changes reach it. Declared names,
+ * when given, leave out the tools the request hid from the model. Only a branch
  * with no recorded system message yet uses the live fallback.
  */
 export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
@@ -69,7 +72,11 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
 	if (base === undefined) return buildNativeSnapshot(input);
 	const request = applySystemChanges(base, input.systemChanges ?? []);
-	const tools = replayedToolSlices(request.state, request.declarations, input.allTools);
+	const declared = input.declaredToolNames;
+	const declarations = declared === undefined
+		? request.declarations
+		: request.declarations.filter((tool) => declared.has(tool.name));
+	const tools = replayedToolSlices(request.state, declarations, input.allTools);
 	const options = copyPromptOptions(input.options);
 	const items = analyzeSystemPrompt(forced ?? systemMessageText(request.state), {
 		...options,
@@ -90,10 +97,10 @@ export function markForcedPrompt(items: InjectionItem[], forced: string | undefi
 export function applySystemChanges(base: SystemMessage, changes: readonly SystemChange[]): RequestSystemState {
 	let content = contentText(base.content);
 	const sections: Record<string, string | null> = { ...base.sections };
-	const sectionChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced">>();
+	const sectionChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced" | "hidden">>();
 	const deletedSections: DeletedSection[] = [];
 	const declarations = [...(base.toolsAdded ?? [])];
-	const toolChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced">>();
+	const toolChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced" | "hidden">>();
 	const deletedTools: Tool[] = [];
 	for (const change of changes) {
 		switch (change.type) {

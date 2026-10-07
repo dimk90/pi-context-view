@@ -5,6 +5,7 @@
  * process-local data.
  */
 import type { DeclaredTools, GuardFinding } from "../snapshot.ts";
+import { diffLines, normalizeText } from "./messages.ts";
 import type { PayloadDeclaration } from "./payload.ts";
 
 /** Inputs of one tool-channel comparison. */
@@ -34,8 +35,9 @@ export interface ToolComparison {
  * Compare the declarations:
  *   missing from the payload    hidden declaration, with loadout candidates
  *   added by the payload        edited after monitor
- *   description differs         edited after monitor
- * Schemas are not compared: Pi adapts them per provider, such as for strict mode.
+ *   description differs         edited after monitor, with the changed lines
+ * Descriptions are compared without whitespace, as message text is. Schemas
+ * are not compared: Pi adapts them per provider, such as for strict mode.
  */
 export function compareToolDeclarations(input: ToolComparisonInput): ToolComparison {
 	const expectedByName = new Map(input.expected.map((tool) => [tool.name, tool]));
@@ -53,12 +55,14 @@ export function compareToolDeclarations(input: ToolComparisonInput): ToolCompari
 	}
 	for (const declaration of declared) {
 		const tool = expectedByName.get(declaration.name);
-		if (tool !== undefined && tool.description === declaration.description) continue;
+		const before = tool?.description ?? "";
+		const after = declaration.description ?? "";
+		if (tool !== undefined && normalizeText(before) === normalizeText(after)) continue;
 		findings.push({
 			type: "late-tool-edit",
 			change: tool === undefined ? "added" : "modified",
 			name: declaration.name,
-			...(declaration.description === undefined ? {} : { description: declaration.description }),
+			lines: diffLines(before, after),
 		});
 	}
 	return {

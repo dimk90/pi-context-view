@@ -33,16 +33,22 @@ bullet with only `request probe` in `warning` color; the rest is dim:
 ```
 
 The bullet collapses with the rest of the description block. The payload guard
-compares tool declarations and message text. While the overall comparison is
-pending or incomplete, the description block carries one dim bullet with the
-reason. A standard probe says `Late edits were not checked: No provider payload
-was observed for this request.` This does not mean "no edits". The bullet
-collapses with the rest of the block.
+compares tool declarations and message text with the provider payload. While
+that comparison is pending or incomplete, the description block carries one dim
+guard-status bullet with the reason:
 
-The views stay unchanged until **Guard results in the views**: findings are
-stored but are not yet rendered or counted. A complete guard shows no late-edit
-bullet, even when it has findings; the absence of that bullet is not a claim
-that no late edits occurred.
+| Guard                        | Bullet                                                               |
+| ---------------------------- | -------------------------------------------------------------------- |
+| Pending                      | `Late edits are not checked yet: the payload comparison is pending.` |
+| Incomplete, nothing compared | `Late edits were not checked: <reason>`                              |
+| Incomplete, one channel only | `Late edits were checked only in part: <reason>`                     |
+
+A standard probe says `Late edits were not checked: No provider payload was
+observed for this request.` None of these means "no edits". A partial check
+still shows the [late edits](#late-edits) and [hidden tools](#hidden-tools) of
+the channel it compared. A complete guard adds no bullet: without late-edit or
+hidden-tool rows, the payload matched the request up to this extension's own
+`before_provider_request` handler. Handlers after it stay invisible.
 
 ## Contribution tree
 
@@ -83,11 +89,14 @@ Present Initial contributions in this order:
   - injected messages identified by `customType` where available
 - `unattributed` for prompt additions no signal could attribute, and for
   request-only changes to messages without a `customType`
+- `late edits` for changes found only in the provider payload
+  ([Late edits](#late-edits))
 
 ### Request-only changes
 
-Changes from all `context` handlers and earlier `context_with_system` handlers
-stay in place in the tree, with a marker after the estimate:
+Changes from all `context` handlers and earlier `context_with_system` handlers,
+and [hidden tools](#hidden-tools), stay in place in the tree, with a marker
+after the estimate:
 
 | Marker     | Color             | Row                                                                                   |
 | ---------- | ----------------- | ------------------------------------------------------------------------------------- |
@@ -95,6 +104,7 @@ stay in place in the tree, with a marker after the estimate:
 | `Modified` | `warning`         | A message, System Prompt part, or tool whose request version differs from the session |
 | `Deleted`  | `toolDiffRemoved` | A message, System Prompt part, or tool the request removed; it reads 0 tokens         |
 | `Forced`   | `warning`         | System Prompt, when the request carried an extension's forced prompt instead of pi's  |
+| `Hidden`   | `toolDiffRemoved` | A tool the request kept active but did not declare to the model; it reads 0 tokens    |
 
 - **Messages.** An added or modified custom message sits under its
   `customType` source with the `message` label; any other message sits under
@@ -108,9 +118,9 @@ stay in place in the tree, with a marker after the estimate:
   session order, before `Extension Additions`. A forced prompt replaces every
   section, so section and content changes do not apply to it. `Forced` marks
   the System Prompt row and its preview header, never its parts.
-- **Tools.** A changed declaration marks its tool. A deleted tool keeps a
-  0-token row under its source; `Built-in Tools (N)` counts only the tools the
-  request declared.
+- **Tools.** A changed declaration marks its tool. A deleted or
+  [hidden](#hidden-tools) tool keeps a 0-token row under its source;
+  `Built-in Tools (N)` counts only the tools the request declared.
 
 These source groups identify the affected content, not the extension that
 edited it. Changes to a pi part or a custom message remain unattributed to an
@@ -120,6 +130,48 @@ A row can carry `Moved` and a change marker together; markers keep the order
 `Dropped`, `Moved`, then the change. The estimate counts the request version.
 `TOTAL` covers these contributions only, not unchanged ordinary conversation;
 it is not a provider-payload size.
+
+### Late edits
+
+Late edits are payload differences the structured capture cannot explain: they
+come from `context_with_system` handlers after this extension, or from
+`before_provider_request` handlers before it. They carry no structure or
+source, so they cannot stay in place. The `late edits` group, after
+`unattributed`, lists one row per finding:
+
+- A changed message part: `system message`, `user message`,
+  `assistant message`, `tool call`, or `tool result`.
+- A tool declaration the payload added or describes differently: the tool name.
+
+Each row carries the `Added`, `Modified`, or `Deleted` marker of its change.
+The guard keeps only the changed lines, so a row's estimate counts the lines
+the payload added, and a deleted row reads 0 tokens. These estimates count
+toward the group and `TOTAL`. Rows sort like other source groups. While the
+group is shown, the description carries a dim bullet:
+
+```text
+- Late edits were made after pi-context-view captured the request. Their sources are unknown; only changed lines are known, and estimates count the added lines.
+```
+
+### Hidden tools
+
+A tool whose declaration the request carried at capture but the payload did
+not is hidden: it stays active and callable, but the model never received it.
+Its row stays in place under its source with the `Hidden` marker and reads
+0 tokens, like a deleted tool. Its prompt lines, if the prompt still has them,
+stay in pi's prompt text.
+
+Pi hides declarations on behalf of tools that define `prepareLoadout()`, such
+as `codemode`. Pi does not report which tool did it, so active `model-only`
+tools are only candidates. The description carries up to two dim bullets:
+
+```text
+- Hidden tools may come from active model-only tools: codemode.
+- Hidden tools without an active model-only candidate may have been removed by a later handler: write.
+```
+
+The first names every candidate of the hidden rows; the second names the
+hidden tools that have none.
 
 Within the `pi` group, keep the fixed semantic order above and sort remaining
 prompt additions by size. Children break down parent contributions and do not
@@ -142,10 +194,12 @@ The list description survives scrolling, per the floor in
 [Descriptions](../UI.md#descriptions); the `(current/total)` counter never
 collapses it by itself. When capture is degraded, wrap the precise reason below
 the header and show a `[Degraded: …]` indicator beside the description, keeping
-the fallback hierarchy usable. Below both come the probe and late-edit bullets,
-when shown, and one [legend bullet](previews.md#marker-legend) per marker the rows
-carry — `Dropped`, `Moved`, `Forced`, `Added`, `Modified`, `Deleted`, or none.
-All of them collapse with the rest of the block.
+the fallback hierarchy usable. Below both come, when shown, the probe bullet,
+the guard-status bullet, one [legend bullet](previews.md#marker-legend) per
+marker the rows carry — `Dropped`, `Moved`, `Forced`, `Added`, `Modified`,
+`Deleted`, `Hidden`, or none — then the late-edits bullet and the hidden-tool
+bullets, which explain those markers further. All of them collapse with the
+rest of the block.
 
 ## Injection preview
 
@@ -172,3 +226,15 @@ message previews both versions:
 
 A deleted System Prompt part or tool previews the session text it removed, at 0
 tokens. A modified System Prompt part or tool shows only the request version.
+A hidden tool previews its definition at 0 tokens, like a deleted one.
+
+A late edit previews its changed lines in payload order, without labeled parts.
+A line only in the payload opens with `+ ` in `toolDiffAdded`; a line only in
+the captured request opens with `- ` in `toolDiffRemoved`. The whole line takes
+that color, and wrapped continuation lines hang under its text.
+
+After the legend bullets of its markers, the preview description repeats the
+bullets that explain the item: the late-edits bullet for a late edit, and for a
+hidden tool, or for `Built-in Tools (N)` with hidden children, the hidden-tool
+bullets limited to those tools and their own candidates. They collapse with the
+legend, under the rules in [previews.md](previews.md#marker-legend).

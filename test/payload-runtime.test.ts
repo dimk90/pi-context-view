@@ -84,11 +84,21 @@ for (const api of APIS) {
 			const runtime = await createRuntime(t, { api, [order]: [editor] });
 			await runtime.session.prompt("tool edits");
 			const [snapshot] = await runtime.snapshots();
-			assert.deepEqual(findings(snapshot), order === "after" ? [] : [
+			const changed = [{ type: "added", text: "Changed late — 工具" }];
+			// The modification also lists every line of read's built-in description as removed
+			const added = findings(snapshot).map((finding) => finding.type === "late-tool-edit"
+				? { ...finding, lines: finding.lines.filter((line) => line.type === "added") }
+				: finding);
+			assert.deepEqual(added, order === "after" ? [] : [
 				{ type: "hidden-declaration", name: "write", candidates: [] },
-				{ type: "late-tool-edit", change: "modified", name: "read", description: "Changed late — 工具" },
-				{ type: "late-tool-edit", change: "added", name: "extra", description: "Changed late — 工具" },
+				{ type: "late-tool-edit", change: "modified", name: "read", lines: changed },
+				{ type: "late-tool-edit", change: "added", name: "extra", lines: changed },
 			]);
+			if (order === "before") {
+				const modified = findings(snapshot).find((finding) => finding.type === "late-tool-edit");
+				assert.ok(modified?.type === "late-tool-edit");
+				assert.ok(modified.lines.some((line) => line.type === "removed"));
+			}
 			assert.deepEqual(snapshot.declaredTools?.declared, order === "after" ? ["read", "write"] : ["read", "extra"]);
 		});
 	}
