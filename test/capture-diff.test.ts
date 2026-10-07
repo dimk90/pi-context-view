@@ -165,9 +165,15 @@ test("diffing the unmatched rest gives the same edits as diffing both whole side
 		const after: RequestMessage[] = [system, ...Array.from({ length: next() % 10 }, () => user(`m${next() % 3}`))];
 		const unmatched = trimMatchedEnds(before, after);
 		assert.deepEqual(diffConversation(unmatched.baseline, unmatched.request), diffConversation(before, after));
+		// The payload guard rebuilds the request from the baseline ends around the copied rest
+		const conversation = before.map(({ message }) => message).filter((message) => message.role !== "system");
+		const suffixStart = unmatched.prefix + unmatched.baseline.length;
+		const rebuilt = [...conversation.slice(0, unmatched.prefix), ...unmatched.request, ...conversation.slice(suffixStart)];
+		assert.deepEqual(rebuilt.map(messageKey), after.filter((message) => message.role !== "system").map(messageKey));
 	}
 	const unchanged = [user("one"), assistant("two")];
-	assert.deepEqual(trimMatchedEnds(baseline(system, ...unchanged), [system, ...unchanged]), { baseline: [], request: [] });
+	assert.deepEqual(trimMatchedEnds(baseline(system, ...unchanged), [system, ...unchanged]),
+		{ prefix: 2, baseline: [], request: [] });
 });
 
 test("a collapsed system message equals the sequence it replaced", () => {

@@ -97,14 +97,16 @@ test("a snapshot keeps redacted, attributed changes and entry references", () =>
 
 test("a request copy keeps only the differing messages and the replayed system state, as owned copies", () => {
 	const tool = { name: "read", description: "Read a file", parameters: { type: "object", properties: {} } };
-	const system: RequestMessage = { role: "system", content: "Prompt", toolsAdded: [tool], timestamp: 0 };
+	const system: RequestMessage = {
+		role: "system", content: "Prompt", sections: { cwd: "<cwd>/a</cwd>" }, toolsAdded: [tool], timestamp: 0,
+	};
 	const baseline: BaselineMessage[] = [
 		{ entryId: "s", message: system },
 		{ entryId: "u1", message: { role: "user", content: "one", timestamp: 1 } },
 		{ entryId: "u2", message: { role: "user", content: "two", timestamp: 2 } },
 	];
 	const unchanged = copyRequest(baseline, structuredClone(baseline.map(({ message }) => message)));
-	assert.deepEqual(unchanged.conversation, { baseline: [], request: [] }, "an unchanged request copies no message");
+	assert.deepEqual(unchanged.conversation, { prefix: 2, baseline: [], request: [] }, "an unchanged request copies no message");
 
 	const messages: RequestMessage[] = [
 		structuredClone(system),
@@ -114,6 +116,7 @@ test("a request copy keeps only the differing messages and the replayed system s
 	const copy = copyRequest(baseline, messages);
 	assert.deepEqual(copy.conversation.baseline.map(({ entryId }) => entryId), ["u2"]);
 	assert.deepEqual(copy.conversation.request, [messages[2]]);
+	assert.equal(copy.conversation.prefix, 1);
 
 	// Later handlers may edit the shared request objects in place
 	const [requestSystem, , edited] = messages;
@@ -122,6 +125,9 @@ test("a request copy keeps only the differing messages and the replayed system s
 	const schema = requestSystem.toolsAdded?.[0].parameters as { properties: Record<string, unknown> } | undefined;
 	assert.ok(schema);
 	schema.properties.path = { type: "string" };
+	if (requestSystem.sections) requestSystem.sections.cwd = "<cwd>/changed</cwd>";
+	assert.deepEqual(copy.systemTexts, [{ position: 0, content: "Prompt", sections: { cwd: "<cwd>/a</cwd>" } }],
+		"system texts are owned copies");
 	const snapshot = buildRequestSnapshot({
 		id: 1, origin: "real-turn", capturedAt: 1, baseline: { leafId: "leaf", messages: baseline }, ...copy,
 	}, { status: "pending" });

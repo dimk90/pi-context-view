@@ -3,7 +3,9 @@
  * capture in `context_with_system` (D2, D3). Everything here runs inside the
  * handler, before later handlers can mutate the shared request messages.
  */
-import { getCurrentSystemMessage, getCurrentSystemPrompt, type SystemMessage } from "@earendil-works/pi-ai";
+import {
+	contentText, getCurrentSystemMessage, getCurrentSystemPrompt, getDeclaredTools, type SystemMessage, type Tool,
+} from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { ProbeView } from "../probe/view.ts";
@@ -25,12 +27,29 @@ export interface Baseline {
 }
 
 /**
- * The parts of a request the deferred diff needs, as this extension's handler
- * saw them. Request-side values are owned copies.
+ * Text of one request system message, without its tool changes. The payload
+ * guard renders it as Pi does, at its position, for models that keep later
+ * system messages in place.
+ */
+export interface SystemText {
+	/** Number of non-system request messages before this one. */
+	readonly position: number;
+	/** Plain content; text blocks are joined as Pi renders them. */
+	readonly content: string;
+	readonly sections?: Readonly<Record<string, string | null>>;
+}
+
+/**
+ * The parts of a request the deferred diff and the payload guard need, as this
+ * extension's handler saw them. Request-side values are owned copies.
  */
 export interface RequestCopy {
 	/** The request's replayed system state; undefined when it has none. */
 	readonly system?: SystemMessage;
+	/** Every request system message's text, in order. */
+	readonly systemTexts: readonly SystemText[];
+	/** Every definition declared in the request, latest per name, including tools removed later. */
+	readonly declarations: readonly Tool[];
 	/**
 	 * Non-system messages left after removing the ends both sides share: session
 	 * originals on the baseline side, copies on the request side.
@@ -81,26 +100,27 @@ export function captureRequest(input: CaptureInput): CapturedRequest {
 		baseline,
 		...copyRequest(baseline.messages, input.messages),
 		forcedPrompt: detectForcedPrompt(input.effectivePrompt, baseline.messages),
-		...(input.requestModel === undefined ? {} : {
-			requestModel: {
-				provider: input.requestModel.provider, api: input.requestModel.api, id: input.requestModel.id,
-			},
-		}),
+		...(input.requestModel === undefined ? {} : { requestModel: copyGuardModel(input.requestModel) }),
 	};
 }
 
 /**
  * Copy the request's replayed system state and the messages that differ from
  * the baseline. Messages equal to the baseline at both ends are compared in
- * place and never copied, so an unchanged request copies only its system state.
+ * place and never copied. System text positions and historical declarations
+ * also belong to the copy: serializers may keep them instead of collapsing.
  */
 export function copyRequest(baseline: readonly BaselineMessage[], messages: readonly RequestMessage[]): RequestCopy {
 	const unmatched = trimMatchedEnds(baseline, messages);
 	// Later handlers share these objects, tool schemas included, and may edit them in place
-	const copy = structuredClone({ system: getCurrentSystemMessage(messages), request: unmatched.request });
+	const copy = structuredClone({
+		system: getCurrentSystemMessage(messages), declarations: getDeclaredTools(messages), request: unmatched.request,
+	});
 	return {
 		...(copy.system === undefined ? {} : { system: copy.system }),
-		conversation: { baseline: unmatched.baseline, request: copy.request },
+		systemTexts: copySystemTexts(messages),
+		declarations: copy.declarations,
+		conversation: { prefix: unmatched.prefix, baseline: unmatched.baseline, request: copy.request },
 	};
 }
 
@@ -127,4 +147,40 @@ export function readBaseline(
 export function detectForcedPrompt(effectivePrompt: string, baseline: readonly BaselineMessage[]): string | undefined {
 	const replayed = getCurrentSystemPrompt(baseline.map(({ message }) => message));
 	return effectivePrompt === replayed ? undefined : effectivePrompt;
+}
+
+/**
+ * Copy the text of every system message with its position. Strings are
+ * immutable, so a shallow copy of the sections suffices; tool changes are
+ * left out because the replayed system state already holds them.
+ */
+function copySystemTexts(messages: readonly RequestMessage[]): SystemText[] {
+	const texts: SystemText[] = [];
+	let position = 0;
+	for (const message of messages) {
+		if (message.role !== "system") {
+			position++;
+			continue;
+		}
+		const content = contentText(message.content);
+		texts.push(message.sections === undefined
+			? { position, content }
+			: { position, content, sections: { ...message.sections } });
+	}
+	return texts;
+}
+
+/**
+ * Copy the identity and the capabilities message normalization reads, before
+ * later handlers can change the model object. Only top-level `compat` flags
+ * are read, so a shallow copy suffices.
+ */
+function copyGuardModel(model: GuardModel): GuardModel {
+	return {
+		provider: model.provider,
+		api: model.api,
+		id: model.id,
+		input: [...model.input],
+		...(model.compat === undefined ? {} : { compat: { ...model.compat } }),
+	};
 }

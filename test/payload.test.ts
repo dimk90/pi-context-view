@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { MessageUnit } from "../src/capture/messages.ts";
 import {
-	copyPayload, DEFERRED_PLACEHOLDER_NAME, hasWarmOutputLimit, parsePayloadTools, PAYLOAD_SHAPE_CHECKS,
+	CLAUDE_CODE_IDENTITY, copyPayload, DEFERRED_PLACEHOLDER_NAME, hasWarmOutputLimit, parsePayloadMessages,
+	parsePayloadTools, PAYLOAD_SHAPE_CHECKS,
 } from "../src/capture/payload.ts";
 import { compareToolDeclarations } from "../src/capture/tools.ts";
 
@@ -13,6 +15,18 @@ const WRITE = { name: "write", description: "Write a file." };
 /** Completions declaration including a schema, which is deliberately not compared. */
 function completionsTool(tool = READ): unknown {
 	return { type: "function", function: { ...tool, parameters: { type: "object" } } };
+}
+
+/** Image data the message channel must never keep. */
+const IMAGE_DATA = "data:image/png;base64,PRIVATE_IMAGE_BYTES";
+
+/** Message units of a successful parse. */
+function units(api: string, payload: unknown): readonly MessageUnit[] {
+	const parsed = parsePayloadMessages(api, payload);
+	assert.equal(parsed.status, "parsed", JSON.stringify(parsed));
+	assert.ok(parsed.status === "parsed");
+	assert.doesNotMatch(JSON.stringify(parsed.units), /PRIVATE_IMAGE_BYTES/);
+	return parsed.units;
 }
 
 /** Successful parse, failing the test rather than masking an unsupported channel. */
@@ -145,4 +159,126 @@ test("Anthropic OAuth names map back to captured spelling; other APIs retain cas
 		findings: [], declaredTools: { declared: ["read"], baseline: ["read"] },
 	});
 	assert.equal(compareToolDeclarations({ ...input, ignoreNameCase: false }).findings.length, 2);
+});
+
+test("Completions message units: roles, text parts, tool calls and results; not reasoning or inline tools", () => {
+	const payload = {
+		messages: [
+			{ role: "developer", content: [{ type: "text", text: "prompt", cache_control: { type: "ephemeral" } }] },
+			{ role: "user", content: [{ type: "text", text: "look" }, { type: "image_url", image_url: { url: IMAGE_DATA } }] },
+			{
+				role: "assistant", content: null, reasoning_content: "hidden reasoning",
+				tool_calls: [
+					{ id: "a", type: "function", function: { name: "read", arguments: '{"path":"x","limit":2}' } },
+					{ id: "b", type: "custom", custom: { name: "codemode", input: "return 1;" } },
+					{ id: "c", type: "function", function: { name: "bad", arguments: "{not json" } },
+				],
+			},
+			{ role: "tool", tool_call_id: "a", content: "file" },
+			{ role: "system", tools: [completionsTool(WRITE)] },
+			{ role: "system", content: "update" },
+			{ role: "assistant", content: "done" },
+		],
+	};
+	assert.deepEqual(units("openai-completions", payload), [
+		{ part: "system", text: "prompt" },
+		{ part: "user", text: "look" },
+		{ part: "assistant", text: "" },
+		{ part: "tool-call", name: "read", text: '{"limit":2,"path":"x"}' },
+		{ part: "tool-call", name: "codemode", text: "return 1;" },
+		{ part: "tool-call", name: "bad", text: "{not json" },
+		{ part: "tool-result", text: "file" },
+		{ part: "system", text: "update" },
+		{ part: "assistant", text: "done" },
+	]);
+});
+
+test("Responses message units: items in order; reasoning and inline tool items are skipped", () => {
+	const payload = {
+		input: [
+			{ role: "developer", content: "prompt" },
+			{ role: "user", content: [{ type: "input_text", text: "look" }, { type: "input_image", image_url: IMAGE_DATA }] },
+			{ type: "reasoning", id: "rs_1", encrypted_content: "opaque" },
+			{ type: "message", role: "assistant", content: [{ type: "output_text", text: "one", annotations: [] }] },
+			{ type: "message", role: "assistant", content: [{ type: "output_text", text: "two", annotations: [] }] },
+			{ type: "function_call", call_id: "a", name: "read", arguments: '{"path":"x"}' },
+			{ type: "custom_tool_call", call_id: "b", name: "codemode", input: "return 1;" },
+			{ type: "function_call_output", call_id: "a", output: "file" },
+			{ type: "custom_tool_call_output", call_id: "b", output: [{ type: "input_image", image_url: IMAGE_DATA }] },
+			{ type: "additional_tools", role: "developer", tools: [{ type: "function", ...WRITE }] },
+			{ type: "tool_search_call", call_id: "s", arguments: { query: "write" } },
+			{ type: "tool_search_output", call_id: "s", tools: [{ type: "function", ...WRITE }] },
+		],
+	};
+	assert.deepEqual(units("openai-responses", payload), [
+		{ part: "system", text: "prompt" },
+		{ part: "user", text: "look" },
+		{ part: "assistant", text: "one" },
+		{ part: "assistant", text: "two" },
+		{ part: "tool-call", name: "read", text: '{"path":"x"}' },
+		{ part: "tool-call", name: "codemode", text: "return 1;" },
+		{ part: "tool-result", text: "file" },
+		{ part: "tool-result", text: "" },
+	]);
+});
+
+test("Anthropic message units: OAuth identity, held system text, merged blocks, and skipped thinking", () => {
+	const payload = {
+		system: [{ type: "text", text: CLAUDE_CODE_IDENTITY }, { type: "text", text: "prompt" }],
+		messages: [
+			{ role: "user", content: "look" },
+			{ role: "assistant", content: [
+				{ type: "thinking", thinking: "signed", signature: "s" },
+				{ type: "redacted_thinking", data: "opaque" },
+				{ type: "text", text: "one" },
+				{ type: "text", text: "two" },
+				{ type: "tool_use", id: "a", name: "Read", input: { path: "x", limit: 2 } },
+				{ type: "text", text: "after" },
+			] },
+			{ role: "user", content: [
+				{ type: "tool_result", tool_use_id: "a", content: "file" },
+				{ type: "tool_result", tool_use_id: "b", content: [
+					{ type: "text", text: "(see attached image)" }, { type: "image", source: { data: IMAGE_DATA } },
+				] },
+			] },
+			{ role: "system", content: [
+				{ type: "text", text: "update" },
+				{ type: "tool_addition", tool: { type: "tool_definition", definition: WRITE } },
+			] },
+			{ role: "system", content: [], output_config: { effort: "high" } },
+		],
+	};
+	assert.deepEqual(units("anthropic-messages", payload), [
+		{ part: "system", text: "prompt" },
+		{ part: "user", text: "look" },
+		{ part: "assistant", text: "one\ntwo" },
+		{ part: "tool-call", name: "Read", text: '{"limit":2,"path":"x"}' },
+		{ part: "assistant", text: "after" },
+		{ part: "tool-result", text: "file" },
+		{ part: "tool-result", text: "(see attached image)" },
+		{ part: "system", text: "update" },
+	]);
+	// Only Pi's exact leading block is its OAuth identity
+	assert.deepEqual(units("anthropic-messages", { system: `${CLAUDE_CODE_IDENTITY} Custom.`, messages: [] }),
+		[{ part: "system", text: `${CLAUDE_CODE_IDENTITY} Custom.` }]);
+});
+
+test("unknown message parts, items, and blocks leave the message channel unsupported", () => {
+	const cases: Array<[string, unknown]> = [
+		["openai-completions", { messages: [{ role: "user", content: [{ type: "input_audio", input_audio: {} }] }] }],
+		["openai-completions", { messages: [{ role: "assistant", content: null, tool_calls: [{ type: "mystery" }] }] }],
+		["openai-completions", { messages: [{ role: "tool", content: 42 }] }],
+		["openai-responses", { input: [{ type: "compaction", encrypted_content: "x" }] }],
+		["openai-responses", { input: [{ role: "assistant", content: [{ type: "refusal", refusal: "no" }] }] }],
+		["openai-responses", { input: [{ role: "critic", content: "x" }] }],
+		["anthropic-messages", { messages: [{ role: "user", content: [{ type: "document", source: {} }] }] }],
+		["anthropic-messages", { messages: [{ role: "assistant", content: [{ type: "server_tool_use", name: "x" }] }] }],
+		["anthropic-messages", { system: [{ type: "image" }], messages: [] }],
+	];
+	for (const [api, payload] of cases) {
+		const parsed = parsePayloadMessages(api, payload);
+		assert.equal(parsed.status, "unsupported", `${api}: ${JSON.stringify(payload)}`);
+	}
+	assert.equal(parsePayloadMessages("google-generative-ai", { contents: [] }).status, "unsupported");
+	assert.equal(parsePayloadMessages("openai-responses", { messages: [] }).status, "unsupported");
 });

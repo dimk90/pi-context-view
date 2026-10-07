@@ -1,27 +1,36 @@
 /**
- * PayloadGuard: deferred tool-channel comparison and dispatch confirmation
- * (D4, D7, D9). Physical selections parse immediately after the payload copy;
- * virtual selections keep the copy until dispatch supplies the model.
+ * PayloadGuard: deferred comparison of the tool-declaration and message
+ * channels, and dispatch confirmation (D4, D7, D9). Physical selections parse
+ * immediately after the payload copy; virtual selections keep the copy until
+ * dispatch supplies the model.
  */
-import { type Api, getCurrentTools, type Model, type SystemMessage } from "@earendil-works/pi-ai";
+import { getCurrentTools } from "@earendil-works/pi-ai";
 
-import type { DeclaredTools, Dispatch, GuardResult } from "../snapshot.ts";
-import { copyPayload, type ParsedTools, type PayloadCopy, type PayloadDeclaration, parsePayloadTools } from "./payload.ts";
-import type { Baseline } from "./request.ts";
+import type { DeclaredTools, Dispatch, GuardFinding, GuardResult } from "../snapshot.ts";
+import {
+	type ConvertedRequest, type ConvertibleCapture, convertCapturedRequest, renderExpectedUnits,
+} from "./adjustments.ts";
+import { compareMessageUnits } from "./messages.ts";
+import {
+	copyPayload, type PayloadCopy, type PayloadDeclaration, parsePayloadMessages, parsePayloadTools,
+} from "./payload.ts";
 import { compareToolDeclarations } from "./tools.ts";
 
-/** Guard reason while only the tool-declaration channel is compared. */
-export const MESSAGES_NOT_COMPARED_REASON = "Message edits after the monitor are not compared yet.";
-
-/** Model identity at capture; message normalization will also need its capabilities. */
-export type GuardModel = Pick<Model<Api>, "provider" | "api" | "id">;
+/** Model identity and the capabilities message normalization reads. */
+export interface GuardModel {
+	readonly provider: string;
+	readonly api: string;
+	readonly id: string;
+	/** Input modalities; without `image`, Pi replaces images with placeholders. */
+	readonly input: readonly string[];
+	/** API-specific compatibility settings; only top-level boolean flags are read. */
+	readonly compat?: object;
+}
 
 /** What the guard reads from a capture, before releasing the transcript. */
-export interface GuardCapture {
+export interface GuardCapture extends ConvertibleCapture {
 	readonly id: number;
 	readonly requestModel?: GuardModel;
-	readonly system?: SystemMessage;
-	readonly baseline: Baseline;
 }
 
 /** Where guard results go; SnapshotBuilder in production. */
@@ -37,24 +46,38 @@ export interface PayloadGuardOptions {
 	readonly publisher: GuardPublisher;
 	/** Read at the payload hook, before active tools can change while awaiting dispatch. */
 	readonly loadoutCandidates: () => readonly string[];
+	/** Pi's `images.blockImages` setting, read at the payload hook. */
+	readonly blockImages: () => boolean;
 }
 
 /** Catalog lookup, as `ctx.modelRegistry.find()` does. */
 export type FindModel = (provider: string, modelId: string) => GuardModel | undefined;
 
-/** Minimal comparison data; no transcript, schemas, images, or signatures. */
-interface ExpectedTools {
+/** Minimal comparison data; no schemas, image data, or signatures. */
+interface ExpectedRequest {
 	readonly declarations: readonly PayloadDeclaration[];
 	readonly baselineNames: readonly string[];
+	/** Undefined when the captured request could not be converted. */
+	readonly transcript?: ConvertedRequest;
 }
+
+/**
+ * Result of comparing one channel:
+ *   compared      the channel was compared; `findings` may be empty
+ *   unsupported   the channel could not be compared, for `reason`
+ */
+type ChannelResult =
+	| { readonly status: "compared"; readonly findings: readonly GuardFinding[]; readonly declaredTools?: DeclaredTools }
+	| { readonly status: "unsupported"; readonly reason: string };
 
 /** State retained until comparison and dispatch confirmation have both ended. */
 interface PairedState {
 	readonly id: number;
 	readonly requestModel?: GuardModel;
 	readonly candidates: readonly string[];
+	readonly blockImages: boolean;
 	capture?: GuardCapture;
-	expected?: ExpectedTools;
+	expected?: ExpectedRequest;
 	payload?: PayloadCopy;
 	scheduled?: NodeJS.Immediate;
 	/** The virtual route's catalog model, once known. */
@@ -82,6 +105,7 @@ export class PayloadGuard {
 			capture,
 			payload: copyPayload(payload),
 			candidates: [...this.options.loadoutCandidates()],
+			blockImages: this.options.blockImages(),
 			finished: false,
 		};
 		this.open.set(state.id, state);
@@ -151,17 +175,14 @@ export class PayloadGuard {
 		});
 	}
 
-	/** Release transcript references even while a virtual request waits for dispatch. */
+	/** Reduce the capture to comparison data first, even while a virtual request waits for dispatch. */
 	private process(state: PairedState): void {
 		if (state.failure !== undefined) {
 			this.options.publisher.settleGuard(state.id, state.failure);
 			return;
 		}
 		if (state.capture !== undefined) {
-			state.expected = {
-				declarations: (state.capture.system?.toolsAdded ?? []).map(({ name, description }) => ({ name, description })),
-				baselineNames: getCurrentTools(state.capture.baseline.messages.map(({ message }) => message)).map((tool) => tool.name),
-			};
+			state.expected = reduceCapture(state.capture, state.blockImages);
 			state.capture = undefined;
 		}
 		const model = state.requestModel?.api === "pi-virtual" ? state.dispatchedModel : state.requestModel;
@@ -172,33 +193,96 @@ export class PayloadGuard {
 		state.expected = undefined;
 		if (copy === undefined || expected === undefined) return; // Already compared on the physical path
 		if (model === undefined) {
-			this.options.publisher.settleGuard(state.id, { status: "incomplete", reason: "No model was selected for this request." });
+			this.options.publisher.settleGuard(state.id, {
+				status: "incomplete", reason: "No model was selected for this request.",
+			});
 			return;
 		}
 		this.evaluate(state, copy, expected, model);
 	}
 
-	/** Parse the tool channel and publish findings plus names; the message channel remains unavailable. */
-	private evaluate(state: PairedState, copy: PayloadCopy, expected: ExpectedTools, model: GuardModel): void {
-		const parsed: ParsedTools = copy.supported
-			? parsePayloadTools(model.api, copy.payload)
-			: { status: "unsupported", reason: copy.reason };
+	/**
+	 * Compare both channels and publish their findings. Only two compared
+	 * channels complete the guard; otherwise the compared one keeps its findings,
+	 * and declared names need only the tool channel.
+	 */
+	private evaluate(state: PairedState, copy: PayloadCopy, expected: ExpectedRequest, model: GuardModel): void {
 		const dispatch = state.dispatch ?? toDispatch(model);
-		if (parsed.status !== "parsed") {
-			this.options.publisher.settleGuard(state.id, { status: "incomplete", reason: parsed.reason, dispatch });
+		if (!copy.supported) {
+			this.options.publisher.settleGuard(state.id, { status: "incomplete", reason: copy.reason, dispatch });
 			return;
 		}
-		const comparison = compareToolDeclarations({
-			expected: expected.declarations,
-			declarations: parsed.declarations,
-			baselineNames: expected.baselineNames,
-			ignoreNameCase: model.api === "anthropic-messages",
-			loadoutCandidates: () => state.candidates,
-		});
-		this.options.publisher.settleGuard(state.id, {
-			status: "incomplete", reason: MESSAGES_NOT_COMPARED_REASON, dispatch, findings: comparison.findings,
-		}, comparison.declaredTools);
+		const tools = compareToolChannel(copy.payload, expected, model, state.candidates);
+		const messages = compareMessageChannel(copy.payload, expected.transcript, model);
+		const declaredTools = tools.status === "compared" ? tools.declaredTools : undefined;
+		const compared = [tools, messages].flatMap((channel) => channel.status === "compared" ? [channel.findings] : []);
+		const failure = tools.status === "unsupported" ? tools : messages.status === "unsupported" ? messages : undefined;
+		const guard: GuardResult = failure === undefined
+			? { status: "complete", dispatch, findings: compared.flat() }
+			: {
+				status: "incomplete", reason: failure.reason, dispatch,
+				...(compared.length === 0 ? {} : { findings: compared.flat() }),
+			};
+		this.options.publisher.settleGuard(state.id, guard, declaredTools);
 	}
+}
+
+/**
+ * The comparison data of a capture: expected declarations, baseline tool
+ * names, and the converted transcript. A request that cannot be converted
+ * leaves only the message channel uncompared.
+ */
+function reduceCapture(capture: GuardCapture, blockImages: boolean): ExpectedRequest {
+	const tools = {
+		declarations: (capture.system?.toolsAdded ?? []).map(({ name, description }) => ({ name, description })),
+		baselineNames: getCurrentTools(capture.baseline.messages.map(({ message }) => message)).map((tool) => tool.name),
+	};
+	try {
+		return { ...tools, transcript: convertCapturedRequest(capture, { blockImages }) };
+	} catch {
+		return tools;
+	}
+}
+
+/** Compare tool declarations, and record declared names when the channel is complete (D9). */
+function compareToolChannel(
+	payload: unknown,
+	expected: ExpectedRequest,
+	model: GuardModel,
+	candidates: readonly string[],
+): ChannelResult {
+	const parsed = parsePayloadTools(model.api, payload);
+	if (parsed.status !== "parsed") return parsed;
+	const comparison = compareToolDeclarations({
+		expected: expected.declarations,
+		declarations: parsed.declarations,
+		baselineNames: expected.baselineNames,
+		ignoreNameCase: model.api === "anthropic-messages",
+		loadoutCandidates: () => candidates,
+	});
+	return { status: "compared", findings: comparison.findings, declaredTools: comparison.declaredTools };
+}
+
+/** Compare the payload's text units with those Pi would send for the captured request. */
+function compareMessageChannel(
+	payload: unknown,
+	transcript: ConvertedRequest | undefined,
+	model: GuardModel,
+): ChannelResult {
+	if (transcript === undefined) {
+		return { status: "unsupported", reason: "The captured request could not be converted for comparison." };
+	}
+	const parsed = parsePayloadMessages(model.api, payload);
+	if (parsed.status !== "parsed") return parsed;
+	let expected;
+	try {
+		expected = renderExpectedUnits(transcript, model);
+	} catch {
+		// An unexpected message shape must not hide the tool channel's result
+		return { status: "unsupported", reason: "The captured request could not be normalized for this model." };
+	}
+	const findings = compareMessageUnits(expected, parsed.units, { ignoreNameCase: model.api === "anthropic-messages" });
+	return { status: "compared", findings };
 }
 
 /** Dispatch identity without mutable model metadata. */

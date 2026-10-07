@@ -130,11 +130,13 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
     Decided: tools are compared by name and description, not schema; Anthropic names match case-insensitively for OAuth casing. Unknown provider-native Responses tools leave the tool channel incomplete. OpenAI Responses raises the warm-refresh output limit to 16, so 16 also marks a refresh.
     Verified on Pi 1.0.3: `pnpm check` (467 tests). `test/payload-runtime.test.ts` runs the real adapters of all three APIs against the mock provider, including codemode `on`/`only`, tool-search, a stdio MCP server, virtual routing, both retry levels, and idle cache warming. Mock-provider real-PTY runs in fullscreen/dark and regular/system modes, both extension orders, 24/60/80/120 columns, height changes, preview/back, both views, and reload showed the expected incomplete-guard reasons. Marker/forced-prompt/input-transform probes kept the `after_provider_response` sentinel silent, and each real prompt made one provider request.
 
-- [ ] **Payload guard: message channel** (D4):
+- [x] **Payload guard: message channel** (D4):
   - PayloadParser: extract the message channel as text units per message part: system, user, assistant, tool call, and tool result.
   - PayloadGuard: normalize the Pi adjustments listed in D4 that the selected model's capabilities, such as `input` and `compat`, determine. Compare whitespace-insensitive unit keys with an LCS alignment; report the rest as **edited after monitor** with the changed lines.
   - A compared message channel and tool channel settle the guard `complete`.
   - Test late edits before and after the monitor, every normalized adjustment, image placeholders only with model evidence, and incomplete comparison.
+    Decided: keep both views unchanged until the next item. Read `images.blockImages` through `pi.getSettings()` at the payload hook. Capture system text positions, the matched prefix length, historical tool definitions, and model input/compat flags; use Pi's `convertToLlm()` and reproduce only the adapters' text behavior. Independent channel failures keep the successful channel's findings; declared names need only the tool channel.
+    Verified on Pi 1.0.4: `pnpm check` (524 tests). The three real adapters passed the 27-case adjustment matrix, late edits in both extension orders, virtual routing to text-only models with images, and independent channel failures. Mutation checks caught removed normalizations. Marker/forced-prompt/input-transform probe tests in both orders kept the `after_provider_response` sentinel silent. No view code changed; rendering guard findings remains the next item.
 
 - [ ] **Guard results in the views** (D7, D9, D11):
   - Injections: late edits without structure or attribution, hidden declarations with their candidates, guard status. Update `doc/ui/injections.md`.

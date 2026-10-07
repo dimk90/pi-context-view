@@ -21,7 +21,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import registerExtension from "../src/index.ts";
-import { MESSAGES_NOT_COMPARED_REASON } from "../src/capture/guard.ts";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import { applyRequestSnapshot } from "../src/projection.ts";
 import { buildUsageSnapshot } from "../src/replay.ts";
@@ -63,8 +62,12 @@ interface Runtime {
 	readonly session: AgentSession;
 	readonly published: RequestSnapshot[];
 	readonly errors: string[];
-	/** Snapshots of captures after the deferred diff and guard settlement, latest copy per ID. */
-	settled(): Promise<RequestSnapshot[]>;
+	/**
+	 * Snapshots of captures after the deferred diff and guard settlement, latest
+	 * copy per ID. Real turns must compare completely without late edits, unless
+	 * `lateEdits` allows them.
+	 */
+	settled(options?: { readonly lateEdits?: boolean }): Promise<RequestSnapshot[]>;
 }
 
 suite("structured capture calibration", { concurrency: true }, () => {
@@ -87,9 +90,10 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		assert.deepEqual(snapshots.map((snapshot) => snapshot.id), [1, 2, 3, 4, 5]);
 		assert.ok(snapshots.every((snapshot) => snapshot.leafId !== null));
 		// Pending, then one guard update; or one publication when the guard settled before the diff ran
-		for (const { id } of snapshots) {
+		for (const { id, origin } of snapshots) {
 			const statuses = runtime.published.filter((snapshot) => snapshot.id === id).map((snapshot) => snapshot.guard.status);
-			assert.ok(["pending,incomplete", "incomplete"].includes(statuses.join()), `${id}: ${statuses}`);
+			const settled = origin === "synthetic-probe" ? "incomplete" : "complete";
+			assert.ok([`pending,${settled}`, settled].includes(statuses.join()), `${id}: ${statuses}`);
 		}
 	});
 
@@ -249,11 +253,13 @@ suite("structured edits", { concurrency: true }, () => {
 				const factories = structured ? [...fixtures, monitorSlot] : [monitorSlot, ...fixtures];
 				const runtime = await createRuntime(t, provider, { factories });
 				await runtime.session.prompt("prompt");
-				const [snapshot] = await runtime.settled();
+				const [snapshot] = await runtime.settled({ lateEdits: !structured });
 				if (!structured) {
 					assertEmpty(snapshot);
+					assertLateEdits(snapshot);
 					return;
 				}
+				assert.deepEqual(snapshot.guard.status === "complete" && snapshot.guard.findings, []);
 				const system = snapshot.changes.system.map(describeSystemChange);
 				assert.equal(system.length, 4);
 				assert.match(system[0], new RegExp(`^content: .*${SYSTEM_APPEND_TEXT}$`, "s"));
@@ -401,16 +407,15 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 	});
 	return {
 		session, published, errors,
-		settled: async () => {
+		settled: async ({ lateEdits = false } = {}) => {
 			await new Promise((resolve) => setImmediate(resolve));
 			const latest = new Map(published.map((snapshot) => [snapshot.id, snapshot]));
 			const snapshots = [...latest.values()].sort((a, b) => a.id - b.id);
 			for (const snapshot of snapshots) {
 				if (snapshot.origin === "synthetic-probe") assert.deepEqual(snapshot.guard, NO_PAYLOAD);
 				else {
-					assert.ok(snapshot.guard.status === "incomplete");
-					assert.equal(snapshot.guard.reason, MESSAGES_NOT_COMPARED_REASON);
-					assert.deepEqual(snapshot.guard.findings, []);
+					assert.ok(snapshot.guard.status === "complete", JSON.stringify(snapshot.guard));
+					if (!lateEdits) assert.deepEqual(snapshot.guard.findings, []);
 					assert.ok(snapshot.declaredTools);
 				}
 			}
@@ -424,6 +429,24 @@ function assertEmpty(snapshot: RequestSnapshot | undefined): void {
 	assert.ok(snapshot, "a snapshot was published");
 	assert.deepEqual(snapshot.changes, { conversation: [], system: [] });
 	assert.equal(snapshot.forcedPrompt, undefined);
+}
+
+/**
+ * Assert the payload guard reports the fixtures' `context_with_system` edits
+ * after the monitor: one modified system prompt and one modified user message,
+ * each with only its changed lines.
+ */
+function assertLateEdits(snapshot: RequestSnapshot): void {
+	assert.ok(snapshot.guard.status === "complete");
+	const [system, user, ...rest] = snapshot.guard.findings;
+	assert.deepEqual(rest, []);
+	assert.ok(system?.type === "late-edit" && user?.type === "late-edit");
+	assert.deepEqual([system.change, system.part, user.change, user.part], ["modified", "system", "modified", "user"]);
+	assert.deepEqual(user.lines, [{ type: "added", text: IN_PLACE_SUFFIX }]);
+	const added = system.lines.filter((line) => line.type === "added").map((line) => line.text);
+	assert.deepEqual(added, [SYSTEM_APPEND_TEXT, SECTION_MODIFY_TEXT, SECTION_PATCH_TEXT]);
+	const removed = system.lines.filter((line) => line.type === "removed").map((line) => line.text);
+	assert.ok(removed.length > 0 && removed[0] === `<${SECTION_DELETE_NAME}>`, removed.join("\n"));
 }
 
 /** Assert a modification or deletion references the session entry of the user message with `text`. */

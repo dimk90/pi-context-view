@@ -112,9 +112,9 @@ With no request-only changes, the structured diff must be empty, including after
 
 ### D3. Primary capture on `context_with_system`
 
-Synchronously compare `event.messages` with the baseline, then defer the diff. Non-system messages equal to the baseline at both ends are compared in place and never copied; `structuredClone` copies only the rest and the request's replayed system state. An unchanged request therefore copies no conversation message. The capture handler runs after ProbeFilter's handler, so the request never contains probe messages. This captures all `context` contributions and earlier `context_with_system` contributions while roles, `customType`, `details` and system sections remain intact. Later handlers share the same message array, content blocks and tool schemas and may mutate them in place, so retaining references is unsafe.
+Synchronously compare `event.messages` with the baseline, then defer the diff. Non-system messages equal to the baseline at both ends are compared in place and never copied; `structuredClone` copies the rest, the request's replayed system state, and each historically declared tool's latest definition. An unchanged request therefore copies no conversation message. The capture handler runs after ProbeFilter's handler, so the request never contains probe messages. This captures all `context` contributions and earlier `context_with_system` contributions while roles, `customType`, `details` and system sections remain intact. Later handlers share the same message array, content blocks and tool schemas and may mutate them in place, so retaining references is unsafe.
 
-The copy does not keep the positions of system messages or unchanged messages. The payload guard can rebuild the compared request from the baseline ends and the copied rest; if it needs system-message positions, the copy must record them.
+The copy keeps the matched prefix length and each system message's text, sections, and position among non-system messages. The payload guard rebuilds the compared request from those positions, the baseline ends, and the copied rest. Historical declarations are needed for OpenAI grammar calls even after a tool is removed; they must come from this request, not from baseline history a handler may have collapsed or replaced.
 
 Compare replayed system state rather than individual system messages: Pi's collapse after a changing `context` handler must not appear as an extension edit.
 
@@ -123,9 +123,10 @@ A forced prompt is not in this capture. Detect it by comparing `ctx.getSystemPro
 ### D4. Payload guard on `before_provider_request`
 
 Implementation is split into two plan items: pairing and tool declarations,
-then the message channel. The first part is implemented. It records tool
-findings and declared names under an `incomplete` guard until the message
-channel is available; the views consume them in a later step.
+then the message channel. Both are implemented. A compared message channel
+and tool channel settle `complete`; otherwise, the guard stays `incomplete`
+while retaining findings from any compared channel. Declared names depend only
+on the tool channel. The views consume these findings in a later step.
 
 The chosen message comparison uses text units (system, user, assistant, tool
 call, tool result), whitespace-insensitive keys, and LCS alignment, with changed
@@ -156,17 +157,21 @@ Release pending data on settlement and shutdown. Missing dispatch/model metadata
 
 Pi changes the request after the capture. None of these changes are **edited after monitor** findings. Hidden declarations and the forced prompt projection are request-only changes that Pi makes on an extension's behalf; report them through D7 and D3. Normalize the other changes without reporting them:
 
-- `convertToLlm()`: custom messages become user messages; bash executions and summaries get wrapper text; bash executions excluded from context are dropped. Image blocking replaces images with `Image reading is disabled.`
+- `convertToLlm()`: custom messages become user messages; bash executions and summaries get wrapper text; bash executions excluded from context are dropped. Image blocking replaces images with `Image reading is disabled.` Read `images.blockImages` through `pi.getSettings()` at the payload hook as evidence; unreadable settings count as off.
 - Models without image input receive `(image omitted: model does not support images)` or the tool-result variant.
 - Cross-model assistant replay can turn thinking into text, drop empty or redacted thinking, remove signatures and rewrite tool-call IDs.
 - Error and aborted assistant messages are dropped. Tool calls without results receive synthetic `No result provided` error results. A system message between a tool call and its results moves after the results. Anthropic moves each later system message to just before the next assistant message, so it can follow a user message.
 - Without `compat.supportsMidConvoSystemMessages`, system messages collapse into one leading prompt and declarations become the current tool set. With support, later system messages remain.
 - Anthropic's native mid-conversation tool changes (`compat.supportsMidConvoToolChanges` with an initial tool set): the request-level `tools` list holds only the initial tools and `__pi_deferred_placeholder__`, and never changes. Later system messages define added tools inline in `tool_addition` blocks with a `tool_definition` and withdraw removed tools in `tool_removal` blocks. A redefinition under the same name has no `tool_removal`. The extractor removes these blocks from the message channel and replays them, in order, on the initial list to get the declared tools; a later definition with the same name wins.
 - OpenAI Responses tool additions (`compat.supportsMidConvoSystemMessages` with `supportsAdditionalTools` or `supportsToolSearch`): while the tool history only adds tools, the request-level `tools` list holds the initial tools, and each later addition appears inline at its system message, as an `additional_tools` developer item or as a `tool_search_call` and `tool_search_output` pair. After a removal or a redefinition under the same name, the request-level list holds the current tool set and nothing is inline. The extractor removes these items from the message channel and adds their tools to the declared tools.
-- With an Anthropic OAuth token, tool names that match Claude Code tools change case, such as `read` to `Read`. Match such names case-insensitively, as Pi does when it maps tool calls back.
+- With an Anthropic OAuth token, tool names that match Claude Code tools change case, such as `read` to `Read`. Match such names case-insensitively, as Pi does when it maps tool calls back. Exclude only Pi's exact leading Claude Code identity block from the top-level `system` array.
 - OpenAI Completions with `supportsMidConvoSystemMessages` and `supportsMidConvoToolAdditions` can also declare later tools in a system message's `tools` list. Replay those additions in the declaration channel.
 
-Use `convertToLlm` from `@earendil-works/pi-coding-agent` and the exported `getCurrentSystemMessage`, `getCurrentSystemPrompt` and `resolveTranscript` helpers from `@earendil-works/pi-ai`. Per-model message transforms are not exported; extractors must account for them without treating uncertain differences as proven Pi adjustments.
+- OpenAI serializes empty/image-only tool results with filler text. Completions may add an attached-image user message and an assistant bridge (`requiresAssistantAfterToolResult`), or serialize thinking as text (`requiresThinkingAsText`). Responses keeps assistant text blocks as separate items. OpenAI grammar tools (`supportsOpenAIGrammarTools`) send their required string property as raw input, not JSON arguments.
+- Anthropic converts unsigned thinking to text unless `allowEmptySignature` permits it as thinking; signed and redacted thinking remains opaque. Known reasoning/image blocks are excluded, not compared by bytes. Unknown message blocks/items make the message channel incomplete.
+- Text keys ignore whitespace and unpaired UTF-16 surrogates. Empty system/user/assistant units are omitted; empty tool results still count. Text blocks merge within one message part, not across message boundaries.
+
+Use `convertToLlm` from `@earendil-works/pi-coding-agent` and exported system replay/rendering helpers from `@earendil-works/pi-ai`. Per-model message transforms are not exported; reproduce only their text behavior, without treating uncertain differences as proven Pi adjustments.
 
 #### Payload format and dispatch metadata
 
@@ -222,6 +227,31 @@ the tool channel incomplete rather than inventing declared names. Candidate
 not change attribution while a virtual response is pending. Deferred work
 reduces the capture to expected names/descriptions and baseline names, dropping
 transcript references before waiting for virtual dispatch.
+
+#### Message-channel validation on Pi 1.0.4
+
+The guard now compares message units alongside declarations. Its first deferred
+job converts the rebuilt capture and releases baseline references; a virtual
+request retains the converted transcript without image/signature bytes until
+dispatch. Only changed text lines reach the final findings.
+
+`test/payload-runtime.test.ts` exercises late payload additions, modifications,
+and deletions in both extension orders on all three real adapters. Its 27-case
+adjustment matrix covers text/vision models, image blocking, forced prompts,
+mid-conversation system support, cross-model thinking, failed/aborted replies,
+missing tool results, custom/bash/summary conversion, grammar calls, OAuth, and
+adapter-specific compatibility flags. Removing individual normalizations makes
+the corresponding tests fail. Completions inline tool-only system messages are
+also covered. `test/capture-runtime.test.ts` checks late system/user changes
+from `context_with_system` handlers loaded after the monitor.
+
+`test/message-channel.test.ts` covers whitespace/surrogate-insensitive alignment,
+changed lines, capability-gated image placeholders, and reconstruction from
+captured positions and tool declarations. Parser and guard tests cover unknown
+content blocks and independent channel failures: a compared channel keeps its
+findings when the other fails. The views remain unchanged until the next item;
+complete guards have no unavailable-comparison bullet, but findings are not yet
+rendered.
 
 ### D5. Observe only, stay off the critical path
 

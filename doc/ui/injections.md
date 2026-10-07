@@ -33,14 +33,16 @@ bullet with only `request probe` in `warning` color; the rest is dim:
 ```
 
 The bullet collapses with the rest of the description block. The payload guard
-currently compares tool declarations only. Message comparison and showing tool
-findings in the tree are separate plan items. While the overall comparison is
+compares tool declarations and message text. While the overall comparison is
 pending or incomplete, the description block carries one dim bullet with the
-reason. A request with a compared tool channel says `Late edits were not checked:
-Message edits after the monitor are not compared yet.` A standard probe still
-says `Late edits were not checked: No provider payload was observed for this
-request.` Neither means "no edits". The bullet collapses with the rest of the
-block.
+reason. A standard probe says `Late edits were not checked: No provider payload
+was observed for this request.` This does not mean "no edits". The bullet
+collapses with the rest of the block.
+
+The views stay unchanged until **Guard results in the views**: findings are
+stored but are not yet rendered or counted. A complete guard shows no late-edit
+bullet, even when it has findings; the absence of that bullet is not a claim
+that no late edits occurred.
 
 ## Contribution tree
 

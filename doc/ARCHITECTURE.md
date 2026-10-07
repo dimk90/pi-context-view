@@ -70,13 +70,13 @@ context_with_system handlers                    FILTER: known probe identities
   Full transcript, with system positions intact OBSERVE: structured snapshot
   |
   v
-convertToLlm()                                  USE: selected estimates/previews
+convertToLlm()                                  USE: estimates/previews and guard
   Convert custom, bash, and summary messages
-  to LLM-complaint format
+  to LLM-compatible format
   Drop bash executions excluded from context
   |
   v
-Settings-specific conversion                    NOT used
+Settings-specific conversion                    GUARD: read images.blockImages
   For example, replace blocked images
   with a text placeholder
   |
@@ -84,13 +84,13 @@ Settings-specific conversion                    NOT used
 Messages + effective prompt + active tools      READ: forced prompt, tool APIs
   |
   v
-Provider-specific serialization                 READ: tool declarations below
+Provider-specific serialization                 GUARD: normalize text below
   Convert messages, system prompt, and tools
   into the provider's request format
   |
   v
 before_provider_request handlers                OBSERVE: paired payload copy,
-  May replace the outgoing payload                compare tool declarations
+  May replace the outgoing payload                compare tools and messages
   |
   v
 Send to provider
@@ -154,7 +154,8 @@ as supported.
 - `convertToLlm()` supplies the text pi sends for bash and summary messages.
   It does not run extension handlers or build the final provider payload.
   **Goal:** estimate bash and summary messages using pi's formatted text, and
-  build captured bash previews without unrelated message metadata.
+  build captured bash previews without unrelated message metadata. The payload
+  guard also uses it to convert the rebuilt captured request before comparison.
 
 - `ctx.getContextUsage()` supplies pi's reported usage and context window
   separately from this extension's category estimates.
@@ -218,7 +219,8 @@ context_with_system, after ProbeFilter's handler     every request: prompts,
   Read buildSessionProjection(), filter probe messages per entry,
   keep each message's source entry ID and the leaf ID
   Compare in place: drop non-system messages equal at both ends
-  structuredClone the rest and the request's replayed system state
+  structuredClone the rest, replayed system state, and historical declarations
+  Copy system text/sections with positions; retain the matched prefix length
   Forced prompt: ctx.getSystemPrompt() differs from
   getCurrentSystemPrompt(baseline)
   Return nothing
@@ -228,7 +230,7 @@ Align the rest, diff system state, attribute, redact,
 publish with guard "pending"
   |
   v  before_provider_request, or next capture / agent_settled
-Pair the payload and compare tool declarations (below),
+Pair the payload and compare tool declarations and message text (below),
 or settle incomplete when no payload was observed
 ```
 
@@ -236,15 +238,18 @@ or settle incomplete when no payload was observed
   It compares and copies synchronously because later handlers share and may
   edit the same message objects, tool schemas included. Messages equal to the
   baseline at both ends of the conversation are compared in place and never
-  copied, so an unchanged request copies only its replayed system state. A
-  request whose differing messages cannot be cloned is not captured.
+  copied. The copy also keeps system text/sections with their positions and
+  each historically declared tool's last definition: serializers can retain
+  these instead of collapsing them. The matched prefix length locates the
+  copied middle for reconstruction. A request whose differing messages cannot
+  be cloned is not captured.
   `session_shutdown` cancels scheduled diffs.
 
 - **Coverage.** The compared request holds every `context` change and the
   `context_with_system` changes of extensions loaded before this one. Later
   `context_with_system` handlers and payload rewrites are not visible in the
-  structured diff. The payload guard currently compares their tool declarations
-  only; message comparison remains a later step.
+  structured diff. The payload guard compares their tool declarations and
+  message text, up to this extension's own payload handler.
 
 - **System state.** Both sides are replayed with Pi's
   `getCurrentSystemMessage()`, so Pi's collapse of system messages after a
@@ -274,22 +279,24 @@ or settle incomplete when no payload was observed
   changes, and the forced prompt, with the [redaction](#images-and-provider-signatures)
   below. The builder releases its request copy after building. RequestTracker
   holds the unpaired capture until a payload or settlement; the guard's first
-  deferred job reduces it to tool names and descriptions and baseline names,
-  releasing transcript references even while a virtual request waits for dispatch.
+  deferred job reduces it to tool names/descriptions, baseline names, grammar
+  input properties, and a converted transcript without image or signature bytes.
+  Baseline and capture references are released even while a virtual request
+  waits for dispatch; the converted transcript remains until comparison.
   Consumers rebuild the baseline with `buildSessionProjection(entries, leafId)`.
 
 With no request-only changes, a snapshot is empty after first and later
 prompts, tool follow-ups, resume with another model, compaction, and probes.
 
-## Payload Guard: Tool Declarations
+## Payload Guard: Tool Declarations and Messages
 
-The first payload-guard part implements D4, D7, and D9 of
+The payload guard implements D4, D7, and D9 of
 [REQUEST-ONLY-INJECTIONS.md](REQUEST-ONLY-INJECTIONS.md). It runs in every mode
-and publishes through the same SnapshotBuilder. **Message comparison is not
-implemented yet.** A successfully compared tool channel therefore settles the
-guard `incomplete`, with `Message edits after the monitor are not compared yet.`
-as its reason, plus its tool findings and `declaredTools`. It never claims that
-there were no late message edits.
+and publishes through the same SnapshotBuilder. The guard is `complete` only
+when both the tool-declaration and message channels were compared. Otherwise
+it is `incomplete`, with a fixed reason and findings from any channel that
+succeeded. A complete guard may have findings; complete does not mean no edits.
+Declared names require only a compared tool channel.
 
 - **Pairing.** RequestTracker pairs each payload with the latest unpaired local
   capture ID, not `turnIndex`. Agent retries produce new captures; provider
@@ -307,7 +314,8 @@ there were no late message edits.
   data. Copy failures use a fixed reason, never exception text containing raw
   payload content. Parsing and publication run in `setImmediate` jobs.
 - **Physical selections.** Capture copies `ctx.model`'s provider/API/model
-  identity. The guard parses with that API right after copying, without waiting
+  identity, `input`, and top-level `compat` flags. The guard parses with that
+  API and its capabilities right after copying, without waiting
   for a response. Assistant `message_start` or `provider_stream_event`, whichever
   comes first, confirms the identity; assistant `message_end` is the fallback.
   A mismatch replaces the guard with an incomplete result and drops provisional
@@ -344,8 +352,60 @@ there were no late message edits.
   work and drops all pending data. Neither payload copies nor guard findings
   are logged or persisted.
 
-The views do not yet consume tool findings or filter tools by `declaredTools`;
-that is the separate **Guard results in the views** plan item.
+### Message Channel
+
+`src/capture/payload.ts` extracts ordered text units: system, user, assistant,
+tool call, and tool result. Text blocks merge within one message part, not
+across message boundaries. Tool calls keep their name and canonical JSON
+arguments, or raw grammar input. Tool IDs, unsent metadata, images, reasoning
+blocks, and inline declaration changes are not message text. Only the exact
+leading Claude Code identity block is skipped in Anthropic's `system` array.
+Unknown message roles, item types, or content blocks leave the channel
+unsupported rather than silently disappearing. Tool-channel support is checked
+separately, so malformed declarations need not hide message findings.
+
+`src/capture/adjustments.ts` rebuilds the captured request from its baseline
+ends, copied middle, and system text positions. It applies the forced prompt
+projection and Pi's exported `convertToLlm()`, then reproduces only the text
+behavior of the supported adapters, checked on Pi 1.0.4:
+
+- Read `images.blockImages` through `pi.getSettings()` at the payload hook.
+  Only an enabled setting justifies `Image reading is disabled.` Unreadable
+  settings count as off. Without `image` in the dispatched model's `input`,
+  image runs become Pi's user/tool-result placeholders. With image input,
+  unexplained placeholder text remains a finding.
+- Collapse system messages unless `compat.supportsMidConvoSystemMessages`
+  keeps them. Render later section patches as updates. Move system messages
+  past outstanding tool results, and on Anthropic hold them until the next
+  assistant message, or the transcript end.
+- Apply cross-model thinking-to-text conversion and redacted/empty thinking
+  omission. Drop error/aborted assistant messages and synthesize
+  `No result provided` for unanswered tool calls. Tool-call ID changes do not
+  affect text keys.
+- Account for OpenAI empty/image-only result fillers, Completions' attached-image
+  user message, `requiresAssistantAfterToolResult`, and `requiresThinkingAsText`.
+  OpenAI grammar inputs require `supportsOpenAIGrammarTools` and a captured
+  grammar declaration with one required string property. Declarations come from
+  the captured request, not an approximation from baseline tool history.
+- Anthropic's unsigned thinking becomes text unless `allowEmptySignature`
+  accepts it as thinking. Signed and redacted thinking remains outside the text
+  channel. Inline tool additions/removals are handled by the declaration channel.
+
+`src/capture/messages.ts` aligns whitespace-insensitive unit keys with the same
+LCS helper as structured capture. Keys also remove unpaired UTF-16 surrogates,
+as Pi does. Empty system/user/assistant text does not count; empty tool results
+do. In each unmatched gap, units of the same part pair in order as modifications;
+unpaired units are additions or deletions. Findings retain the message part,
+change kind, and added/removed lines, without attribution or baseline entry IDs.
+Blank lines and whitespace-only differences are ignored. Anthropic tool-call
+names match case-insensitively for OAuth casing. Image and opaque signature
+changes alone are deliberately outside this text-only comparison.
+
+The views stay unchanged in this step: pending/incomplete guards still show
+their reason, while complete guards show no late-edit bullet. They do not yet
+render findings or filter tools by `declaredTools`; that is the separate
+**Guard results in the views** plan item. An absent bullet therefore does not
+prove there were no late edits.
 
 ## Injections on Snapshots
 
@@ -1005,8 +1065,10 @@ not the decoded image; token estimates still use pi's image proxy.
 
 Treat `textSignature`, `thinkingSignature`, and `thoughtSignature` as opaque
 provider metadata. Gemini can also store reasoning data in `textSignature` on
-text blocks. Inspect signature bytes only for length; never retain, tokenize,
-render, preview, or log the bytes themselves.
+text blocks. For accounting, inspect signature bytes only for length. The payload guard
+also checks absence, emptiness, and whitespace-only content to follow Pi's
+thinking-to-text rules; it retains only those states, never the bytes.
+Never tokenize, render, preview, or log the bytes themselves.
 
 Strip those fields from assistant text, thinking, and tool-call blocks,
 respectively, before serializing injected-message previews. This includes
@@ -1021,10 +1083,15 @@ remains, for the [signature-size proxy](THINKING.md#counting-architecture).
 Token estimates do not change: Pi counts images by a fixed proxy and never
 counts signatures. The short-lived request copy used for the diff is raw and
 released after building and payload pairing or settlement. It holds only the
-replayed system state and messages that differ from the baseline. Payload
-copies duplicate arrays and objects, sharing string values (including image and
-signature strings) until parsing. The tool parser retains only declared names
-and descriptions, never message content, image data, or opaque signature bytes.
+replayed system state, historical declarations, positioned system text, and
+messages that differ from the baseline. Payload copies duplicate arrays and
+objects, sharing string values (including image and signature strings) until
+parsing. The tool parser retains only declared names and descriptions. The
+message parser excludes image data and opaque signatures; findings keep only
+changed model-facing text lines. The guard's converted transcript strips image
+data and replaces signature bytes with presence/emptiness states before waiting
+for a virtual dispatch. All comparison inputs are released after comparison or
+settlement.
 
 Persisted probe records contain only role and timestamp identities, plus
 `context_edit` target entry IDs with null replacements.
@@ -1039,9 +1106,11 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.       |
 | `src/capture/register.ts`    | Capture wiring: structured capture, payload pairing, dispatch events, and cleanup.            |
 | `src/capture/tracker.ts`     | RequestTracker: number captures, pair payloads, and mark warm refreshes.                       |
-| `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline, request copy, forced prompt, model identity. |
+| `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline, positioned request copy, forced prompt, model capabilities. |
 | `src/capture/dispatch.ts`    | DispatchConfirmer: accept one identity per paired request, consuming warm stream events.       |
-| `src/capture/payload.ts`     | Copy payloads, select parsers by API, and replay tool declarations including inline changes.   |
+| `src/capture/payload.ts`     | Copy payloads, select parsers by API, extract message units and replay tool declarations.      |
+| `src/capture/adjustments.ts` | Rebuild/convert the captured request and render Pi's model-dependent text adjustments.        |
+| `src/capture/messages.ts`    | Collect message units, align whitespace-insensitive keys, and retain changed lines.           |
 | `src/capture/tools.ts`       | Compare declaration names/descriptions; loadout candidates and DeclaredTools.                  |
 | `src/capture/guard.ts`       | Defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.   |
 | `src/capture/diff.ts`        | Differ: compare system state; trim equal ends in place, align the rest with a Myers diff.     |
@@ -1095,8 +1164,12 @@ probe request isolation and message ownership, not a relaxation of those goals.
 - Per-request overhead stays as small as possible: capture runs on every
   request, even if `/context` is never opened. Compare in place, copy only what
   differs, and defer the rest.
-- Payload parsers are selected by API, never shape. Dispatch mismatches and
-  incomplete channels never report "no edits" or leave provisional declared names.
+- Payload parsers are selected by API, never shape. A complete guard needs both
+  channels compared; incomplete never means "no edits". Each compared channel
+  retains its findings independently. Declared names require a compared tool
+  channel; dispatch mismatches drop all provisional findings and names.
+- Message normalization requires evidence from Pi's API behavior, the model's
+  capabilities, or the payload-time image-blocking setting, never text alone.
 - Warm refreshes publish nothing. Standard probes have no payload or declared names.
 - On a Pi version older than `MIN_PI_VERSION`, no lifecycle handler is registered.
 - Probes make no provider request, and their messages are blanked in agent

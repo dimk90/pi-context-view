@@ -5,6 +5,7 @@
 
 ### New
 * `[injections]` Show Added, Modified, and Deleted contributions.
+* `[capture]` Compare payload message text and retain late-edit injections in request.
 
 ### Changed
 * `[usage]` Apply the latest request's added/modified/deleted messages instead of first-turn copies.

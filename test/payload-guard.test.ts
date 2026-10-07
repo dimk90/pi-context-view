@@ -3,12 +3,12 @@ import { test } from "node:test";
 
 import { SnapshotBuilder } from "../src/capture/builder.ts";
 import { DispatchConfirmer } from "../src/capture/dispatch.ts";
-import { type GuardModel, MESSAGES_NOT_COMPARED_REASON, PayloadGuard } from "../src/capture/guard.ts";
+import { type GuardModel, PayloadGuard } from "../src/capture/guard.ts";
 import { type CapturedRequest, copyRequest } from "../src/capture/request.ts";
 import { RequestTracker } from "../src/capture/tracker.ts";
-import { type CaptureOrigin, type RequestSnapshot, SnapshotStore } from "../src/snapshot.ts";
+import { type CaptureOrigin, type RequestMessage, type RequestSnapshot, SnapshotStore } from "../src/snapshot.ts";
 
-const MODEL = { provider: "mock", api: "openai-completions", id: "text" };
+const MODEL: GuardModel = { provider: "mock", api: "openai-completions", id: "text", input: ["text"] };
 const DISPATCH = { provider: MODEL.provider, api: MODEL.api, model: MODEL.id };
 const TOOL = { name: "read", description: "Read a file.", parameters: { type: "object" } };
 
@@ -39,18 +39,15 @@ function harness(request = capture()) {
 	snapshots.subscribe((snapshot) => published.push(snapshot));
 	const builder = new SnapshotBuilder(snapshots);
 	const candidates = ["codemode"];
-	const guard = new PayloadGuard({ publisher: builder, loadoutCandidates: () => candidates });
+	const guard = new PayloadGuard({ publisher: builder, loadoutCandidates: () => candidates, blockImages: () => false });
 	builder.build(request);
 	return { guard, builder, snapshots, published, candidates, request };
 }
 
-/** A settled tool channel, not a completed message comparison. */
+/** Both channels compared without findings. */
 function assertCompared(snapshot: RequestSnapshot | undefined) {
 	assert.ok(snapshot);
-	assert.equal(snapshot.guard.status, "incomplete");
-	assert.ok(snapshot.guard.status === "incomplete");
-	assert.equal(snapshot.guard.reason, MESSAGES_NOT_COMPARED_REASON);
-	assert.deepEqual(snapshot.guard.findings, []);
+	assert.deepEqual(snapshot.guard, { status: "complete", dispatch: DISPATCH, findings: [] });
 	assert.deepEqual(snapshot.declaredTools, { declared: ["read"], baseline: ["read"] });
 }
 
@@ -86,7 +83,7 @@ for (const timing of ["before", "after"]) {
 }
 
 test("virtual guard waits for dispatch and uses the catalog API, not the payload shape", async () => {
-	const h = harness(capture({ provider: "router", api: "pi-virtual", id: "auto" }));
+	const h = harness(capture({ ...MODEL, provider: "router", api: "pi-virtual", id: "auto" }));
 	h.guard.accept(h.request, payload());
 	await flush();
 	assert.equal(h.snapshots.latest()?.guard.status, "pending");
@@ -94,7 +91,7 @@ test("virtual guard waits for dispatch and uses the catalog API, not the payload
 	await flush();
 	assertCompared(h.snapshots.latest());
 
-	const other = harness(capture({ provider: "router", api: "pi-virtual", id: "auto" }));
+	const other = harness(capture({ ...MODEL, provider: "router", api: "pi-virtual", id: "auto" }));
 	other.guard.accept(other.request, payload());
 	other.guard.confirm(1, { ...DISPATCH, api: "openai-responses" }, () => ({ ...MODEL, api: "openai-responses" }));
 	await flush();
@@ -133,8 +130,58 @@ test("candidate attribution is frozen at payload time, not read when a virtual r
 	h.guard.confirm(1, DISPATCH, () => MODEL);
 	await flush();
 	const snapshot = h.snapshots.latest();
-	assert.ok(snapshot?.guard.status === "incomplete");
-	assert.deepEqual(snapshot.guard.findings, [{ type: "hidden-declaration", name: "read", candidates: ["codemode"] }]);
+	assert.ok(snapshot?.guard.status === "complete");
+	assert.deepEqual(snapshot.guard.findings, [
+		{ type: "hidden-declaration", name: "read", candidates: ["codemode"] },
+		{ type: "late-edit", change: "deleted", part: "system", lines: [{ type: "removed", text: "prompt" }] },
+	]);
+});
+
+test("late message edits complete the guard with their findings", async () => {
+	const h = harness();
+	const body = payload();
+	h.guard.accept(h.request, { ...body, messages: [...body.messages, { role: "user", content: "late" }] });
+	await flush();
+	assert.deepEqual(h.snapshots.latest()?.guard, {
+		status: "complete", dispatch: DISPATCH,
+		findings: [{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "late" }] }],
+	});
+});
+
+test("a request that cannot be converted keeps the tool channel's findings and names", async () => {
+	const request = capture();
+	// An earlier handler's malformed message reaches the copied middle of the request
+	const malformed = { ...request, ...copyRequest(request.baseline.messages, [
+		...request.baseline.messages.map(({ message }) => message),
+		{ role: "toolResult", toolCallId: "a", toolName: "read", content: "not blocks", isError: false, timestamp: 2 } as
+			unknown as RequestMessage,
+	]) };
+	const h = harness(malformed);
+	h.guard.accept(malformed, { ...payload(), tools: [] });
+	await flush();
+	const snapshot = h.snapshots.latest();
+	assert.deepEqual(snapshot?.guard, {
+		status: "incomplete", reason: "The captured request could not be converted for comparison.", dispatch: DISPATCH,
+		findings: [{ type: "hidden-declaration", name: "read", candidates: ["codemode"] }],
+	});
+	assert.deepEqual(snapshot.declaredTools, { declared: [], baseline: ["read"] });
+});
+
+test("an unsupported tool channel preserves compared message findings without declared names", async () => {
+	for (const api of ["openai-completions", "openai-responses", "anthropic-messages"]) {
+		const request = capture({ ...MODEL, api });
+		const h = harness(request);
+		const messages = [{ role: "system", content: "prompt" }, { role: "user", content: "late" }];
+		const body = api === "openai-responses" ? { input: messages } : { messages };
+		h.guard.accept(request, { ...body, tools: [{ type: "unknown" }] });
+		await flush();
+		const snapshot = h.snapshots.latest();
+		assert.ok(snapshot?.guard.status === "incomplete");
+		assert.deepEqual(snapshot.guard.findings, [
+			{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "late" }] },
+		]);
+		assert.equal(snapshot.declaredTools, undefined);
+	}
 });
 
 test("nonstandard probe payloads pair and compare just like real requests", async () => {

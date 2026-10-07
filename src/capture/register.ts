@@ -24,7 +24,11 @@ import { NO_PAYLOAD_REASON, RequestTracker } from "./tracker.ts";
 export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: SnapshotBuilder): void {
 	const tracker = new RequestTracker<CapturedRequest>();
 	const confirmer = new DispatchConfirmer<number>();
-	const guard = new PayloadGuard({ publisher: builder, loadoutCandidates: () => readLoadoutCandidates(pi) });
+	const guard = new PayloadGuard({
+		publisher: builder,
+		loadoutCandidates: () => readLoadoutCandidates(pi),
+		blockImages: () => readBlockImages(pi),
+	});
 
 	/** Settle the latest unpaired capture: no payload reached the monitor for it. */
 	function settleUnpaired(): void {
@@ -106,6 +110,18 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 		guard.clear();
 		builder.clear();
 	});
+}
+
+/**
+ * Pi's live `images.blockImages` setting: the evidence for its blocked-image
+ * text in a payload. Unreadable settings count as off, so that text is reported.
+ */
+function readBlockImages(pi: ExtensionAPI): boolean {
+	try {
+		return pi.getSettings().images?.blockImages === true;
+	} catch {
+		return false;
+	}
 }
 
 /** Active tools with `model-only` exposure; any of them may hide declarations through `prepareLoadout()` (D7). */

@@ -67,14 +67,37 @@ export interface Dispatch {
 }
 
 /**
+ * Part of a provider message that the payload guard compares as one text unit:
+ *   system        system prompt or later system message text
+ *   user          user text, including converted custom messages and summaries
+ *   assistant     assistant text
+ *   tool-call     one tool call: its name and arguments
+ *   tool-result   one tool result's text
+ */
+export type MessagePart = "system" | "user" | "assistant" | "tool-call" | "tool-result";
+
+/** One changed line of a late edit: only in the payload (`added`) or only in the captured request (`removed`). */
+export interface LateEditLine {
+	readonly type: "added" | "removed";
+	readonly text: string;
+}
+
+/**
  * A payload difference the structured capture cannot explain:
- *   late-edit            message text changed after the monitor, without structure or attribution
+ *   late-edit            message text added, changed, or removed after the monitor,
+ *                        without structure or attribution
  *   late-tool-edit       a declaration the payload adds, or describes differently, after the monitor
  *   hidden-declaration   a captured tool declaration missing from the payload, with
  *                        active `model-only` tools as candidate sources; it can also be a late removal
  */
 export type GuardFinding =
-	| { readonly type: "late-edit"; readonly text: string }
+	| {
+		readonly type: "late-edit";
+		readonly change: "added" | "modified" | "deleted";
+		readonly part: MessagePart;
+		/** Changed lines; a modification lists only the lines that differ, ignoring whitespace. */
+		readonly lines: readonly LateEditLine[];
+	}
 	| {
 		readonly type: "late-tool-edit";
 		readonly change: "added" | "modified";

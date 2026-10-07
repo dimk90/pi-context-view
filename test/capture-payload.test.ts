@@ -8,12 +8,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { SnapshotBuilder } from "../src/capture/builder.ts";
-import { MESSAGES_NOT_COMPARED_REASON } from "../src/capture/guard.ts";
 import { registerCapture } from "../src/capture/register.ts";
 import { NO_PAYLOAD_REASON } from "../src/capture/tracker.ts";
 import { type RequestSnapshot, SnapshotStore } from "../src/snapshot.ts";
 
-const MODEL = { provider: "mock", api: "openai-completions", id: "vision" };
+const MODEL = { provider: "mock", api: "openai-completions", id: "vision", input: ["text", "image"] };
 const TOOL = { name: "read", description: "Read.", parameters: { type: "object" } };
 const SYSTEM = { role: "system", content: "prompt", toolsAdded: [TOOL], timestamp: 1 } as const;
 
@@ -84,8 +83,7 @@ for (const first of ["message_start", "provider_stream_event", "message_end"] as
 		await flush();
 		const snapshot = h.snapshots.latest();
 		assert.equal(snapshot?.origin, "synthetic-probe");
-		assert.ok(snapshot?.guard.status === "incomplete");
-		assert.equal(snapshot.guard.reason, MESSAGES_NOT_COMPARED_REASON);
+		assert.ok(snapshot?.guard.status === "complete");
 		assert.deepEqual(snapshot.guard.findings, [{ type: "hidden-declaration", name: "read", candidates: ["codemode"] }]);
 		assert.deepEqual(snapshot.declaredTools, { baseline: ["read"], declared: [] });
 		const count = h.published.length;

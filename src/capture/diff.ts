@@ -23,6 +23,8 @@ export type ConversationEdit =
 
 /** Non-system messages of both sides that remain after their equal ends are removed. */
 export interface UnmatchedMessages {
+	/** Number of non-system messages both sides share at the start. */
+	readonly prefix: number;
 	readonly baseline: readonly BaselineMessage[];
 	readonly request: readonly RequestMessage[];
 }
@@ -122,6 +124,7 @@ export function trimMatchedEnds(
 	while (suffix < before.length - prefix && suffix < after.length - prefix
 		&& sameMessage(before[before.length - 1 - suffix].message, after[after.length - 1 - suffix])) suffix++;
 	return {
+		prefix,
 		baseline: before.slice(prefix, before.length - suffix),
 		request: after.slice(prefix, after.length - suffix),
 	};
@@ -290,7 +293,7 @@ function modelFacingPart(message: RequestMessage): unknown {
 }
 
 /** JSON with object keys sorted at every level, so key order never affects equality. */
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
 	return JSON.stringify(value, (_key, nested: unknown) => {
 		if (typeof nested !== "object" || nested === null || Array.isArray(nested)) return nested;
 		return Object.fromEntries(Object.entries(nested).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
@@ -372,7 +375,7 @@ function isPlainObject(value: object): boolean {
 // ============================================================================
 
 /** Indexes of one matched element in the baseline and the request. */
-interface AlignedPair {
+export interface AlignedPair {
 	readonly before: number;
 	readonly after: number;
 }
@@ -382,7 +385,7 @@ interface AlignedPair {
  * The common prefix and suffix are matched directly; Myers' O((N+M)D) search
  * aligns only the middle, which is small when few messages changed.
  */
-function alignSequences(before: readonly number[], after: readonly number[]): AlignedPair[] {
+export function alignSequences(before: readonly number[], after: readonly number[]): AlignedPair[] {
 	let prefix = 0;
 	while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++;
 	let suffix = 0;
