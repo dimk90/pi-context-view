@@ -17,6 +17,34 @@ Marks:
 - ❌ not shown
 - ➖ not visible by design
 
+## Automatic section demo
+
+Run `./scripts/demo-injections.sh --no-session` and open `/context injections`
+in a fresh session. No marker prompts are needed for these section changes:
+
+| Fixture | Changes |
+| --- | --- |
+| `section-patch` | Adds `context-view-fixture`, `context-view-fixture-checklist`, and `context-view-fixture-summary`. |
+| `section-modify` | Modifies `cwd`, `context-view-fixture-review`, and `context-view-fixture-output`. |
+| `section-delete` | Deletes `docs`, `context-view-fixture-obsolete`, and `context-view-fixture-scratch`. |
+
+The modification and deletion fixtures seed four synthetic sections through
+`before_agent_start`. Pi records those originals as the session baseline;
+`context_with_system` changes only the outgoing request. Modified section previews
+show the request text; Deleted previews keep the original at zero tokens. With normal
+Pi defaults, this gives three examples of each section change on the first
+capture, including a silent probe. The existing message additions and preamble
+modification also remain.
+
+The silent probe needs a configured model and credentials and must pass the
+usual probe safety checks. Alternatively, send an ordinary prompt first.
+`--after` puts these section edits after capture, so they are not marked in the
+structured view. `--force` replaces the sectioned system prompt entirely.
+Marker prompts below remain available for conversation deletion and reordering.
+
+The tables below are historical checks of the smaller fixtures, before this
+expansion; their recorded results have not been rewritten.
+
 ## How the results were checked
 
 The v0.6.0 results were checked with Pi 1.0.0. Unreleased was rechecked with

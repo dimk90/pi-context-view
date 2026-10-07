@@ -23,9 +23,9 @@ import { PAYLOAD_LOG_VARIABLE } from "./fixtures/payload-logger.ts";
 import { PAYLOAD_MODIFY_SUFFIX } from "./fixtures/payload-modify.ts";
 import { declaredToolName, PAYLOAD_REMOVED_TOOL } from "./fixtures/payload-remove-tool.ts";
 import { PAYLOAD_REWRITE_TEXT } from "./fixtures/payload-rewrite.ts";
-import { SECTION_DELETE_NAME } from "./fixtures/section-delete.ts";
-import { SECTION_MODIFY_TEXT } from "./fixtures/section-modify.ts";
-import { SECTION_PATCH_TEXT } from "./fixtures/section-patch.ts";
+import { SECTION_DELETE_NAME, SECTION_DELETE_SECTIONS } from "./fixtures/section-delete.ts";
+import { SECTION_MODIFY_SECTIONS, SECTION_MODIFY_TEXT } from "./fixtures/section-modify.ts";
+import { SECTION_PATCH_SECTIONS } from "./fixtures/section-patch.ts";
 import { SYSTEM_APPEND_TEXT } from "./fixtures/system-append.ts";
 
 /** A 1×1 PNG for image-input checks. */
@@ -103,7 +103,9 @@ suite("harness fixtures change the provider request", { concurrency: true }, () 
 	test("context_with_system section patch", async (t) => {
 		const { provider, client } = await startHarness(t, { extensions: [fixture("section-patch")] });
 		await client.promptAndWait("prompt");
-		assert.ok(requestText(provider.requests[0]).includes(SECTION_PATCH_TEXT));
+		for (const text of Object.values(SECTION_PATCH_SECTIONS)) {
+			assert.ok(requestText(provider.requests[0]).includes(JSON.stringify(text).slice(1, -1)));
+		}
 	});
 
 	test("in-place mutation", async (t) => {
@@ -150,14 +152,21 @@ suite("harness fixtures change the provider request", { concurrency: true }, () 
 		const { provider, client } = await startHarness(t, { extensions: [fixture("section-modify")] });
 		await client.promptAndWait("prompt");
 		// JSON escapes the newline before the closing tag
-		assert.ok(requestText(provider.requests[0]).includes(`${SECTION_MODIFY_TEXT}\\n</cwd>`));
+		const request = requestText(provider.requests[0]);
+		assert.ok(request.includes(`${SECTION_MODIFY_TEXT}\\n</cwd>`));
+		for (const { original, text } of SECTION_MODIFY_SECTIONS) {
+			assert.ok(request.includes(text));
+			assert.ok(!request.includes(original));
+		}
 	});
 
 	test("context_with_system section delete", async (t) => {
 		const { provider, client } = await startHarness(t, { extensions: [fixture("section-delete")] });
 		await client.promptAndWait("prompt");
 		const request = requestText(provider.requests[0]);
-		assert.ok(!request.includes(`<${SECTION_DELETE_NAME}>`));
+		for (const name of [SECTION_DELETE_NAME, ...Object.keys(SECTION_DELETE_SECTIONS)]) {
+			assert.ok(!request.includes(`<${name}>`));
+		}
 		assert.ok(request.includes("<cwd>"), "other sections stay");
 	});
 

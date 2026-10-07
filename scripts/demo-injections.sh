@@ -15,7 +15,13 @@
 # Discovered extensions stay disabled, so an installed copy of pi-context-view
 # does not add a second `/context` command.
 #
-# Some demo extensions act only on prompts with a marker; use one per prompt:
+# Open /context injections in a fresh session for three section additions,
+# three modifications, and three deletions without any marker prompts.
+# section-modify.ts and section-delete.ts seed synthetic baseline sections;
+# only their request copies are changed. --after hides these structured edits
+# because they run after capture; --force replaces the sectioned prompt.
+#
+# Optional conversation demos act on prompts with a marker; use one per prompt:
 #   XYZZY_CONTEXT_REORDER   swapped with the latest prompt; send another prompt after it
 #   XYZZY_CONTEXT_DELETE    removed from the request
 #   XYZZY_PAYLOAD_DELETE    removed from the provider payload

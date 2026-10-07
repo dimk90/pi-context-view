@@ -40,9 +40,9 @@ import forcedPrompt, { FORCED_SYSTEM_PROMPT } from "./fixtures/forced-prompt.ts"
 import inPlaceMutation, { IN_PLACE_SUFFIX } from "./fixtures/in-place-mutation.ts";
 import inputTransform from "./fixtures/input-transform.ts";
 import marker from "./fixtures/marker.ts";
-import sectionDelete, { SECTION_DELETE_NAME } from "./fixtures/section-delete.ts";
-import sectionModify, { SECTION_MODIFY_TEXT } from "./fixtures/section-modify.ts";
-import sectionPatch, { SECTION_PATCH_NAME, SECTION_PATCH_TEXT } from "./fixtures/section-patch.ts";
+import sectionDelete, { SECTION_DELETE_NAME, SECTION_DELETE_SECTIONS } from "./fixtures/section-delete.ts";
+import sectionModify, { SECTION_MODIFY_SECTIONS, SECTION_MODIFY_TEXT } from "./fixtures/section-modify.ts";
+import sectionPatch, { SECTION_PATCH_SECTIONS } from "./fixtures/section-patch.ts";
 import systemAppend, { SYSTEM_APPEND_TEXT } from "./fixtures/system-append.ts";
 import { type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
 
@@ -261,13 +261,53 @@ suite("structured edits", { concurrency: true }, () => {
 				}
 				assert.deepEqual(snapshot.guard.status === "complete" && snapshot.guard.findings, []);
 				const system = snapshot.changes.system.map(describeSystemChange);
-				assert.equal(system.length, 4);
+				assert.equal(system.length, 10);
 				assert.match(system[0], new RegExp(`^content: .*${SYSTEM_APPEND_TEXT}$`, "s"));
-				assert.equal(system[1], `section cwd: ${SECTION_MODIFY_TEXT}`);
-				assert.equal(system[2], `section ${SECTION_PATCH_NAME}: ${SECTION_PATCH_TEXT}`);
-				assert.equal(system[3], `section ${SECTION_DELETE_NAME}: removed`);
+				assertSectionChanges(snapshot);
 				assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`modified user: prompt\n${IN_PLACE_SUFFIX}`]);
 			});
+		});
+
+		test(`section demos run automatically in a fresh probe (fixture ${position})`, async (t) => {
+			const provider = await startProvider(t);
+			let responses = 0;
+			const sentinel: ExtensionFactory = (pi) => {
+				pi.on("after_provider_response", () => { responses++; });
+			};
+			const fixtures = [sectionPatch, sectionModify, sectionDelete];
+			const factories = structured ? [...fixtures, monitorSlot, sentinel] : [monitorSlot, ...fixtures, sentinel];
+			const runtime = await createRuntime(t, provider, { factories });
+			await runtime.session.prompt("/context injections");
+			const [probe] = await runtime.settled();
+			assert.equal(probe.origin, "synthetic-probe");
+			assert.equal(responses, 0);
+			assert.equal(provider.requests.length, 0);
+			if (structured) {
+				assertSectionChanges(probe);
+				const composition = buildInjectionsSnapshot({
+					snapshot: probe, entries: runtime.session.sessionManager.getEntries(),
+					filterMessages: (messages) => messages, options: { cwd: "/" },
+					allTools: [], systemPrompt: "", activeToolNames: [],
+				});
+				const parts = composition.groups.flatMap((group) => group.items.flatMap((item) => item.children ?? []));
+				for (const change of ["added", "modified", "deleted"]) {
+					assert.equal(parts.filter((part) => part.change === change).length, 3, change);
+				}
+				for (const [name, text] of Object.entries(SECTION_DELETE_SECTIONS)) {
+					const part = parts.find((part) => part.label === name);
+					assert.equal(part?.tokens, 0);
+					assert.ok(part?.text.includes(text.split("\n")[1]), "deleted preview retains its original");
+				}
+			} else assertEmpty(probe);
+
+			await runtime.session.prompt("ordinary prompt");
+			await runtime.session.prompt("another ordinary prompt");
+			const snapshots = await runtime.settled({ lateEdits: !structured });
+			assert.equal(snapshots.length, 3);
+			for (const snapshot of snapshots) {
+				assert.deepEqual(snapshot.changes.system, probe.changes.system, "changes do not accumulate");
+			}
+			assert.deepEqual(runtime.errors, []);
 		});
 
 		test(`a forced prompt is captured in real and probe runs (fixture ${position})`, async (t) => {
@@ -316,9 +356,10 @@ suite("Injections composition", { concurrency: true }, () => {
 			`${CONTEXT_ADD_TYPE} / message: added`,
 			"pi / Documentation: deleted",
 			"pi / Preamble: modified",
-			`pi / ${SECTION_PATCH_NAME}: added`,
+			...Object.keys(SECTION_PATCH_SECTIONS).map((name) => `pi / ${name}: added`),
+			...Object.keys(SECTION_DELETE_SECTIONS).map((name) => `pi / ${name}: deleted`),
 			"unattributed / user message: modified",
-		]);
+		].sort());
 		const modified = composition.groups.flatMap((group) => group.items).find((item) => item.change === "modified");
 		assert.deepEqual(modified?.sections?.map((part) => [part.label, part.text]), [
 			["Request", `${CONTEXT_MODIFY_PREFIX} original text`],
@@ -444,9 +485,25 @@ function assertLateEdits(snapshot: RequestSnapshot): void {
 	assert.deepEqual([system.change, system.part, user.change, user.part], ["modified", "system", "modified", "user"]);
 	assert.deepEqual(user.lines, [{ type: "added", text: IN_PLACE_SUFFIX }]);
 	const added = system.lines.filter((line) => line.type === "added").map((line) => line.text);
-	assert.deepEqual(added, [SYSTEM_APPEND_TEXT, SECTION_MODIFY_TEXT, SECTION_PATCH_TEXT]);
+	assert.deepEqual(added, [
+		SYSTEM_APPEND_TEXT, SECTION_MODIFY_TEXT,
+		...SECTION_MODIFY_SECTIONS.map(({ text }) => text),
+		...Object.values(SECTION_PATCH_SECTIONS).flatMap((text) => text.split("\n")),
+	]);
 	const removed = system.lines.filter((line) => line.type === "removed").map((line) => line.text);
 	assert.ok(removed.length > 0 && removed[0] === `<${SECTION_DELETE_NAME}>`, removed.join("\n"));
+}
+
+/** All nine section changes remain distinct, including the three deleted originals. */
+function assertSectionChanges(snapshot: RequestSnapshot): void {
+	const changes = snapshot.changes.system.filter((change) => change.type === "section");
+	assert.deepEqual(changes.map(describeSystemChange).sort(), [
+		`section cwd: ${SECTION_MODIFY_TEXT}`,
+		...SECTION_MODIFY_SECTIONS.map(({ name, text }) => `section ${name}: ${text}`),
+		...Object.entries(SECTION_PATCH_SECTIONS).map(([name, text]) =>
+			`section ${name}: ${text.split("\n").find((line) => line.includes("XYZZY"))}`),
+		...[SECTION_DELETE_NAME, ...Object.keys(SECTION_DELETE_SECTIONS)].map((name) => `section ${name}: removed`),
+	].sort());
 }
 
 /** Assert a modification or deletion references the session entry of the user message with `text`. */
