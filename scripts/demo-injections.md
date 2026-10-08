@@ -7,8 +7,34 @@ when a version changes a result.
 
 Columns per version:
 
-- **Before:** demo extensions load before pi-context-view (`./scripts/demo-injections.sh`)
-- **After:** pi-context-view loads first (`./scripts/demo-injections.sh --after`)
+- **Before:** selected demo extensions load before pi-context-view (default order).
+- **After:** pi-context-view loads first (add `--after` to the same fixture flags).
+
+## Explicit fixture selection
+
+The launcher loads only pi-context-view by default. Select related fixtures
+with group flags. Place demo flags before Pi arguments; groups load in flag
+order, with each group's fixtures in the order below. `--after` moves
+pi-context-view before all selected fixtures.
+
+| Flag              | Fixtures                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| `--context`       | `context-modify`, `context-in-place`, `context-delete`, `context-reorder`, `context-add`, `context-add-user` |
+| `--system`        | `system-append`, `section-patch`, `section-modify`, `section-delete`, `in-place-mutation`                    |
+| `--payload`       | `payload-late-edits`, `payload-delete`, `payload-remove-tool`                                                |
+| `--forced`        | `forced-prompt` (forced system prompt)                                                                       |
+| `--codemode-only` | `hidden-tools` (codemode `only` mode)                                                                        |
+
+Flags combine without enabling unselected groups. For example:
+
+```sh
+./scripts/demo-injections.sh --codemode-only --forced --no-session
+```
+
+This loads only the codemode and forced-prompt fixtures alongside pi-context-view.
+Individual fixture flags are no longer demo flags. For isolated checks, load
+any fixture directly with Pi's `-e` option. `--forced` replaces the old `--force`
+spelling; `--force` is no longer a demo flag.
 
 Marks:
 
@@ -19,8 +45,12 @@ Marks:
 
 ## Automatic section demo
 
-Run `./scripts/demo-injections.sh --no-session` and open `/context injections`
-in a fresh session. No marker prompts are needed for these section changes:
+Run the selected section fixtures and open `/context injections` in a fresh
+session. No marker prompts are needed:
+
+```sh
+./scripts/demo-injections.sh --system --no-session
+```
 
 | Fixture          | Changes                                                                                            |
 | ---------------- | -------------------------------------------------------------------------------------------------- |
@@ -33,19 +63,20 @@ The modification and deletion fixtures seed four synthetic sections through
 `context_with_system` changes only the outgoing request. Modified section previews
 show the request text; Deleted previews keep the original at zero tokens. With normal
 Pi defaults, this gives three examples of each section change on the first
-capture, including a silent probe. The existing message additions and preamble
-modification also remain.
+capture, including a silent probe. `--system` also loads `system-append` and
+`in-place-mutation`; conversation additions require `--context`.
 
 The silent probe needs a configured model and credentials and must pass the
 usual probe safety checks. Alternatively, send an ordinary prompt first.
 `--after` puts these section edits after capture, so they are not marked in the
-structured view. `--force` replaces the sectioned system prompt entirely.
-Marker prompts below remain available for conversation deletion and reordering.
+structured view. `--forced` replaces the sectioned system prompt entirely.
+Conversation deletion and reordering require `--context` plus their marker
+prompts (`XYZZY_CONTEXT_DELETE` and `XYZZY_CONTEXT_REORDER`).
 
 ## Automatic late-edit demo
 
-Run `./scripts/demo-injections.sh --no-session`, send an ordinary prompt, then
-open `/context injections`. `payload-late-edits` produces one of each marker in
+Run `./scripts/demo-injections.sh --payload --no-session`, send an ordinary
+prompt, then open `/context injections`. `payload-late-edits` produces one of each marker in
 `late edits` on the first real request:
 
 | Change   | Preview                                                              |
@@ -62,17 +93,18 @@ The separator keeps modification and deletion distinct in the payload diff.
 real prompts unchanged. It supports OpenAI Completions, OpenAI Responses, and
 Anthropic Messages.
 
-The launcher now uses this fixture instead of `payload-modify` and
-`payload-rewrite`, avoiding duplicate automatic findings. Those individual
-fixtures remain available for isolated checks. `payload-delete` still removes
-prompts containing `XYZZY_PAYLOAD_DELETE` when that optional demo is wanted.
+`--payload` leaves out the older `payload-modify` and `payload-rewrite`
+fixtures to avoid duplicate automatic findings. They remain available through
+Pi's `-e` option for isolated checks. The group also loads `payload-delete`,
+which removes prompts containing `XYZZY_PAYLOAD_DELETE`, and
+`payload-remove-tool`, which manually removes the `write` declaration.
 
 Send the prompt **before first opening Injections**: a silent probe has no
 provider payload, and Initial stays frozen. If a probe already captured Initial,
 run `/reload`, send a prompt, then reopen the view. With `--after`, these payload
 edits run after the monitor's payload hook and are not visible; the later
-`context_with_system` edits still appear as late edits. `--force` does not stop
-these message demos.
+explicitly selected `context_with_system` edits still appear as late edits.
+`--forced` does not stop these message demos.
 
 ## Optional codemode hidden-tools demo
 
@@ -80,10 +112,9 @@ these message demos.
 ./scripts/demo-injections.sh --codemode-only --no-session
 ```
 
-Place demo flags before Pi arguments. `--codemode-only` loads only
-`hidden-tools.ts` and pi-context-view; it skips every other demo fixture,
-including `forced-prompt` even when `--force` is passed. `--after` still changes
-the extension load order. The fixture registers Pi's built-in codemode with a
+`--codemode-only` selects `hidden-tools.ts` without adding other fixtures.
+Add `--forced`, `--context`, `--system`, or `--payload` to include those demos.
+`--after` changes the extension load order. The fixture registers Pi's built-in codemode with a
 process-local `mode: "only"` override and activates it alongside the currently
 selected tools. No settings file is changed. Discovered extensions remain
 disabled, so codemode is registered only once by this fixture.
@@ -94,9 +125,9 @@ callable through codemode scripts. With the default tool selection, `read`,
 `bash`, `edit`, and `write` are hidden; Usage counts only `codemode`. This works
 in both extension load orders. Tool-selection arguments can change that set.
 
-This mode demonstrates codemode hiding alone, without section, conversation,
-or payload edits. Without the flag, all the usual demo fixtures still load,
-including the manual `write`-declaration removal.
+With no other fixture flags, this mode demonstrates codemode hiding alone,
+without section, conversation, or payload edits. Manual `write`-declaration
+removal runs only when the `--payload` group is explicitly selected.
 As with late edits, send a real prompt before first opening Injections.
 
 The tables below are historical checks of earlier fixture sets; their recorded
@@ -200,9 +231,9 @@ counted, and the text that `payload-modify` and `payload-rewrite` add is not.
 
 ## Forced system prompt
 
-`--force` also loads `forced-prompt.ts`, which returns `systemPrompt` from
-`before_agent_start` on every run (`./scripts/demo-injections.sh --force`, and
-`--after --force`). Pi then sends that text instead of its structured prompt,
+`--forced` selects `forced-prompt.ts`, which returns `systemPrompt` from
+`before_agent_start` on every run (`./scripts/demo-injections.sh --forced`, and
+`--after --forced`). Pi then sends that text instead of its structured prompt,
 so `system-append`, `section-patch`, `section-modify`, and `section-delete`
 do not reach the request. Pi still sends the tool declarations of the
 recorded system state with the forced text.
