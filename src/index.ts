@@ -68,6 +68,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 					options: ctx.getSystemPromptOptions(),
 					allTools: pi.getAllTools(),
 					activeToolNames: pi.getActiveTools(),
+					promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 				}),
 				degradedReason: initial.degradedReason,
 			});

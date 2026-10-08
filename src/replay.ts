@@ -24,7 +24,7 @@ export interface NativeSnapshotInput {
 	options: BuildSystemPromptOptions;
 	allTools: readonly ToolInfo[];
 	activeToolNames: readonly string[];
-	/** Loaded extension provenance, used only to guess who appended prompt text. */
+	/** Loaded extension provenance: labels path extensions and guesses who appended prompt text. */
 	promptSources?: readonly PromptSourceSlice[];
 	/** Forced prompt of the request, measured instead of the prompt; tool changes still apply. */
 	forcedPrompt?: string;
@@ -174,6 +174,7 @@ export function captureActiveTools(
 			snippet: options.toolSnippets?.[tool.name],
 			guidelines: normalizeGuidelines(tool.promptGuidelines),
 			source: tool.sourceInfo.source,
+			sourcePath: tool.sourceInfo.path,
 		}));
 }
 
@@ -200,6 +201,7 @@ export function replayedToolSlices(
 			snippet: snippetLine?.slice(`- ${tool.name}: `.length),
 			guidelines: normalizeGuidelines(metadata?.promptGuidelines),
 			source: metadata?.sourceInfo.source ?? "unattributed",
+			sourcePath: metadata?.sourceInfo.path,
 		};
 	});
 }

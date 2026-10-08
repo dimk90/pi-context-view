@@ -9,47 +9,55 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT = fileURLToPath(new URL("../scripts/demo-injections.sh", import.meta.url));
 const MONITOR = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+const SELECTIONS = [
+	{ flag: "--context", fixtures: [
+		"context-modify", "context-in-place", "context-delete", "context-reorder", "context-add", "context-add-user",
+	] },
+	{ flag: "--system", fixtures: [
+		"system-append", "section-patch", "section-modify", "section-delete", "in-place-mutation",
+	] },
+	{ flag: "--payload", fixtures: ["payload-late-edits", "payload-delete", "payload-remove-tool"] },
+	{ flag: "--codemode-only", fixtures: ["hidden-tools"] },
+	{ flag: "--forced", fixtures: ["forced-prompt"] },
+];
 
 for (const after of [false, true]) {
-	for (const force of [false, true]) {
-		for (const hidden of [false, true]) {
-			test(`demo launcher: after=${after}, force=${force}, codemode-only=${hidden}`, async (t) => {
-				const flags = [
-					...(hidden ? ["--codemode-only"] : []),
-					...(force ? ["--force"] : []),
-					...(after ? ["--after"] : []),
-				];
-				const forwarded = ["--model", "provider/model", "--no-session", "a prompt with spaces"];
-				const args = await launcherArgs(t, [...flags, ...forwarded]);
-				assert.equal(args[0], "--no-extensions");
-				assert.deepEqual(args.slice(-forwarded.length), forwarded);
-				const extensions = args.slice(1, -forwarded.length).filter((arg) => arg !== "-e");
-				assert.equal(extensions.filter((path) => path === MONITOR).length, 1);
-				assert.equal(after ? extensions[0] : extensions.at(-1), MONITOR);
-				const fixtures = extensions.map((path) => basename(path, ".ts"));
-				if (hidden) {
-					assert.deepEqual(fixtures, after ? ["index", "hidden-tools"] : ["hidden-tools", "index"],
-						"codemode-only skips every other fixture, including --force");
-				} else {
-					assert.ok(fixtures.includes("payload-late-edits"));
-					assert.ok(fixtures.includes("payload-delete"), "keep the optional marker demo");
-					assert.ok(!fixtures.includes("payload-modify") && !fixtures.includes("payload-rewrite"),
-						"the automatic fixture replaces these editors rather than duplicating their findings");
-					assert.ok(!fixtures.includes("hidden-tools"));
-					assert.ok(fixtures.includes("payload-remove-tool"));
-					assert.equal(fixtures.includes("forced-prompt"), force);
-				}
-			});
-		}
+	for (let mask = 0; mask < 2 ** SELECTIONS.length; mask++) {
+		const selected = SELECTIONS.filter((_, index) => (mask & (1 << index)) !== 0);
+		const flags = selected.map(({ flag }) => flag);
+		test(`demo launcher: groups=${flags.join(" ") || "none"}, after=${after}`, async (t) => {
+			const forwarded = ["--model", "provider/model", "--no-session", "a prompt with spaces"];
+			const args = await launcherArgs(t, [...flags, ...(after ? ["--after"] : []), ...forwarded]);
+			const fixtures = selected.flatMap((selection) => selection.fixtures);
+			const paths = fixtures.map((fixture) => fileURLToPath(new URL(`./fixtures/${fixture}.ts`, import.meta.url)));
+			const extensions = after ? [MONITOR, ...paths] : [...paths, MONITOR];
+			assert.deepEqual(args, ["--no-extensions", ...extensions.flatMap((path) => ["-e", path]), ...forwarded]);
+		});
 	}
+
+	test(`demo launcher loads groups in flag order, after=${after}`, async (t) => {
+		const selected = [...SELECTIONS].reverse();
+		const args = await launcherArgs(t, [...(after ? ["--after"] : []), ...selected.map(({ flag }) => flag)]);
+		const extensions = args.slice(1).filter((arg) => arg !== "-e");
+		const fixtures = selected.flatMap((selection) => selection.fixtures);
+		assert.deepEqual(extensions.map((path) => basename(path, ".ts")),
+			after ? ["index", ...fixtures] : [...fixtures, "index"]);
+	});
 }
 
-test("demo launcher leaves arguments after -- untouched", async (t) => {
-	const args = await launcherArgs(t, ["--", "--codemode-only", "--after", "--force"]);
-	assert.deepEqual(args.slice(-4), ["--", "--codemode-only", "--after", "--force"]);
-	assert.ok(args.includes(MONITOR));
-	assert.ok(!args.some((arg) => arg.endsWith("/hidden-tools.ts")));
-});
+for (const forwarded of [
+	["--", "--context", "--system", "--payload", "--codemode-only", "--after", "--forced"],
+	["--model", "provider/model", "--context", "--system", "--payload", "--codemode-only", "--forced"],
+	["--force"],
+	["--context-modify"],
+	["--section-patch"],
+	["--payload-late-edits"],
+]) {
+	test(`demo launcher leaves Pi arguments untouched: ${forwarded.join(" ")}`, async (t) => {
+		const args = await launcherArgs(t, forwarded);
+		assert.deepEqual(args, ["--no-extensions", "-e", MONITOR, ...forwarded]);
+	});
+}
 
 /** Replace `pi` on PATH with an argv printer; NUL separation preserves spaces and empty arguments. */
 async function launcherArgs(t: TestContext, args: string[]): Promise<string[]> {

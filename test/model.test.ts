@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildSnapshot, groupInjections, type InjectionItem, type InjectionKind } from "../src/model.ts";
+import {
+	buildSnapshot,
+	extensionSource,
+	groupInjections,
+	type InjectionItem,
+	type InjectionKind,
+} from "../src/model.ts";
 
 /** InjectionItem fixture with sizes derived from the token count. */
 function item(
@@ -117,4 +123,23 @@ test("buildSnapshot owns injected references on sections and standalone children
 		assert.equal(owned?.[0]?.source.label, "npm:web");
 	}
 	assert.equal(snapshot.totalTokens, 3);
+});
+
+test("extensionSource labels path extensions by their shortest unique path tail", () => {
+	const fixture = { source: "cli", path: "/repo/test/fixtures/hidden-tools.ts" };
+	const folder = { source: "auto", path: "/home/tester/.pi/agent/extensions/my-ext/index.ts" };
+	const first = { source: "local", path: "/a/tools/web.ts" };
+	const second = { source: "cli", path: "/b/tools/web.ts" };
+	const roster = [fixture, folder, first, second, { source: "npm:web", path: "/pkgs/web/web.ts" }];
+
+	assert.deepEqual(extensionSource({ source: "npm:web", path: "/pkgs/web/index.ts" }, roster),
+		{ id: "tool-source:npm:web", label: "npm:web", native: false });
+	assert.deepEqual(extensionSource(fixture, roster),
+		{ id: "tool-source:cli:/repo/test/fixtures/hidden-tools.ts", label: "hidden-tools.ts", native: false });
+	assert.equal(extensionSource(folder, roster).label, "my-ext");
+	// Package paths never collide with loose files, which need just enough of their path to differ.
+	assert.equal(extensionSource(first, roster).label, "a/tools/web.ts");
+	assert.equal(extensionSource(second, roster).label, "b/tools/web.ts");
+	assert.equal(extensionSource(second).label, "web.ts");
+	assert.notEqual(extensionSource(first).id, extensionSource({ ...second, source: "local" }).id);
 });

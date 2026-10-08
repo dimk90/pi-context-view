@@ -20,6 +20,7 @@
 * `[usage]` Count request replacements once and exclude removals ([#6](https://github.com/dimk90/pi-context-view/issues/6)).
 * `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).
 * `[probe]` Preserve system-message positions when filtering and persist probe context omissions.
+* `[views]` Group and label path-loaded extensions by file, not as one `cli` or `local` source.
 
 
 ## `[v0.6.0]` - 20.09.2026

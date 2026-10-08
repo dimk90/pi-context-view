@@ -119,10 +119,13 @@ interface PromptAdditionOwner {
 	readonly tool?: string;
 }
 
-/** Several tools/commands from one package are one candidate, not an ambiguous match. */
+/**
+ * Several tools/commands from one package are one candidate, not an ambiguous
+ * match; two path extensions are two candidates.
+ */
 function guessOwner(text: string, sources: readonly PromptSourceSlice[]): PromptAdditionOwner {
 	const normalized = text.replaceAll("\\", "/");
-	const matches = new Set<string>();
+	const matches = new Map<string, InjectionSource>();
 	for (const source of sources) {
 		if (source.source === "builtin" || source.source === "sdk") continue;
 		const packageName = source.source.match(/^npm:((?:@[^/]+\/)?[^@]+)(?:@.*)?$/)?.[1];
@@ -130,11 +133,14 @@ function guessOwner(text: string, sources: readonly PromptSourceSlice[]): Prompt
 			containsPath(normalized, source.path) || containsPath(normalized, source.baseDir) ||
 			(packageName !== undefined && containsPackage(normalized, packageName)) ||
 			(/^(npm:|git:|https?:\/\/|ssh:\/\/)/.test(source.source) && containsPackage(normalized, source.source))
-		) matches.add(source.source);
+		) {
+			const owner = extensionSource(source, sources);
+			matches.set(owner.id, owner);
+		}
 	}
-	const [match] = matches;
+	const [match] = matches.values();
 	if (matches.size !== 1 || match === undefined) return { source: AGGREGATE_SOURCE };
-	return { source: extensionSource(match), tool: guessTool(normalized, sources, match) };
+	return { source: match, tool: guessTool(normalized, sources, match.id) };
 }
 
 /**
@@ -146,11 +152,11 @@ function guessOwner(text: string, sources: readonly PromptSourceSlice[]): Prompt
 function guessTool(
 	text: string,
 	sources: readonly PromptSourceSlice[],
-	owner: string,
+	ownerId: string,
 ): string | undefined {
 	const matches = new Set<string>();
 	for (const source of sources) {
-		if (source.source !== owner) continue;
+		if (extensionSource(source).id !== ownerId) continue;
 		for (const name of source.names ?? []) {
 			if (name.length >= MIN_NAME_LENGTH && containsName(text, name)) matches.add(name);
 		}

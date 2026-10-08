@@ -30,9 +30,52 @@ export const LATE_EDITS_SOURCE: InjectionSource = {
 	native: false,
 };
 
-/** Injection source for one non-builtin provenance string, e.g. `npm:pi-web-providers`. */
-export function extensionSource(source: string): InjectionSource {
-	return { id: `tool-source:${source}`, label: source, native: false };
+/** Pi source kinds whose extensions are loose files, identified only by their path. */
+const PATH_SOURCE_KINDS: ReadonlySet<string> = new Set(["auto", "local", "cli"]);
+
+/** Provenance Pi reports for an extension's tool or command: its source kind and entry path. */
+export interface ExtensionProvenance {
+	/** Source kind, e.g. `npm:pi-web-providers`, `cli`, or `local`. */
+	readonly source: string;
+	readonly path?: string;
+}
+
+/**
+ * Injection source for one non-builtin extension. A package source such as
+ * `npm:pi-web-providers` names itself. Every path extension (`auto`, `local`,
+ * `cli`) gets its own source, labelled like Pi's startup list: the shortest
+ * path tail no other path extension in `roster` ends with, without a trailing
+ * `index.ts` or `index.js`.
+ */
+export function extensionSource(
+	provenance: ExtensionProvenance,
+	roster: readonly ExtensionProvenance[] = [],
+): InjectionSource {
+	const { source, path } = provenance;
+	if (!PATH_SOURCE_KINDS.has(source) || path === undefined) {
+		return { id: `tool-source:${source}`, label: source, native: false };
+	}
+	const others = roster
+		.filter((entry) => PATH_SOURCE_KINDS.has(entry.source) && entry.path !== undefined && entry.path !== path)
+		.map((entry) => pathSegments(entry.path ?? ""));
+	return { id: `tool-source:${source}:${path}`, label: compactPathLabel(pathSegments(path), others), native: false };
+}
+
+/** Shortest tail of `segments` that no other path ends with; the whole path when none is unique. */
+function compactPathLabel(segments: readonly string[], others: readonly string[][]): string {
+	for (let count = 1; count <= segments.length; count++) {
+		const tail = segments.slice(-count).join("/");
+		if (others.every((other) => other.slice(-count).join("/") !== tail)) return tail;
+	}
+	return segments.join("/");
+}
+
+/** Path segments, without a trailing `index.ts` or `index.js` that names no extension. */
+function pathSegments(path: string): string[] {
+	const segments = path.replaceAll("\\", "/").split("/").filter((segment) => segment.length > 0);
+	const last = segments.at(-1);
+	if (segments.length > 1 && (last === "index.ts" || last === "index.js")) segments.pop();
+	return segments;
 }
 
 /** Source of a custom-role message: its customType, since the actual injector is unknowable. */

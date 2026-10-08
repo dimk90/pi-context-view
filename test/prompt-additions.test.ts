@@ -168,6 +168,17 @@ test("splitPromptAdditions keeps separators and trailing whitespace inside runs"
 	);
 });
 
+test("splitPromptAdditions tells path extensions apart and labels them by path", () => {
+	const marker: PromptSourceSlice = { source: "cli", path: "/repo/fixtures/marker.ts", names: ["mark"] };
+	const other: PromptSourceSlice = { source: "cli", path: "/repo/fixtures/other.ts", names: ["other"] };
+
+	assert.deepEqual(owners("\n\nCall mark; see /repo/fixtures/marker.ts first.", [marker, other]),
+		[["\n\nCall mark; see /repo/fixtures/marker.ts first.", "marker.ts", "mark"]]);
+	// Both match, and sharing the `cli` kind no longer makes them one candidate.
+	assert.deepEqual(split("\n\nSee /repo/fixtures/marker.ts and /repo/fixtures/other.ts first.", [marker, other]),
+		[["\n\nSee /repo/fixtures/marker.ts and /repo/fixtures/other.ts first.", "unattributed", undefined]]);
+});
+
 test("collectPromptSources rosters the names of extension tools and commands", () => {
 	const tool = (name: string, source: string): ToolInfo => ({
 		name,

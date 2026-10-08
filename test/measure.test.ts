@@ -178,6 +178,21 @@ test("analyzeSystemPrompt breaks tool items into reconciling prompt and definiti
 	assert.doesNotMatch(base?.text ?? "", /Cite sources|search: Search the web/);
 });
 
+test("analyzeSystemPrompt gives each path extension its own source, labelled by path", () => {
+	const systemPrompt = buildSystemPrompt({ cwd: CWD, selectedTools: ["codemode", "mark"] });
+	const tool = (name: string, sourcePath: string): ToolSlice =>
+		({ name, description: name, parametersJson: "{}", guidelines: [], source: "cli", sourcePath });
+	const tools = [tool("codemode", "/repo/fixtures/hidden-tools.ts"), tool("mark", "/repo/fixtures/marker/index.ts")];
+	const sources = tools.map((entry) => ({ source: entry.source, path: entry.sourcePath ?? "" }));
+
+	const groups = buildSnapshot(analyzeSystemPrompt(systemPrompt, {}, tools, { sources }), "real-turn", new Date())
+		.groups.filter((group) => !group.source.native);
+	assert.deepEqual(groups.map((group) => [group.source.label, group.items.map((item) => item.label)]).sort(), [
+		["hidden-tools.ts", ["codemode"]],
+		["marker", ["mark"]],
+	]);
+});
+
 test("analyzeSystemPrompt breaks the System Prompt into the parts pi assembles it from", () => {
 	const append = "APPENDED RULE";
 	const systemPrompt = buildSystemPrompt({
@@ -237,7 +252,7 @@ test("analyzeSystemPrompt gives guessed prompt additions to their extension and 
 
 	const items = analyzeSystemPrompt(systemPrompt, {}, [], { sources });
 
-	const attributed = findItem(items, "prompt-addition:npm:pi-web");
+	const attributed = findItem(items, "prompt-addition:tool-source:npm:pi-web");
 	const unattributed = findItem(items, "prompt-addition:unattributed");
 	assert.equal(attributed?.text, "\n\nRead npm:pi-web docs before searching.");
 	assert.equal(attributed?.source.id, "tool-source:npm:pi-web");

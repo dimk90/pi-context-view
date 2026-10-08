@@ -57,7 +57,7 @@ export interface InjectionsInput {
 	/** Live prompt options; only `customPrompt` is used, to mark dropped blocks. */
 	readonly options: BuildSystemPromptOptions;
 	readonly allTools: readonly ToolInfo[];
-	/** Loaded extension provenance, used only to guess who appended prompt text. */
+	/** Loaded extension provenance: labels path extensions and guesses who appended prompt text. */
 	readonly promptSources?: readonly PromptSourceSlice[];
 	/** Live prompt and active tools, used only when the branch recorded no system state. */
 	readonly systemPrompt: string;

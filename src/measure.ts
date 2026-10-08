@@ -11,6 +11,7 @@
 import {
 	AGGREGATE_SOURCE,
 	BUILT_IN_TOOLS_LABEL,
+	type ExtensionProvenance,
 	extensionSource,
 	type InjectedReference,
 	INSTRUCTION_FILES_LABEL,
@@ -86,6 +87,8 @@ export interface ToolSlice {
 	guidelines: string[];
 	/** Provenance, e.g. "builtin" or "npm:pi-web-providers". */
 	source: string;
+	/** Entry path of the owning extension; tells path extensions (`cli`, `local`) apart. */
+	sourcePath?: string;
 	/** Request-only change of the declaration; a deleted or hidden tool keeps only its uncounted definition. */
 	change?: RequestChange;
 }
@@ -128,7 +131,9 @@ export function analyzeSystemPrompt(
 		names.add(section.name);
 		return true;
 	});
-	if (sections.length === 0 && changes.replayed === undefined) return analyzeForcedPrompt(systemPrompt, tools);
+	if (sections.length === 0 && changes.replayed === undefined) {
+		return analyzeForcedPrompt(systemPrompt, tools, additions.sources ?? []);
+	}
 	return analyzePromptSections(systemPrompt, sections, options, tools, additions, changes);
 }
 
@@ -164,9 +169,13 @@ function locateReplayedSections(state: NonNullable<PromptChanges["replayed"]>): 
  * one undivided System Prompt part: no text in it is evidence of a block or an
  * addition, and tools keep only their definitions.
  */
-function analyzeForcedPrompt(prompt: string, tools: ToolSlice[]): InjectionItem[] {
+function analyzeForcedPrompt(
+	prompt: string,
+	tools: ToolSlice[],
+	roster: readonly ExtensionProvenance[],
+): InjectionItem[] {
 	const items: InjectionItem[] = [];
-	measureTools(prompt, tools, items, [], [], []);
+	measureTools(prompt, tools, items, [], [], [], roster);
 	items.unshift(createSystemPromptItem([{ ...PREAMBLE_BLOCK, kind: "base-prompt", text: prompt }]));
 	return items;
 }
@@ -189,7 +198,7 @@ function analyzePromptSections(
 		.filter((block) => !sections.some((section) => SECTION_PARTS[section.name]?.id === block.id)
 			&& !changes.deleted?.some((section) => SECTION_PARTS[section.name]?.id === block.id))
 		.map((block) => block.id) : [];
-	const lines = measureTools(prompt, tools, items, spans, droppedIds, blocks);
+	const lines = measureTools(prompt, tools, items, spans, droppedIds, blocks, additions.sources ?? []);
 	const preambleEnd = sections[0]?.start ?? prompt.length;
 	appendPromptPart(parts, { ...PREAMBLE_BLOCK, change: changes.sections?.get("preamble") },
 		prompt.slice(0, preambleEnd).trimEnd());
@@ -347,7 +356,7 @@ function measurePromptAdditions(
 function additionItemId(source: InjectionSource): string {
 	return source.id === AGGREGATE_SOURCE.id
 		? "prompt-addition:unattributed"
-		: `prompt-addition:${source.label}`;
+		: `prompt-addition:${source.id}`;
 }
 
 /** Same chars/4 heuristic pi's estimateTokens uses for text content. */
@@ -373,7 +382,8 @@ interface ToolPromptLines {
  * prompt snippet/guideline lines carved out of the base prompt. Built-in
  * tools collapse into one aggregate pi-native item. Lines a `--system-prompt`
  * replacement suppressed belong to the parts named by `droppedPartIds`; each
- * tool keeps those as dropped, uncounted sections instead.
+ * tool keeps those as dropped, uncounted sections instead. `roster` holds every
+ * extension's provenance, so path extensions get distinct labels.
  */
 function measureTools(
 	base: string,
@@ -382,6 +392,7 @@ function measureTools(
 	carvedSpans: Span[],
 	droppedPartIds: readonly string[],
 	blocks: readonly LocatedPromptBlock[],
+	roster: readonly ExtensionProvenance[],
 ): ToolPromptLines {
 	const carver = createPromptCarver(base, carvedSpans, blocks);
 	const claimedGuidelines = new Set(piOwnedGuidelines(tools.filter((tool) => !isUnsent(tool.change))));
@@ -389,7 +400,7 @@ function measureTools(
 	const builtinChildren: InjectionItem[] = [];
 	for (const tool of tools) {
 		if (isUnsent(tool.change)) {
-			const unsent = createUnsentToolItem(tool, tool.change);
+			const unsent = createUnsentToolItem(tool, tool.change, toolSource(tool, roster));
 			if (tool.source === "builtin") builtinChildren.push(unsent);
 			else items.push(unsent);
 			continue;
@@ -410,7 +421,7 @@ function measureTools(
 		}
 		const owner: InjectedOwner = {
 			itemId: `tool:${tool.source}:${tool.name}`,
-			source: extensionSource(tool.source),
+			source: toolSource(tool, roster),
 			tool: tool.name,
 		};
 		collectDroppedReferences(dropped, droppedLines, owner);
@@ -435,11 +446,16 @@ function measureTools(
  * A tool the request deleted or hid: its session definition only, for the
  * preview, at 0 tokens. Its prompt lines stay with whatever text still holds them.
  */
-function createUnsentToolItem(tool: ToolSlice, change: "deleted" | "hidden"): InjectionItem {
-	const source = tool.source === "builtin" ? PI_SOURCE : extensionSource(tool.source);
+function createUnsentToolItem(tool: ToolSlice, change: "deleted" | "hidden", source: InjectionSource): InjectionItem {
 	const id = tool.source === "builtin" ? `tool:builtin:${tool.name}` : `tool:${tool.source}:${tool.name}`;
 	const definition: SectionDraft = { ...createDefinitionSection(tool), change };
 	return { ...createToolItem(id, source, tool.name, [definition]), change };
+}
+
+/** Owner of a tool: pi for a built-in, otherwise its extension labelled against the roster. */
+function toolSource(tool: ToolSlice, roster: readonly ExtensionProvenance[]): InjectionSource {
+	if (tool.source === "builtin") return PI_SOURCE;
+	return extensionSource({ source: tool.source, path: tool.sourcePath }, roster);
 }
 
 /** Whether a change kept the contribution out of the request: deleted, or a tool hidden from the model. */

@@ -972,7 +972,11 @@ prompt that contains sections is measured like any other sectioned prompt.
 
 ### Tool Ownership and Preview References
 
-Use `ToolInfo.sourceInfo` for tool ownership.
+Use `ToolInfo.sourceInfo` for tool ownership. A package source (`npm:`, `git:`)
+identifies its extension. The path kinds `cli`, `local`, and `auto` do not, so
+tools and prompt additions from such an extension are owned by its kind and
+entry path, and labelled by path against every extension that registered a
+tool or command.
 
 Separate a tool's complete prompt bullets only from the first `tools` and
 `rules` sections, including moved ones. Never match unrelated text or only a prefix

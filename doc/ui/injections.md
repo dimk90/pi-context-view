@@ -82,7 +82,10 @@ Present Initial contributions in this order:
     paths with `~`
   - Skills (K), with one content-only child per skill
   - Built-in Tools (N), with one child per active built-in tool
-- each extension/tool source
+- each extension/tool source, labelled by its package (`npm:pi-web`). An
+  extension loaded from a path (`-e`, settings, or auto-discovery) is its own
+  source, labelled like Pi's startup list: the shortest path tail no other such
+  extension shares, without `/index.ts` (`hidden-tools.ts`, `my-ext`)
   - one child per active tool
   - `system prompt additions` when unwrapped text around pi's sections was
     attributed to that source
