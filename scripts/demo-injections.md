@@ -23,7 +23,7 @@ pi-context-view before all selected fixtures.
 | `--system`        | `system-append`, `section-patch`, `section-modify`, `section-delete`, `in-place-mutation`                    |
 | `--payload`       | `payload-late-edits`, `payload-delete`, `payload-remove-tool`                                                |
 | `--forced`        | `forced-prompt` (forced system prompt)                                                                       |
-| `--codemode-only` | `hidden-tools` (codemode `only` mode)                                                                        |
+| `--codemode-only` | none; Pi's built-in codemode in `only` mode                                                                  |
 
 Flags combine without enabling unselected groups. For example:
 
@@ -31,7 +31,7 @@ Flags combine without enabling unselected groups. For example:
 ./scripts/demo-injections.sh --codemode-only --forced --no-session
 ```
 
-This loads only the codemode and forced-prompt fixtures alongside pi-context-view.
+This loads only built-in codemode and the forced-prompt fixture alongside pi-context-view.
 Individual fixture flags are no longer demo flags. For isolated checks, load
 any fixture directly with Pi's `-e` option. `--forced` replaces the old `--force`
 spelling; `--force` is no longer a demo flag.
@@ -112,12 +112,21 @@ explicitly selected `context_with_system` edits still appear as late edits.
 ./scripts/demo-injections.sh --codemode-only --no-session
 ```
 
-`--codemode-only` selects `hidden-tools.ts` without adding other fixtures.
-Add `--forced`, `--context`, `--system`, or `--payload` to include those demos.
-`--after` changes the extension load order. The fixture registers Pi's built-in codemode with a
-process-local `mode: "only"` override and activates it alongside the currently
-selected tools. No settings file is changed. Discovered extensions remain
-disabled, so codemode is registered only once by this fixture.
+`--codemode-only` loads Pi's built-in codemode with `-e builtin:codemode`,
+without adding fixtures. Add `--forced`, `--context`, `--system`, or
+`--payload` to include those demos. Pi loads explicit `builtin:` entries after
+other `-e` paths, so `--after` moves only pi-context-view and the fixtures.
+
+Pi reads codemode settings only from settings files, so the launcher runs pi
+with `PI_CODING_AGENT_DIR` set to a temporary directory. It links every entry of
+the real agent directory (auth, models, sessions, themes) except
+`settings.json`, which is a copy of your settings with `codemode.mode` set to
+`"only"` and `+codemode` added to `defaultTools`. Your settings file is not
+changed, and settings changed during the run are lost. The directory is removed
+when pi exits.
+
+As in a real session, `codemode` has the `builtin` source and is listed under
+Built-in Tools.
 
 After an ordinary prompt, Injections marks the other active tools `Hidden` at
 0 tokens, with `codemode` as their `model-only` candidate. Those tools remain
