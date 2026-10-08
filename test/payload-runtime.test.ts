@@ -1,6 +1,6 @@
 /** Payload pairing, tool declarations, and message text on Pi's real adapters, with loopback-only endpoints. */
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { type AssistantMessage, type ImageContent, type Message, type TextContent, Type } from "@earendil-works/pi-ai";
 import {
 	type AgentSession, createAgentSession, createCodemodeExtension, createMcpExtension, createToolSearchExtension,
-	DefaultResourceLoader, type ExtensionContext, type ExtensionFactory, ModelRuntime, SessionManager,
+	DefaultResourceLoader, type ExtensionContext, type ExtensionFactory, type ExtensionUIContext, ModelRuntime, SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
@@ -17,6 +17,12 @@ import registerExtension from "../src/index.ts";
 import { type GuardFinding, type RequestSnapshot, SnapshotStore } from "../src/snapshot.ts";
 import cacheWarm from "./fixtures/cache-warm.ts";
 import forcedPrompt from "./fixtures/forced-prompt.ts";
+import hiddenTools from "./fixtures/hidden-tools.ts";
+import inputTransform from "./fixtures/input-transform.ts";
+import marker from "./fixtures/marker.ts";
+import payloadLateEdits, {
+	PAYLOAD_LATE_ADDED, PAYLOAD_LATE_DELETED, PAYLOAD_LATE_MODIFIED, PAYLOAD_LATE_ORIGINAL,
+} from "./fixtures/payload-late-edits.ts";
 import { type MockApi, type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
 
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
@@ -122,6 +128,63 @@ for (const mode of ["on", "only"] as const) {
 		});
 	}
 }
+
+for (const order of ["before", "after"] as const) {
+	test(`demo fixtures ${order} the monitor keep probes provider-free`, async (t) => {
+		let responses = 0;
+		const sentinel: ExtensionFactory = (pi) => {
+			pi.on("after_provider_response", () => { responses++; });
+		};
+		const runtime = await createRuntime(t, {
+			[order]: [payloadLateEdits, hiddenTools, marker, forcedPrompt, inputTransform, sentinel],
+		});
+		await runtime.session.bindExtensions({
+			mode: "tui",
+			uiContext: { setWorkingVisible: () => undefined, custom: async () => undefined } as unknown as ExtensionUIContext,
+		});
+		await runtime.session.prompt("/context injections");
+		await runtime.session.prompt("/context injections");
+		const [snapshot] = await runtime.snapshots();
+		assert.equal(snapshot.origin, "synthetic-probe");
+		assert.equal(snapshot.guard.status, "incomplete");
+		assert.deepEqual(snapshot.guard.findings ?? [], []);
+		assert.equal(snapshot.declaredTools, undefined);
+		assert.equal(responses, 0, "after_provider_response sentinel stays silent");
+		assert.equal(runtime.provider.requests.length, 0);
+		const assistant = runtime.session.sessionManager.getBranch().findLast((entry) =>
+			entry.type === "message" && entry.message.role === "assistant");
+		assert.ok(assistant?.type === "message" && assistant.message.role === "assistant");
+		assert.equal(assistant.message.stopReason, "stop", "the probe abort was sanitized");
+	});
+}
+
+test("hidden-tools demo keeps nested calls available and subject to permission gates", async (t) => {
+	const directory = await temporaryDirectory(t);
+	const path = join(directory, "note.txt");
+	await writeFile(path, "XYZZY_HIDDEN_TOOL_READ");
+	let blocked = false;
+	let calls = 0;
+	const gate: ExtensionFactory = (pi) => {
+		pi.on("tool_call", (event) => {
+			if (event.toolName !== "read") return;
+			calls++;
+			if (blocked) return { block: true, reason: "XYZZY_HIDDEN_TOOL_BLOCKED" };
+		});
+	};
+	const runtime = await createRuntime(t, { before: [hiddenTools, gate] });
+	const code = `return await tools.read({ path: ${JSON.stringify(path)} });`;
+	for (const block of [false, true]) {
+		blocked = block;
+		runtime.provider.enqueue({ type: "tool-call", name: "codemode", arguments: { code } });
+		await runtime.session.prompt("Read the demo note through codemode.");
+		const sent = JSON.stringify(runtime.provider.requests.at(-1)?.body);
+		assert.ok(sent.includes(block ? "XYZZY_HIDDEN_TOOL_BLOCKED" : "XYZZY_HIDDEN_TOOL_READ"));
+		assert.deepEqual(runtime.store.latest()?.declaredTools?.declared, ["codemode"]);
+	}
+	assert.equal(calls, 2);
+	assert.equal(runtime.provider.requests.length, 4, "each codemode call has one follow-up");
+	for (const snapshot of await runtime.snapshots()) findings(snapshot);
+});
 
 test("MCP direct tools are recorded declarations, not late edits", async (t) => {
 	const directory = await temporaryDirectory(t);
@@ -267,6 +330,43 @@ for (const api of ["openai-completions", "openai-responses"] as const) {
 
 for (const api of APIS) {
 	for (const order of ["before", "after"] as const) {
+		test(`${api}: automatic late-edit demo ${order} the monitor needs no marker prompt`, async (t) => {
+			const runtime = await createRuntime(t, { api, [order]: [payloadLateEdits] });
+			for (const prompt of ["ordinary prompt", "another prompt"]) {
+				await runtime.session.prompt(prompt);
+				const snapshot = (await runtime.snapshots()).at(-1);
+				assert.deepEqual(findings(snapshot), order === "after" ? [] : [
+					{ type: "late-edit", change: "modified", part: "user", lines: [
+						{ type: "removed", text: PAYLOAD_LATE_ORIGINAL },
+						{ type: "added", text: PAYLOAD_LATE_MODIFIED },
+					] },
+					{ type: "late-edit", change: "deleted", part: "user", lines: [{ type: "removed", text: PAYLOAD_LATE_DELETED }] },
+					{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: PAYLOAD_LATE_ADDED }] },
+				]);
+				const sent = JSON.stringify(runtime.provider.requests.at(-1)?.body);
+				assert.ok(sent.includes(PAYLOAD_LATE_ADDED) && sent.includes(PAYLOAD_LATE_MODIFIED));
+				assert.ok(!sent.includes(PAYLOAD_LATE_DELETED) && !sent.includes(PAYLOAD_LATE_ORIGINAL));
+				assert.ok(sent.includes(prompt), "real prompts are preserved");
+				assert.ok(!JSON.stringify(runtime.session.sessionManager.getBranch()).includes("XYZZY_PAYLOAD_LATE"),
+					"synthetic notes and payload edits never enter session history");
+			}
+			assert.equal(runtime.provider.requests.length, 2);
+		});
+
+		test(`${api}: hidden-tools demo ${order} the monitor overrides mode without changing settings`, async (t) => {
+			const runtime = await createRuntime(t, {
+				api, [order]: [hiddenTools], settings: { codemode: { mode: "on" } },
+			});
+			await runtime.session.prompt("ordinary prompt");
+			const [snapshot] = await runtime.snapshots();
+			assert.deepEqual(findings(snapshot), ["read", "write"].map((name) => ({
+				type: "hidden-declaration", name, candidates: ["codemode"],
+			})));
+			assert.deepEqual(snapshot.declaredTools?.declared, ["codemode"]);
+			assert.deepEqual(runtime.session.getActiveToolNames().sort(), ["codemode", "read", "write"]);
+			assert.equal(runtime.session.settingsManager.getSettings().codemode?.mode, "on");
+		});
+
 		test(`${api}: payload message edits ${order} the monitor are late edits only before it`, async (t) => {
 			const runtime = await createRuntime(t, { api, [order]: [payloadMessageEditor(api)] });
 			await runtime.session.prompt("first prompt");

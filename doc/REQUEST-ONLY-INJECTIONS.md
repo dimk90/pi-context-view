@@ -417,7 +417,7 @@ Counts the replayed projection and applies the selected snapshot's conversation 
 - **Source.** Take `declaredTools` from the latest snapshot of either origin that records them. A standard Pi 1.0 probe has no payload and records none (D10), so it does not replace the names of an earlier request.
 - **Filter.** Count a replayed tool only if the snapshot declares its name. Other replayed tools drop out of Usage: they are neither listed nor counted. Declared names missing from the replay are not Usage tools; D3 and D4 report them.
 - **Definitions.** Count the replayed name, description and schema, not the payload text. Usage stays a provider-independent estimate.
-- **Freshness.** Use the names only while the current replayed tool names equal the snapshot's baseline names. An active-tool change, branch navigation or resume that changes the set makes them unusable until a newer snapshot.
+- **Freshness.** Use the names only while the current replayed tool names and the live active tool names equal the snapshot's baseline names. Pi records an active-tool change only when the next request starts, so the live names catch it at once; branch navigation or resume changes the replayed set. Either makes the names unusable until a newer snapshot.
 - **Fallback.** Without usable names, count every replayed tool without a marker, as Usage does today. This covers the time before the first snapshot, a changed tool set, and an incomplete tool-declaration channel.
 
 ## Components

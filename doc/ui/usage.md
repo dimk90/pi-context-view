@@ -186,7 +186,8 @@ the model. A tool that stays active but was hidden from the request, such as
 the tools codemode's `only` mode hides, is neither listed nor counted, and
 Usage marks nothing. Every replayed tool counts while no declared names are
 usable: before a request whose payload declarations were compared, after the
-active tools changed, and when that comparison was incomplete.
+active tools changed, even before the next request records the change, and
+when that comparison was incomplete.
 [ARCHITECTURE.md](../ARCHITECTURE.md#usage-and-attribution) defines the rules.
 
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than

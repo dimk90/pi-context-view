@@ -145,7 +145,8 @@ as supported.
 - `pi.getActiveTools()` and `pi.getAllTools()` supply the active tool names,
   definitions, and source information. `pi.getCommands()` supplies additional
   extension source information for prompt attribution.
-  **Goal:** provide the views' live fallback.
+  **Goal:** provide the views' live fallback, and keep Usage's declared tool
+  names from outliving an active-tool change that Pi has not recorded yet.
   For transcript-backed views, recorded declarations supply definitions and the
   active set; current registration metadata supplies provenance and guideline
   attribution only. Unregistered recorded tools stay visible as unattributed.
@@ -509,7 +510,7 @@ Live prompt/tool fallback   Latest snapshot,          Current session branch
          |                  Conversation changes by entry; drop stale ones
          |                  System changes and forced prompt
          |                  only while still fresh; declared names
-         |                  only while the replayed tool names match
+         |                  only while replayed and active names match
          |                                     |
          +-------------------------------------+
                                  |
@@ -593,10 +594,12 @@ turn supplies the changes. `src/projection.ts` applies them when the view opens:
   from the latest retained snapshot of either origin that records them: a
   standard probe records none and does not replace an earlier turn's names,
   while a later turn with an incomplete tool channel or a pending guard leaves
-  none. The names apply only while the current replayed tool names, as a set,
-  equal the snapshot's baseline names; an active-tool change, branch
-  navigation, or resume that changes them drops the names until a newer
-  snapshot. While they apply, a replayed tool counts only if the payload
+  none. The names apply only while the current replayed tool names and the
+  live `pi.getActiveTools()` names, as sets, equal the snapshot's baseline
+  names. Pi records an active-tool change only when the next request starts,
+  so the live names drop the declared names at once; branch navigation or
+  resume changes the replayed names. Either drops them until a newer snapshot.
+  While they apply, a replayed tool counts only if the payload
   declared its name, after any fresh request-only tool changes; other tools are
   neither listed nor counted, and Usage marks nothing. Declared names missing
   from the replay are not Usage tools. Counted tools keep their replayed
@@ -1221,8 +1224,9 @@ probe request isolation and message ownership, not a relaxation of those goals.
 - Usage applies the latest snapshot's conversation changes by baseline entry,
   drops changes whose entry left the projection, and applies system changes
   and the forced prompt only while the replayed system state is unchanged
-  since capture. It leaves out undeclared tools only while the replayed tool
-  names equal the baseline names of the latest snapshot that records them.
+  since capture. It leaves out undeclared tools only while the replayed and
+  live active tool names equal the baseline names of the latest snapshot that
+  records them.
 - Raw content appears only after Enter and is never logged or newly persisted.
 - Parent and child contributions are never double-counted.
 - Usage counts the replayed branch prompt/tool state once, never again as system

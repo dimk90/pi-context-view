@@ -144,12 +144,14 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
     Decided: late edits form a `late edits` group after `unattributed`, one row per finding, labeled by message part or tool name, with the `Added`, `Modified`, or `Deleted` marker. Their estimates count the added lines, and previews show the changed lines as a `+`/`-` diff. Hidden tools stay in place with a `Hidden` marker at 0 tokens; description bullets name their `model-only` candidates or say that a later handler may have removed them. A complete guard adds no bullet; an incomplete guard with one compared channel says the check was partial. Late tool edits now keep changed description lines, and descriptions compare without whitespace. Usage takes declared names from the latest retained snapshot of either origin that records them and compares tool names as sets.
     Verified on Pi 1.0.4: `pnpm check` (538 tests). Mock-provider real-PTY runs of the demo extensions in both orders, fullscreen and regular, matched the payload log: before the monitor, the payload demos appeared as late edits and `write` as `Hidden`, and Usage left `write` out; after the monitor, the `context_with_system` demos appeared as late edits. With codemode `only`, `read`, `bash`, `edit`, and `write` were `Hidden` with the `codemode` candidate, and Usage counted only `codemode`. Previews, 24/60/80/120 columns, and height changes rendered within bounds; opening the views made no provider request.
 
-- [ ] **Verify the fix for [#11](https://github.com/dimk90/pi-context-view/issues/11)**:
+- [x] **Verify the fix for [#11](https://github.com/dimk90/pi-context-view/issues/11)**:
   - Unit test DeclaredTools with OpenAI Completions and Anthropic payloads that declare only `codemode` and `__pi_deferred_placeholder__`, against a baseline that replays `read`, `bash`, `edit`, `write`, and `codemode`. Declared names are `codemode` only; the placeholder never appears. Add Anthropic payloads where tools are added, removed, or redefined later through inline `tool_addition` and `tool_removal` blocks (Pi 1.0.1); declared names follow those blocks.
   - Unit test Usage: Built-in Tools neither lists nor counts hidden tools. It counts every replayed tool before the first snapshot, after an active-tool change, and with an incomplete tool-declaration channel.
   - Unit test Injections: hidden tools appear as hidden declarations with their `model-only` candidates, not as sent Built-in Tools.
   - Verify in a real session with `"codemode": { "mode": "only" }`: after a prompt, and after a later probe, `/context` counts only `codemode`; a probe before the first prompt records no declared names, so Usage counts every replayed tool; a `before_provider_request` logger confirms the declared names. Change active tools and reopen Usage before and after the next request.
   - Add a `Fixed` entry to `CHANGELOG.md` that links #11 and credits the reporter.
+    Decided: declared names also require the live `pi.getActiveTools()` names to equal the baseline names. Pi records an active-tool change only when the next request starts, so the replay check alone kept hiding tools until then. The later-probe check uses test-only wiring of the real probe and capture layers; no public probe command was added.
+    Verified on Pi 1.0.4: `pnpm check`. `test/declared-tools.test.ts` runs the issue's payloads through PayloadGuard, Usage, and Injections; `test/declared-tools-runtime.test.ts` runs real codemode `only` on both adapters, a first probe, a later probe, and an active-tool change, with the `after_provider_response` sentinel silent for probes. Mock-provider real-PTY runs (fullscreen with OpenAI Completions, regular with Anthropic) matched the payload log: a probe before the first prompt counted all five tools; after a prompt, Usage counted only `codemode` and Injections showed `read`, `bash`, `edit`, and `write` as `Hidden` with the `codemode` candidate; the placeholder never appeared. After `setActiveTools()` without codemode, Usage counted all five replayed tools until the next request, then the four declared ones. Opening the views made no provider request.
 
 - [ ] **Adopt tests from [#9](https://github.com/dimk90/pi-context-view/pull/9)** (the PR's capture code is not merged):
   - Turn `examples/test.ts` into a fixture under `test/fixtures/` that changes the request at four points. Run it in both load orders and expect the design's results:
@@ -172,6 +174,12 @@ normally aborts before payload hooks, so probe payload guards settle incomplete.
 
 ## `Backlog`
 
+- [ ] **Improve Silent Probe Robustness with v1.1.0 features**:
+  - Check especially "Added aborted to agent_settled session, extension, and JSON events, so integrations can tell a cancelled run from a finished one (#10607)".
+
 - [ ] **Manual probe trigger** (D10):
   - An explicit user action starts a new probe; one probe at a time, concurrent requests share it.
   - Choose a command or a view key; keep parsing, completions, registration text, README usage, and command tests in sync.
+
+- [ ] **Fix Visualization for > 100% After Model Switch**:
+  - e.g. Opus 1M (50%) -> switch -> Sol 200k (120%).

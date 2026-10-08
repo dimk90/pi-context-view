@@ -37,6 +37,11 @@ export interface SnapshotApplicationInput {
 	readonly filterMessages: MessageFilter;
 	/** Tool names of the latest snapshot that records them; see `latestDeclaredTools()`. */
 	readonly declaredTools?: DeclaredTools;
+	/**
+	 * Live active tool names. Pi records an active-tool change only when the next
+	 * request starts, so declared names apply only while these match too.
+	 */
+	readonly activeToolNames?: readonly string[];
 }
 
 /** Current messages with the request's changes applied, and the system changes that still apply. */
@@ -49,8 +54,8 @@ export interface AppliedRequest {
 	readonly forcedPrompt?: string;
 	/**
 	 * Tool names the request declared to the model, only while the current
-	 * replayed tool names equal its baseline names. Undefined means every
-	 * replayed tool counts.
+	 * replayed and live active tool names equal its baseline names. Undefined
+	 * means every replayed tool counts.
 	 */
 	readonly declaredToolNames?: ReadonlySet<string>;
 }
@@ -87,11 +92,12 @@ export function latestDeclaredTools(snapshots: SnapshotReader): DeclaredTools | 
  * projection is stale and dropped. System changes are deltas against the
  * snapshot's replayed system state, and a forced prompt is a rendering of it,
  * so both apply only while the current replayed state still equals it.
- * Declared tool names apply while the replayed tool names are unchanged.
+ * Declared tool names apply while the replayed and live active tool names are
+ * unchanged.
  */
 export function applyRequestSnapshot(input: SnapshotApplicationInput): AppliedRequest {
 	const current = readProjection(input.entries, input.leafId, input.filterMessages);
-	const declaredToolNames = freshDeclaredNames(input.declaredTools, current);
+	const declaredToolNames = freshDeclaredNames(input.declaredTools, current, input.activeToolNames);
 	const names = declaredToolNames === undefined ? {} : { declaredToolNames };
 	if (input.snapshot === undefined) {
 		return { messages: current.map(({ message }) => message), systemChanges: [], ...names };
@@ -101,19 +107,27 @@ export function applyRequestSnapshot(input: SnapshotApplicationInput): AppliedRe
 }
 
 /**
- * The declared names, or none once the current replayed tool names differ
- * from the snapshot's baseline names: an active-tool change, branch
- * navigation, or resume can change which tools the next request declares.
+ * The declared names, or none once the current replayed or live active tool
+ * names differ from the snapshot's baseline names: an active-tool change,
+ * branch navigation, or resume can change which tools the next request
+ * declares. Without live names, none apply.
  */
 function freshDeclaredNames(
 	declaredTools: DeclaredTools | undefined,
 	current: readonly ProjectedMessage[],
+	activeToolNames: readonly string[] | undefined,
 ): ReadonlySet<string> | undefined {
-	if (declaredTools === undefined) return undefined;
-	const replayed = new Set(getCurrentTools(current.map(({ message }) => message)).map((tool) => tool.name));
+	if (declaredTools === undefined || activeToolNames === undefined) return undefined;
+	const replayed = getCurrentTools(current.map(({ message }) => message)).map((tool) => tool.name);
 	const baseline = new Set(declaredTools.baseline);
-	const unchanged = replayed.size === baseline.size && [...replayed].every((name) => baseline.has(name));
+	const unchanged = sameNames(replayed, baseline) && sameNames(activeToolNames, baseline);
 	return unchanged ? new Set(declaredTools.declared) : undefined;
+}
+
+/** Whether `names`, as a set, equals `expected`. */
+function sameNames(names: readonly string[], expected: ReadonlySet<string>): boolean {
+	const unique = new Set(names);
+	return unique.size === expected.size && [...unique].every((name) => expected.has(name));
 }
 
 /** Current messages with modifications and deletions applied in place, then additions appended. */

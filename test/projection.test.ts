@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { Tool } from "@earendil-works/pi-ai";
+import { getCurrentTools, type Tool } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import { type AppliedRequest, applyRequestSnapshot, latestDeclaredTools } from "../src/projection.ts";
@@ -51,11 +51,16 @@ function snapshotAt(
 	};
 }
 
-/** Apply `snapshot` to the session's current projection without probe messages to filter. */
+/**
+ * Apply `snapshot` to the session's current projection without probe messages
+ * to filter. Live active tools default to the replayed ones, as when no change
+ * is pending.
+ */
 function apply(
 	session: SessionManager,
 	snapshot: RequestSnapshot | undefined,
 	declaredTools?: DeclaredTools,
+	activeToolNames = getCurrentTools(session.buildSessionProjection().messages).map((tool) => tool.name),
 ): AppliedRequest {
 	return applyRequestSnapshot({
 		snapshot,
@@ -63,6 +68,7 @@ function apply(
 		leafId: session.getLeafId(),
 		filterMessages: (messages) => messages,
 		declaredTools,
+		activeToolNames,
 	});
 }
 
@@ -176,6 +182,20 @@ test("declared tool names come from the latest snapshot of either origin that re
 	store.publish(recorded(5, "real-turn"));
 	store.publish(recorded(6, "synthetic-probe"));
 	assert.equal(latestDeclaredTools(store), undefined, "a later turn with an incomplete tool channel leaves none");
+});
+
+test("declared tool names wait for a pending active-tool change and need live names", () => {
+	const { session } = createSession();
+	const declaredTools: DeclaredTools = { declared: ["extra"], baseline: ["read"] };
+	assert.deepEqual(apply(session, undefined, declaredTools, ["read", "read"]).declaredToolNames, new Set(["extra"]));
+	assert.equal(apply(session, undefined, declaredTools, ["read", "bash"]).declaredToolNames, undefined,
+		"Pi records the change only when the next request starts");
+	assert.equal(apply(session, undefined, declaredTools, []).declaredToolNames, undefined);
+	const withoutLiveNames = applyRequestSnapshot({
+		snapshot: undefined, entries: session.getEntries(), leafId: session.getLeafId(),
+		filterMessages: (messages) => messages, declaredTools,
+	});
+	assert.equal(withoutLiveNames.declaredToolNames, undefined);
 });
 
 test("declared tool names apply only while the replayed tool names equal the baseline names", () => {

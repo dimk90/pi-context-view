@@ -106,6 +106,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 			leafId: ctx.sessionManager.getLeafId(),
 			filterMessages: (projected) => probeView.filterMessages(projected),
 			declaredTools: latestDeclaredTools(snapshots),
+			activeToolNames: pi.getActiveTools(),
 		});
 		const current = buildUsageSnapshot({
 			messages,
