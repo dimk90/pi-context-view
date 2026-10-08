@@ -27,13 +27,18 @@ for (const after of [false, true]) {
 				assert.equal(extensions.filter((path) => path === MONITOR).length, 1);
 				assert.equal(after ? extensions[0] : extensions.at(-1), MONITOR);
 				const fixtures = extensions.map((path) => basename(path, ".ts"));
-				assert.ok(fixtures.includes("payload-late-edits"));
-				assert.ok(fixtures.includes("payload-delete"), "keep the optional marker demo");
-				assert.ok(!fixtures.includes("payload-modify") && !fixtures.includes("payload-rewrite"),
-					"the automatic fixture replaces these editors rather than duplicating their findings");
-				assert.equal(fixtures.includes("hidden-tools"), hidden);
-				assert.equal(fixtures.includes("payload-remove-tool"), !hidden);
-				assert.equal(fixtures.includes("forced-prompt"), force);
+				if (hidden) {
+					assert.deepEqual(fixtures, after ? ["index", "hidden-tools"] : ["hidden-tools", "index"],
+						"codemode-only skips every other fixture, including --force");
+				} else {
+					assert.ok(fixtures.includes("payload-late-edits"));
+					assert.ok(fixtures.includes("payload-delete"), "keep the optional marker demo");
+					assert.ok(!fixtures.includes("payload-modify") && !fixtures.includes("payload-rewrite"),
+						"the automatic fixture replaces these editors rather than duplicating their findings");
+					assert.ok(!fixtures.includes("hidden-tools"));
+					assert.ok(fixtures.includes("payload-remove-tool"));
+					assert.equal(fixtures.includes("forced-prompt"), force);
+				}
 			});
 		}
 	}

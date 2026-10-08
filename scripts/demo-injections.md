@@ -22,11 +22,11 @@ Marks:
 Run `./scripts/demo-injections.sh --no-session` and open `/context injections`
 in a fresh session. No marker prompts are needed for these section changes:
 
-| Fixture | Changes |
-| --- | --- |
-| `section-patch` | Adds `context-view-fixture`, `context-view-fixture-checklist`, and `context-view-fixture-summary`. |
-| `section-modify` | Modifies `cwd`, `context-view-fixture-review`, and `context-view-fixture-output`. |
-| `section-delete` | Deletes `docs`, `context-view-fixture-obsolete`, and `context-view-fixture-scratch`. |
+| Fixture          | Changes                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------- |
+| `section-patch`  | Adds `context-view-fixture`, `context-view-fixture-checklist`, and `context-view-fixture-summary`. |
+| `section-modify` | Modifies `cwd`, `context-view-fixture-review`, and `context-view-fixture-output`.                  |
+| `section-delete` | Deletes `docs`, `context-view-fixture-obsolete`, and `context-view-fixture-scratch`.               |
 
 The modification and deletion fixtures seed four synthetic sections through
 `before_agent_start`. Pi records those originals as the session baseline;
@@ -42,8 +42,65 @@ usual probe safety checks. Alternatively, send an ordinary prompt first.
 structured view. `--force` replaces the sectioned system prompt entirely.
 Marker prompts below remain available for conversation deletion and reordering.
 
-The tables below are historical checks of the smaller fixtures, before this
-expansion; their recorded results have not been rewritten.
+## Automatic late-edit demo
+
+Run `./scripts/demo-injections.sh --no-session`, send an ordinary prompt, then
+open `/context injections`. `payload-late-edits` produces one of each marker in
+`late edits` on the first real request:
+
+| Change   | Preview                                                              |
+| -------- | -------------------------------------------------------------------- |
+| Modified | `-` original `XYZZY_PAYLOAD_LATE_MODIFY` note, `+` replacement note. |
+| Deleted  | `-` `XYZZY_PAYLOAD_LATE_DELETE` note, at 0 tokens.                   |
+| Added    | `+` `XYZZY_PAYLOAD_LATE_ADD` note.                                   |
+
+The fixture prepends three synthetic user notes in `context`: the modification
+original, an unchanged separator, and the deletion original. They appear as
+structured request-only additions under `unattributed`, not in saved history.
+The separator keeps modification and deletion distinct in the payload diff.
+`before_provider_request` edits those originals and adds a new message, leaving
+real prompts unchanged. It supports OpenAI Completions, OpenAI Responses, and
+Anthropic Messages.
+
+The launcher now uses this fixture instead of `payload-modify` and
+`payload-rewrite`, avoiding duplicate automatic findings. Those individual
+fixtures remain available for isolated checks. `payload-delete` still removes
+prompts containing `XYZZY_PAYLOAD_DELETE` when that optional demo is wanted.
+
+Send the prompt **before first opening Injections**: a silent probe has no
+provider payload, and Initial stays frozen. If a probe already captured Initial,
+run `/reload`, send a prompt, then reopen the view. With `--after`, these payload
+edits run after the monitor's payload hook and are not visible; the later
+`context_with_system` edits still appear as late edits. `--force` does not stop
+these message demos.
+
+## Optional codemode hidden-tools demo
+
+```sh
+./scripts/demo-injections.sh --codemode-only --no-session
+```
+
+Place demo flags before Pi arguments. `--codemode-only` loads only
+`hidden-tools.ts` and pi-context-view; it skips every other demo fixture,
+including `forced-prompt` even when `--force` is passed. `--after` still changes
+the extension load order. The fixture registers Pi's built-in codemode with a
+process-local `mode: "only"` override and activates it alongside the currently
+selected tools. No settings file is changed. Discovered extensions remain
+disabled, so codemode is registered only once by this fixture.
+
+After an ordinary prompt, Injections marks the other active tools `Hidden` at
+0 tokens, with `codemode` as their `model-only` candidate. Those tools remain
+callable through codemode scripts. With the default tool selection, `read`,
+`bash`, `edit`, and `write` are hidden; Usage counts only `codemode`. This works
+in both extension load orders. Tool-selection arguments can change that set.
+
+This mode demonstrates codemode hiding alone, without section, conversation,
+or payload edits. Without the flag, all the usual demo fixtures still load,
+including the manual `write`-declaration removal.
+As with late edits, send a real prompt before first opening Injections.
+
+The tables below are historical checks of earlier fixture sets; their recorded
+results have not been rewritten.
 
 ## How the results were checked
 
@@ -118,14 +175,14 @@ Unreleased Usage counts the current branch with the latest request snapshot
 applied, the one Injections uses for the first request. v0.6.0 used the older
 Initial capture; its `--after` results come from the notes of that check.
 
-| Content in Usage                                     | Target: before            | Target: after                     | v0.6.0: before                        | v0.6.0: after      | Unreleased: before              | Unreleased: after |
-| ---------------------------------------------------- | ------------------------- | --------------------------------- | ------------------------------------- | ------------------ | ------------------------------- | ----------------- |
-| Prompt `two`, deleted by `context-delete`            | not counted               | same as before                    | ⚠️ counted                            | ⚠️ counted         | ✅ not counted                   | ✅ not counted     |
-| Prompt `four`, modified by `context-modify`          | counted once, as modified | same as before                    | ⚠️ counted twice: original and copy ⁴ | ⚠️ original only ⁴ | ✅ counted once ⁵                | ✅ counted once ⁵  |
-| Additions by `context-add` and `context-add-user`    | counted                   | same as before                    | ✅ counted under Extensions            | ❌ not counted      | ✅ counted ⁶                     | ✅ counted ⁶       |
-| System changes from `context_with_system`            | counted while fresh       | not counted: edited after monitor | ❌ not counted                         | ➖                  | ✅ counted under System Prompt ⁷ | ➖                 |
-| `XYZZY_IN_PLACE`, appended by `in-place-mutation`    | counted                   | not counted: edited after monitor | not checked                           | not checked        | ✅ counted                       | ➖                 |
-| `write` declaration removed by `payload-remove-tool` | not counted               | counted                           | ⚠️ counted under Built-in Tools       | ✅ counted          | ⚠️ counted under Built-in Tools | ✅ counted         |
+| Content in Usage                                     | Target: before            | Target: after                     | v0.6.0: before                          | v0.6.0: after        | Unreleased: before                | Unreleased: after |
+| ---------------------------------------------------- | ------------------------- | --------------------------------- | --------------------------------------- | -------------------- | --------------------------------- | ----------------- |
+| Prompt `two`, deleted by `context-delete`            | not counted               | same as before                    | ⚠️ counted                            | ⚠️ counted         | ✅ not counted                    | ✅ not counted    |
+| Prompt `four`, modified by `context-modify`          | counted once, as modified | same as before                    | ⚠️ counted twice: original and copy ⁴ | ⚠️ original only ⁴ | ✅ counted once ⁵                 | ✅ counted once ⁵ |
+| Additions by `context-add` and `context-add-user`    | counted                   | same as before                    | ✅ counted under Extensions             | ❌ not counted       | ✅ counted ⁶                      | ✅ counted ⁶      |
+| System changes from `context_with_system`            | counted while fresh       | not counted: edited after monitor | ❌ not counted                          | ➖                   | ✅ counted under System Prompt ⁷  | ➖                |
+| `XYZZY_IN_PLACE`, appended by `in-place-mutation`    | counted                   | not counted: edited after monitor | not checked                             | not checked          | ✅ counted                        | ➖                |
+| `write` declaration removed by `payload-remove-tool` | not counted               | counted                           | ⚠️ counted under Built-in Tools       | ✅ counted           | ⚠️ counted under Built-in Tools | ✅ counted        |
 
 4. [Issue #6](https://github.com/dimk90/pi-context-view/issues/6). With `--after`,
    only the original `four` is counted; its edited copy is missing.
@@ -156,12 +213,12 @@ The payload log confirmed that, in both load orders, the system message of
 every request was the forced text alone, and the tools were still declared.
 Built-in Tools therefore stays in both views.
 
-| Content                                             | Target                                       | Unreleased: before                    | Unreleased: after |
-| --------------------------------------------------- | -------------------------------------------- | ------------------------------------- | ----------------- |
-| Injections: forced prompt                           | System Prompt holds the forced text, Forced  | ✅ 17 tokens, `Forced` ⁸              | ✅ same as before |
-| Injections: `system-append` and `section-*` changes | not in the request                           | ➖                                    | ➖                |
-| Usage: forced prompt                                | counted as System Prompt, Forced             | ✅ 17 tokens, `Forced` in the preview | ✅ same as before |
-| Usage: system changes from `context_with_system`    | not counted                                  | ➖                                    | ➖                |
+| Content                                             | Target                                      | Unreleased: before                    | Unreleased: after |
+| --------------------------------------------------- | ------------------------------------------- | ------------------------------------- | ----------------- |
+| Injections: forced prompt                           | System Prompt holds the forced text, Forced | ✅ 17 tokens, `Forced` ⁸              | ✅ same as before |
+| Injections: `system-append` and `section-*` changes | not in the request                          | ➖                                    | ➖                |
+| Usage: forced prompt                                | counted as System Prompt, Forced            | ✅ 17 tokens, `Forced` in the preview | ✅ same as before |
+| Usage: system changes from `context_with_system`    | not counted                                 | ➖                                    | ➖                |
 
 8. The System Prompt row stays under `pi`, unattributed, with no parts. Its
    row and preview header carry `Forced`, and both the list and the preview
@@ -178,15 +235,15 @@ the expanded fixtures above and the setup and prompts of
 180×70. The payload log had four requests per order; opening the views added
 none. Only results that changed are listed.
 
-| Demo extension                                                       | Target: before       | Target: after        | Guard results: before   | Guard results: after |
-| -------------------------------------------------------------------- | -------------------- | -------------------- | ----------------------- | -------------------- |
-| `system-append`, `section-patch`, `section-modify`, `section-delete` | system change        | edited after monitor | ✅ structured, as before | ✅ late edit ⁹        |
-| `in-place-mutation`                                                  | modification         | edited after monitor | ⚠️³, as before          | ✅ late edit          |
-| `payload-modify`                                                     | edited after monitor | not visible          | ✅ late edit             | ➖                    |
-| `payload-delete`                                                     | edited after monitor | not visible          | ✅ late edit             | ➖                    |
-| `payload-remove-tool`                                                | edited after monitor | not visible          | ✅ `Hidden` ¹⁰           | ➖                    |
-| `payload-rewrite`                                                    | edited after monitor | not visible          | ✅ late edit             | ➖                    |
-| Usage: `write` removed by `payload-remove-tool`                      | not counted          | counted              | ✅ not counted           | ✅ counted            |
+| Demo extension                                                       | Target: before       | Target: after        | Guard results: before    | Guard results: after |
+| -------------------------------------------------------------------- | -------------------- | -------------------- | ------------------------ | -------------------- |
+| `system-append`, `section-patch`, `section-modify`, `section-delete` | system change        | edited after monitor | ✅ structured, as before | ✅ late edit ⁹       |
+| `in-place-mutation`                                                  | modification         | edited after monitor | ⚠️³, as before         | ✅ late edit         |
+| `payload-modify`                                                     | edited after monitor | not visible          | ✅ late edit             | ➖                   |
+| `payload-delete`                                                     | edited after monitor | not visible          | ✅ late edit             | ➖                   |
+| `payload-remove-tool`                                                | edited after monitor | not visible          | ✅ `Hidden` ¹⁰           | ➖                   |
+| `payload-rewrite`                                                    | edited after monitor | not visible          | ✅ late edit             | ➖                   |
+| Usage: `write` removed by `payload-remove-tool`                      | not counted          | counted              | ✅ not counted           | ✅ counted           |
 
 9. The system prompt is one message unit in the payload, so these demos
    appear together as the changed lines of one `system message` row
