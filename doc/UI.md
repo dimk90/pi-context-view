@@ -29,6 +29,7 @@ is authoritative.
 | Injections tree model / rendering | `src/ui/injections-model.ts`, `src/ui/injections-view.ts` |
 | Labeled parts, preview legend | `src/ui/section-preview.ts` |
 | State markers and legend bullets | `src/ui/markers.ts` |
+| Search prompt, matching, highlighting | `src/ui/search.ts` |
 | Marked JSON, skill badges, wheel | `src/ui/json-preview.ts`, `src/ui/skill-preview.ts`, `src/ui/wheel.ts` |
 
 ## Style rules
@@ -138,6 +139,8 @@ blocks; empty categories keep their explicit no-content state.
 - Enter opens the selected row's preview; in a Usage block stream it opens full
   content only when the selected block is capped.
 - Escape returns one level while preserving selection, then closes the view.
+  A kept list filter counts as a level.
+- `/` filters a list or searches a preview, per [Search and filter](#search-and-filter).
 - Views may add keys; Usage adds `z` for the map scale.
 
 The mouse wheel scrolls wherever the keys navigate: one notch moves the
@@ -151,6 +154,39 @@ Navigation skips non-selectable rows and remains bounded after terminal resize.
 All content is terminal-sanitized before rendering and raw content appears only
 after explicit Enter selection; [ARCHITECTURE.md](ARCHITECTURE.md) owns the full
 privacy contract.
+
+### Search and filter
+
+`/` opens a one-line prompt in every list and preview. The prompt row sits below
+the header, followed by one blank row, and shows a dim label, the query, and a
+right-aligned dim status. It edits through pi's own `Input`, so word deletion,
+kill/yank, and undo behave as in pi's editor. While it is open, printable keys —
+`j`, `k`, `n`, and `q` included — type into it; only the arrow keys, the page
+keys, and the wheel keep navigating.
+
+Matching is case-insensitive, and every whitespace run, line breaks included,
+matches a single space, as in pi's fullscreen transcript search: a phrase
+wrapped across two preview lines is still found. Matches use pi's
+transcript-search styles — underlined `searchMatchText` on `searchMatchBg`, and
+bold inverse for the current match — so they follow the theme.
+
+- **Lists** filter live and select the first row that matched itself; a
+  match's ancestors stay as unmatched context. The status counts rows that
+  matched themselves: `1 match`, `N matches`, or `No matches`. Enter keeps the
+  filter and opens the selected row; Escape while typing drops the filter.
+  A kept filter shows its query read-only, and Escape clears it, keeping the
+  selected row, before it closes the view. Value columns stay where the
+  unfiltered list puts them, so filtering never shifts them.
+- **Previews** highlight live and move to the first match at or below the top
+  visible line. Enter keeps the query; Escape while typing drops it. `n`/`N`
+  move to the next or previous match, wrapping around, and scroll a hidden one
+  into view `SEARCH_CONTEXT_LINES` (2) lines below the top. The status reads
+  `current/total`. A search ends with its preview.
+
+Hints follow the prompt: an open one shows `↑↓`, Enter, and `Esc Clear`, and a
+kept preview search replaces `PgUp/PgDn Page` with `n/N Next/Prev`. The `/`
+hint is optional (`fitHintRow`): when the hint row does not fit, it drops out
+whole before any other hint is truncated.
 
 ## Responsive rendering
 
@@ -168,4 +204,6 @@ UI cases `pnpm check` must cover, beyond the general matrix in
 - both map scales, the header label's line-splitting fallback, the conditions
   hiding the zoom binding, and every map-key degradation;
 - a configured map size larger than the width and the height can render;
-- overflow navigation, preview return position, and theme invalidation.
+- overflow navigation, preview return position, and theme invalidation;
+- filtered and empty lists, live preview search, and every hint state of the
+  search prompt, within the width.

@@ -190,6 +190,13 @@ buffer and free-space rows, and its left number is the last visible row, so
 scrolling to the end reaches the total. Height-only resizing must also reflow
 and clamp the viewport.
 
+`/` filters the legend by category name under the shared
+[search and filter rules](../UI.md#search-and-filter), with the prompt label
+`Filter`. A matching Tool Output keeps its whole breakdown, and a matching
+breakdown row keeps Tool Output as context. Auto-Compact Buffer and Free Space
+have no name to match and hide while a filter is active; the map never changes.
+With no match, the legend reads `No categories match the filter.`
+
 ## Category preview
 
 Render the selected category as chronological entries headed by:
@@ -287,8 +294,24 @@ Enter is a no-op for them.
 Enter on a capped block opens a separate fullscreen level with the category
 header, one blank separator row, the selected entry header, and its complete
 uncapped content. That level uses line and page scrolling with
-`↑↓/jk Scroll · PgUp/PgDn Page · Esc Back`, and Escape returns to the same block
-and viewport. A category without entries instead shows
+`↑↓/jk Scroll · PgUp/PgDn Page · / Search · Esc Back`, and Escape returns to the
+same block and viewport. A category without entries instead shows
 `No content captured for this category.` without a gutter; Enter is a no-op and
 the hint row offers `Esc Back` alone. Unknown usage after compaction retains an
 explicit preview state.
+
+### Search
+
+`/` searches the open category under the shared
+[search and filter rules](../UI.md#search-and-filter). One search spans both
+preview levels of a category:
+
+- In a block stream it covers every entry header and each block's uncapped
+  content, so a match can lie in lines the block cap hides. Moving to a match
+  selects its block and highlights the match wherever it is visible; a hidden
+  match leaves its block selected, one Enter away.
+- Enter on that capped block opens its full content scrolled to the same
+  match, with the status counting that block's matches. Escape returns to the
+  stream with the search kept on the block; Escape from the stream ends it.
+- Single-entry categories search their full content directly. A category
+  without entries has nothing to search and offers no `/` hint.

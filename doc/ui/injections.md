@@ -75,12 +75,36 @@ the fallback hierarchy usable. Below both, the description block ends with one
 [legend bullet](previews.md#marker-legend) per marker the rows carry — `Dropped`,
 `Moved`, or neither — and collapses with the rest of the block.
 
+## Filter
+
+`/` filters the list under the shared
+[search and filter rules](../UI.md#search-and-filter). It compares names by
+default; Tab in the open prompt switches between names and content, and the
+prompt label reads `Filter by Name` or `Filter by Content`.
+
+- Name mode matches group and item labels. A matching group or item keeps its
+  whole subtree, since naming a container asks for its contents; rows inside it
+  whose own label matches still count as matches.
+- Content mode matches each item's sanitized text. An item with children
+  matches through them: its own text concatenates theirs, so it stands alone
+  only when no child matches. Group labels are names and never match here.
+
+Filtered rows rebuild their tree connectors and keep their estimates, and
+`TOTAL` still counts the whole Initial snapshot. Name mode highlights the query
+inside row labels. Content mode highlights nothing and shows no matching text,
+because raw text never appears in rows. With no match, the list reads
+`No injections match the filter.` and Enter does nothing.
+
+Enter on a content-mode match opens its preview with the same query already
+searched, at its first match.
+
 ## Injection preview
 
 Enter on an injection item opens its sanitized raw text. Show item title,
 source, and estimated tokens in the header; wrap content to available width and
-support arrow and page scrolling. Escape returns to the same selected row. Raw
-text must never appear in row descriptions.
+support arrow and page scrolling, plus `/` search under the shared
+[search and filter rules](../UI.md#search-and-filter). Escape returns to the
+same selected row. Raw text must never appear in row descriptions.
 
 A tool item renders its labeled parts under the
 [labeled part rules](previews.md#labeled-parts) instead of one undivided block

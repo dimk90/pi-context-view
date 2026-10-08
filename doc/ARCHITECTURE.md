@@ -817,6 +817,11 @@ terminal rendering, and reveal it only after explicit Enter preview. Never log
 it, include it in notifications, persist extra copies, or inject it into a
 later model request.
 
+The Injections content filter reads the same text to decide which rows stay
+visible. Its sanitized, whitespace-collapsed copy lives only as long as the
+view, and rows never show the matching text; raw text still appears only in an
+opened preview.
+
 Capture message content, not the whole message object:
 
 - System previews contain plain `content` followed by non-deleted section text,
