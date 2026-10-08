@@ -106,6 +106,14 @@ export class BlockNavigator {
 		return this.moveTo(this.firstVisibleBlock(offset), offset);
 	}
 
+	/** Select one block, e.g. the one holding a search match, scrolling minimally to show it. */
+	public select(index: number): boolean {
+		if (index < 0 || index >= this.extents.length || index === this.selectedIndex) return false;
+		this.selectedIndex = index;
+		this.revealSelected();
+		return true;
+	}
+
 	/** Select the first block at the top of the stream. */
 	public moveToFirst(): boolean {
 		return this.moveTo(0, 0);

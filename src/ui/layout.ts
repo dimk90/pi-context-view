@@ -107,9 +107,22 @@ export function spreadLine(left: string, right: string, width: number): string {
 }
 
 /** Pi-style hint row: two-space indent, `key description` pairs joined by ` · `. */
-export function hintRow(theme: Theme, hints: ReadonlyArray<readonly [string, string]>): string {
+export function hintRow(theme: Theme, hints: readonly Hint[]): string {
 	const separator = theme.fg("dim", " · ");
 	return `${BODY_INDENT}${hints.map(([key, description]) => hint(theme, key, description)).join(separator)}`;
+}
+
+/** One hint pair; an optional hint is the first to go when the row is too narrow. */
+export type Hint = readonly [key: string, description: string, optional?: boolean];
+
+/**
+ * Hint row fitted to the width: optional hints drop out whole before any
+ * required hint is truncated, so a narrow frame keeps its essential keys.
+ */
+export function fitHintRow(theme: Theme, hints: readonly Hint[], width: number): string {
+	const full = hintRow(theme, hints);
+	if (visibleWidth(full) <= width) return full;
+	return fitLine(hintRow(theme, hints.filter(([, , optional]) => optional !== true)), width);
 }
 
 /** Pi-style hint: dim key, slightly brighter (muted) description. */

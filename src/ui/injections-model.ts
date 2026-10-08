@@ -2,7 +2,26 @@
  * Pure presentation model for the Injections view: flattened rows and
  * list navigation/scrolling state. No pi or TUI access — unit-testable.
  */
-import type { InitialSnapshot, InjectionItem } from "../model.ts";
+import type { InitialSnapshot, InjectionGroup, InjectionItem } from "../model.ts";
+
+/** What a list filter compares the query against. */
+export type InjectionFilterMode = "name" | "content";
+
+/** A non-blank list filter; the view owns how text is normalized and compared. */
+export interface InjectionFilter {
+	readonly mode: InjectionFilterMode;
+	/** Whether a group or item label contains the query. */
+	readonly nameMatches: (label: string) => boolean;
+	/** Whether an item's content contains the query. */
+	readonly contentMatches: (item: InjectionItem) => boolean;
+}
+
+/** Snapshot pruned to a filter, plus which groups and items matched themselves. */
+export interface FilteredInjections {
+	readonly snapshot: InitialSnapshot;
+	/** Item ids and `source:<id>` group keys of rows that matched directly, not as context. */
+	readonly matched: ReadonlySet<string>;
+}
 
 /** One flattened list row derived from the snapshot hierarchy. */
 export type InjectionRow =
@@ -11,6 +30,8 @@ export type InjectionRow =
 		readonly label: string;
 		readonly tokens: number;
 		readonly depth: 0;
+		/** Whether an active filter matched this row itself rather than keeping it as context. */
+		readonly matched?: boolean;
 	}
 	| {
 		readonly kind: "item";
@@ -28,6 +49,8 @@ export type InjectionRow =
 		readonly moved?: boolean;
 		/** Stable preview target id from the snapshot. */
 		readonly itemId: string;
+		/** Whether an active filter matched this row itself rather than keeping it as context. */
+		readonly matched?: boolean;
 	}
 	| {
 		readonly kind: "separator";
@@ -54,8 +77,68 @@ export function collectItemsById(snapshot: InitialSnapshot): Map<string, Injecti
 	return items;
 }
 
-/** Flatten snapshot groups into rows separated from the non-selectable Initial total. */
-export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
+/**
+ * Prune the snapshot to rows the filter matches, keeping each match's
+ * ancestors as context. In name mode a matching group or item keeps its whole
+ * subtree, since naming a container asks for its contents. In content mode an
+ * item with children matches through them: its own text concatenates theirs,
+ * so it stands alone only when no child matches. Estimates stay unchanged.
+ */
+export function filterInjections(snapshot: InitialSnapshot, filter: InjectionFilter): FilteredInjections {
+	const matched = new Set<string>();
+	const matches = (item: InjectionItem): boolean => filter.mode === "name"
+		? filter.nameMatches(item.label)
+		: filter.contentMatches(item);
+	const groups: InjectionGroup[] = [];
+	for (const group of snapshot.groups) {
+		if (filter.mode === "name" && filter.nameMatches(group.source.label)) {
+			matched.add(groupKey(group));
+			for (const item of group.items) filterItem(item, "name", matches, matched);
+			groups.push(group);
+			continue;
+		}
+		const items: InjectionItem[] = [];
+		for (const item of group.items) {
+			const kept = filterItem(item, filter.mode, matches, matched);
+			if (kept !== undefined) items.push(kept);
+		}
+		if (items.length > 0) groups.push({ ...group, items });
+	}
+	return { snapshot: { ...snapshot, groups }, matched };
+}
+
+/** One item pruned to its matching children, or undefined when nothing in it matches. */
+function filterItem(
+	item: InjectionItem,
+	mode: InjectionFilterMode,
+	matches: (item: InjectionItem) => boolean,
+	matched: Set<string>,
+): InjectionItem | undefined {
+	const children = item.children ?? [];
+	const keptChildren = children.filter(matches);
+	if (mode === "name" && matches(item)) {
+		for (const id of [item.id, ...keptChildren.map((child) => child.id)]) matched.add(id);
+		return item;
+	}
+	for (const child of keptChildren) matched.add(child.id);
+	if (keptChildren.length > 0) return { ...item, children: keptChildren };
+	if (mode === "content" && matches(item)) {
+		matched.add(item.id);
+		return { ...item, children: undefined };
+	}
+	return undefined;
+}
+
+/** Match key of a group row, kept apart from item ids. */
+function groupKey(group: InjectionGroup): string {
+	return `source:${group.source.id}`;
+}
+
+/**
+ * Flatten snapshot groups into rows separated from the non-selectable Initial
+ * total, flagging the rows a filter matched directly.
+ */
+export function buildInjectionRows(snapshot: InitialSnapshot, matched?: ReadonlySet<string>): InjectionRow[] {
 	const rows: InjectionRow[] = [];
 	for (const group of snapshot.groups) {
 		rows.push({
@@ -63,6 +146,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 			label: group.source.label,
 			tokens: group.totalTokens,
 			depth: 0,
+			matched: matched?.has(groupKey(group)),
 		});
 		group.items.forEach((item, itemIndex) => {
 			const isLastItem = itemIndex === group.items.length - 1;
@@ -75,6 +159,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 				dropped: item.dropped,
 				moved: item.moved,
 				itemId: item.id,
+				matched: matched?.has(item.id),
 			});
 			const children = item.children ?? [];
 			children.forEach((child, childIndex) => {
@@ -88,6 +173,7 @@ export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
 					dropped: child.dropped,
 					moved: child.moved,
 					itemId: child.id,
+					matched: matched?.has(child.id),
 				});
 			});
 		});
@@ -230,6 +316,12 @@ export class PreviewScroller {
 
 	public page(direction: -1 | 1): boolean {
 		return this.scrollBy(direction * Math.max(1, this.visibleCount - 1));
+	}
+
+	/** Leave a visible line in place; otherwise scroll it near the top, below `context` lines. */
+	public reveal(line: number, context: number): boolean {
+		if (line >= this.offsetValue && line < this.offsetValue + this.visibleCount) return false;
+		return this.scrollTo(line - context);
 	}
 
 	public reset(): void {

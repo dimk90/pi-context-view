@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { InitialSnapshot, InjectionItem } from "../src/model.ts";
-import { buildInjectionRows, collectItemsById, ListNavigator, PreviewScroller } from "../src/ui/injections-model.ts";
+import {
+	buildInjectionRows,
+	collectItemsById,
+	filterInjections,
+	type InjectionFilterMode,
+	ListNavigator,
+	PreviewScroller,
+} from "../src/ui/injections-model.ts";
 
 function item(id: string, sourceId: string, native: boolean, tokens: number): InjectionItem {
 	return {
@@ -146,4 +153,90 @@ test("ListNavigator skips non-selectable trailing rows while scrolling them into
 	assert.equal(navigator.selectedOrdinal, 4);
 	assert.equal(navigator.offset, 4);
 	assert.equal(navigator.moveBy(1), false);
+});
+
+/** Filter by a plain substring, the way the view compares labels and content. */
+function filtered(mode: InjectionFilterMode, query: string, content: (item: InjectionItem) => string = (entry) => entry.text) {
+	return filterInjections(snapshot(), {
+		mode,
+		nameMatches: (label) => label.includes(query),
+		contentMatches: (entry) => content(entry).includes(query),
+	});
+}
+
+/** Kind, label, and matched flag of every row a filter leaves. */
+function rowSummary(result: ReturnType<typeof filtered>): Array<[string, string, boolean]> {
+	return buildInjectionRows(result.snapshot, result.matched)
+		.filter((row) => row.kind === "group" || row.kind === "item")
+		.map((row) => [row.kind, row.label, row.matched === true]);
+}
+
+test("filterInjections keeps a name match's ancestors as unmatched context", () => {
+	assert.deepEqual(rowSummary(filtered("name", "bash")), [
+		["group", "pi", false],
+		["item", "tool:builtin", false],
+		["item", "tool:builtin:bash", true],
+	]);
+});
+
+test("filterInjections keeps the whole subtree of a matching group or item", () => {
+	assert.deepEqual(rowSummary(filtered("name", "tool:builtin")).map(([, label, matched]) => [label, matched]), [
+		["pi", false],
+		["tool:builtin", true],
+		["tool:builtin:bash", true],
+		["tool:builtin:read", true],
+	]);
+	assert.deepEqual(rowSummary(filtered("name", "npm:")), [
+		["group", "npm:web", true],
+		["item", "web_search", false],
+	]);
+	// Rows inside a matching group still count as matches when their own label matches.
+	assert.deepEqual(rowSummary(filtered("name", "web")), [
+		["group", "npm:web", true],
+		["item", "web_search", true],
+	]);
+});
+
+test("filterInjections matches content through children, not their concatenated parent", () => {
+	const texts: Record<string, string> = {
+		"tool:builtin": "runs bash and reads files",
+		"tool:builtin:bash": "runs bash",
+		"tool:builtin:read": "reads files",
+		"skills": "unrelated",
+	};
+	const content = (entry: InjectionItem) => texts[entry.id] ?? "";
+	assert.deepEqual(rowSummary(filtered("content", "bash", content)), [
+		["group", "pi", false],
+		["item", "tool:builtin", false],
+		["item", "tool:builtin:bash", true],
+	]);
+
+	// Content only the aggregate carries keeps it alone, without unrelated children.
+	texts["tool:builtin"] = "aggregate-only notes";
+	assert.deepEqual(rowSummary(filtered("content", "aggregate-only", content)), [
+		["group", "pi", false],
+		["item", "tool:builtin", true],
+	]);
+	// Group labels are names, so content mode never matches them.
+	assert.deepEqual(rowSummary(filtered("content", "npm:web", content)), []);
+});
+
+test("filterInjections leaves estimates and the Initial total unchanged", () => {
+	const result = filtered("name", "bash");
+	assert.equal(result.snapshot.totalTokens, 230);
+	assert.equal(result.snapshot.groups[0]?.totalTokens, 200);
+	assert.equal(result.snapshot.groups[0]?.items[0]?.tokens, 60);
+	assert.deepEqual(filtered("name", "missing").snapshot.groups, []);
+});
+
+test("PreviewScroller.reveal leaves visible lines alone and scrolls hidden ones into context", () => {
+	const scroller = new PreviewScroller();
+	scroller.setExtent(100, 10);
+	assert.equal(scroller.reveal(5, 2), false);
+	assert.equal(scroller.reveal(40, 2), true);
+	assert.equal(scroller.offset, 38);
+	assert.equal(scroller.reveal(99, 2), true);
+	assert.equal(scroller.offset, 90, "clamped to the last full page");
+	assert.equal(scroller.reveal(1, 2), true);
+	assert.equal(scroller.offset, 0);
 });
