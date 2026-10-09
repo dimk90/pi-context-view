@@ -9,7 +9,7 @@ extension can read, and how that data reaches the two views.
 | View       | What it shows                                                                                          | When its data changes                                    |
 | ---------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
 | Injections | First request's prompt, tools, custom messages, marked request-only changes, late edits, hidden tools. | First snapshot's content stays fixed                     |
-| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes and declared tools.       | Rebuilt from the current branch and store when it opens. |
+| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes, excluding tools Pi hides. | Rebuilt from the current branch and store when it opens. |
 
 Both views read request snapshots that
 [structured request capture](#structured-request-capture) publishes to
@@ -45,7 +45,7 @@ conversation.
 
 ## How Pi Prepares a Request
 
-The following flow was checked against pi `1.0.0`. The notes on the right show
+The following flow was checked against pi `1.1.0`. The notes on the right show
 which parts `pi-context-view` uses or skips.
 
 ```text
@@ -56,8 +56,9 @@ Canonical session projection
   + New user message and pending messages
   |
   v
-before_agent_start handlers                     PROBE: claim the probe run only
+before_agent_start handlers                     PROBE: claim the probe run
   Inject messages, change structured prompt options
+  Read systemPromptOptions.hiddenTools           CAPTURE: Pi's hidden tools
   |
   + Persist system-section patches and tool changes
   |
@@ -107,9 +108,9 @@ session branch later cannot recover those request-only changes.
 
 ### Supported Pi Versions
 
-This extension requires Pi `1.0.0` or newer. It relies on `context_with_system`
-filtering, `turn_end` omission edits, and the probe's abort form described
-below. The Pi packages stay `"*"` peer dependencies, so an older Pi can still
+This extension requires Pi `1.1.0` or newer. It relies on `context_with_system`
+filtering, `turn_end` omission edits, `hiddenTools` in Pi's prompt options, and
+the probe's abort form described below. The Pi packages stay `"*"` peer dependencies, so an older Pi can still
 load the extension. The factory therefore compares pi's `VERSION` with
 `MIN_PI_VERSION` and, on an older Pi, registers no lifecycle handlers: nothing
 is captured, probed, or filtered. Every `/context` form, including `config`,
@@ -138,15 +139,19 @@ as supported.
   only when the branch has no system messages.
 
 - `ctx.getSystemPromptOptions()` reads the base prompt construction options in
-  a command handler.
-  **Goal:** keep `customPrompt` Dropped markers in Injections and measure the
-  live fallback.
+  a command handler, including `hiddenTools` from Pi's current loadout.
+  **Goal:** keep `customPrompt` Dropped markers in Injections, measure the
+  live fallback, and leave out hidden tools in Usage before any provider request.
+
+- `before_agent_start.systemPromptOptions.hiddenTools` reports Pi's hidden
+  declarations to event handlers. Capture copies this list for the run and
+  copies it into each request snapshot, independently of payload comparison.
+  **Goal:** mark hidden tools in frozen Initial, including a silent probe.
 
 - `pi.getActiveTools()` and `pi.getAllTools()` supply the active tool names,
   definitions, and source information. `pi.getCommands()` supplies additional
   extension source information for prompt attribution.
-  **Goal:** provide the views' live fallback, and keep Usage's declared tool
-  names from outliving an active-tool change that Pi has not recorded yet.
+  **Goal:** provide the views' live fallback and tool provenance.
   For transcript-backed views, recorded declarations supply definitions and the
   active set; current registration metadata supplies provenance and guideline
   attribution only. Unregistered recorded tools stay visible as unattributed.
@@ -276,12 +281,23 @@ or settle incomplete when no payload was observed
   Everything else is unattributed. For a modification or deletion, these
   fields describe the affected message, not the extension that edited it.
 
+- **Hidden tools.** Capture reads `systemPromptOptions.hiddenTools` in
+  `before_agent_start` and freezes the names into each request snapshot.
+  These are Pi's `prepareLoadout()` exclusions, not guesses from a setting or
+  tool name. Pi does not report which tool requested them, so there are no
+  candidate-source labels. A probe records them without a provider payload.
+  Event contexts have no `getSystemPromptOptions()` method: capture retains
+  the last observed list until the next `before_agent_start`, or shutdown.
+  A later handler or mid-run tool change can make it stale; a continuation
+  without that event uses the last list (initially empty). Usage instead reads
+  the live list in its command handler and is not subject to this limitation.
+
 - **Retention.** A snapshot keeps changed request messages, entry IDs, system
-  changes, and the forced prompt, with the [redaction](#images-and-provider-signatures)
+  changes, hidden tool names, and the forced prompt, with the [redaction](#images-and-provider-signatures)
   below. The builder releases its request copy after building. RequestTracker
   holds the unpaired capture until a payload or settlement; the guard's first
-  deferred job reduces it to tool names/descriptions, baseline names, grammar
-  input properties, and a converted transcript without image or signature bytes.
+  deferred job reduces it to non-hidden tool names/descriptions, grammar input
+  properties, and a converted transcript without image or signature bytes.
   Baseline and capture references are released even while a virtual request
   waits for dispatch; the converted transcript remains until comparison.
   Consumers rebuild the baseline with `buildSessionProjection(entries, leafId)`.
@@ -291,13 +307,13 @@ prompts, tool follow-ups, resume with another model, compaction, and probes.
 
 ## Payload Guard: Tool Declarations and Messages
 
-The payload guard implements D4, D7, and D9 of
+The payload guard implements D4 and D7 of
 [REQUEST-ONLY-INJECTIONS.md](REQUEST-ONLY-INJECTIONS.md). It runs in every mode
 and publishes through the same SnapshotBuilder. The guard is `complete` only
 when both the tool-declaration and message channels were compared. Otherwise
 it is `incomplete`, with a fixed reason and findings from any channel that
 succeeded. A complete guard may have findings; complete does not mean no edits.
-Declared names require only a compared tool channel.
+Pi's captured hidden tools are excluded from the expected tool channel.
 
 - **Pairing.** RequestTracker pairs each payload with the latest unpaired local
   capture ID, not `turnIndex`. Agent retries produce new captures; provider
@@ -305,8 +321,8 @@ Declared names require only a compared tool channel.
   unpaired at the next capture or `agent_settled` settles incomplete.
 - **Warm refreshes.** A `cache_warming_decision` after the latest capture plus
   a one-token output limit identifies a refresh. OpenAI Responses raises that
-  limit to 16, which is accepted too. No payload copy, comparison, findings, or
-  declared names are produced. Its stream events cannot confirm the waiting
+  limit to 16, which is accepted too. No payload copy, comparison, or findings
+  are produced. Its stream events cannot confirm the waiting
   agent request; assistant events can. A payload without a waiting capture is
   ignored even if its adapter omits or changes the limit. The marker is a
   heuristic: a warm decision alone cannot reveal a later handler's action.
@@ -320,7 +336,7 @@ Declared names require only a compared tool channel.
   for a response. Assistant `message_start` or `provider_stream_event`, whichever
   comes first, confirms the identity; assistant `message_end` is the fallback.
   A mismatch replaces the guard with an incomplete result and drops provisional
-  findings and declared names, without reparsing. This detects `pi.setModel()`
+  findings, without reparsing. Hidden tools are unaffected. This detects `pi.setModel()`
   during preparation. Missing dispatch metadata also invalidates the result.
 - **Virtual selections.** The guard retains the payload copy until dispatch
   supplies an identity, then looks up the physical model with
@@ -338,15 +354,14 @@ Declared names require only a compared tool channel.
   additions, are folded into the same channel. `__pi_deferred_placeholder__`
   is excluded. Anthropic names match case-insensitively, as for OAuth casing.
 - **Findings.** Compare names and whitespace-insensitive descriptions, not
-  schemas that Pi adapts for each provider. Added declarations and changed
-  descriptions are late tool edits; they keep the changed description lines,
-  like message findings. Missing declarations carry the active `model-only` tools at payload
-  time as candidates, not confirmed sources. An empty candidate list remains
-  a missing declaration; it may have been removed by a later handler.
-- **DeclaredTools.** Record the parsed names and the names replayed from the
-  capture's baseline whenever the tool channel is complete, independently of
-  message comparison. A standard probe observes no payload and records none;
-  a nonstandard host that reaches the hook pairs a probe payload normally.
+  schemas that Pi adapts for each provider. Added declarations, changed
+  descriptions, and removed declarations are late tool edits; they keep the
+  changed description lines, like message findings. A tool Pi hid is excluded
+  before comparison, so its absence is expected, not a late removal. If the
+  payload adds it back, it is a late addition. Missing non-hidden declarations
+  are deletions; their previews keep the removed description lines.
+  A standard probe observes no payload and cannot check late edits; a
+  nonstandard host that reaches the hook pairs a probe payload normally.
 - **Retention.** Physical payload copies are released after parsing; only the
   snapshot and identity wait for confirmation. Virtual copies are released after
   dispatch parsing or settlement. SnapshotBuilder allows guard replacements
@@ -404,8 +419,8 @@ names match case-insensitively for OAuth casing. Image and opaque signature
 changes alone are deliberately outside this text-only comparison.
 
 Injections renders the findings of the first snapshot
-([Injections on Snapshots](#injections-on-snapshots)); Usage filters tools by
-the declared names of the latest snapshot that records them
+([Injections on Snapshots](#injections-on-snapshots)). Payload findings do not
+change Usage: it filters tools by Pi's live hidden set
 ([Usage and Attribution](#usage-and-attribution)).
 
 ## Injections on Snapshots
@@ -457,25 +472,26 @@ structured edits already belong to the baseline, and the forced prompt is
 captured as final text. Unwrapped additions split at blank lines and section
 boundaries; adjacent additions with no separator may share an attribution guess.
 
-The [payload guard](#payload-guard-tool-declarations-and-messages) findings of
-a complete guard, or of the compared channel of an incomplete one, are added
-when the view opens:
+The snapshot also supplies hidden tools and late edits when the view opens:
 
-- **Hidden declarations.** The tool stays in place, marked `hidden`, at zero
-  tokens with its definition, like a deleted tool. Hidden wins over a
-  structured change of the same tool: the model never received either version.
-  The item keeps the finding's `model-only` candidates for the description;
-  they are never shown as its source.
-- **Late edits.** Message and tool findings have no entry reference or
-  attribution, so they form a separate `late edits` group after `unattributed`.
-  An item keeps the finding's changed lines for its preview; its text and
-  estimate hold only the added lines, so a deletion counts zero. Item kinds are
-  `message` and `tool`, so the group sorts like other sources.
+- **Hidden tools.** The snapshot's `hiddenTools` marks tools in place at zero
+  tokens with their definitions, independently of guard status. Hidden wins
+  over a structured change of the same tool. The marker legend explains that
+  Pi leaves them out while they remain callable through another tool; there
+  are no candidate labels or separate hidden-tool notes. A fallback without a
+  snapshot uses Pi's live hidden set instead.
+- **Late edits.** [Payload guard](#payload-guard-tool-declarations-and-messages)
+  findings of each compared channel form a separate `late edits` group after
+  `unattributed`. They have no entry reference or attribution. An item keeps
+  the finding's changed lines for its preview; its text and estimate hold only
+  the added lines, so a deletion counts zero. Tool removals belong here, not
+  under their source as Hidden. Item kinds are `message` and `tool`.
 
 Probe snapshots carry the warning specified in [ui/injections.md](ui/injections.md).
 Pending and incomplete guards appear as an unavailable or partial late-edit
 comparison in the description, never as "no edits". A complete guard adds no
-note; without findings, the payload matched the captured request up to this
+note; without findings, the payload matched the captured request, excluding
+Pi's known hidden declarations, up to this
 extension's own payload handler. The view is fixed while open; reopening reads
 a guard update with the same snapshot ID.
 
@@ -496,8 +512,8 @@ new transformed request on each open.
          +-----------------------+---------------------------+
          |                       |                           |
          v                       v                           v
-Live prompt/tool fallback   Latest snapshot,          Current session branch
-         |                  latest declared names            |
+Live prompt/tool fallback   Latest snapshot           Current session branch
+         |                       |                           |
          |                       |                           v
          |                       |                  buildSessionProjection()
          |                       |                  Filter probe messages,
@@ -509,8 +525,7 @@ Live prompt/tool fallback   Latest snapshot,          Current session branch
          |                           applyRequestSnapshot()
          |                  Conversation changes by entry; drop stale ones
          |                  System changes and forced prompt
-         |                  only while still fresh; declared names
-         |                  only while replayed and active names match
+         |                  only while still fresh
          |                                     |
          +-------------------------------------+
                                  |
@@ -519,7 +534,7 @@ Live prompt/tool fallback   Latest snapshot,          Current session branch
                   Replay system sections and tool deltas,
                   then the fresh request-only system changes;
                   a fresh forced prompt replaces the prompt text;
-                  fresh declared names leave out hidden tools
+                  Pi's live hidden tools are left out
                   (live fallback only without system state)
                                  |
                                  v
@@ -588,23 +603,16 @@ turn supplies the changes. `src/projection.ts` applies them when the view opens:
   [measured as usual](#prompt-parts-and-moved-blocks), so appended text counts
   as an extension addition. Like Injections, Usage marks the System Prompt item
   `forced`, and its previews [show the marker](ui/usage.md#forced-prompt).
-- **Declared tools, while fresh.** Replayed declarations include
-  [hidden](#payload-guard-tool-declarations-and-messages) tools, which stay
-  active although the model never receives them. Usage takes `declaredTools`
-  from the latest retained snapshot of either origin that records them: a
-  standard probe records none and does not replace an earlier turn's names,
-  while a later turn with an incomplete tool channel or a pending guard leaves
-  none. The names apply only while the current replayed tool names and the
-  live `pi.getActiveTools()` names, as sets, equal the snapshot's baseline
-  names. Pi records an active-tool change only when the next request starts,
-  so the live names drop the declared names at once; branch navigation or
-  resume changes the replayed names. Either drops them until a newer snapshot.
-  While they apply, a replayed tool counts only if the payload
-  declared its name, after any fresh request-only tool changes; other tools are
-  neither listed nor counted, and Usage marks nothing. Declared names missing
-  from the replay are not Usage tools. Counted tools keep their replayed
-  definitions, not payload text. Without usable names, and in the live
-  fallback, every tool counts.
+- **Hidden tools, from Pi's live loadout.** Every time Usage opens, it reads
+  `ctx.getSystemPromptOptions().hiddenTools`. After applying fresh request-only
+  tool changes, it leaves out those names, without markers. The same filtering
+  applies to the live fallback, before any prompt, and when a probe fails or
+  the payload guard is incomplete. No payload-declared names, baseline-name
+  sets, or freshness checks are retained for this purpose. Counted tools keep
+  their replayed definitions, not payload text. Pi records active-tool changes
+  at the next request: the replay can still include a recently deactivated
+  tool until then, but the hidden set updates immediately. A late payload
+  removal does not change Usage, just as other late edits do not.
 
 Without a snapshot, after a failed or skipped probe, Usage counts the current
 branch alone and shows the degraded reason. Session-backed custom messages
@@ -629,8 +637,8 @@ snapshot. Additions carry no
 entry reference, so they remain after branch navigation or compaction. A
 modification whose entry is still projected replaces that entry's current
 message even if a later `context_edit` changed it. Late edits from later
-`context_with_system` handlers and payload rewrites are not applied to Usage;
-only the declared tool names reach it. Usage is not an exact view of the last or
+`context_with_system` handlers and payload rewrites are not applied to Usage,
+including late tool removals. Usage is not an exact view of the last or
 next provider request.
 
 ## On-demand Silent Probe
@@ -1152,7 +1160,7 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/capture/payload.ts`     | Copy payloads, select parsers by API, extract message units and replay tool declarations.                     |
 | `src/capture/adjustments.ts` | Rebuild/convert the captured request and render Pi's model-dependent text adjustments.                        |
 | `src/capture/messages.ts`    | Collect message units, align whitespace-insensitive keys, and retain changed lines.                           |
-| `src/capture/tools.ts`       | Compare declaration names/descriptions; loadout candidates and DeclaredTools.                                 |
+| `src/capture/tools.ts`       | Compare non-hidden declarations; report added, modified, and deleted late tool edits.                         |
 | `src/capture/guard.ts`       | Defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.                   |
 | `src/capture/diff.ts`        | Differ: compare system state; trim equal ends in place, align the rest with a Myers diff.                     |
 | `src/capture/attribution.ts` | Attributor: `customType` and cooperative `details` provenance of custom messages.                             |
@@ -1167,7 +1175,7 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                                 |
 | `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                                            |
 | `src/injections.ts`          | Rebuild the first snapshot's baseline; measure it with marked changes and guard findings.                     |
-| `src/projection.ts`          | Rebuild filtered projections; apply the latest snapshot and declared tool names for Usage.                    |
+| `src/projection.ts`          | Rebuild filtered projections; apply the latest snapshot's conversation and fresh system changes for Usage.    |
 | `src/replay.ts`              | Replay recorded system state and changes; Usage prompt/tools and the live fallback.                           |
 | `src/message-preview.ts`     | Content-only message previews, redacting session images and omitting opaque signatures.                       |
 | `src/measure.ts`             | Split and estimate prompt/tool contributions without pi API access.                                           |
@@ -1207,11 +1215,11 @@ probe request isolation and message ownership, not a relaxation of those goals.
   differs, and defer the rest.
 - Payload parsers are selected by API, never shape. A complete guard needs both
   channels compared; incomplete never means "no edits". Each compared channel
-  retains its findings independently. Declared names require a compared tool
-  channel; dispatch mismatches drop all provisional findings and names.
+  retains its findings independently. Dispatch mismatches drop all provisional
+  findings, never the hidden names captured from Pi.
 - Message normalization requires evidence from Pi's API behavior, the model's
   capabilities, or the payload-time image-blocking setting, never text alone.
-- Warm refreshes publish nothing. Standard probes have no payload or declared names.
+- Warm refreshes publish nothing. Standard probes have no payload but record Pi's hidden tools.
 - On a Pi version older than `MIN_PI_VERSION`, no lifecycle handler is registered.
 - Probes make no provider request, and their messages are blanked in agent
   state, in every later model context, and in the saved session.
@@ -1228,9 +1236,8 @@ probe request isolation and message ownership, not a relaxation of those goals.
 - Usage applies the latest snapshot's conversation changes by baseline entry,
   drops changes whose entry left the projection, and applies system changes
   and the forced prompt only while the replayed system state is unchanged
-  since capture. It leaves out undeclared tools only while the replayed and
-  live active tool names equal the baseline names of the latest snapshot that
-  records them.
+  since capture. It leaves out Pi's live hidden tools on every open, with or
+  without a snapshot or compared payload.
 - Raw content appears only after Enter and is never logged or newly persisted.
 - Parent and child contributions are never double-counted.
 - Usage counts the replayed branch prompt/tool state once, never again as system

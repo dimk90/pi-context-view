@@ -1,12 +1,10 @@
 /**
  * PayloadGuard: deferred comparison of the tool-declaration and message
- * channels, and dispatch confirmation (D4, D7, D9). Physical selections parse
+ * channels, and dispatch confirmation (D4, D7). Physical selections parse
  * immediately after the payload copy; virtual selections keep the copy until
  * dispatch supplies the model.
  */
-import { getCurrentTools } from "@earendil-works/pi-ai";
-
-import type { DeclaredTools, Dispatch, GuardFinding, GuardResult } from "../snapshot.ts";
+import type { Dispatch, GuardFinding, GuardResult } from "../snapshot.ts";
 import {
 	type ConvertedRequest, type ConvertibleCapture, convertCapturedRequest, renderExpectedUnits,
 } from "./adjustments.ts";
@@ -31,12 +29,14 @@ export interface GuardModel {
 export interface GuardCapture extends ConvertibleCapture {
 	readonly id: number;
 	readonly requestModel?: GuardModel;
+	/** Tools Pi left out of the request; their missing declarations are expected. */
+	readonly hiddenTools?: readonly string[];
 }
 
 /** Where guard results go; SnapshotBuilder in production. */
 export interface GuardPublisher {
-	/** Replace the earlier guard and declared names, including on a dispatch mismatch. */
-	settleGuard(id: number, guard: GuardResult, declaredTools?: DeclaredTools): void;
+	/** Replace the earlier guard, including on a dispatch mismatch. */
+	settleGuard(id: number, guard: GuardResult): void;
 	/** Stop accepting updates after the final result. */
 	release(id: number): void;
 }
@@ -44,8 +44,6 @@ export interface GuardPublisher {
 /** Ports of the guard. */
 export interface PayloadGuardOptions {
 	readonly publisher: GuardPublisher;
-	/** Read at the payload hook, before active tools can change while awaiting dispatch. */
-	readonly loadoutCandidates: () => readonly string[];
 	/** Pi's `images.blockImages` setting, read at the payload hook. */
 	readonly blockImages: () => boolean;
 }
@@ -56,7 +54,6 @@ export type FindModel = (provider: string, modelId: string) => GuardModel | unde
 /** Minimal comparison data; no schemas, image data, or signatures. */
 interface ExpectedRequest {
 	readonly declarations: readonly PayloadDeclaration[];
-	readonly baselineNames: readonly string[];
 	/** Undefined when the captured request could not be converted. */
 	readonly transcript?: ConvertedRequest;
 }
@@ -67,14 +64,13 @@ interface ExpectedRequest {
  *   unsupported   the channel could not be compared, for `reason`
  */
 type ChannelResult =
-	| { readonly status: "compared"; readonly findings: readonly GuardFinding[]; readonly declaredTools?: DeclaredTools }
+	| { readonly status: "compared"; readonly findings: readonly GuardFinding[] }
 	| { readonly status: "unsupported"; readonly reason: string };
 
 /** State retained until comparison and dispatch confirmation have both ended. */
 interface PairedState {
 	readonly id: number;
 	readonly requestModel?: GuardModel;
-	readonly candidates: readonly string[];
 	readonly blockImages: boolean;
 	capture?: GuardCapture;
 	expected?: ExpectedRequest;
@@ -104,7 +100,6 @@ export class PayloadGuard {
 			requestModel: capture.requestModel,
 			capture,
 			payload: copyPayload(payload),
-			candidates: [...this.options.loadoutCandidates()],
 			blockImages: this.options.blockImages(),
 			finished: false,
 		};
@@ -114,7 +109,7 @@ export class PayloadGuard {
 
 	/**
 	 * Read identity once, without parsing in a stream handler. Physical identity
-	 * mismatches invalidate the result and declared names, never reparse. Virtual
+	 * mismatches invalidate the result, never reparse. Virtual
 	 * requests use the dispatched model's API, not the payload shape.
 	 */
 	public confirm(id: number, dispatch: Dispatch, findModel: FindModel): void {
@@ -203,8 +198,7 @@ export class PayloadGuard {
 
 	/**
 	 * Compare both channels and publish their findings. Only two compared
-	 * channels complete the guard; otherwise the compared one keeps its findings,
-	 * and declared names need only the tool channel.
+	 * channels complete the guard; otherwise the compared one keeps its findings.
 	 */
 	private evaluate(state: PairedState, copy: PayloadCopy, expected: ExpectedRequest, model: GuardModel): void {
 		const dispatch = state.dispatch ?? toDispatch(model);
@@ -212,9 +206,8 @@ export class PayloadGuard {
 			this.options.publisher.settleGuard(state.id, { status: "incomplete", reason: copy.reason, dispatch });
 			return;
 		}
-		const tools = compareToolChannel(copy.payload, expected, model, state.candidates);
+		const tools = compareToolChannel(copy.payload, expected, model);
 		const messages = compareMessageChannel(copy.payload, expected.transcript, model);
-		const declaredTools = tools.status === "compared" ? tools.declaredTools : undefined;
 		const compared = [tools, messages].flatMap((channel) => channel.status === "compared" ? [channel.findings] : []);
 		const failure = tools.status === "unsupported" ? tools : messages.status === "unsupported" ? messages : undefined;
 		const guard: GuardResult = failure === undefined
@@ -223,19 +216,21 @@ export class PayloadGuard {
 				status: "incomplete", reason: failure.reason, dispatch,
 				...(compared.length === 0 ? {} : { findings: compared.flat() }),
 			};
-		this.options.publisher.settleGuard(state.id, guard, declaredTools);
+		this.options.publisher.settleGuard(state.id, guard);
 	}
 }
 
 /**
- * The comparison data of a capture: expected declarations, baseline tool
- * names, and the converted transcript. A request that cannot be converted
- * leaves only the message channel uncompared.
+ * The comparison data of a capture: the declarations Pi sends, without the
+ * tools it hid, and the converted transcript. A request that cannot be
+ * converted leaves only the message channel uncompared.
  */
 function reduceCapture(capture: GuardCapture, blockImages: boolean): ExpectedRequest {
+	const hidden = new Set(capture.hiddenTools);
 	const tools = {
-		declarations: (capture.system?.toolsAdded ?? []).map(({ name, description }) => ({ name, description })),
-		baselineNames: getCurrentTools(capture.baseline.messages.map(({ message }) => message)).map((tool) => tool.name),
+		declarations: (capture.system?.toolsAdded ?? [])
+			.filter(({ name }) => !hidden.has(name))
+			.map(({ name, description }) => ({ name, description })),
 	};
 	try {
 		return { ...tools, transcript: convertCapturedRequest(capture, { blockImages }) };
@@ -244,23 +239,16 @@ function reduceCapture(capture: GuardCapture, blockImages: boolean): ExpectedReq
 	}
 }
 
-/** Compare tool declarations, and record declared names when the channel is complete (D9). */
-function compareToolChannel(
-	payload: unknown,
-	expected: ExpectedRequest,
-	model: GuardModel,
-	candidates: readonly string[],
-): ChannelResult {
+/** Compare the payload's tool declarations with the expected ones. */
+function compareToolChannel(payload: unknown, expected: ExpectedRequest, model: GuardModel): ChannelResult {
 	const parsed = parsePayloadTools(model.api, payload);
 	if (parsed.status !== "parsed") return parsed;
-	const comparison = compareToolDeclarations({
+	const findings = compareToolDeclarations({
 		expected: expected.declarations,
 		declarations: parsed.declarations,
-		baselineNames: expected.baselineNames,
 		ignoreNameCase: model.api === "anthropic-messages",
-		loadoutCandidates: () => candidates,
 	});
-	return { status: "compared", findings: comparison.findings, declaredTools: comparison.declaredTools };
+	return { status: "compared", findings };
 }
 
 /** Compare the payload's text units with those Pi would send for the captured request. */

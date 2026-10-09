@@ -10,7 +10,7 @@ Capture observes every agent request: user prompts, tool follow-ups, runs starte
 
 The baseline is Pi's canonical session projection. Persistent contributions are already in that baseline and cancel out of the diff. They include stored custom messages, `context_edit` entries, compaction and branch summaries, boundary entries, recorded prompt/tool changes, and finalized message or tool-result replacements.
 
-Built-in extensions follow the same rules as third-party extensions. The forced system prompt and hidden tool declarations are also in scope: Pi applies these request-only changes on an extension's behalf. Pi's model-specific representation changes are normalized away. Snapshots also record which tools the payload declares, so consumers can leave out hidden tools (D9).
+Built-in extensions follow the same rules as third-party extensions. The forced system prompt and hidden tool declarations are also in scope: Pi applies these request-only changes on an extension's behalf. Pi's model-specific representation changes are normalized away. Snapshots record Pi's hidden tools for Injections (D7); Usage reads Pi's live hidden set (D9).
 
 | Request-only change                                                 | Capture                                     | Attribution                             |
 | ------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------- |
@@ -20,7 +20,7 @@ Built-in extensions follow the same rules as third-party extensions. The forced 
 | `before_provider_request` handler before the monitor                | Payload guard, text only                    | None                                    |
 | `before_provider_request` handler after the monitor                 | Not visible                                 | None                                    |
 | Forced prompt from `before_agent_start`, any load position          | Structured, through `ctx.getSystemPrompt()` | None                                    |
-| Hidden tool declarations from `prepareLoadout()`, any load position | Payload guard, tool-declaration channel     | Active `model-only` tools as candidates |
+| Hidden tool declarations from `prepareLoadout()`                    | `before_agent_start` prompt options (D7)    | Pi's loadout; the hiding tool is unknown |
 | Pi's model-specific adjustments                                     | Normalized, not reported                    | Not applicable                          |
 | Cache-warm refresh                                                  | Marked and skipped                          | Not applicable                          |
 | The monitor's own probe-message filter                              | Applied to both sides, not reported         | Not applicable                          |
@@ -125,9 +125,8 @@ A forced prompt is not in this capture. Detect it by comparing `ctx.getSystemPro
 Implementation is split into two plan items: pairing and tool declarations,
 then the message channel. Both are implemented. A compared message channel
 and tool channel settle `complete`; otherwise, the guard stays `incomplete`
-while retaining findings from any compared channel. Declared names depend only
-on the tool channel. Injections renders the findings, and Usage filters
-tools by declared names (D11).
+while retaining findings from any compared channel. Injections renders the
+findings. Usage reads Pi's live hidden tools, independently of this guard (D11).
 
 The chosen message comparison uses text units (system, user, assistant, tool
 call, tool result), whitespace-insensitive keys, and LCS alignment, with changed
@@ -139,7 +138,7 @@ Copy the payload synchronously, then parse and compare two channels off the crit
 - **Messages:** model-facing message and system text, excluding `details` and other unsent metadata.
 - **Tool declarations:** tool names and descriptions. Inline tool changes belong to this channel too: Anthropic's `tool_addition` and `tool_removal` blocks in system messages, and the `additional_tools` and tool search items of OpenAI Responses (see Pi's own adjustments).
 
-Compare them with the corresponding data extracted from the capture after Pi's adjustments. Unexplained additions, changes or removals are reported as **edited after monitor**, without structure or attribution. Missing declarations first go through the loadout check in D7. Later `before_provider_request` handlers remain invisible.
+Compare them with the corresponding data extracted from the capture after Pi's adjustments. Unexplained additions, changes or removals are reported as **edited after monitor**, without structure or attribution. Pi's captured hidden set is excluded from expected declarations (D7); other missing declarations are late deletions. Later `before_provider_request` handlers remain invisible.
 
 #### Request pairing
 
@@ -152,7 +151,7 @@ Number captures locally; `turnIndex` restarts at zero for every agent run and ca
 
 The cache-warming decision alone is insufficient: handler results do not update `event.action`, so the monitor cannot see whether a later handler changed it. Failed warm refreshes have no assistant-message fallback and do not need one because their comparison is skipped.
 
-Release pending data on settlement and shutdown. Missing dispatch/model metadata or unsupported payload formats produce an incomplete guard result, not an empty diff. A physical result published before dispatch is provisional: an identity mismatch or missing confirmation replaces it and removes its findings and declared names. SnapshotBuilder accepts these replacements until the guard explicitly releases that ID.
+Release pending data on settlement and shutdown. Missing dispatch/model metadata or unsupported payload formats produce an incomplete guard result, not an empty diff. A physical result published before dispatch is provisional: an identity mismatch or missing confirmation replaces it and removes its findings. Pi's captured hidden tools are unaffected. SnapshotBuilder accepts these replacements until the guard explicitly releases that ID.
 
 #### Pi's own adjustments
 
@@ -212,6 +211,9 @@ Checked on Pi 1.0.2 against the mock provider for OpenAI Completions, OpenAI Res
 
 #### Tool-channel validation on Pi 1.0.3
 
+Historical check of the earlier candidate/DeclaredTools implementation; D7 and
+D9 now use Pi's hidden set instead.
+
 `test/payload-runtime.test.ts` exercises all three adapters: ordinary prompts,
 tool follow-ups, payload edits in both orders, codemode `on` and `only`,
 tool-search, a direct-tool MCP server, virtual routing, and both retry levels.
@@ -254,6 +256,9 @@ findings when the other fails.
 
 #### Guard results in the views on Pi 1.0.4
 
+Historical results: the Pi 1.1 changes in D7/D9 replace candidate attribution
+and payload-based Usage filtering.
+
 Injections shows hidden declarations in place with a `Hidden` marker, at zero
 tokens, and names their `model-only` candidates in its description. Late edits
 have no structure or source, so they form a `late edits` group that counts only
@@ -284,22 +289,30 @@ Pi calls `prepareLoadout()` when active tools change. Its outputs have different
 - `descriptions` replace tool descriptions and are recorded in system messages. They belong to the baseline.
 - `hiddenDeclarations` removes declarations from each request after `context_with_system`, while tools stay active and callable. This is request-only. Hidden tools are also omitted from the recorded prompt's tool list; that prompt change belongs to the baseline.
 
-Pi does not expose the hidden set or which tools define `prepareLoadout()`. `pi.getAllTools()` supplies exposure and namespace. When captured declarations are absent from the payload, active `model-only` tools are attribution candidates, not confirmed sources. Both built-in `codemode` and `tool_search` have that exposure, but only `codemode` defines `prepareLoadout()`, so `tool_search` is a false candidate. Added or rewritten declarations are not loadout effects.
+Pi exposes this set as `hiddenTools` in prompt options. Capture copies the list
+from `before_agent_start.systemPromptOptions` into request snapshots, including
+probes with no payload. The guard excludes these names from its expected tool
+channel. Other removals are Deleted late edits, with the removed description
+lines. Pi does not expose which tool requested each exclusion, so remove the
+`model-only` candidate heuristic rather than treating it as attribution.
 
-Snapshots report hidden declarations with these candidates. Each consumer decides how to present or count them (D11).
+Event contexts cannot read live prompt options. A later handler, tool change,
+or continuation without `before_agent_start` can leave capture's last observed
+set stale (initially empty). Usage reads live command-context options instead.
+[ARCHITECTURE.md](ARCHITECTURE.md#structured-request-capture) owns this limit.
 
 ### D8. Built-ins follow the same capture rules
 
 Built-ins load as `builtin:<name>` at the positions in D1. Codemode, tool search, MCP and llama.cpp register no `context`, `context_with_system` or `before_provider_request` handlers. MCP writes its `mcp_servers` prompt section through `systemPromptOptions`, so it belongs to the baseline; llama.cpp registers a provider. Codemode's hidden declarations are handled through D7 and D9. No special capture path is needed.
 
-### D9. Declared tool names
+### D9. Tool counting
 
-Tool declarations replayed from the session projection include hidden tools: they stay active, so the replay still declares them, although the model never receives them. Each snapshot therefore records two name sets from its paired payload:
-
-- **Declared:** names in the payload's tool-declaration channel after the inline tool changes are replayed (D4), without `__pi_deferred_placeholder__`.
-- **Baseline:** names replayed from the capture's baseline (D2).
-
-Record them only when the tool-declaration channel is complete; the message channel does not matter. Warm refreshes record nothing. Retain only the two name sets and release the payload copy as D4 describes. Consumers decide how to use them; Usage's rules are in D11.
+Usage excludes `ctx.getSystemPromptOptions().hiddenTools` on every open. This
+works before the first prompt and without a compared payload. No declared or
+baseline name sets are retained, and no name-freshness checks are needed.
+Late payload edits, including tool removals, do not change Usage. Definitions
+still come from the replayed branch, with live tools only as the no-system-state
+fallback. This replaces the original payload-based DeclaredTools design.
 
 ### D10. Silent probe is a trigger, not a capture path
 
@@ -374,7 +387,7 @@ interface RequestSnapshot {
   readonly changes: StructuredChanges; // D3 and the diff algorithm
   readonly forcedPrompt?: string;
   readonly guard: GuardResult; // D4, D7
-  readonly declaredTools?: DeclaredTools; // D9
+  readonly hiddenTools?: readonly string[]; // D7, independent of guard status
 }
 
 type GuardResult =
@@ -394,7 +407,7 @@ interface SnapshotReader {
 }
 ```
 
-- **Contents.** A snapshot keeps the findings and the data consumers need to count them: changed message content, system patches, forced prompt text, guard findings, loadout candidates and tool names. Release the request copy, baseline and payload copy once processing ends. Session entries are append-only, so `buildSessionProjection(entries, leafId)` rebuilds the same baseline later.
+- **Contents.** A snapshot keeps the findings and the data consumers need to count them: changed message content, system patches, forced prompt text, guard findings and Pi's hidden tool names. Release the request copy, baseline and payload copy once processing ends. Session entries are append-only, so `buildSessionProjection(entries, leafId)` rebuilds the same baseline later.
 - **Publication.** Publish a snapshot when its structured diff is ready, with guard `pending`. When the guard settles, publish a new object with the same ID; the store replaces its retained copy. Warm refreshes publish nothing.
 - **Retention.** Keep the first and the latest snapshot for each origin, so at most four. The first snapshot of an origin stays until `session_shutdown`. Without an origin, `first()` and `latest()` choose by ID across both origins.
 - **Updates.** `subscribe()` reports every publication, so a consumer can follow each request.
@@ -408,17 +421,16 @@ interface SnapshotReader {
 
 #### Injections view
 
-Shows the selected snapshot (Initial today): structured changes with attribution, the forced prompt, late edits, and hidden declarations as request-only changes with their `model-only` candidates (D7). It labels probe snapshots and incomplete guards.
+Shows the selected snapshot (Initial today): structured changes with attribution, the forced prompt, late edits, and hidden declarations as request-only changes from Pi's captured hidden set (D7). It labels probe snapshots and incomplete guards.
 
 #### Usage view
 
-Counts the replayed projection and applies the selected snapshot's conversation changes by baseline entry: additions are counted, modifications replace their baseline message, and deletions remove it. System changes and the forced prompt apply after the replayed system state only while it equals the state rebuilt at the snapshot's `leafId`. A forced prompt replaces the measured prompt text; as in the request, only tool changes apply with it. Hidden declarations are a normalized Pi adjustment for Usage: hidden tools drop out without a finding. Tool counting uses D9's name sets:
+Counts the replayed projection and applies the selected snapshot's conversation changes by baseline entry: additions are counted, modifications replace their baseline message, and deletions remove it. System changes and the forced prompt apply after the replayed system state only while it equals the state rebuilt at the snapshot's `leafId`. A forced prompt replaces the measured prompt text; as in the request, only tool changes apply with it. Hidden declarations are a normalized Pi adjustment for Usage: hidden tools drop out without a finding. Tool counting uses D9's live hidden set:
 
-- **Source.** Take `declaredTools` from the latest snapshot of either origin that records them. A standard Pi 1.0 probe has no payload and records none (D10), so it does not replace the names of an earlier request.
-- **Filter.** Count a replayed tool only if the snapshot declares its name. Other replayed tools drop out of Usage: they are neither listed nor counted. Declared names missing from the replay are not Usage tools; D3 and D4 report them.
-- **Definitions.** Count the replayed name, description and schema, not the payload text. Usage stays a provider-independent estimate.
-- **Freshness.** Use the names only while the current replayed tool names and the live active tool names equal the snapshot's baseline names. Pi records an active-tool change only when the next request starts, so the live names catch it at once; branch navigation or resume changes the replayed set. Either makes the names unusable until a newer snapshot.
-- **Fallback.** Without usable names, count every replayed tool without a marker, as Usage does today. This covers the time before the first snapshot, a changed tool set, and an incomplete tool-declaration channel.
+- **Source.** Read `ctx.getSystemPromptOptions().hiddenTools` each time Usage opens.
+- **Filter.** Neither list nor count those tools; Usage marks nothing. A late payload removal does not affect Usage.
+- **Definitions.** Count the replayed name, description and schema, not payload text. Usage stays a provider-independent estimate.
+- **Fallback.** The same filtering applies to live tools without recorded system state, before any prompt or after a failed probe. Guard status does not affect it.
 
 ## Components
 
@@ -433,8 +445,7 @@ Counts the replayed projection and applies the selected snapshot's conversation 
 | Capture   | Attributor        | Deferred                                                                                                                     | Label changes from `customType` and cooperative provenance                                          |
 | Capture   | PayloadParser     | Deferred                                                                                                                     | Select the parser by API; extract message and tool-declaration channels                             |
 | Capture   | PayloadGuard      | Deferred                                                                                                                     | Normalize Pi adjustments and report unexplained differences or incomplete comparison                |
-| Capture   | LoadoutAttributor | Deferred                                                                                                                     | Explain missing declarations with active `model-only` candidates                                    |
-| Capture   | DeclaredTools     | Deferred, after PayloadGuard                                                                                                 | Record the declared and baseline tool names (D9)                                                    |
+| Capture   | Hidden tools      | `before_agent_start`, copied into each capture                                                                              | Record Pi's hidden set, including for probes with no payload (D7)                                   |
 | Capture   | DispatchConfirmer | Assistant `message_start`, `provider_stream_event`, assistant `message_end`                                                  | Record identity once per paired request; confirm the request model or supply the virtual route      |
 | Capture   | SnapshotBuilder   | Deferred                                                                                                                     | Assemble snapshots, publish them and their guard updates, release copies                            |
 | Store     | SnapshotStore     | None; the wiring clears it on `session_shutdown`                                                                             | Retain the first and latest snapshot per origin; notify subscribers                                 |
@@ -478,6 +489,7 @@ interface Capture {
   messages: AgentMessage[];
   baseline: AgentMessage[];
   forcedPrompt?: string;
+  hiddenTools: readonly string[];
 }
 
 interface PendingPayload {
@@ -501,6 +513,11 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, snapshots: S
   let unpaired: Capture | undefined; // latest capture still waiting for its payload
   let warmDecisionSinceCapture = false;
   let awaitingDispatch: PendingPayload | undefined;
+  let hiddenTools: readonly string[] = [];
+
+  pi.on("before_agent_start", (event) => {
+    hiddenTools = [...event.systemPromptOptions.hiddenTools];
+  });
 
   pi.on("context_with_system", (event, ctx) => {
     // the previous request ended without a payload
@@ -515,6 +532,7 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, snapshots: S
       ...copyRequest(baseline, event.messages),
       baseline,
       forcedPrompt: effectivePrompt === getCurrentSystemPrompt(baseline) ? undefined : effectivePrompt,
+      hiddenTools: [...hiddenTools],
     };
     unpaired = capture;
     warmDecisionSinceCapture = false;
@@ -580,18 +598,14 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, snapshots: S
       }
       const parsed = parsePayload(pending.payload, format);
       const expected = applyPiSteps(capture, model);
-      const findings = explainByLoadout(compare(parsed, expected), pi.getAllTools());
-      snapshots.publishGuard(capture.id, { status: "complete", dispatch, findings }, {
-        // keep tool names only, never the payload (D9)
-        declared: declaredToolNames(parsed),
-        baseline: replayedToolNames(capture.baseline),
-      });
+      const findings = compare(parsed, expected);
+      snapshots.publishGuard(capture.id, { status: "complete", dispatch, findings });
     }, 0);
   }
 }
 ```
 
-The omitted helpers implement the components above. `Dispatch` holds provider, API and model. `copyPayload` copies arrays and plain objects and shares strings and other primitives. `chooseFormat` returns no format for unsupported payloads. An incomplete guard distinguishes an unavailable comparison from a successful comparison with no edits. `applyPiSteps` leaves hidden declarations in the expected channel for `explainByLoadout` to handle. `declaredToolNames` removes the deferred placeholder. `SnapshotBuilder` publishes a capture's changes before its guard update and then releases the capture's clones. A complete tool-declaration channel with an incomplete message channel still records declared names; the skeleton omits that case.
+The omitted helpers implement the components above. `Dispatch` holds provider, API and model. `copyPayload` copies arrays and plain objects and shares strings and other primitives. `chooseFormat` returns no format for unsupported payloads. An incomplete guard distinguishes an unavailable comparison from a successful comparison with no edits. `applyPiSteps` excludes `capture.hiddenTools` from expected declarations. Parsing removes the deferred placeholder. `SnapshotBuilder` publishes a capture's changes and hidden tools before its guard update and then releases the capture's clones. A complete tool-declaration channel with an incomplete message channel still keeps its findings; the skeleton omits that case.
 
 The physical-selection path also stores `ctx.model` in the capture. `before_provider_request` then schedules parsing with that model right after the copy, retains only the comparison data, and leaves the identity-bearing events to confirm the model. On the physical path, `Dispatch` in a complete guard is the request model.
 
@@ -607,7 +621,7 @@ Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_
 | Late edits                | Rewrite the payload before and after the monitor and confirm the stated visibility limits.                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Forced prompt             | Return `systemPrompt` from `before_agent_start`; verify the capture applies it in both load orders, in real and probe runs, and the guard in real runs.                                                                                                                                                                                                                                                                                                                                                |
 | Built-ins                 | Load codemode with an active `codemode` tool in both normal and `"codemode": { "mode": "only" }` settings; load tool-search and MCP with a minimal direct-tool server. Separate recorded prompt/description changes from hidden declarations.                                                                                                                                                                                                                                                          |
-| Usage tools               | With codemode `"mode": "only"`, Usage counts only `codemode` after a request, also after a later probe, and every replayed tool before it, even after a probe. Change active tools and reopen Usage before and after the next request. An incomplete declaration channel uses replay. The placeholder never appears.                                                                                                                                                                                   |
+| Usage tools               | With codemode `"mode": "only"`, Usage counts only `codemode` before and after a request, including probes and incomplete guards. Injections marks the snapshot's hidden tools before the first prompt. Change active tools and reopen Usage before and after the next request. Late payload removals do not affect Usage. The placeholder never appears.                                                                                                                                                                                   |
 | Routing and normalization | Alternate physical providers, directly and through a virtual model; route image input to a text-only model; cover every adjustment in D4.                                                                                                                                                                                                                                                                                                                                                              |
 | Retries                   | Fail once with agent retries enabled, then with `"retry": { "enabled": false, "provider": { "maxRetries": 2 } }`. Verify capture pairing.                                                                                                                                                                                                                                                                                                                                                              |
 | Cache warming             | Set model `"promptCache": { "short": 12 }`, `"cacheWarming": "idle"`, and return `{ action: "warm" }` from the decision fixture. Check successful and failed refreshes are skipped, including refreshes after a probe.                                                                                                                                                                                                                                                                                 |

@@ -59,7 +59,7 @@ test("copyPromptOptions owns the custom prompt and section overrides", () => {
 	assert.deepEqual(copied.sections, { review: "Original rule" });
 });
 
-test("buildUsageSnapshot lists and counts only declared tools while names are given", () => {
+test("buildUsageSnapshot neither lists nor counts the tools Pi hides", () => {
 	const declarations = ["read", "bash", "codemode"].map((name) => ({
 		name, description: `${name} description`, parameters: { type: "object", properties: {} },
 	}) as Tool);
@@ -71,22 +71,16 @@ test("buildUsageSnapshot lists and counts only declared tools while names are gi
 		systemPrompt: "live prompt",
 		options: { cwd: "/tmp" },
 		allTools: [tool("read", "builtin"), tool("bash", "builtin"), tool("codemode", "builtin:codemode")],
-		activeToolNames: ["read"],
+		activeToolNames: ["read", "bash"],
 	};
-	const codemodeOnly = new Set(["codemode", "late_extra"]);
+	const hidden = { ...input, options: { cwd: "/tmp", hiddenTools: ["read", "bash"] } };
 	assert.deepEqual(toolNames(buildUsageSnapshot(input)), ["bash", "codemode", "read"]);
-	assert.deepEqual(toolNames(buildUsageSnapshot({ ...input, declaredToolNames: codemodeOnly })), ["codemode"],
-		"hidden tools drop out; declared names missing from the replay are not Usage tools");
-	assert.deepEqual(
-		toolNames(buildUsageSnapshot({ ...input, forcedPrompt: "Forced prompt", declaredToolNames: codemodeOnly })),
-		["codemode"],
-		"tool filtering applies with a forced prompt too",
-	);
-	assert.deepEqual(
-		toolNames(buildUsageSnapshot({ ...input, messages: [], declaredToolNames: codemodeOnly })),
-		["read"],
-		"the live fallback without recorded state counts every active tool",
-	);
+	assert.deepEqual(toolNames(buildUsageSnapshot(hidden)), ["codemode"]);
+	assert.deepEqual(toolNames(buildUsageSnapshot({ ...hidden, forcedPrompt: "Forced prompt" })), ["codemode"],
+		"tool filtering applies with a forced prompt too");
+	assert.deepEqual(toolNames(buildUsageSnapshot({ ...input, messages: [] })), ["bash", "read"]);
+	assert.deepEqual(toolNames(buildUsageSnapshot({ ...hidden, messages: [] })), [],
+		"the live fallback without recorded state leaves them out too");
 });
 
 /** Sorted names of every measured tool, built-in children included. */

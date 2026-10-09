@@ -6,40 +6,43 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import {
-	type AgentSession, createAgentSession, createCodemodeExtension, DefaultResourceLoader, type ExtensionAPI,
-	type ExtensionContext, type ExtensionFactory, type ExtensionUIContext, ModelRuntime, SessionManager,
-	SettingsManager,
+	type AgentSession, createAgentSession, createCodemodeExtension, DefaultResourceLoader, type ExtensionContext,
+	type ExtensionFactory, type ExtensionUIContext, ModelRuntime, SessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-import { SnapshotBuilder } from "../src/capture/builder.ts";
-import { registerCapture } from "../src/capture/register.ts";
-import { CompactionState, registerCompactionTracking } from "../src/compaction.ts";
 import registerExtension from "../src/index.ts";
-import { ProbeFilter, registerProbeFilter } from "../src/probe/filter.ts";
-import { registerSilentProbe, SilentProbe } from "../src/probe/silent-probe.ts";
-import { type ProbeResult, ProbeTrigger } from "../src/probe/trigger.ts";
-import { createProbeView } from "../src/probe/view.ts";
-import { applyRequestSnapshot, latestDeclaredTools } from "../src/projection.ts";
+import { buildInjectionsSnapshot } from "../src/injections.ts";
+import type { InjectionItem } from "../src/model.ts";
+import { applyRequestSnapshot } from "../src/projection.ts";
 import { buildUsageSnapshot } from "../src/replay.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
 import { computeUsage } from "../src/usage.ts";
 import { type MockApi, startMockProvider } from "./harness/mock-provider.ts";
 
 const ACTIVE = ["read", "bash", "edit", "write", "codemode"];
+const HIDDEN = ["read", "bash", "edit", "write"];
 
 for (const api of ["openai-completions", "anthropic-messages"] as const) {
-	test(`#11 ${api}: a first probe uses replay; a real codemode-only request excludes hidden definitions`, async (t) => {
+	test(`#11 ${api}: a first probe already leaves out the tools codemode-only hides`, async (t) => {
 		const { session, store, provider, errors, observed } = await createRuntime(t, api);
 		await session.prompt("/context");
-		assert.equal(store.latest()?.origin, "synthetic-probe");
-		assert.equal(store.latest()?.declaredTools, undefined);
+		const probe = store.latest();
+		assert.equal(probe?.origin, "synthetic-probe");
+		assert.deepEqual(probe?.hiddenTools, HIDDEN);
 		assert.equal(provider.requests.length, 0);
 		assert.equal(observed.responses, 0, "after_provider_response sentinel stays silent for the probe");
-		assert.deepEqual(toolNames(session, store), [...ACTIVE].sort());
+		assert.deepEqual(usageToolNames(session, store), ["codemode"]);
+		assert.deepEqual(hiddenInjections(session, store), [...HIDDEN].sort());
+
 		await session.prompt("hi");
 		await flush();
-		assert.deepEqual(store.latest()?.declaredTools, { declared: ["codemode"], baseline: ACTIVE });
-		assert.deepEqual(toolNames(session, store), ["codemode"]);
+		const real = store.latest();
+		assert.equal(real?.origin, "real-turn");
+		assert.deepEqual(real?.hiddenTools, HIDDEN);
+		assert.equal(real?.guard.status, "complete");
+		assert.deepEqual(real?.guard.status === "complete" ? real.guard.findings : undefined, [],
+			"tools Pi hid are not late removals");
+		assert.deepEqual(usageToolNames(session, store), ["codemode"]);
 		assert.equal(provider.requests.length, 1);
 		assert.equal(observed.responses, 1);
 		assert.deepEqual(observed.declarations, [api === "anthropic-messages"
@@ -51,48 +54,37 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
 	});
 }
 
-test("#11: a later probe records no names and keeps the real turn's declared names", async (t) => {
-	const probes: ProbeResult[] = [];
-	const { session, store, provider, errors, observed } = await createRuntime(t, "openai-completions",
-		(pi, snapshots) => registerProbeCommand(pi, snapshots, probes));
-	await session.prompt("hi");
-	await flush();
-	assert.deepEqual(toolNames(session, store), ["codemode"]);
-	await session.prompt("/probe");
-	assert.equal(probes[0]?.status, "captured", JSON.stringify(probes[0]));
-	assert.equal(store.latest()?.origin, "synthetic-probe");
-	assert.equal(store.latest()?.declaredTools, undefined);
-	assert.deepEqual(latestDeclaredTools(store), { declared: ["codemode"], baseline: ACTIVE });
-	assert.deepEqual(toolNames(session, store), ["codemode"]);
-	assert.equal(provider.requests.length, 1, "the probe makes no provider request");
-	assert.equal(observed.responses, 1, "after_provider_response sentinel stays silent for the probe");
-	assert.deepEqual(errors, []);
-});
-
-test("#11: changing active tools invalidates declared names before the next request", async (t) => {
+test("#11: Usage follows Pi's hidden tools as soon as the active tools change", async (t) => {
 	const { session, store } = await createRuntime(t, "openai-completions");
 	await session.prompt("hi");
 	await flush();
-	assert.deepEqual(toolNames(session, store), ["codemode"]);
+	assert.deepEqual(usageToolNames(session, store), ["codemode"]);
 	session.setActiveToolsByName(["read", "bash", "edit", "write"]);
 	assert.deepEqual(session.getActiveToolNames(), ["read", "bash", "edit", "write"]);
-	assert.deepEqual(toolNames(session, store), [...ACTIVE].sort(),
-		"Pi records the change at the next request, so every replayed tool counts until then");
+	assert.deepEqual(hiddenInjections(session, store), [...HIDDEN].sort(), "Initial keeps its captured hidden set");
+	assert.deepEqual(usageToolNames(session, store), [...ACTIVE].sort(),
+		"Pi hides nothing now and records the change at the next request, so every replayed tool counts until then");
 	await session.prompt("after active-tool change");
 	await flush();
-	assert.deepEqual(store.latest()?.declaredTools?.declared, ["read", "bash", "edit", "write"]);
-	assert.deepEqual(toolNames(session, store), ["bash", "edit", "read", "write"]);
+	assert.equal(store.latest()?.hiddenTools, undefined);
+	assert.deepEqual(usageToolNames(session, store), ["bash", "edit", "read", "write"]);
+	assert.deepEqual(hiddenInjections(session, store), [...HIDDEN].sort(), "a later request does not change Initial");
 });
 
-/** Tool names Usage lists, through its production selection, application, and measurement. */
-function toolNames(session: AgentSession, store: SnapshotStore): string[] {
+/** Pi's current prompt options, as a command handler reads them. */
+function liveOptions(session: AgentSession) {
+	return session.extensionRunner.createCommandContext().getSystemPromptOptions();
+}
+
+/** Tool names Usage lists, through its production application and measurement. */
+function usageToolNames(session: AgentSession, store: SnapshotStore): string[] {
 	const manager = session.sessionManager;
 	const applied = applyRequestSnapshot({
-		snapshot: store.latest(), declaredTools: latestDeclaredTools(store), activeToolNames: session.getActiveToolNames(),
-		entries: manager.getEntries(), leafId: manager.getLeafId(), filterMessages: (messages) => messages,
+		snapshot: store.latest(), entries: manager.getEntries(), leafId: manager.getLeafId(),
+		filterMessages: (messages) => messages,
 	});
 	const snapshot = buildUsageSnapshot({
-		...applied, systemPrompt: session.systemPrompt, options: { cwd: "/tmp/project" },
+		...applied, systemPrompt: session.systemPrompt, options: liveOptions(session),
 		allTools: session.getAllTools(), activeToolNames: session.getActiveToolNames(),
 	});
 	return computeUsage({ snapshot, messages: applied.messages }).categories
@@ -100,39 +92,28 @@ function toolNames(session: AgentSession, store: SnapshotStore): string[] {
 		.flatMap((category) => category.children ?? []).map((child) => child.label).sort();
 }
 
-/**
- * Test-only wiring of the production probe and capture layers, in the order
- * `src/index.ts` registers them, with a `/probe` command that asks
- * ProbeTrigger for a probe even when the store already holds a snapshot.
- */
-function registerProbeCommand(pi: ExtensionAPI, snapshots: SnapshotStore, results: ProbeResult[]): void {
-	const probeFilter = new ProbeFilter();
-	const probe = new SilentProbe(probeFilter);
-	const compaction = new CompactionState();
-	const trigger = new ProbeTrigger({ pi, probe, snapshots, compaction });
-	registerProbeFilter(pi, probeFilter);
-	registerSilentProbe(pi, probe);
-	registerCapture(pi, createProbeView(probeFilter, probe), new SnapshotBuilder(snapshots));
-	registerCompactionTracking(pi, compaction);
-	pi.registerCommand("probe", {
-		description: "Test only",
-		handler: async (_args, ctx) => { results.push(await trigger.request(ctx)); },
+/** Tool names Injections marks `hidden` on the first snapshot. */
+function hiddenInjections(session: AgentSession, store: SnapshotStore): string[] {
+	const first = store.first();
+	assert.ok(first !== undefined);
+	const snapshot = buildInjectionsSnapshot({
+		snapshot: first, entries: session.sessionManager.getEntries(), filterMessages: (messages) => messages,
+		options: liveOptions(session), allTools: session.getAllTools(), systemPrompt: session.systemPrompt,
+		activeToolNames: session.getActiveToolNames(),
 	});
+	const flatten = (item: InjectionItem): InjectionItem[] => [item, ...(item.children ?? []).flatMap(flatten)];
+	return snapshot.groups.flatMap((group) => group.items).flatMap(flatten)
+		.filter((item) => item.kind === "tool" && item.change === "hidden").map((item) => item.label).sort();
 }
 
 /**
  * Real SDK runtime with codemode `only`, the monitor, and a last-loaded
- * payload logger and `after_provider_response` sentinel. The monitor defaults
- * to the production extension.
+ * payload logger and `after_provider_response` sentinel.
  */
-async function createRuntime(
-	t: TestContext,
-	api: MockApi,
-	monitor: (pi: ExtensionAPI, snapshots: SnapshotStore) => void = (pi, snapshots) => registerExtension(pi, snapshots),
-) {
+async function createRuntime(t: TestContext, api: MockApi) {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
-	const directory = await mkdtemp(join(tmpdir(), "context-declared-tools-"));
+	const directory = await mkdtemp(join(tmpdir(), "context-hidden-tools-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const settingsManager = SettingsManager.inMemory({
 		cacheWarming: "off", compaction: { enabled: false }, retry: { enabled: false },
@@ -162,7 +143,7 @@ async function createRuntime(
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 		extensionFactories: [
 			(pi) => pi.registerProvider("mock", { api, baseUrl: model.baseUrl, apiKey: "mock-key", models: [model] }),
-			createCodemodeExtension(), (pi) => monitor(pi, store), logger,
+			createCodemodeExtension(), (pi) => registerExtension(pi, store), logger,
 		],
 	});
 	await resourceLoader.reload();

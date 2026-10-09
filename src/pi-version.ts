@@ -1,7 +1,10 @@
 /** Pi version support check; callers pass pi's exported `VERSION`. */
 
-/** Oldest Pi release whose request lifecycle and probe behavior this extension relies on. */
-export const MIN_PI_VERSION = "1.0.0";
+/**
+ * Oldest Pi release whose request lifecycle, probe behavior, and hidden tool
+ * reporting (`hiddenTools` in prompt options) this extension relies on.
+ */
+export const MIN_PI_VERSION = "1.1.0";
 
 /**
  * Whether `version` is MIN_PI_VERSION or newer. Only the numeric

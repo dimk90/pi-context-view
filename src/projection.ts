@@ -1,21 +1,14 @@
 /**
  * Session projections for the views: the filtered projection at a leaf with
  * each message's source entry, and the latest request snapshot, forced prompt
- * and declared tool names included, applied to the current projection for
- * Usage (D9 and D11 in REQUEST-ONLY-INJECTIONS.md). Reads snapshots and Pi
- * data only; imports no capture or probe module.
+ * included, applied to the current projection for Usage (D11 in
+ * REQUEST-ONLY-INJECTIONS.md). Reads snapshots and Pi data only; imports no
+ * capture or probe module.
  */
-import { declarationsEqual, getCurrentSystemMessage, getCurrentTools, type SystemMessage } from "@earendil-works/pi-ai";
+import { declarationsEqual, getCurrentSystemMessage, type SystemMessage } from "@earendil-works/pi-ai";
 import { buildSessionProjection, type SessionEntry } from "@earendil-works/pi-coding-agent";
 
-import type {
-	ConversationChange,
-	DeclaredTools,
-	RequestMessage,
-	RequestSnapshot,
-	SnapshotReader,
-	SystemChange,
-} from "./snapshot.ts";
+import type { ConversationChange, RequestMessage, RequestSnapshot, SystemChange } from "./snapshot.ts";
 
 /** A projected message with the session entry that owns it. */
 export interface ProjectedMessage {
@@ -35,13 +28,6 @@ export interface SnapshotApplicationInput {
 	/** Current session leaf. */
 	readonly leafId: string | null;
 	readonly filterMessages: MessageFilter;
-	/** Tool names of the latest snapshot that records them; see `latestDeclaredTools()`. */
-	readonly declaredTools?: DeclaredTools;
-	/**
-	 * Live active tool names. Pi records an active-tool change only when the next
-	 * request starts, so declared names apply only while these match too.
-	 */
-	readonly activeToolNames?: readonly string[];
 }
 
 /** Current messages with the request's changes applied, and the system changes that still apply. */
@@ -52,12 +38,6 @@ export interface AppliedRequest {
 	readonly systemChanges: readonly SystemChange[];
 	/** The request's forced prompt, under the same freshness rule as `systemChanges`. */
 	readonly forcedPrompt?: string;
-	/**
-	 * Tool names the request declared to the model, only while the current
-	 * replayed and live active tool names equal its baseline names. Undefined
-	 * means every replayed tool counts.
-	 */
-	readonly declaredToolNames?: ReadonlySet<string>;
 }
 
 /** The filtered session projection at `leafId`, keeping each message's source entry. */
@@ -71,63 +51,18 @@ export function readProjection(
 }
 
 /**
- * Declared tool names from the latest retained snapshot of either origin that
- * records them. A standard probe has no payload and records none, so it does
- * not replace the names of an earlier real turn; a later real turn with an
- * incomplete tool channel does, leaving none.
- */
-export function latestDeclaredTools(snapshots: SnapshotReader): DeclaredTools | undefined {
-	let source: RequestSnapshot | undefined;
-	for (const snapshot of [snapshots.latest("real-turn"), snapshots.latest("synthetic-probe")]) {
-		if (snapshot?.declaredTools === undefined) continue;
-		if (source === undefined || snapshot.id > source.id) source = snapshot;
-	}
-	return source?.declaredTools;
-}
-
-/**
  * Apply a request snapshot to the current projection. Conversation changes
  * apply by baseline entry: additions are appended, a modification replaces its
  * entry's message, and a deletion removes it. A change whose entry has left the
  * projection is stale and dropped. System changes are deltas against the
  * snapshot's replayed system state, and a forced prompt is a rendering of it,
  * so both apply only while the current replayed state still equals it.
- * Declared tool names apply while the replayed and live active tool names are
- * unchanged.
  */
 export function applyRequestSnapshot(input: SnapshotApplicationInput): AppliedRequest {
 	const current = readProjection(input.entries, input.leafId, input.filterMessages);
-	const declaredToolNames = freshDeclaredNames(input.declaredTools, current, input.activeToolNames);
-	const names = declaredToolNames === undefined ? {} : { declaredToolNames };
-	if (input.snapshot === undefined) {
-		return { messages: current.map(({ message }) => message), systemChanges: [], ...names };
-	}
+	if (input.snapshot === undefined) return { messages: current.map(({ message }) => message), systemChanges: [] };
 	const messages = applyConversationChanges(current, input.snapshot.changes.conversation);
-	return { messages, ...freshSystemState(input.snapshot, input.entries, messages), ...names };
-}
-
-/**
- * The declared names, or none once the current replayed or live active tool
- * names differ from the snapshot's baseline names: an active-tool change,
- * branch navigation, or resume can change which tools the next request
- * declares. Without live names, none apply.
- */
-function freshDeclaredNames(
-	declaredTools: DeclaredTools | undefined,
-	current: readonly ProjectedMessage[],
-	activeToolNames: readonly string[] | undefined,
-): ReadonlySet<string> | undefined {
-	if (declaredTools === undefined || activeToolNames === undefined) return undefined;
-	const replayed = getCurrentTools(current.map(({ message }) => message)).map((tool) => tool.name);
-	const baseline = new Set(declaredTools.baseline);
-	const unchanged = sameNames(replayed, baseline) && sameNames(activeToolNames, baseline);
-	return unchanged ? new Set(declaredTools.declared) : undefined;
-}
-
-/** Whether `names`, as a set, equals `expected`. */
-function sameNames(names: readonly string[], expected: ReadonlySet<string>): boolean {
-	const unique = new Set(names);
-	return unique.size === expected.size && [...unique].every((name) => expected.has(name));
+	return { messages, ...freshSystemState(input.snapshot, input.entries, messages) };
 }
 
 /** Current messages with modifications and deletions applied in place, then additions appended. */

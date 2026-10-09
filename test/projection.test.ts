@@ -1,26 +1,18 @@
 /**
  * The latest request snapshot applied to the current projection for Usage:
- * conversation changes by baseline entry, system changes, the forced prompt,
- * and declared tool names only while fresh.
+ * conversation changes by baseline entry, and system changes and the forced
+ * prompt only while fresh.
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getCurrentTools, type Tool } from "@earendil-works/pi-ai";
+import type { Tool } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
-import { type AppliedRequest, applyRequestSnapshot, latestDeclaredTools } from "../src/projection.ts";
-import {
-	type ConversationChange,
-	type DeclaredTools,
-	type RequestMessage,
-	type RequestSnapshot,
-	SnapshotStore,
-	type SystemChange,
-} from "../src/snapshot.ts";
+import { type AppliedRequest, applyRequestSnapshot } from "../src/projection.ts";
+import type { ConversationChange, RequestMessage, RequestSnapshot, SystemChange } from "../src/snapshot.ts";
 
 const READ: Tool = { name: "read", description: "Read files", parameters: { type: "object", properties: {} } } as Tool;
-const BASH: Tool = { name: "bash", description: "Run commands", parameters: { type: "object", properties: {} } } as Tool;
 
 /** A session with a recorded system state and three user prompts. */
 function createSession(): { session: SessionManager; entries: Record<"first" | "second" | "third", string> } {
@@ -51,34 +43,14 @@ function snapshotAt(
 	};
 }
 
-/**
- * Apply `snapshot` to the session's current projection without probe messages
- * to filter. Live active tools default to the replayed ones, as when no change
- * is pending.
- */
-function apply(
-	session: SessionManager,
-	snapshot: RequestSnapshot | undefined,
-	declaredTools?: DeclaredTools,
-	activeToolNames = getCurrentTools(session.buildSessionProjection().messages).map((tool) => tool.name),
-): AppliedRequest {
+/** Apply `snapshot` to the session's current projection without probe messages to filter. */
+function apply(session: SessionManager, snapshot: RequestSnapshot | undefined): AppliedRequest {
 	return applyRequestSnapshot({
 		snapshot,
 		entries: session.getEntries(),
 		leafId: session.getLeafId(),
 		filterMessages: (messages) => messages,
-		declaredTools,
-		activeToolNames,
 	});
-}
-
-/** A snapshot with only an ID, an origin, and optionally declared tool names. */
-function recorded(id: number, origin: RequestSnapshot["origin"], declaredTools?: DeclaredTools): RequestSnapshot {
-	return {
-		id, origin, capturedAt: 0, leafId: null, changes: { conversation: [], system: [] },
-		guard: { status: "incomplete", reason: "No payload." },
-		...(declaredTools === undefined ? {} : { declaredTools }),
-	};
 }
 
 /** Contents of the non-system messages, in order. */
@@ -162,60 +134,4 @@ test("a forced prompt applies under the same freshness rule as system changes", 
 
 	session.appendMessage({ role: "system", content: "", sections: { cwd: "<cwd>\n/new\n</cwd>" }, timestamp: 6 });
 	assert.equal(apply(session, snapshot).forcedPrompt, undefined);
-});
-
-test("declared tool names come from the latest snapshot of either origin that records them", () => {
-	const names = (declared: string[]): DeclaredTools => ({ declared, baseline: ["read", "bash"] });
-	const store = new SnapshotStore();
-	assert.equal(latestDeclaredTools(store), undefined);
-
-	store.publish(recorded(1, "real-turn", names(["read"])));
-	store.publish(recorded(2, "synthetic-probe"));
-	assert.deepEqual(latestDeclaredTools(store), names(["read"]), "a standard probe records none and replaces nothing");
-
-	store.publish(recorded(3, "synthetic-probe", names(["bash"])));
-	assert.deepEqual(latestDeclaredTools(store), names(["bash"]), "a probe payload that was compared records names");
-
-	store.publish(recorded(4, "real-turn", names(["read", "bash"])));
-	assert.deepEqual(latestDeclaredTools(store), names(["read", "bash"]));
-
-	store.publish(recorded(5, "real-turn"));
-	store.publish(recorded(6, "synthetic-probe"));
-	assert.equal(latestDeclaredTools(store), undefined, "a later turn with an incomplete tool channel leaves none");
-});
-
-test("declared tool names wait for a pending active-tool change and need live names", () => {
-	const { session } = createSession();
-	const declaredTools: DeclaredTools = { declared: ["extra"], baseline: ["read"] };
-	assert.deepEqual(apply(session, undefined, declaredTools, ["read", "read"]).declaredToolNames, new Set(["extra"]));
-	assert.equal(apply(session, undefined, declaredTools, ["read", "bash"]).declaredToolNames, undefined,
-		"Pi records the change only when the next request starts");
-	assert.equal(apply(session, undefined, declaredTools, []).declaredToolNames, undefined);
-	const withoutLiveNames = applyRequestSnapshot({
-		snapshot: undefined, entries: session.getEntries(), leafId: session.getLeafId(),
-		filterMessages: (messages) => messages, declaredTools,
-	});
-	assert.equal(withoutLiveNames.declaredToolNames, undefined);
-});
-
-test("declared tool names apply only while the replayed tool names equal the baseline names", () => {
-	const { session } = createSession();
-	const declaredTools: DeclaredTools = { declared: ["read", "extra"], baseline: ["read"] };
-	assert.deepEqual(apply(session, undefined, declaredTools).declaredToolNames, new Set(["read", "extra"]));
-	assert.deepEqual(apply(session, snapshotAt(session), declaredTools).declaredToolNames, new Set(["read", "extra"]));
-	assert.equal(apply(session, snapshotAt(session)).declaredToolNames, undefined);
-
-	session.appendMessage(user("later prompt", 5));
-	session.appendMessage({ role: "system", content: "", sections: { cwd: "<cwd>\n/new\n</cwd>" }, timestamp: 6 });
-	assert.deepEqual(apply(session, snapshotAt(session), declaredTools).declaredToolNames, new Set(["read", "extra"]),
-		"a recorded prompt change keeps the same tools");
-
-	session.appendMessage({ role: "system", content: "", toolsAdded: [BASH], timestamp: 7 });
-	assert.equal(apply(session, snapshotAt(session), declaredTools).declaredToolNames, undefined,
-		"an active-tool change makes them stale until a newer snapshot");
-	assert.deepEqual(
-		apply(session, snapshotAt(session), { declared: ["bash"], baseline: ["bash", "read"] }).declaredToolNames,
-		new Set(["bash"]),
-		"names compare as sets",
-	);
 });

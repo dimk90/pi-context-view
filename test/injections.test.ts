@@ -205,6 +205,12 @@ test("a branch with no recorded system state uses the live prompt", () => {
 
 	assert.equal(itemsById(snapshot).get("base-prompt")?.text, "live prompt");
 	assert.equal(itemsById(snapshot).get("tool:builtin")?.label, "Built-in Tools (1)");
+
+	const live = input(session, {}, { hiddenTools: ["read"] });
+	const hidden = itemsById(buildInjectionsSnapshot({ ...live, options: { ...live.options, hiddenTools: ["bash"] } }));
+	assert.equal(hidden.get("tool:builtin")?.label, "Built-in Tools (0)");
+	assert.deepEqual([hidden.get("tool:builtin:read")?.change, hidden.get("tool:builtin:read")?.tokens], ["hidden", 0],
+		"the snapshot's hidden tools apply, not the live ones");
 });
 
 test("Initial uses its leaf after later edits, branching, and tool changes", () => {
@@ -300,13 +306,16 @@ test("late edits form the last group and count only the lines the payload added"
 		] },
 		{ type: "late-edit", change: "deleted", part: "tool-result", lines: [{ type: "removed", text: "gone" }] },
 		{ type: "late-tool-edit", change: "added", name: "late_tool", lines: [{ type: "added", text: "Late tool." }] },
+		{ type: "late-tool-edit", change: "deleted", name: "bash", lines: [{ type: "removed", text: "Run commands" }] },
 	])));
 
 	assert.deepEqual(snapshot.groups.map((group) => group.source.label),
 		["pi", "fixture-notes", "unattributed", "late edits"]);
+	assert.equal(itemsById(snapshot).get("tool:builtin:bash")?.change, undefined, "a late removal does not stay in place");
 	const late = snapshot.groups.at(-1);
 	assert.deepEqual(late?.items.map((item) => [item.label, item.kind, item.tokens, item.change]), [
 		["late_tool", "tool", 3, "added"],
+		["bash", "tool", 0, "deleted"],
 		["user message", "message", 6, "added"],
 		["system message", "message", 3, "modified"],
 		["tool result", "message", 0, "deleted"],
@@ -320,20 +329,17 @@ test("late edits form the last group and count only the lines the payload added"
 	assert.equal(snapshot.totalTokens, snapshot.groups.reduce((sum, group) => sum + group.totalTokens, 0));
 });
 
-test("hidden declarations stay in place at 0 tokens with their candidates", () => {
+test("tools Pi hid stay in place at 0 tokens", () => {
 	const { session } = createSession();
 	const grep: Tool = { name: "grep", description: "Search files", parameters: { type: "object" } } as Tool;
 	const snapshot = buildInjectionsSnapshot(input(session, {
 		system: [{ type: "tool", name: "grep", declaration: grep }, { type: "tool", name: "read", declaration: null }],
-	}, complete([
-		{ type: "hidden-declaration", name: "bash", candidates: ["codemode"] },
-		{ type: "hidden-declaration", name: "grep", candidates: [] },
-	])));
+	}, { ...complete([]), hiddenTools: ["bash", "grep"] }));
 	const items = itemsById(snapshot);
 
 	assert.equal(items.get("tool:builtin")?.label, "Built-in Tools (0)", "the count names declared tools only");
 	const bash = items.get("tool:builtin:bash");
-	assert.deepEqual([bash?.change, bash?.tokens, bash?.candidates], ["hidden", 0, ["codemode"]]);
+	assert.deepEqual([bash?.change, bash?.tokens], ["hidden", 0]);
 	assert.match(bash?.sections?.[0]?.text ?? "", /^bash: Run commands/, "a hidden tool previews its definition");
 	assert.equal(bash?.sections?.[0]?.change, "hidden");
 	assert.equal(items.get("tool:builtin:read")?.change, "deleted");
@@ -342,8 +348,7 @@ test("hidden declarations stay in place at 0 tokens with their candidates", () =
 		["bash", "hidden", 0], ["read", "deleted", 0],
 	]);
 	const hiddenGrep = items.get("tool:unattributed:grep");
-	assert.deepEqual([hiddenGrep?.change, hiddenGrep?.tokens, hiddenGrep?.candidates], ["hidden", 0, []],
-		"hidden wins over the structured addition; an empty candidate list stays defined");
+	assert.deepEqual([hiddenGrep?.change, hiddenGrep?.tokens], ["hidden", 0], "hidden wins over the structured addition");
 	assert.ok(snapshot.groups.every((group) => group.source.label !== "late edits"));
 });
 

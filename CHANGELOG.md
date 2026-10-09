@@ -5,7 +5,7 @@
 
 ### New
 * `[injections]` Show Added, Modified, and Deleted request-only injections.
-* `[injections]` Show late edits and hidden tool declarations found in the provider payload.
+* `[injections]` Show late payload edits and tools Pi hides.
 
 ### Changed
 * `[usage]` Apply the latest request's added/modified/deleted messages instead of first-turn copies.
@@ -13,7 +13,7 @@
 * `[probe]` Skip probing for queued input, virtual models, and idle warming.
 * `[probe]` Skip probing above the auto-compaction threshold or when settings cannot be checked.
 * `[context]` Refuse both views with a warning while compaction is in progress.
-* `[package]` Require Pi 1.0 and report older versions, drop the pre-0.86 prompt parser.
+* `[package]` Require Pi 1.1 and report older versions, drop the pre-0.86 prompt parser.
 
 ### Fixed
 * `[usage]` Leave out tools hidden from the model, such as by codemode `only` ([#11](https://github.com/dimk90/pi-context-view/issues/11)).

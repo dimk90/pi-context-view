@@ -4,8 +4,7 @@
  * This removal has no marker text: look for the missing declaration instead.
  *
  * Expected result:
- *   before the monitor   edited after monitor: a missing declaration with no
- *                        `model-only` candidates; Usage stops counting the tool
+ *   before the monitor   Deleted tool under late edits; Usage is unchanged
  *   after the monitor    not visible
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

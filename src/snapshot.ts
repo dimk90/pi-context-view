@@ -84,11 +84,10 @@ export interface LateEditLine {
 
 /**
  * A payload difference the structured capture cannot explain:
- *   late-edit            message text added, changed, or removed after the monitor,
- *                        without structure or attribution
- *   late-tool-edit       a declaration the payload adds, or describes differently, after the monitor
- *   hidden-declaration   a captured tool declaration missing from the payload, with
- *                        active `model-only` tools as candidate sources; it can also be a late removal
+ *   late-edit        message text added, changed, or removed after the monitor,
+ *                    without structure or attribution
+ *   late-tool-edit   a declaration the payload adds, removes, or describes differently
+ *                    after the monitor; tools Pi hid are not removals
  */
 export type GuardFinding =
 	| {
@@ -100,15 +99,15 @@ export type GuardFinding =
 	}
 	| {
 		readonly type: "late-tool-edit";
-		readonly change: "added" | "modified";
+		readonly change: "added" | "modified" | "deleted";
 		readonly name: string;
 		/**
 		 * Changed description lines: every line the payload declares for an addition,
-		 * only the lines that differ for a modification, ignoring whitespace.
+		 * every captured line for a deletion, and only the lines that differ for a
+		 * modification, ignoring whitespace.
 		 */
 		readonly lines: readonly LateEditLine[];
-	}
-	| { readonly type: "hidden-declaration"; readonly name: string; readonly candidates: readonly string[] };
+	};
 
 /**
  * Payload comparison state. Pending and incomplete mean the comparison is
@@ -126,12 +125,6 @@ export type GuardResult =
 		readonly findings?: readonly GuardFinding[];
 	};
 
-/** Tool names from a complete tool-declaration channel and from the capture's baseline replay. */
-export interface DeclaredTools {
-	readonly declared: readonly string[];
-	readonly baseline: readonly string[];
-}
-
 /** One captured request. Raw message content is process-local; never log or persist it. */
 export interface RequestSnapshot {
 	/** Local capture number; later captures have larger IDs. A guard update keeps its ID. */
@@ -145,8 +138,11 @@ export interface RequestSnapshot {
 	/** Effective forced prompt text, present only when it differs from the replayed prompt. */
 	readonly forcedPrompt?: string;
 	readonly guard: GuardResult;
-	/** Present only when the paired payload had a complete tool-declaration channel. */
-	readonly declaredTools?: DeclaredTools;
+	/**
+	 * Active tools Pi left out of the request for a tool's `prepareLoadout()`, as
+	 * the run's `before_agent_start` reported them; absent when Pi hid none.
+	 */
+	readonly hiddenTools?: readonly string[];
 }
 
 /** Read access for consumers. Without an origin, selection is by ID across both origins. */

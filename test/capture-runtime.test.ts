@@ -457,7 +457,6 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 				else {
 					assert.ok(snapshot.guard.status === "complete", JSON.stringify(snapshot.guard));
 					if (!lateEdits) assert.deepEqual(snapshot.guard.findings, []);
-					assert.ok(snapshot.declaredTools);
 				}
 			}
 			return snapshots;

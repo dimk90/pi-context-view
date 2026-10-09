@@ -70,7 +70,7 @@ for (const api of APIS) {
 		assert.equal(snapshots.length, 3);
 		for (const snapshot of snapshots) {
 			assert.deepEqual(findings(snapshot), []);
-			assert.deepEqual(snapshot.declaredTools, { declared: ["read", "write"], baseline: ["read", "write"] });
+			assert.equal(snapshot.hiddenTools, undefined);
 		}
 	});
 
@@ -96,16 +96,17 @@ for (const api of APIS) {
 				? { ...finding, lines: finding.lines.filter((line) => line.type === "added") }
 				: finding);
 			assert.deepEqual(added, order === "after" ? [] : [
-				{ type: "hidden-declaration", name: "write", candidates: [] },
+				{ type: "late-tool-edit", change: "deleted", name: "write", lines: [] },
 				{ type: "late-tool-edit", change: "modified", name: "read", lines: changed },
 				{ type: "late-tool-edit", change: "added", name: "extra", lines: changed },
 			]);
 			if (order === "before") {
-				const modified = findings(snapshot).find((finding) => finding.type === "late-tool-edit");
-				assert.ok(modified?.type === "late-tool-edit");
-				assert.ok(modified.lines.some((line) => line.type === "removed"));
+				for (const change of ["deleted", "modified"]) {
+					const edit = findings(snapshot).find((finding) => finding.type === "late-tool-edit" && finding.change === change);
+					assert.ok(edit?.type === "late-tool-edit");
+					assert.ok(edit.lines.some((line) => line.type === "removed"), `${change} lists the captured lines`);
+				}
 			}
-			assert.deepEqual(snapshot.declaredTools?.declared, order === "after" ? ["read", "write"] : ["read", "extra"]);
 		});
 	}
 }
@@ -120,11 +121,8 @@ for (const mode of ["on", "only"] as const) {
 			await runtime.session.prompt("built-in loadout");
 			const [snapshot] = await runtime.snapshots();
 			assert.deepEqual(snapshot.changes, { conversation: [], system: [] });
-			assert.deepEqual(findings(snapshot), mode === "on" ? [] : ["read", "write"].map((name) => ({
-				type: "hidden-declaration", name, candidates: ["codemode", "tool_search"],
-			})));
-			assert.deepEqual(snapshot.declaredTools?.declared, mode === "on"
-				? ["read", "write", "codemode", "tool_search"] : ["codemode", "tool_search"]);
+			assert.deepEqual(findings(snapshot), []);
+			assert.deepEqual(snapshot.hiddenTools, mode === "on" ? undefined : ["read", "write"]);
 		});
 	}
 }
@@ -148,7 +146,7 @@ for (const order of ["before", "after"] as const) {
 		assert.equal(snapshot.origin, "synthetic-probe");
 		assert.equal(snapshot.guard.status, "incomplete");
 		assert.deepEqual(snapshot.guard.findings ?? [], []);
-		assert.equal(snapshot.declaredTools, undefined);
+		assert.deepEqual(snapshot.hiddenTools, ["read", "write"], "a probe records the tools Pi hides");
 		assert.equal(responses, 0, "after_provider_response sentinel stays silent");
 		assert.equal(runtime.provider.requests.length, 0);
 		const assistant = runtime.session.sessionManager.getBranch().findLast((entry) =>
@@ -179,7 +177,7 @@ test("hidden-tools demo keeps nested calls available and subject to permission g
 		await runtime.session.prompt("Read the demo note through codemode.");
 		const sent = JSON.stringify(runtime.provider.requests.at(-1)?.body);
 		assert.ok(sent.includes(block ? "XYZZY_HIDDEN_TOOL_BLOCKED" : "XYZZY_HIDDEN_TOOL_READ"));
-		assert.deepEqual(runtime.store.latest()?.declaredTools?.declared, ["codemode"]);
+		assert.deepEqual(runtime.store.latest()?.hiddenTools, ["read", "write"]);
 	}
 	assert.equal(calls, 2);
 	assert.equal(runtime.provider.requests.length, 4, "each codemode call has one follow-up");
@@ -198,7 +196,7 @@ test("MCP direct tools are recorded declarations, not late edits", async (t) => 
 	const [snapshot] = await runtime.snapshots();
 	assert.deepEqual(findings(snapshot), []);
 	assert.deepEqual(snapshot.changes, { conversation: [], system: [] });
-	assert.ok(snapshot.declaredTools?.declared.includes("mcp__fixture__echo"));
+	assert.match(JSON.stringify(runtime.provider.requests[0]?.body), /mcp__fixture__echo/);
 });
 
 for (const compat of [{ supportsAdditionalTools: true }, { supportsToolSearch: true }]) {
@@ -286,7 +284,6 @@ test("physical guard publishes before HTTP response, then detects setModel durin
 	for (const snapshot of snapshots.slice(1)) {
 		assert.ok(snapshot.guard.status === "incomplete");
 		assert.match(snapshot.guard.reason, /differs/);
-		assert.equal(snapshot.declaredTools, undefined);
 	}
 });
 
@@ -359,10 +356,8 @@ for (const api of APIS) {
 			});
 			await runtime.session.prompt("ordinary prompt");
 			const [snapshot] = await runtime.snapshots();
-			assert.deepEqual(findings(snapshot), ["read", "write"].map((name) => ({
-				type: "hidden-declaration", name, candidates: ["codemode"],
-			})));
-			assert.deepEqual(snapshot.declaredTools?.declared, ["codemode"]);
+			assert.deepEqual(findings(snapshot), []);
+			assert.deepEqual(snapshot.hiddenTools, ["read", "write"]);
 			assert.deepEqual(runtime.session.getActiveToolNames().sort(), ["codemode", "read", "write"]);
 			assert.equal(runtime.session.settingsManager.getSettings().codemode?.mode, "on");
 		});
@@ -395,7 +390,6 @@ for (const api of APIS) {
 		assert.ok(snapshot.guard.status === "incomplete");
 		assert.match(snapshot.guard.reason, /shape the .* parser does not know/);
 		assert.deepEqual(snapshot.guard.findings, [], "the compared tool channel keeps its findings");
-		assert.deepEqual(snapshot.declaredTools, { declared: ["read", "write"], baseline: ["read", "write"] });
 	});
 }
 
@@ -570,10 +564,9 @@ async function exerciseToolChanges(runtime: Runtime): Promise<void> {
 		await runtime.session.prompt(names.join(" "));
 	}
 	const snapshots = await runtime.snapshots();
-	for (const [index, names] of [["read"], ["read", "write"], ["write"]].entries()) {
+	for (const index of [0, 1, 2]) {
 		assert.deepEqual(findings(snapshots[index]), []);
 		assert.deepEqual(snapshots[index].changes, { conversation: [], system: [] });
-		assert.deepEqual(snapshots[index].declaredTools, { declared: names, baseline: names });
 	}
 	// A same-name redefinition is recorded by Pi, not reported as a late edit
 	await runtime.session.prompt("/redefine");

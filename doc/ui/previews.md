@@ -99,8 +99,8 @@ uses, followed by dim text:
 >   session keeps the original. The request version is counted.
 > - **Deleted** parts were removed by an extension for this request only; the
 >   session keeps them. They are counted nowhere.
-> - **Hidden** tools stay active and callable, but the request did not declare
->   them to the model. They are counted nowhere.
+> - **Hidden** tools stay active and callable through another tool, such as
+>   codemode, but pi left them out of the request. They are counted nowhere.
 
 Each sentence is fixed and states its own accounting, so the `Dropped` bullet
 reads as the exception to the `Highlighted` one wherever a preview shows both.
@@ -126,7 +126,7 @@ A bullet renders only where its mark is visible on that frame:
 The Usage category stream inspects all entries; full content, opened directly or
 from a block, inspects only its open entry.
 
-An Injections preview of a late edit or a hidden tool adds the dim note bullet
+An Injections preview of a late edit adds the dim note bullet
 that [explains it](injections.md#injection-preview) after its legend bullets.
 The note belongs to the same block and follows the same collapse rules.
 

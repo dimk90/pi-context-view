@@ -21,6 +21,7 @@ import { type SystemMessage, systemMessageText } from "./transcript.ts";
 /** Inputs for an on-demand pi-native prompt/tool fallback without recorded system state. */
 export interface NativeSnapshotInput {
 	systemPrompt: string;
+	/** Prompt options; `hiddenTools` names the tools Pi leaves out of requests. */
 	options: BuildSystemPromptOptions;
 	allTools: readonly ToolInfo[];
 	activeToolNames: readonly string[];
@@ -37,8 +38,6 @@ export interface UsageSnapshotInput extends NativeSnapshotInput {
 	messages: readonly RequestMessage[];
 	/** Request-only system changes of the latest request, applied after the replayed state. */
 	systemChanges?: readonly SystemChange[];
-	/** Tool names the latest request declared; other replayed tools are neither listed nor counted. */
-	declaredToolNames?: ReadonlySet<string>;
 }
 
 /** System state a request carried, with what its changes touched. */
@@ -50,10 +49,12 @@ export interface RequestSystemState {
 	readonly deletedTools: readonly Tool[];
 }
 
-/** Build a view-local pi-native fallback without starting a capture. */
+/** Build a view-local pi-native fallback without starting a capture; tools Pi hides are marked `hidden`. */
 export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot {
 	const options = copyPromptOptions(input.options);
-	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options);
+	const hidden = new Set(input.options.hiddenTools);
+	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options)
+		.map((tool): ToolSlice => hidden.has(tool.name) ? { ...tool, change: "hidden" } : tool);
 	const prompt = input.forcedPrompt ?? input.systemPrompt;
 	const items = analyzeSystemPrompt(prompt, options, tools, { sources: input.promptSources });
 	return buildSnapshot(markForcedPrompt(items, input.forcedPrompt), "synthetic-probe", input.capturedAt ?? new Date());
@@ -62,20 +63,20 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot
 /**
  * Measure the branch's replayed prompt and tools instead of today's loader
  * prompt/tools, with the latest request's system changes applied once. A forced
- * prompt replaces every section, so only tool changes reach it. Declared names,
- * when given, leave out the tools the request hid from the model. Only a branch
- * with no recorded system message yet uses the live fallback.
+ * prompt replaces every section, so only tool changes reach it. The tools Pi
+ * currently hides from the model are left out. Only a branch with no recorded
+ * system message yet uses the live fallback.
  */
 export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 	const forced = input.forcedPrompt;
+	const hidden = new Set(input.options.hiddenTools);
 	const base = getCurrentSystemMessage(input.messages);
 	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
-	if (base === undefined) return buildNativeSnapshot(input);
+	if (base === undefined) {
+		return buildNativeSnapshot({ ...input, activeToolNames: input.activeToolNames.filter((name) => !hidden.has(name)) });
+	}
 	const request = applySystemChanges(base, input.systemChanges ?? []);
-	const declared = input.declaredToolNames;
-	const declarations = declared === undefined
-		? request.declarations
-		: request.declarations.filter((tool) => declared.has(tool.name));
+	const declarations = request.declarations.filter((tool) => !hidden.has(tool.name));
 	const tools = replayedToolSlices(request.state, declarations, input.allTools);
 	const options = copyPromptOptions(input.options);
 	const items = analyzeSystemPrompt(forced ?? systemMessageText(request.state), {

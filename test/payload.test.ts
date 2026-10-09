@@ -134,51 +134,42 @@ test("malformed declarations and inline changes cannot produce a complete tool c
 	for (const [api, payload] of cases) assert.equal(parsePayloadTools(api, payload).status, "unsupported");
 });
 
-test("tool comparison reports additions, changed descriptions, and missing declarations with candidates", () => {
+test("tool comparison reports additions, changed descriptions, and removed declarations", () => {
 	const result = compareToolDeclarations({
-		expected: [{ ...READ, description: "Read a file.\nKeep this line." }, WRITE],
-		baselineNames: ["read", "write", "old"],
+		expected: [{ ...READ, description: "Read a file.\nKeep this line." }, WRITE, { name: "bare_removed" }],
 		declarations: [
 			{ ...READ, description: "Read any file.\nKeep  this line." },
 			{ name: "late", description: "Added later.\n\nSecond line." },
 			{ name: "bare" },
 		],
-		ignoreNameCase: false, loadoutCandidates: () => ["codemode", "tool_search"],
+		ignoreNameCase: false,
 	});
-	assert.deepEqual(result, {
-		findings: [
-			{ type: "hidden-declaration", name: "write", candidates: ["codemode", "tool_search"] },
-			{
-				type: "late-tool-edit", change: "modified", name: "read",
-				lines: [{ type: "removed", text: "Read a file." }, { type: "added", text: "Read any file." }],
-			},
-			{
-				type: "late-tool-edit", change: "added", name: "late",
-				lines: [{ type: "added", text: "Added later." }, { type: "added", text: "Second line." }],
-			},
-			{ type: "late-tool-edit", change: "added", name: "bare", lines: [] },
-		],
-		declaredTools: { declared: ["read", "late", "bare"], baseline: ["read", "write", "old"] },
-	});
+	assert.deepEqual(result, [
+		{ type: "late-tool-edit", change: "deleted", name: "write", lines: [{ type: "removed", text: "Write a file." }] },
+		{ type: "late-tool-edit", change: "deleted", name: "bare_removed", lines: [] },
+		{
+			type: "late-tool-edit", change: "modified", name: "read",
+			lines: [{ type: "removed", text: "Read a file." }, { type: "added", text: "Read any file." }],
+		},
+		{
+			type: "late-tool-edit", change: "added", name: "late",
+			lines: [{ type: "added", text: "Added later." }, { type: "added", text: "Second line." }],
+		},
+		{ type: "late-tool-edit", change: "added", name: "bare", lines: [] },
+	]);
 });
 
 test("tool comparison ignores whitespace-only description changes, as message text does", () => {
 	const result = compareToolDeclarations({
-		expected: [READ], baselineNames: ["read"], declarations: [{ ...READ, description: "  Read a\nfile. " }],
-		ignoreNameCase: false, loadoutCandidates: () => [],
+		expected: [READ], declarations: [{ ...READ, description: "  Read a\nfile. " }], ignoreNameCase: false,
 	});
-	assert.deepEqual(result.findings, []);
+	assert.deepEqual(result, []);
 });
 
 test("Anthropic OAuth names map back to captured spelling; other APIs retain case changes", () => {
-	const input = {
-		expected: [READ], baselineNames: ["read"], declarations: [{ ...READ, name: "Read" }],
-		loadoutCandidates: () => [],
-	};
-	assert.deepEqual(compareToolDeclarations({ ...input, ignoreNameCase: true }), {
-		findings: [], declaredTools: { declared: ["read"], baseline: ["read"] },
-	});
-	assert.equal(compareToolDeclarations({ ...input, ignoreNameCase: false }).findings.length, 2);
+	const input = { expected: [READ], declarations: [{ ...READ, name: "Read" }] };
+	assert.deepEqual(compareToolDeclarations({ ...input, ignoreNameCase: true }), []);
+	assert.equal(compareToolDeclarations({ ...input, ignoreNameCase: false }).length, 2);
 });
 
 test("Completions message units: roles, text parts, tool calls and results; not reasoning or inline tools", () => {

@@ -45,10 +45,12 @@ guard-status bullet with the reason:
 
 A standard probe says `Late edits were not checked: No provider payload was
 observed for this request.` None of these means "no edits". A partial check
-still shows the [late edits](#late-edits) and [hidden tools](#hidden-tools) of
-the channel it compared. A complete guard adds no bullet: without late-edit or
-hidden-tool rows, the payload matched the request up to this extension's own
-`before_provider_request` handler. Handlers after it stay invisible.
+still shows the [late edits](#late-edits) of the channel it compared.
+[Hidden tools](#hidden-tools) come from Pi's prompt options, independently of
+the guard, so a probe can show them too. A complete guard adds no bullet:
+without late edits, the payload matched the request, excluding Pi's known
+hidden declarations, up to this extension's own `before_provider_request`
+handler. Handlers after it stay invisible.
 
 ## Contribution tree
 
@@ -144,7 +146,9 @@ source, so they cannot stay in place. The `late edits` group, after
 
 - A changed message part: `system message`, `user message`,
   `assistant message`, `tool call`, or `tool result`.
-- A tool declaration the payload added or describes differently: the tool name.
+- A tool declaration the payload added, removed, or describes differently: the
+  tool name. A removal Pi did not report in `hiddenTools` is a `Deleted` late
+  edit, not a `Hidden` tool under its source.
 
 Each row carries the `Added`, `Modified`, or `Deleted` marker of its change.
 The guard keeps only the changed lines, so a row's estimate counts the lines
@@ -158,23 +162,22 @@ group is shown, the description carries a dim bullet:
 
 ### Hidden tools
 
-A tool whose declaration the request carried at capture but the payload did
-not is hidden: it stays active and callable, but the model never received it.
-Its row stays in place under its source with the `Hidden` marker and reads
-0 tokens, like a deleted tool. Its prompt lines, if the prompt still has them,
-stay in pi's prompt text.
+A tool in the snapshot's `hiddenTools` is hidden: Pi leaves its declaration
+out while it stays active and callable through another tool. Its row stays
+under its source with the `Hidden` marker and reads 0 tokens, like a deleted
+tool. Its prompt lines, if the prompt still has them, stay in pi's prompt text.
 
-Pi hides declarations on behalf of tools that define `prepareLoadout()`, such
-as `codemode`. Pi does not report which tool did it, so active `model-only`
-tools are only candidates. The description carries up to two dim bullets:
+Capture reads Pi's `before_agent_start.systemPromptOptions.hiddenTools`, so
+these markers work for a silent probe before the first ordinary prompt. They
+are independent of payload comparison and stay frozen with Initial. A degraded
+fallback without a snapshot uses the live list instead.
 
-```text
-- Hidden tools may come from active model-only tools: codemode.
-- Hidden tools without an active model-only candidate may have been removed by a later handler: write.
-```
-
-The first names every candidate of the hidden rows; the second names the
-hidden tools that have none.
+Pi does not report which tool's `prepareLoadout()` hid each declaration. Do
+not guess from `model-only` exposure or name a candidate. The single `Hidden`
+[legend bullet](previews.md#marker-legend) explains that the tools remain
+callable through another tool, such as codemode; there is no extra hidden-tool
+bullet. Capture's observation limits are documented in
+[ARCHITECTURE.md](../ARCHITECTURE.md#structured-request-capture).
 
 Within the `pi` group, keep the fixed semantic order above and sort remaining
 prompt additions by size. Children break down parent contributions and do not
@@ -200,9 +203,8 @@ the header and show a `[Degraded: …]` indicator beside the description, keepin
 the fallback hierarchy usable. Below both come, when shown, the probe bullet,
 the guard-status bullet, one [legend bullet](previews.md#marker-legend) per
 marker the rows carry — `Dropped`, `Moved`, `Forced`, `Added`, `Modified`,
-`Deleted`, `Hidden`, or none — then the late-edits bullet and the hidden-tool
-bullets, which explain those markers further. All of them collapse with the
-rest of the block.
+`Deleted`, `Hidden`, or none — then the late-edits bullet. All of them collapse
+with the rest of the block.
 
 ## Injection preview
 
@@ -236,8 +238,7 @@ A line only in the payload opens with `+ ` in `toolDiffAdded`; a line only in
 the captured request opens with `- ` in `toolDiffRemoved`. The whole line takes
 that color, and wrapped continuation lines hang under its text.
 
-After the legend bullets of its markers, the preview description repeats the
-bullets that explain the item: the late-edits bullet for a late edit, and for a
-hidden tool, or for `Built-in Tools (N)` with hidden children, the hidden-tool
-bullets limited to those tools and their own candidates. They collapse with the
-legend, under the rules in [previews.md](previews.md#marker-legend).
+After the legend bullets of its markers, a late-edit preview repeats the
+late-edits bullet. A hidden tool, or `Built-in Tools (N)` with hidden children,
+needs only the `Hidden` legend. Descriptions collapse under the rules in
+[previews.md](previews.md#marker-legend).

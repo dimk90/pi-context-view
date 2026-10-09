@@ -222,8 +222,6 @@ export interface InjectionItem {
 	 * added lines, which the estimate counts.
 	 */
 	readonly changedLines?: readonly LateEditLine[];
-	/** Active `model-only` tools that may have hidden this tool; not confirmed sources. */
-	readonly candidates?: readonly string[];
 	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
 	readonly injectedReferences?: readonly InjectedReference[];
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
@@ -366,7 +364,6 @@ function copyItem(item: InjectionItem): InjectionItem {
 		jsonSpan: copyJsonSpan(item.jsonSpan),
 		injectedReferences: copyInjectedReferences(item.injectedReferences),
 		changedLines: item.changedLines?.map((line) => ({ ...line })),
-		candidates: item.candidates === undefined ? undefined : [...item.candidates],
 		sections: item.sections?.map((section) => ({
 			...section,
 			jsonSpan: copyJsonSpan(section.jsonSpan),

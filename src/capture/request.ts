@@ -70,6 +70,8 @@ export interface CapturedRequest extends RequestCopy {
 	readonly forcedPrompt?: string;
 	/** `ctx.model` at capture: the dispatched model on a physical selection, the virtual one otherwise. */
 	readonly requestModel?: GuardModel;
+	/** Tools Pi left out of the request; absent when it hid none. */
+	readonly hiddenTools?: readonly string[];
 }
 
 /** Inputs of one capture, read from the `context_with_system` event and its context. */
@@ -83,6 +85,8 @@ export interface CaptureInput {
 	readonly probe: Pick<ProbeView, "filterMessages">;
 	/** `ctx.model`; its identity is copied before later handlers can change it. */
 	readonly requestModel?: GuardModel;
+	/** Pi's hidden declarations for the current run, from its `before_agent_start` options. */
+	readonly hiddenTools?: readonly string[];
 	readonly capturedAt?: number;
 }
 
@@ -101,6 +105,9 @@ export function captureRequest(input: CaptureInput): CapturedRequest {
 		...copyRequest(baseline.messages, input.messages),
 		forcedPrompt: detectForcedPrompt(input.effectivePrompt, baseline.messages),
 		...(input.requestModel === undefined ? {} : { requestModel: copyGuardModel(input.requestModel) }),
+		...(input.hiddenTools === undefined || input.hiddenTools.length === 0
+			? {}
+			: { hiddenTools: [...input.hiddenTools] }),
 	};
 }
 

@@ -2,9 +2,7 @@
  * SnapshotBuilder: runs the deferred part of a capture off the request's
  * critical path (D5), then publishes the snapshot and its guard update (D11).
  */
-import type {
-	ConversationChange, DeclaredTools, GuardResult, RequestSnapshot, StructuredChanges,
-} from "../snapshot.ts";
+import type { ConversationChange, GuardResult, RequestSnapshot, StructuredChanges } from "../snapshot.ts";
 import { attributeMessage } from "./attribution.ts";
 import { type ConversationEdit, diffConversation, diffSystemState } from "./diff.ts";
 import { redactMessage } from "./redact.ts";
@@ -15,17 +13,11 @@ export interface SnapshotPublisher {
 	publish(snapshot: RequestSnapshot): void;
 }
 
-/** A guard result with the tool names of its payload. */
-interface GuardUpdate {
-	readonly guard: GuardResult;
-	readonly declaredTools?: DeclaredTools;
-}
-
 /** A capture whose diff has not run yet, with a guard that settled meanwhile. */
 interface ScheduledBuild {
 	readonly handle: NodeJS.Immediate;
-	update?: GuardUpdate;
-	/** The guard will not change after `update`. */
+	guard?: GuardResult;
+	/** The guard will not change after `guard`. */
 	released: boolean;
 }
 
@@ -52,20 +44,16 @@ export class SnapshotBuilder {
 		this.scheduled.set(request.id, { handle, released: false });
 	}
 
-	/**
-	 * Publish a capture's guard, replacing its earlier guard and declared tool
-	 * names; unknown or released IDs are ignored.
-	 */
-	public settleGuard(id: number, guard: GuardResult, declaredTools?: DeclaredTools): void {
-		const update = declaredTools === undefined ? { guard } : { guard, declaredTools };
+	/** Publish a capture's guard, replacing its earlier guard; unknown or released IDs are ignored. */
+	public settleGuard(id: number, guard: GuardResult): void {
 		const scheduled = this.scheduled.get(id);
 		if (scheduled !== undefined) {
-			if (!scheduled.released) scheduled.update = update;
+			if (!scheduled.released) scheduled.guard = guard;
 			return;
 		}
 		const snapshot = this.open.get(id);
 		if (snapshot === undefined) return;
-		const updated = applyGuardUpdate(snapshot, update);
+		const updated = { ...snapshot, guard };
 		this.open.set(id, updated);
 		this.publisher.publish(updated);
 	}
@@ -90,22 +78,15 @@ export class SnapshotBuilder {
 		this.scheduled.delete(request.id);
 		let snapshot: RequestSnapshot;
 		try {
-			snapshot = buildRequestSnapshot(request, { status: "pending" });
+			snapshot = buildRequestSnapshot(request, scheduled?.guard ?? { status: "pending" });
 		} catch {
 			// Deferred work runs outside Pi's handler error reporting, where a throw
 			// would end the host process; an unexpected message shape skips the snapshot
 			return;
 		}
-		if (scheduled?.update !== undefined) snapshot = applyGuardUpdate(snapshot, scheduled.update);
 		if (scheduled?.released !== true) this.open.set(snapshot.id, snapshot);
 		this.publisher.publish(snapshot);
 	}
-}
-
-/** A snapshot copy with the update's guard and declared tool names, and no earlier names. */
-function applyGuardUpdate(snapshot: RequestSnapshot, update: GuardUpdate): RequestSnapshot {
-	const { declaredTools: _previous, ...rest } = snapshot;
-	return { ...rest, ...update };
 }
 
 /** Assemble an immutable snapshot whose retained messages are attributed and redacted. */
@@ -125,6 +106,7 @@ export function buildRequestSnapshot(request: CapturedRequest, guard: GuardResul
 		changes,
 		...(request.forcedPrompt === undefined ? {} : { forcedPrompt: request.forcedPrompt }),
 		guard,
+		...(request.hiddenTools === undefined ? {} : { hiddenTools: request.hiddenTools }),
 	};
 }
 

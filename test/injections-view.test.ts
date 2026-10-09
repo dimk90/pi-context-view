@@ -1033,7 +1033,7 @@ function guardedSnapshot(): InitialSnapshot {
 	const base = (id: string, tokens: number): InjectionItem => ({ ...item(id, "pi", true, tokens), kind: "tool" });
 	const hiddenBash: InjectionItem = {
 		...base("tool:builtin:bash", 0),
-		label: "bash", text: "", change: "hidden", candidates: ["codemode", "tool_search"],
+		label: "bash", text: "", change: "hidden",
 		sections: [{ label: "Definition", text: "bash: Run commands\n{}", tokens: 0, change: "hidden" }],
 	};
 	const read: InjectionItem = { ...base("tool:builtin:read", 12), label: "read" };
@@ -1046,7 +1046,7 @@ function guardedSnapshot(): InitialSnapshot {
 	};
 	const hiddenWrite: InjectionItem = {
 		...item("tool:npm:x:write", "npm:x", false, 0),
-		kind: "tool", label: "write", text: "", change: "hidden", candidates: [],
+		kind: "tool", label: "write", text: "", change: "hidden",
 	};
 	const late = (id: string, label: string, change: "added" | "modified", lines: InjectionItem["changedLines"]) => ({
 		...item(id, "late-edits", false, 4), source: LATE_EDITS_SOURCE, label, change, changedLines: lines,
@@ -1084,13 +1084,11 @@ test("InjectionsView explains late edits and hidden tools after the marker legen
 			" They are counted.",
 		"Modified parts were changed by an extension for this request only; the session keeps the original. The request" +
 			" version is counted.",
-		"Hidden tools stay active and callable, but the request did not declare them to the model." +
-			" They are counted nowhere.",
+		"Hidden tools stay active and callable through another tool, such as codemode, but pi left them out of the" +
+			" request. They are counted nowhere.",
 		"Late edits were made after pi-context-view captured the request. Their sources are unknown; only changed lines" +
 			" are known, and estimates count the added lines.",
-		"Hidden tools may come from active model-only tools: codemode, tool_search.",
-		"Hidden tools without an active model-only candidate may have been removed by a later handler: write.",
-	], "a complete guard adds no status bullet; the notes follow the legend");
+	], "a complete guard adds no status bullet; the late-edits note follows the legend");
 });
 
 test("InjectionsView reports a partial payload comparison", () => {
@@ -1136,7 +1134,7 @@ test("InjectionsView previews a late edit as colored changed lines with a hangin
 	assert.doesNotMatch(system, /\u001b\[2J/);
 });
 
-test("InjectionsView previews a hidden tool with only its own candidates", () => {
+test("InjectionsView previews a hidden tool with the Hidden legend only", () => {
 	const view = new InjectionsView(createTheme(), { snapshot: guardedSnapshot() }, () => {}, () => 60);
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
@@ -1145,8 +1143,8 @@ test("InjectionsView previews a hidden tool with only its own candidates", () =>
 	const bash = view.render(120).map(stripSgr);
 	assert.match(bash.find((line) => line.includes("bash")) ?? "", /pi · 0 tokens · Hidden/);
 	assert.ok(bash.some((line) => line.trim() === "Definition · 0 tokens · Hidden"));
-	assert.ok(bash.includes("  - Hidden tools may come from active model-only tools: codemode, tool_search."));
-	assert.ok(!bash.some((line) => line.includes("later handler")));
+	assert.ok(bash.some((line) => line.startsWith("  - Hidden tools stay active")));
+	assert.ok(!bash.some((line) => line.startsWith("  - Late edits were made")));
 
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[A");
@@ -1154,8 +1152,7 @@ test("InjectionsView previews a hidden tool with only its own candidates", () =>
 	view.handleInput("\r");
 	const aggregate = view.render(120).map(stripSgr);
 	assert.ok(aggregate.some((line) => line.trim() === "bash · 0 tokens · Hidden"), "aggregate parts carry the marker");
-	assert.ok(aggregate.includes("  - Hidden tools may come from active model-only tools: codemode, tool_search."));
-	assert.ok(!aggregate.some((line) => line.includes("write")));
+	assert.ok(aggregate.some((line) => line.startsWith("  - Hidden tools stay active")));
 });
 
 test("late-edit and hidden-tool frames reflow without partial descriptions", () => {
@@ -1174,7 +1171,7 @@ test("late-edit and hidden-tool frames reflow without partial descriptions", () 
 			}
 		}
 	};
-	frames([1, 24, 60, 80, 120], /a later handler: write\./);
+	frames([1, 24, 60, 80, 120], /count the added lines\./);
 	height = 70;
 	view.handleInput("\u001b[F");
 	view.handleInput("\u001b[A");

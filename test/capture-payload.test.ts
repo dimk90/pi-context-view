@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
-	type ExtensionAPI, type ExtensionContext, type ExtensionEvent, SessionManager,
+	type BeforeAgentStartEvent, type ExtensionAPI, type ExtensionContext, type ExtensionEvent, SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
 import { SnapshotBuilder } from "../src/capture/builder.ts";
@@ -32,11 +32,6 @@ function harness(probe = false) {
 		on: (event: string, handler: (event: ExtensionEvent, ctx: ExtensionContext) => unknown) => {
 			handlers.set(event, [...handlers.get(event) ?? [], handler]);
 		},
-		getActiveTools: () => ["read", "codemode"],
-		getAllTools: () => [
-			{ name: "read", exposure: "direct" }, { name: "codemode", exposure: "model-only" },
-			{ name: "inactive", exposure: "model-only" },
-		],
 	} as unknown as ExtensionAPI;
 	registerCapture(pi, { isCurrentRun: probe, filterMessages: (messages) => messages }, new SnapshotBuilder(snapshots));
 	return {
@@ -71,6 +66,9 @@ for (const first of ["message_start", "provider_stream_event", "message_end"] as
 		const payload = { messages: [{ role: "system", content: "prompt" }], tools: [] };
 		const beforeMessages = structuredClone(messages);
 		const beforePayload = structuredClone(payload);
+		// Capture reads only the hidden tools of Pi's normalized options
+		const options = { hiddenTools: ["read"] } as unknown as BeforeAgentStartEvent["systemPromptOptions"];
+		h.emit({ type: "before_agent_start", prompt: "", systemPrompt: "prompt", systemPromptOptions: options });
 		h.emit({ type: "context_with_system", messages });
 		h.emit({ type: "before_provider_request", payload });
 		assert.deepEqual(messages, beforeMessages);
@@ -84,8 +82,8 @@ for (const first of ["message_start", "provider_stream_event", "message_end"] as
 		const snapshot = h.snapshots.latest();
 		assert.equal(snapshot?.origin, "synthetic-probe");
 		assert.ok(snapshot?.guard.status === "complete");
-		assert.deepEqual(snapshot.guard.findings, [{ type: "hidden-declaration", name: "read", candidates: ["codemode"] }]);
-		assert.deepEqual(snapshot.declaredTools, { baseline: ["read"], declared: [] });
+		assert.deepEqual(snapshot.guard.findings, [], "the tool Pi hid is not a late removal");
+		assert.deepEqual(snapshot.hiddenTools, ["read"]);
 		const count = h.published.length;
 		h.emit({ type: "message_start", message: assistant() });
 		h.emit({ type: "message_end", message: assistant() });
@@ -93,6 +91,23 @@ for (const first of ["message_start", "provider_stream_event", "message_end"] as
 		assert.equal(h.published.length, count);
 	});
 }
+
+test("hidden names are copied at the event boundary and reset by an empty list on the next run", async () => {
+	const h = harness(true);
+	const options = { hiddenTools: ["read"] } as unknown as BeforeAgentStartEvent["systemPromptOptions"];
+	h.emit({ type: "before_agent_start", prompt: "", systemPrompt: "prompt", systemPromptOptions: options });
+	options.hiddenTools.length = 0;
+	h.emit({ type: "context_with_system", messages: [{ ...SYSTEM, toolsAdded: [TOOL] }] });
+	await flush();
+	assert.equal(h.snapshots.first()?.guard.status, "pending");
+	assert.deepEqual(h.snapshots.first()?.hiddenTools, ["read"], "owned even before any payload");
+
+	h.emit({ type: "before_agent_start", prompt: "", systemPrompt: "prompt", systemPromptOptions: options });
+	h.emit({ type: "context_with_system", messages: [{ ...SYSTEM, toolsAdded: [TOOL] }] });
+	await flush();
+	assert.deepEqual(h.snapshots.first()?.hiddenTools, ["read"], "Initial does not share the next run's list");
+	assert.equal(h.snapshots.latest()?.hiddenTools, undefined);
+});
 
 test("a new capture settles an earlier unpaired one and cannot inherit its request model", async () => {
 	const h = harness();

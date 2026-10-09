@@ -6,7 +6,7 @@ import { VERSION } from "@earendil-works/pi-coding-agent";
 import { isSupportedPiVersion, MIN_PI_VERSION } from "../src/pi-version.ts";
 
 test("isSupportedPiVersion accepts the minimum and newer releases", () => {
-	for (const version of [MIN_PI_VERSION, "1.0.1", "1.2.0", "2.0.0", "10.0.0", "v1.0.0", "1.0.0-beta.1"]) {
+	for (const version of [MIN_PI_VERSION, "1.1.1", "1.2.0", "2.0.0", "10.0.0", "v1.1.0", "1.1.0-beta.1"]) {
 		assert.equal(isSupportedPiVersion(version), true, version);
 	}
 	// The pinned development dependency must pass its own check.
@@ -14,7 +14,7 @@ test("isSupportedPiVersion accepts the minimum and newer releases", () => {
 });
 
 test("isSupportedPiVersion refuses releases before the minimum", () => {
-	for (const version of ["0.99.2", "0.87.0", "0.86.1", "0.9.10"]) {
+	for (const version of ["1.0.4", "1.0.0", "0.99.2", "0.87.0", "0.86.1", "0.9.10"]) {
 		assert.equal(isSupportedPiVersion(version), false, version);
 	}
 });

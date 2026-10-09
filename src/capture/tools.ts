@@ -1,57 +1,47 @@
 /**
- * PayloadGuard's tool-declaration channel, LoadoutAttributor, and
- * DeclaredTools (D4, D7, D9): compare the declarations a payload carries with
- * the tools the structured capture replayed. Pure functions over
- * process-local data.
+ * PayloadGuard's tool-declaration channel (D4, D7): compare the declarations a
+ * payload carries with the tools the structured capture replayed, less the ones
+ * Pi hid. Pure functions over process-local data.
  */
-import type { DeclaredTools, GuardFinding } from "../snapshot.ts";
+import type { GuardFinding } from "../snapshot.ts";
 import { diffLines, normalizeText } from "./messages.ts";
 import type { PayloadDeclaration } from "./payload.ts";
 
 /** Inputs of one tool-channel comparison. */
 export interface ToolComparisonInput {
-	/** Tools replayed from the request at the monitor's handler. */
+	/** Tools replayed from the request at the monitor's handler, without the ones Pi hid. */
 	readonly expected: readonly PayloadDeclaration[];
 	/** Declarations of the payload after its inline changes were replayed. */
 	readonly declarations: readonly PayloadDeclaration[];
-	/** Tool names replayed from the capture's baseline. */
-	readonly baselineNames: readonly string[];
 	/**
 	 * Match payload names to expected ones without case, as Pi does for Claude
 	 * Code tool names with an Anthropic OAuth token.
 	 */
 	readonly ignoreNameCase: boolean;
-	/** Active `model-only` tools that may hide declarations; read only when one is missing. */
-	readonly loadoutCandidates: () => readonly string[];
-}
-
-/** Tool-channel findings and the name sets Usage filters by. */
-export interface ToolComparison {
-	readonly findings: readonly GuardFinding[];
-	readonly declaredTools: DeclaredTools;
 }
 
 /**
- * Compare the declarations:
- *   missing from the payload    hidden declaration, with loadout candidates
- *   added by the payload        edited after monitor
- *   description differs         edited after monitor, with the changed lines
+ * Compare the declarations; each difference is edited after monitor:
+ *   missing from the payload    deleted, with the captured description lines
+ *   added by the payload        added, with the payload's description lines
+ *   description differs         modified, with the changed lines
  * Descriptions are compared without whitespace, as message text is. Schemas
  * are not compared: Pi adapts them per provider, such as for strict mode.
  */
-export function compareToolDeclarations(input: ToolComparisonInput): ToolComparison {
+export function compareToolDeclarations(input: ToolComparisonInput): GuardFinding[] {
 	const expectedByName = new Map(input.expected.map((tool) => [tool.name, tool]));
 	const declared = input.declarations.map((declaration) => ({
 		...declaration,
 		name: resolveName(declaration.name, expectedByName, input.ignoreNameCase),
 	}));
-	const declaredByName = new Map(declared.map((declaration) => [declaration.name, declaration]));
+	const declaredNames = new Set(declared.map((declaration) => declaration.name));
 	const findings: GuardFinding[] = [];
 
-	const missing = input.expected.filter((tool) => !declaredByName.has(tool.name));
-	const candidates = missing.length > 0 ? input.loadoutCandidates() : [];
-	for (const tool of missing) {
-		findings.push({ type: "hidden-declaration", name: tool.name, candidates: candidates.filter((name) => name !== tool.name) });
+	for (const tool of input.expected) {
+		if (declaredNames.has(tool.name)) continue;
+		findings.push({
+			type: "late-tool-edit", change: "deleted", name: tool.name, lines: diffLines(tool.description ?? "", ""),
+		});
 	}
 	for (const declaration of declared) {
 		const tool = expectedByName.get(declaration.name);
@@ -65,10 +55,7 @@ export function compareToolDeclarations(input: ToolComparisonInput): ToolCompari
 			lines: diffLines(before, after),
 		});
 	}
-	return {
-		findings,
-		declaredTools: { declared: [...declaredByName.keys()], baseline: [...input.baselineNames] },
-	};
+	return findings;
 }
 
 /** The expected name a payload name stands for; itself when it matches exactly or nothing matches. */

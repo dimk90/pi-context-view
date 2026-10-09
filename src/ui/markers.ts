@@ -83,8 +83,8 @@ const MARKER_LEGENDS: Record<ContextMarker, MarkerLegend> = {
 	hidden: {
 		keyword: "Hidden",
 		color: "toolDiffRemoved",
-		explanation: " tools stay active and callable, but the request did not declare them to the model." +
-			" They are counted nowhere.",
+		explanation: " tools stay active and callable through another tool, such as codemode, but pi left them" +
+			" out of the request. They are counted nowhere.",
 	},
 };
 

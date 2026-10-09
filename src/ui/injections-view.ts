@@ -563,28 +563,7 @@ function lateEditNote(guard: GuardResult | undefined): string | undefined {
 	}
 }
 
-/**
- * Notes that explain late-edit and hidden-tool items further, after the
- * marker legend: what late edits are, the `model-only` candidates of the
- * hidden tools, and the hidden tools no candidate explains.
- */
+/** The note that explains late edits further, after the marker legend, when any of `items` is one. */
 function findingNotes(items: readonly InjectionItem[]): string[] {
-	const notes: string[] = [];
-	if (items.some((item) => item.source.id === LATE_EDITS_SOURCE_ID)) notes.push(LATE_EDITS_NOTE);
-	const hidden = items.filter((item) => item.change === "hidden");
-	const candidates = [...new Set(hidden.flatMap((item) => item.candidates ?? []))];
-	if (candidates.length > 0) {
-		notes.push(`Hidden tools may come from active model-only tools: ${inlineList(candidates)}.`);
-	}
-	const unexplained = hidden.filter((item) => (item.candidates ?? []).length === 0).map((item) => item.label);
-	if (unexplained.length > 0) {
-		notes.push("Hidden tools without an active model-only candidate may have been removed by a later handler: " +
-			`${inlineList(unexplained)}.`);
-	}
-	return notes;
-}
-
-/** Sanitized names joined for one description sentence. */
-function inlineList(names: readonly string[]): string {
-	return names.map(normalizeInlineText).join(", ");
+	return items.some((item) => item.source.id === LATE_EDITS_SOURCE_ID) ? [LATE_EDITS_NOTE] : [];
 }

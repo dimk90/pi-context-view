@@ -38,17 +38,15 @@ function harness(request = capture()) {
 	const published: RequestSnapshot[] = [];
 	snapshots.subscribe((snapshot) => published.push(snapshot));
 	const builder = new SnapshotBuilder(snapshots);
-	const candidates = ["codemode"];
-	const guard = new PayloadGuard({ publisher: builder, loadoutCandidates: () => candidates, blockImages: () => false });
+	const guard = new PayloadGuard({ publisher: builder, blockImages: () => false });
 	builder.build(request);
-	return { guard, builder, snapshots, published, candidates, request };
+	return { guard, builder, snapshots, published, request };
 }
 
 /** Both channels compared without findings. */
 function assertCompared(snapshot: RequestSnapshot | undefined) {
 	assert.ok(snapshot);
 	assert.deepEqual(snapshot.guard, { status: "complete", dispatch: DISPATCH, findings: [] });
-	assert.deepEqual(snapshot.declaredTools, { declared: ["read"], baseline: ["read"] });
 }
 
 test("physical guard settles before any response, confirms once, and owns its payload copy", async () => {
@@ -68,7 +66,7 @@ test("physical guard settles before any response, confirms once, and owns its pa
 });
 
 for (const timing of ["before", "after"]) {
-	test(`physical dispatch mismatch ${timing} comparison removes provisional names without reparsing`, async () => {
+	test(`physical dispatch mismatch ${timing} comparison removes provisional findings without reparsing`, async () => {
 		const h = harness();
 		h.guard.accept(h.request, payload());
 		if (timing === "after") await flush();
@@ -78,7 +76,6 @@ for (const timing of ["before", "after"]) {
 		assert.ok(snapshot?.guard.status === "incomplete");
 		assert.match(snapshot.guard.reason, /differs/);
 		assert.equal(snapshot.guard.findings, undefined);
-		assert.equal(snapshot.declaredTools, undefined);
 	});
 }
 
@@ -96,7 +93,6 @@ test("virtual guard waits for dispatch and uses the catalog API, not the payload
 	other.guard.confirm(1, { ...DISPATCH, api: "openai-responses" }, () => ({ ...MODEL, api: "openai-responses" }));
 	await flush();
 	assert.ok(other.snapshots.latest()?.guard.status === "incomplete");
-	assert.equal(other.snapshots.latest()?.declaredTools, undefined);
 });
 
 for (const api of ["pi-virtual", "openai-completions"]) {
@@ -107,34 +103,30 @@ for (const api of ["pi-virtual", "openai-completions"]) {
 		h.guard.finishUnconfirmed(1);
 		await flush();
 		assert.deepEqual(h.snapshots.latest()?.guard, { status: "incomplete", reason: "No dispatch identity was observed for this request." });
-		assert.equal(h.snapshots.latest()?.declaredTools, undefined);
 	});
 }
 
-test("unknown routed model and unsupported API settle incomplete, without declared names", async () => {
+test("unknown routed model and unsupported API settle incomplete", async () => {
 	for (const request of [capture({ ...MODEL, api: "pi-virtual" }), capture({ ...MODEL, api: "other" })]) {
 		const h = harness(request);
 		h.guard.accept(request, payload());
 		h.guard.confirm(1, { ...DISPATCH, api: request.requestModel?.api ?? "unknown" }, () => undefined);
 		await flush();
 		assert.equal(h.snapshots.latest()?.guard.status, "incomplete");
-		assert.equal(h.snapshots.latest()?.declaredTools, undefined);
 	}
 });
 
-test("candidate attribution is frozen at payload time, not read when a virtual response arrives", async () => {
-	const h = harness(capture({ ...MODEL, api: "pi-virtual" }));
-	h.guard.accept(h.request, { messages: [] });
-	h.candidates.splice(0);
-	await flush();
-	h.guard.confirm(1, DISPATCH, () => MODEL);
-	await flush();
-	const snapshot = h.snapshots.latest();
-	assert.ok(snapshot?.guard.status === "complete");
-	assert.deepEqual(snapshot.guard.findings, [
-		{ type: "hidden-declaration", name: "read", candidates: ["codemode"] },
-		{ type: "late-edit", change: "deleted", part: "system", lines: [{ type: "removed", text: "prompt" }] },
-	]);
+test("a declaration Pi hid is expected to be missing; any other missing one is a late removal", async () => {
+	for (const hiddenTools of [["read"], undefined]) {
+		const h = harness({ ...capture(), ...(hiddenTools === undefined ? {} : { hiddenTools }) });
+		h.guard.accept(h.request, { ...payload(), tools: [] });
+		await flush();
+		assert.deepEqual(h.snapshots.latest()?.guard, {
+			status: "complete", dispatch: DISPATCH, findings: hiddenTools === undefined
+				? [{ type: "late-tool-edit", change: "deleted", name: "read", lines: [{ type: "removed", text: "Read a file." }] }]
+				: [],
+		});
+	}
 });
 
 test("late message edits complete the guard with their findings", async () => {
@@ -148,7 +140,7 @@ test("late message edits complete the guard with their findings", async () => {
 	});
 });
 
-test("a request that cannot be converted keeps the tool channel's findings and names", async () => {
+test("a request that cannot be converted keeps the tool channel's findings", async () => {
 	const request = capture();
 	// An earlier handler's malformed message reaches the copied middle of the request
 	const malformed = { ...request, ...copyRequest(request.baseline.messages, [
@@ -162,12 +154,13 @@ test("a request that cannot be converted keeps the tool channel's findings and n
 	const snapshot = h.snapshots.latest();
 	assert.deepEqual(snapshot?.guard, {
 		status: "incomplete", reason: "The captured request could not be converted for comparison.", dispatch: DISPATCH,
-		findings: [{ type: "hidden-declaration", name: "read", candidates: ["codemode"] }],
+		findings: [
+			{ type: "late-tool-edit", change: "deleted", name: "read", lines: [{ type: "removed", text: "Read a file." }] },
+		],
 	});
-	assert.deepEqual(snapshot.declaredTools, { declared: [], baseline: ["read"] });
 });
 
-test("an unsupported tool channel preserves compared message findings without declared names", async () => {
+test("an unsupported tool channel preserves compared message findings", async () => {
 	for (const api of ["openai-completions", "openai-responses", "anthropic-messages"]) {
 		const request = capture({ ...MODEL, api });
 		const h = harness(request);
@@ -180,7 +173,6 @@ test("an unsupported tool channel preserves compared message findings without de
 		assert.deepEqual(snapshot.guard.findings, [
 			{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "late" }] },
 		]);
-		assert.equal(snapshot.declaredTools, undefined);
 	}
 });
 

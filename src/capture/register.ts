@@ -1,6 +1,7 @@
 /**
- * Capture layer wiring: observes every agent request in `context_with_system`,
- * pairs it with its provider payload in `before_provider_request`, and confirms
+ * Capture layer wiring: reads Pi's hidden tools in `before_agent_start`,
+ * observes every agent request in `context_with_system`, pairs it with its
+ * provider payload in `before_provider_request`, and confirms
  * the dispatch from assistant and provider stream events. Observe only (D5):
  * handlers return nothing and never change provider-bound data. Runs in every
  * run mode, without any consumer, and imports no trigger or consumer code.
@@ -26,9 +27,13 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 	const confirmer = new DispatchConfirmer<number>();
 	const guard = new PayloadGuard({
 		publisher: builder,
-		loadoutCandidates: () => readLoadoutCandidates(pi),
 		blockImages: () => readBlockImages(pi),
 	});
+	/**
+	 * Pi's hidden declarations for the current run. Only `before_agent_start`
+	 * reports them to event handlers, so a run without it keeps the last ones.
+	 */
+	let hiddenTools: readonly string[] = [];
 
 	/** Settle the latest unpaired capture: no payload reached the monitor for it. */
 	function settleUnpaired(): void {
@@ -44,6 +49,10 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 		if (request !== undefined) guard.confirm(request, dispatch, (provider, modelId) => ctx.modelRegistry.find(provider, modelId));
 	}
 
+	pi.on("before_agent_start", (event) => {
+		hiddenTools = [...event.systemPromptOptions.hiddenTools];
+	});
+
 	pi.on("context_with_system", (event, ctx) => {
 		settleUnpaired();
 		let request: CapturedRequest;
@@ -56,6 +65,7 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 				effectivePrompt: ctx.getSystemPrompt(),
 				probe,
 				requestModel: ctx.model,
+				hiddenTools,
 			});
 		} catch {
 			// A request whose changes cannot be cloned is not captured; the request itself proceeds unchanged
@@ -105,6 +115,7 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 	});
 
 	pi.on("session_shutdown", () => {
+		hiddenTools = [];
 		tracker.clear();
 		confirmer.clear();
 		guard.clear();
@@ -122,10 +133,4 @@ function readBlockImages(pi: ExtensionAPI): boolean {
 	} catch {
 		return false;
 	}
-}
-
-/** Active tools with `model-only` exposure; any of them may hide declarations through `prepareLoadout()` (D7). */
-function readLoadoutCandidates(pi: ExtensionAPI): string[] {
-	const active = new Set(pi.getActiveTools());
-	return pi.getAllTools().filter((tool) => tool.exposure === "model-only" && active.has(tool.name)).map((tool) => tool.name);
 }

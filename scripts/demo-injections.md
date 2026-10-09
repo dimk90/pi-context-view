@@ -128,16 +128,21 @@ when pi exits.
 As in a real session, `codemode` has the `builtin` source and is listed under
 Built-in Tools.
 
-After an ordinary prompt, Injections marks the other active tools `Hidden` at
-0 tokens, with `codemode` as their `model-only` candidate. Those tools remain
+Open `/context injections` immediately: its silent probe records Pi's hidden
+tools, so the other active tools already show `Hidden` at 0 tokens. They remain
 callable through codemode scripts. With the default tool selection, `read`,
 `bash`, `edit`, and `write` are hidden; Usage counts only `codemode`. This works
 in both extension load orders. Tool-selection arguments can change that set.
 
 With no other fixture flags, this mode demonstrates codemode hiding alone,
 without section, conversation, or payload edits. Manual `write`-declaration
-removal runs only when the `--payload` group is explicitly selected.
-As with late edits, send a real prompt before first opening Injections.
+removal runs only when the `--payload` group is explicitly selected. To inspect
+late payload edits, send a real prompt before first opening Injections; this is
+no longer necessary for codemode hiding alone.
+
+On Pi 1.1, `--payload` without codemode reports the `write` removal as a `Deleted`
+tool under `late edits`. Its normal tool row and Usage count remain unchanged,
+like other late edits; it is not marked `Hidden`.
 
 The tables below are historical checks of earlier fixture sets; their recorded
 results have not been rewritten.
