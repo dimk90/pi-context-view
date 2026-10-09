@@ -20,7 +20,6 @@ function item(
 ): InjectionItem {
 	return {
 		id,
-		phase: "initial",
 		kind,
 		source: { id: sourceId, label: sourceLabel, native },
 		label: id,
@@ -78,7 +77,6 @@ test("buildSnapshot owns nested input data and computes the total", () => {
 	const sections = [{ label: "Definition", text: "hello world!", tokens: 3 }];
 	const input: InjectionItem = {
 		id: "message:test:0",
-		phase: "initial",
 		kind: "message",
 		source,
 		label: "message",
@@ -87,16 +85,13 @@ test("buildSnapshot owns nested input data and computes the total", () => {
 		text: "hello world!",
 		sections,
 	};
-	const capturedAt = new Date("2026-07-10T12:00:00Z");
-	const snapshot = buildSnapshot([input], "real-turn", capturedAt);
+	const snapshot = buildSnapshot([input]);
 
 	source.label = "changed";
 	sections[0]!.label = "changed";
-	capturedAt.setFullYear(2000);
 
 	assert.equal(snapshot.groups[0]?.source.label, "test");
 	assert.equal(snapshot.groups[0]?.items[0]?.sections?.[0]?.label, "Definition");
-	assert.equal(snapshot.capturedAt.toISOString(), "2026-07-10T12:00:00.000Z");
 	assert.equal(snapshot.totalTokens, 3);
 });
 
@@ -110,7 +105,7 @@ test("buildSnapshot owns injected references on sections and standalone children
 		sections: [{ label: "Guidelines", text: child.text, tokens: 3, injectedReferences: references }],
 		children: [child],
 	};
-	const snapshot = buildSnapshot([input], "real-turn", new Date());
+	const snapshot = buildSnapshot([input]);
 	reference.offset = 0;
 	reference.text = "changed";
 	source.label = "changed";

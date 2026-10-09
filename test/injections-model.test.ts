@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { InitialSnapshot, InjectionItem } from "../src/model.ts";
+import type { InjectionSnapshot, InjectionItem } from "../src/model.ts";
 import { buildInjectionRows, collectItemsById, ListNavigator, PreviewScroller } from "../src/ui/injections-model.ts";
 
 function item(id: string, sourceId: string, native: boolean, tokens: number): InjectionItem {
 	return {
 		id,
-		phase: "initial",
 		kind: "message",
 		source: { id: sourceId, label: sourceId, native },
 		label: id,
@@ -17,7 +16,7 @@ function item(id: string, sourceId: string, native: boolean, tokens: number): In
 	};
 }
 
-function snapshot(): InitialSnapshot {
+function snapshot(): InjectionSnapshot {
 	const builtinTools: InjectionItem = {
 		...item("tool:builtin", "pi", true, 60),
 		children: [item("tool:builtin:bash", "pi", true, 40), item("tool:builtin:read", "pi", true, 20)],
@@ -25,8 +24,6 @@ function snapshot(): InitialSnapshot {
 	const piItems = [item("base-prompt", "pi", true, 100), builtinTools, item("skills", "pi", true, 40)];
 	const extensionItems = [item("web_search", "npm:web", false, 30)];
 	return {
-		origin: "synthetic-probe",
-		capturedAt: new Date("2026-07-10T12:00:00Z"),
 		groups: [
 			{ source: { id: "pi", label: "pi", native: true }, items: piItems, totalTokens: 200 },
 			{ source: { id: "npm:web", label: "npm:web", native: false }, items: extensionItems, totalTokens: 30 },
@@ -35,7 +32,7 @@ function snapshot(): InitialSnapshot {
 	};
 }
 
-test("buildInjectionRows flattens groups and separates the Initial total", () => {
+test("buildInjectionRows flattens groups and separates the snapshot total", () => {
 	const rows = buildInjectionRows(snapshot());
 
 	assert.deepEqual(

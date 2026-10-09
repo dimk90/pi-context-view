@@ -9,9 +9,9 @@ import {
 	BUILT_IN_TOOLS_LABEL,
 	type ContextUsageSnapshot,
 	INSTRUCTION_FILES_LABEL,
-	type InvisibleReasoningEstimate,
-	type InitialSnapshot,
 	type InjectionItem,
+	type InjectionSnapshot,
+	type InvisibleReasoningEstimate,
 	type ReportedContextUsage,
 	SKILLS_LABEL,
 	SYSTEM_PROMPT_LABEL,
@@ -24,7 +24,7 @@ import {
  * carry the latest request's conversation changes.
  */
 export interface UsageInputs {
-	snapshot: InitialSnapshot;
+	snapshot: InjectionSnapshot;
 	messages: ContextEvent["messages"];
 	reported?: ReportedContextUsage;
 	modelLabel?: string;
@@ -92,7 +92,7 @@ interface PromptCategories {
 }
 
 /** Map frozen snapshot items to prompt/tool/instruction/skill categories. */
-function classifyPromptCategories(snapshot: InitialSnapshot): PromptCategories {
+function classifyPromptCategories(snapshot: InjectionSnapshot): PromptCategories {
 	const systemPrompt: UsageCategory[] = [];
 	const promptAdditions: UsageCategory[] = [];
 	const builtInTools: UsageCategory[] = [];
@@ -123,7 +123,7 @@ function classifyPromptCategories(snapshot: InitialSnapshot): PromptCategories {
 					skills.push(...breakdownFromItem(item));
 					break;
 				case "message":
-					// Initial custom messages live in the session; classifyMessages counts them.
+					// Custom messages live in the session; classifyMessages counts them.
 					break;
 			}
 		}

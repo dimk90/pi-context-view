@@ -14,7 +14,7 @@ const SIGNATURE = "OPAQUE_SIGNATURE_BYTES";
 function request(id: number, messages: RequestMessage[]): CapturedRequest {
 	const baseline: BaselineMessage[] = [{ entryId: "u1", message: { role: "user", content: "hello", timestamp: 1 } }];
 	return {
-		id, origin: "real-turn", capturedAt: 1_000,
+		id, origin: "real-turn",
 		baseline: { leafId: "leaf", messages: baseline },
 		...copyRequest(baseline, messages),
 	};
@@ -129,7 +129,7 @@ test("a request copy keeps only the differing messages and the replayed system s
 	assert.deepEqual(copy.systemTexts, [{ position: 0, content: "Prompt", sections: { cwd: "<cwd>/a</cwd>" } }],
 		"system texts are owned copies");
 	const snapshot = buildRequestSnapshot({
-		id: 1, origin: "real-turn", capturedAt: 1, baseline: { leafId: "leaf", messages: baseline }, ...copy,
+		id: 1, origin: "real-turn", baseline: { leafId: "leaf", messages: baseline }, ...copy,
 	}, { status: "pending" });
 	assert.deepEqual(snapshot.changes.system, [], "the copied tool schema is unchanged");
 	const [modified] = snapshot.changes.conversation;

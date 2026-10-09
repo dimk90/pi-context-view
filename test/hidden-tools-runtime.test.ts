@@ -21,8 +21,8 @@ import { type MockApi, startMockProvider } from "./harness/mock-provider.ts";
 
 const ACTIVE = ["read", "bash", "edit", "write", "codemode"];
 const HIDDEN = ["read", "bash", "edit", "write"];
-/** Initial lists only codemode and keeps the names of the tools codemode `only` hides. */
-const INITIAL_TOOLS = { listed: ["codemode"], hidden: HIDDEN };
+/** Injections lists only codemode and keeps the names of the tools codemode `only` hides. */
+const CODEMODE_ONLY_TOOLS = { listed: ["codemode"], hidden: HIDDEN };
 
 for (const api of ["openai-completions", "anthropic-messages"] as const) {
 	test(`#11 ${api}: a first probe already leaves out the tools codemode-only hides`, async (t) => {
@@ -34,7 +34,7 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
 		assert.equal(provider.requests.length, 0);
 		assert.equal(observed.responses, 0, "after_provider_response sentinel stays silent for the probe");
 		assert.deepEqual(usageToolNames(session, store), ["codemode"]);
-		assert.deepEqual(initialTools(session, store), INITIAL_TOOLS);
+		assert.deepEqual(injectionTools(session, store), CODEMODE_ONLY_TOOLS);
 
 		await session.prompt("hi");
 		await flush();
@@ -45,6 +45,7 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
 		assert.deepEqual(real?.guard.status === "complete" ? real.guard.findings : undefined, [],
 			"tools Pi hid are not late removals");
 		assert.deepEqual(usageToolNames(session, store), ["codemode"]);
+		assert.deepEqual(injectionTools(session, store), CODEMODE_ONLY_TOOLS, "the real request hides them too");
 		assert.equal(provider.requests.length, 1);
 		assert.equal(observed.responses, 1);
 		assert.deepEqual(observed.declarations, [api === "anthropic-messages"
@@ -56,21 +57,23 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
 	});
 }
 
-test("#11: Usage follows Pi's hidden tools as soon as the active tools change", async (t) => {
+test("#11: Usage follows Pi's hidden tools at once, Injections at the next request", async (t) => {
 	const { session, store } = await createRuntime(t, "openai-completions");
 	await session.prompt("hi");
 	await flush();
 	assert.deepEqual(usageToolNames(session, store), ["codemode"]);
 	session.setActiveToolsByName(["read", "bash", "edit", "write"]);
 	assert.deepEqual(session.getActiveToolNames(), ["read", "bash", "edit", "write"]);
-	assert.deepEqual(initialTools(session, store), INITIAL_TOOLS, "Initial keeps its captured hidden set");
+	assert.deepEqual(injectionTools(session, store), CODEMODE_ONLY_TOOLS,
+		"Injections keeps the captured hidden set until the next request");
 	assert.deepEqual(usageToolNames(session, store), [...ACTIVE].sort(),
 		"Pi hides nothing now and records the change at the next request, so every replayed tool counts until then");
 	await session.prompt("after active-tool change");
 	await flush();
 	assert.equal(store.latest()?.hiddenTools, undefined);
 	assert.deepEqual(usageToolNames(session, store), ["bash", "edit", "read", "write"]);
-	assert.deepEqual(initialTools(session, store), INITIAL_TOOLS, "a later request does not change Initial");
+	assert.deepEqual(injectionTools(session, store), { listed: ["bash", "edit", "read", "write"], hidden: [] },
+		"the next request declares the four tools and hides none");
 });
 
 /** Pi's current prompt options, as a command handler reads them. */
@@ -94,15 +97,15 @@ function usageToolNames(session: AgentSession, store: SnapshotStore): string[] {
 		.flatMap((category) => category.children ?? []).map((child) => child.label).sort();
 }
 
-/** Tool names Injections lists for the first snapshot, and names of the tools Pi hid it leaves out. */
-function initialTools(
+/** Tool names Injections lists for the latest snapshot, and names of the tools Pi hid it leaves out. */
+function injectionTools(
 	session: AgentSession,
 	store: SnapshotStore,
 ): { listed: string[]; hidden: readonly string[] | undefined } {
-	const first = store.first();
-	assert.ok(first !== undefined);
+	const latest = store.latest();
+	assert.ok(latest !== undefined);
 	const snapshot = buildInjectionsSnapshot({
-		snapshot: first, entries: session.sessionManager.getEntries(), filterMessages: (messages) => messages,
+		snapshot: latest, entries: session.sessionManager.getEntries(), filterMessages: (messages) => messages,
 		options: liveOptions(session), allTools: session.getAllTools(), systemPrompt: session.systemPrompt,
 		activeToolNames: session.getActiveToolNames(),
 	});

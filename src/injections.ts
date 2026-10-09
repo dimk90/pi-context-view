@@ -18,8 +18,8 @@ import { messagePreview } from "./message-preview.ts";
 import {
 	AGGREGATE_SOURCE,
 	buildSnapshot,
-	type InitialSnapshot,
 	type InjectionItem,
+	type InjectionSnapshot,
 	type InjectionSource,
 	LATE_EDITS_SOURCE,
 	messageTypeSource,
@@ -78,7 +78,7 @@ export interface InjectionsInput {
  * custom messages, and changes, with the guard's late edits in their own
  * group. The tools Pi hid are left out; their names supply the description note.
  */
-export function buildInjectionsSnapshot(input: InjectionsInput): InitialSnapshot {
+export function buildInjectionsSnapshot(input: InjectionsInput): InjectionSnapshot {
 	const baseline = readProjection(input.entries, input.snapshot.leafId, input.filterMessages);
 	const findings = guardFindings(input.snapshot.guard);
 	const prompt = measureRequestPrompt(input, baseline.map(({ message }) => message));
@@ -87,10 +87,7 @@ export function buildInjectionsSnapshot(input: InjectionsInput): InitialSnapshot
 		...measureMessages(input.snapshot.changes.conversation, baseline),
 		...measureLateEdits(findings),
 	];
-	return {
-		...buildSnapshot(items, input.snapshot.origin, new Date(input.snapshot.capturedAt)),
-		hiddenTools: prompt.hiddenTools,
-	};
+	return { ...buildSnapshot(items), hiddenTools: prompt.hiddenTools };
 }
 
 /** Findings of every compared channel; a pending guard has none yet. */
@@ -210,8 +207,7 @@ function changeItem(
 		case "deleted": {
 			const original = take(change.entryId);
 			if (original === undefined) {
-				return { id, phase: "initial", kind: "message", source, label: "message", chars: 0, tokens: 0, text: "",
-					change: "deleted" };
+				return { id, kind: "message", source, label: "message", chars: 0, tokens: 0, text: "", change: "deleted" };
 			}
 			return { ...messageItem(id, original, source), chars: 0, tokens: 0, change: "deleted" };
 		}
@@ -232,7 +228,6 @@ function measureLateEdits(findings: readonly GuardFinding[]): InjectionItem[] {
 		const text = finding.lines.filter((line) => line.type === "added").map((line) => line.text).join("\n");
 		return {
 			id: `late:${index}`,
-			phase: "initial",
 			kind: finding.type === "late-edit" ? "message" : "tool",
 			source: LATE_EDITS_SOURCE,
 			label: finding.type === "late-edit" ? LATE_EDIT_LABELS[finding.part] : finding.name,
@@ -250,7 +245,6 @@ function messageItem(id: string, message: RequestMessage, source: InjectionSourc
 	const { text, jsonSpan } = messagePreview(message, redacted);
 	return {
 		id,
-		phase: "initial",
 		kind: "message",
 		source,
 		label: message.role === "custom" ? "message" : `${message.role} message`,

@@ -1,11 +1,12 @@
 /**
  * pi-context-view - inspect what occupies the model context.
  *
- * Structured capture publishes a snapshot of every request to SnapshotStore;
- * Injections shows the first one, Usage applies the latest one to the current
- * branch. Either view runs one on-demand silent probe when opened before any
- * request. On a Pi version older than the supported one, it registers no
- * lifecycle handlers, captures nothing, and `/context` only reports the
+ * Structured capture publishes a snapshot of every request to SnapshotStore,
+ * which keeps the latest one. Injections shows that request as it was sent;
+ * Usage applies it to the current branch. Either view runs one on-demand
+ * silent probe when opened before any request. On a Pi version older than the
+ * supported one, it registers no lifecycle handlers, captures nothing, and
+ * `/context` only reports the
  * required version.
  */
 import { type ExtensionAPI, type ExtensionCommandContext, VERSION } from "@earendil-works/pi-coding-agent";
@@ -20,6 +21,7 @@ import {
 	reportConfigCreation,
 	reportTuiOnly,
 	reportUnsupportedPi,
+	type RequestSnapshotResult,
 	resolveRequestSnapshot,
 } from "./command.ts";
 import { SnapshotBuilder } from "./capture/builder.ts";
@@ -53,15 +55,9 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 	const configStore = new ConfigStore();
 	const supported = isSupportedPiVersion(VERSION);
 
-	/** Open Injections on the first request snapshot, or on the degraded fallback without one. */
-	async function openInjections(ctx: ExtensionCommandContext): Promise<void> {
-		const initial = await resolveRequestSnapshot(snapshots, trigger, ctx, "first");
-		// Compaction can start while waiting for idle; refuse instead of showing its fallback
-		if (compaction.isActive) {
-			reportCompactionInProgress(ctx, "injections");
-			return;
-		}
-		if (initial.type === "missing") {
+	/** Open Injections on the latest request snapshot, or on the degraded fallback without one. */
+	async function openInjections(ctx: ExtensionCommandContext, latest: RequestSnapshotResult): Promise<void> {
+		if (latest.type === "missing") {
 			await showInjectionsView(ctx, {
 				snapshot: buildNativeSnapshot({
 					systemPrompt: ctx.getSystemPrompt(),
@@ -70,11 +66,11 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 					activeToolNames: pi.getActiveTools(),
 					promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 				}),
-				degradedReason: initial.degradedReason,
+				degradedReason: latest.degradedReason,
 			});
 			return;
 		}
-		const snapshot = initial.snapshot;
+		const snapshot = latest.snapshot;
 		await showInjectionsView(ctx, {
 			snapshot: buildInjectionsSnapshot({
 				snapshot,
@@ -92,13 +88,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 	}
 
 	/** Open Usage on the current branch with the latest request snapshot's changes applied. */
-	async function openUsage(ctx: ExtensionCommandContext): Promise<void> {
-		const latest = await resolveRequestSnapshot(snapshots, trigger, ctx, "latest");
-		// Compaction can start while waiting for idle; refuse instead of showing its fallback
-		if (compaction.isActive) {
-			reportCompactionInProgress(ctx, "usage");
-			return;
-		}
+	async function openUsage(ctx: ExtensionCommandContext, latest: RequestSnapshotResult): Promise<void> {
 		// Loaded only for the Usage view, the sole consumer of configured colors.
 		const loadedConfig = configStore.load();
 		const { messages, systemChanges, forcedPrompt } = applyRequestSnapshot({
@@ -160,8 +150,14 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore()) {
 				reportCompactionInProgress(ctx, command.view);
 				return;
 			}
-			if (command.view === "injections") await openInjections(ctx);
-			else await openUsage(ctx);
+			const latest = await resolveRequestSnapshot(snapshots, trigger, ctx);
+			// Compaction can start while waiting for idle; refuse instead of showing its fallback
+			if (compaction.isActive) {
+				reportCompactionInProgress(ctx, command.view);
+				return;
+			}
+			if (command.view === "injections") await openInjections(ctx, latest);
+			else await openUsage(ctx, latest);
 		},
 	});
 

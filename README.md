@@ -28,8 +28,8 @@ injected by other extensions.
 
 - `/context` - shorthand for `/context usage`.
 - `/context usage` - open the context usage visualization.
-- `/context injections` - show the hidden parts of the context captured at
-  session start or resume.
+- `/context injections` - explore the latest request's injections: its system
+  prompt, tool definitions, and extension contributions.
 - `/context config` - create the global configuration file populated with
   defaults, useful for
   [customization](https://github.com/dimk90/pi-context-view#customization).

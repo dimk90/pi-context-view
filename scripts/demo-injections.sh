@@ -20,8 +20,8 @@
 # Place demo flags before Pi arguments. Other arguments go to pi unchanged.
 # Discovered extensions stay disabled to avoid a second installed copy.
 #
-# Send an ordinary prompt before first opening /context injections for payload
-# demos: silent probes have no provider payload, and Initial stays frozen.
+# Send an ordinary prompt for payload demos: silent probes have no provider
+# payload. Injections shows the latest request when reopened.
 #
 
 set -euo pipefail

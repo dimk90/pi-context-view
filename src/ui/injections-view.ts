@@ -1,11 +1,11 @@
 /**
- * Focused `/context injections` view: hierarchical Initial snapshot rows. The
- * Runtime label stays hidden until the runtime-inspection roadmap step.
+ * Focused `/context injections` view: hierarchical rows of the latest request
+ * snapshot. The Runtime label stays hidden until the runtime-inspection roadmap step.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import { type InitialSnapshot, type InjectionItem, LATE_EDITS_SOURCE_ID } from "../model.ts";
+import { type InjectionItem, type InjectionSnapshot, LATE_EDITS_SOURCE_ID } from "../model.ts";
 import type { GuardResult } from "../snapshot.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import {
@@ -43,7 +43,7 @@ import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines }
  */
 const LIST_FIXED_LINE_COUNT = 8;
 const PREVIEW_FIXED_LINE_COUNT = 8;
-const LIST_DESCRIPTION = "Injections into the model context for the first turn, with token estimates.";
+const LIST_DESCRIPTION = "Injections into the model context of the latest request, with token estimates.";
 const LATE_EDITS_NOTE = "Late edits were made after pi-context-view captured the request. Their sources are" +
 	" unknown; only changed lines are known, and estimates count the added lines.";
 /** List rows that must stay visible for the description to keep its own rows. */
@@ -54,7 +54,7 @@ const TOKEN_LEADER_GAP = 4;
 
 /** Everything the Injections view renders. */
 export interface InjectionsViewInput {
-	readonly snapshot: InitialSnapshot;
+	readonly snapshot: InjectionSnapshot;
 	readonly degradedReason?: string;
 	/** True when a silent probe captured the request, not a real turn. */
 	readonly probe?: boolean;
@@ -356,8 +356,8 @@ export class InjectionsView {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold("Context Injections"));
 		const separator = theme.fg("dim", " · ");
-		// Runtime remains unimplemented, so only the Initial label is shown.
-		const tabs = theme.fg("mdHeading", theme.bold("[INITIAL]"));
+		// Runtime remains unimplemented, so only the Latest Request label is shown.
+		const tabs = theme.fg("mdHeading", theme.bold("[Latest Request]"));
 		const combined = `${title}${separator}${tabs}`;
 		if (visibleWidth(combined) <= width) return [this.fit(combined, width)];
 		return [this.fit(title, width), "", this.fit(tabs, width)];
@@ -481,7 +481,7 @@ export class InjectionsView {
 
 	/**
 	 * Description block, collapsed whole once the list window falls below its
-	 * readable floor. The Initial list is unbounded and scrolls on most
+	 * readable floor. The injection list is unbounded and scrolls on most
 	 * terminals, so the description outlives the scroll counter instead of
 	 * yielding to it; a list shorter than the floor keeps every row instead.
 	 */

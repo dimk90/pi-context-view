@@ -1,6 +1,6 @@
 /**
- * `/context` command grammar, argument completions, and request snapshot
- * resolution: the first snapshot for Injections, the latest one for Usage.
+ * `/context` command grammar, argument completions, and resolution of the
+ * latest request snapshot that both views read.
  */
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
@@ -23,7 +23,7 @@ const MAX_REPORTED_MESSAGE_LENGTH = 500;
 const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
-	{ value: "injections", label: "injections", description: "Explore initial context injections" },
+	{ value: "injections", label: "injections", description: "Explore the latest request's injections" },
 	{ value: "config", label: "config", description: "Create config file populated with defaults" },
 ] satisfies AutocompleteItem[];
 
@@ -36,10 +36,7 @@ export type ContextCommand =
 	| { readonly type: "config" }
 	| { readonly type: "invalid"; readonly message: string };
 
-/** Which retained request snapshot a view reads: Initial for Injections, the latest for Usage. */
-export type SnapshotSelection = "first" | "latest";
-
-/** The selected request snapshot, or why the view must degrade without one. */
+/** The latest request snapshot, or why the view must degrade without one. */
 export type RequestSnapshotResult =
 	| { readonly type: "snapshot"; readonly snapshot: RequestSnapshot }
 	| { readonly type: "missing"; readonly degradedReason: string };
@@ -70,25 +67,24 @@ export function getContextArgumentCompletions(argumentPrefix: string): Autocompl
 }
 
 /**
- * Obtain the selected request snapshot of this runtime, asking ProbeTrigger
+ * Obtain the latest request snapshot of this runtime, asking ProbeTrigger
  * only when the store has none after the agent is idle: a real turn that was
- * running publishes one without a probe.
+ * running publishes one without a probe. A probe's snapshot is read from the
+ * store, not from the probe result.
  */
 export async function resolveRequestSnapshot(
 	snapshots: SnapshotReader,
 	trigger: ProbeTrigger,
 	context: ExtensionCommandContext,
-	selection: SnapshotSelection,
 ): Promise<RequestSnapshotResult> {
-	const select = (): RequestSnapshot | undefined => selection === "first" ? snapshots.first() : snapshots.latest();
-	const existing = select();
+	const existing = snapshots.latest();
 	if (existing !== undefined) return { type: "snapshot", snapshot: existing };
 	await context.waitForIdle();
-	const afterIdle = select();
+	const afterIdle = snapshots.latest();
 	if (afterIdle !== undefined) return { type: "snapshot", snapshot: afterIdle };
 
 	const result = await trigger.request(context);
-	const probed = select();
+	const probed = snapshots.latest();
 	if (probed !== undefined) return { type: "snapshot", snapshot: probed };
 	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture a request.";
 	return { type: "missing", degradedReason: `${reason} Extension additions were not observed.` };

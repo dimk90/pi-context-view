@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type { Tool } from "@earendil-works/pi-ai";
 import type { BuildSystemPromptOptions, ToolInfo } from "@earendil-works/pi-coding-agent";
 
-import type { InitialSnapshot } from "../src/model.ts";
+import type { InjectionSnapshot } from "../src/model.ts";
 import {
 	buildNativeSnapshot,
 	buildUsageSnapshot,
@@ -101,7 +101,7 @@ test("buildNativeSnapshot retains only names of active hidden tools for the desc
 });
 
 /** Sorted names of every measured tool, built-in children included. */
-function toolNames(snapshot: InitialSnapshot): string[] {
+function toolNames(snapshot: InjectionSnapshot): string[] {
 	return snapshot.groups.flatMap((group) => group.items)
 		.flatMap((item) => item.children ?? [item])
 		.filter((item) => item.kind === "tool")

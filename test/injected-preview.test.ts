@@ -7,7 +7,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_CATEGORY_COLORS, DEFAULT_MAP_SIZE, THEME_COLOR_NAMES } from "../src/config.ts";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import { analyzeSystemPrompt } from "../src/measure.ts";
-import { buildSnapshot, type InitialSnapshot } from "../src/model.ts";
+import { buildSnapshot, type InjectionSnapshot } from "../src/model.ts";
 import { markForcedPrompt } from "../src/replay.ts";
 import type { RequestMessage } from "../src/snapshot.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
@@ -85,7 +85,7 @@ function createTheme(): Theme {
 }
 
 /** Measured prompt with short attributed lines and enough native lines to exercise caps. */
-function createSnapshot(nativeLineCount = 16, withSnippet = false): InitialSnapshot {
+function createSnapshot(nativeLineCount = 16, withSnippet = false): InjectionSnapshot {
 	const nativeLines = Array.from({ length: nativeLineCount }, (_, index) => `- Native rule ${index}`).join("\n");
 	const toolsBlock = withSnippet ? `\n\n<tools>\n- ${SNIPPET_LINE}\n- read: Read files\n</tools>` : "";
 	const prompt = `Preamble${toolsBlock}\n\n<rules>\n- ${GUIDELINE}\n${nativeLines}\n</rules>`;
@@ -94,7 +94,7 @@ function createSnapshot(nativeLineCount = 16, withSnippet = false): InitialSnaps
 		snippet: withSnippet ? SNIPPET : undefined,
 		guidelines: [GUIDELINE], source: SOURCE,
 	}]);
-	return buildSnapshot(items, "real-turn", new Date("2026-07-10T12:00:00Z"));
+	return buildSnapshot(items);
 }
 
 /** Drop only our SGR styling, leaving any unsafe control sequences visible to assertions. */
@@ -168,10 +168,10 @@ function assertFrame(lines: readonly string[], width: number, height: number): v
 }
 
 /** Injections items of a request that added `message`, without the prompt items. */
-function addedMessageSnapshot(message: RequestMessage): InitialSnapshot {
+function addedMessageSnapshot(message: RequestMessage): InjectionSnapshot {
 	const full = buildInjectionsSnapshot({
 		snapshot: {
-			id: 1, origin: "real-turn", capturedAt: 0, leafId: null,
+			id: 1, origin: "real-turn", leafId: null,
 			changes: { conversation: [{ type: "added", message, attribution: {} }], system: [] },
 			guard: { status: "incomplete", reason: "No payload." },
 		},
@@ -183,7 +183,7 @@ function addedMessageSnapshot(message: RequestMessage): InitialSnapshot {
 		activeToolNames: [],
 	});
 	const items = full.groups.flatMap((group) => group.items).filter((item) => item.kind === "message");
-	return buildSnapshot(items, full.origin, full.capturedAt);
+	return buildSnapshot(items);
 }
 
 test("request summaries and bash text reach both previews without envelope metadata", () => {
@@ -201,7 +201,7 @@ test("request summaries and bash text reach both previews without envelope metad
 		const injections = new InjectionsView(theme, { snapshot: addedMessageSnapshot(message) }, () => {}, () => height);
 		injections.handleInput("j"); // Select the message below its source group
 		const usage = new UsageView(theme, {
-			usage: computeUsage({ snapshot: buildSnapshot([], "synthetic-probe", new Date()), messages: [message] }),
+			usage: computeUsage({ snapshot: buildSnapshot([]), messages: [message] }),
 			categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE,
 		}, () => {}, () => height);
 		for (const view of [injections, usage]) {
@@ -335,13 +335,9 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 	const theme = createTheme();
 	const addition = "\n\nAsk before editing: npm:web docs.";
 	const prompt = `Preamble\n\n<rules>\n- Native rule\n</rules>\n\n<cwd>\n/fixture\n</cwd>${addition}`;
-	const snapshot = buildSnapshot(
-		analyzeSystemPrompt(prompt, {}, [], {
-			sources: [{ source: "npm:web", path: "/pkgs/web/index.ts" }],
-		}),
-		"real-turn",
-		new Date("2026-07-10T12:00:00Z"),
-	);
+	const snapshot = buildSnapshot(analyzeSystemPrompt(prompt, {}, [], {
+		sources: [{ source: "npm:web", path: "/pkgs/web/index.ts" }],
+	}));
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
 	// The addition is owned by its extension, never by pi's own prompt.
 	assert.match(plain(view.render(120)), /npm:web \.+ 9\n\s+└─ system prompt additions \.+ 9/);
@@ -374,13 +370,9 @@ test("a guessed addition names the extension tool its text mentions", () => {
 	const theme = createTheme();
 	const addition = "\n\nCall web_search before answering; npm:web docs explain why.";
 	const prompt = `Preamble\n\n<rules>\n- Native rule\n</rules>\n\n<cwd>\n/fixture\n</cwd>${addition}`;
-	const snapshot = buildSnapshot(
-		analyzeSystemPrompt(prompt, {}, [], {
-			sources: [{ source: "npm:web", path: "/pkgs/web/index.ts", names: ["web_search", "/web"] }],
-		}),
-		"real-turn",
-		new Date("2026-07-10T12:00:00Z"),
-	);
+	const snapshot = buildSnapshot(analyzeSystemPrompt(prompt, {}, [], {
+		sources: [{ source: "npm:web", path: "/pkgs/web/index.ts", names: ["web_search", "/web"] }],
+	}));
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
 	view.handleInput("j"); // System Prompt
 	view.handleInput("\r");
@@ -538,14 +530,14 @@ test("the marker legend gives short content every row and never truncates on tin
 });
 
 /** Snapshot of a --system-prompt replacement: every pi block dropped, one addition still sent. */
-function createReplacedSnapshot(): InitialSnapshot {
+function createReplacedSnapshot(): InjectionSnapshot {
 	const addition = "\n\nAsk before editing: npm:web docs.";
 	const prompt = `Custom reviewer prompt.\n\n<cwd>\n/fixture\n</cwd>${addition}`;
 	const items = analyzeSystemPrompt(prompt, { customPrompt: "Custom reviewer prompt." }, [{
 		name: "search", description: "Search", parametersJson: "{}",
 		snippet: SNIPPET, guidelines: [GUIDELINE], source: SOURCE,
 	}], { sources: [{ source: SOURCE, path: "/pkgs/web/index.ts" }] });
-	return buildSnapshot(items, "real-turn", new Date("2026-07-10T12:00:00Z"));
+	return buildSnapshot(items);
 }
 
 test("a replaced prompt marks its dropped blocks in the tree and in previews", () => {
@@ -592,7 +584,7 @@ test("a replaced prompt marks its dropped blocks in the tree and in previews", (
 });
 
 /** Snapshot of a prompt whose tool-surface sections an extension moved past pi's cwd section. */
-function createRelocatedSnapshot(): InitialSnapshot {
+function createRelocatedSnapshot(): InjectionSnapshot {
 	const prompt = [
 		"Preamble line.",
 		"",
@@ -625,7 +617,7 @@ function createRelocatedSnapshot(): InitialSnapshot {
 			snippet: "Read files", guidelines: [], source: "builtin",
 		},
 	]);
-	return buildSnapshot(items, "real-turn", new Date("2026-07-10T12:00:00Z"));
+	return buildSnapshot(items);
 }
 
 test("a relocated block stays a counted System Prompt part, marked where it now sits", () => {
@@ -748,7 +740,7 @@ test("Usage explains markers in categories beyond the System Prompt, at both pre
 });
 
 /** The snapshot with its System Prompt marked as a forced prompt. */
-function forcedSnapshot(snapshot: InitialSnapshot): InitialSnapshot {
+function forcedSnapshot(snapshot: InjectionSnapshot): InjectionSnapshot {
 	return {
 		...snapshot,
 		groups: snapshot.groups.map((group) => ({ ...group, items: markForcedPrompt([...group.items], "forced") })),
@@ -792,7 +784,7 @@ test("Usage keeps the Forced marker out of previews other than System Prompt", (
 test("native-only System Prompt and sibling previews do not claim extension injection", () => {
 	const snapshot = buildSnapshot(analyzeSystemPrompt(
 		"Preamble\n\n<rules>\n- Native rule -> npm:web\n</rules>", {}, [],
-	), "real-turn", new Date());
+	));
 	const theme = createTheme();
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
 	view.handleInput("j"); // System Prompt

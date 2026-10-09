@@ -1,14 +1,14 @@
 /**
  * ProbeTrigger: the automatic probe policy (D10). It waits for idle, applies
  * the probe preconditions, starts the one SilentProbe attempt of this runtime,
- * and reads the result from SnapshotStore. It imports no capture module and
+ * and waits for its snapshot in SnapshotStore. It imports no capture module and
  * applies no run-mode guard; consumers decide when to ask for a probe.
  */
 import { type ExtensionAPI, type ExtensionCommandContext, shouldCompact } from "@earendil-works/pi-coding-agent";
 
 import type { CompactionState } from "../compaction.ts";
 import { readGlobalCacheWarmingMode, readLiveSettings } from "../settings.ts";
-import type { RequestSnapshot, SnapshotReader } from "../snapshot.ts";
+import type { SnapshotReader } from "../snapshot.ts";
 import type { ProbeOutcome, SilentProbe } from "./silent-probe.ts";
 import { runWithProbeToken } from "./token.ts";
 
@@ -20,9 +20,13 @@ import { runWithProbeToken } from "./token.ts";
 const DEFAULT_SNAPSHOT_GRACE_MS = 1_000;
 const NO_SNAPSHOT_REASON = "Silent probe settled without a request snapshot.";
 
-/** Result of asking for a probe: the probe's snapshot with a settled guard, or why there is none. */
+/**
+ * Result of asking for a probe: the store received the probe's snapshot with a
+ * settled guard, or why it did not. The result holds no snapshot, so the
+ * cached attempt keeps none in memory; consumers read it from the store.
+ */
 export type ProbeResult =
-	| { readonly status: "captured"; readonly snapshot: RequestSnapshot }
+	| { readonly status: "captured" }
 	| { readonly status: "failed"; readonly reason: string };
 
 /** Dependencies and timing of a ProbeTrigger. */
@@ -56,9 +60,9 @@ export class ProbeTrigger {
 	}
 
 	/**
-	 * Wait for idle, then resolve with the first `synthetic-probe` snapshot
-	 * published after the probe started whose guard has settled, or with the
-	 * reason the probe was skipped or failed.
+	 * Wait for idle, then resolve once the first `synthetic-probe` snapshot
+	 * published after the probe started has a settled guard, or with the reason
+	 * the probe was skipped or failed.
 	 */
 	public async request(context: ExtensionCommandContext): Promise<ProbeResult> {
 		await context.waitForIdle();
@@ -94,8 +98,9 @@ export class ProbeTrigger {
 }
 
 /**
- * Resolve with the probe's settled snapshot, the attempt's failure, or a
- * missing-snapshot failure once `graceMs` passed after the probe settled.
+ * Resolve once the probe's snapshot has a settled guard, with the attempt's
+ * failure, or with a missing-snapshot failure once `graceMs` passed after the
+ * probe settled.
  * Probes run one at a time, so any `synthetic-probe` publication belongs to
  * this attempt.
  */
@@ -109,7 +114,7 @@ function waitForProbeResult(
 		let graceTimer: NodeJS.Timeout | undefined;
 		const unsubscribe = snapshots.subscribe((snapshot) => {
 			if (snapshot.origin === "synthetic-probe" && snapshot.guard.status !== "pending") {
-				finish({ status: "captured", snapshot });
+				finish({ status: "captured" });
 			}
 		});
 

@@ -37,7 +37,7 @@ function snapshotAt(
 	system: SystemChange[] = [],
 ): RequestSnapshot {
 	return {
-		id: 1, origin: "real-turn", capturedAt: 0, leafId: session.getLeafId(),
+		id: 1, origin: "real-turn", leafId: session.getLeafId(),
 		changes: { conversation, system },
 		guard: { status: "incomplete", reason: "No payload." },
 	};

@@ -101,7 +101,6 @@ export function buildRequestSnapshot(request: CapturedRequest, guard: GuardResul
 	return {
 		id: request.id,
 		origin: request.origin,
-		capturedAt: request.capturedAt,
 		leafId: request.baseline.leafId,
 		changes,
 		...(request.forcedPrompt === undefined ? {} : { forcedPrompt: request.forcedPrompt }),

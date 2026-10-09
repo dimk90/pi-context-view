@@ -18,6 +18,7 @@ import {
 	ModelRuntime,
 	SessionManager,
 	SettingsManager,
+	type Theme,
 } from "@earendil-works/pi-coding-agent";
 
 import registerExtension from "../src/index.ts";
@@ -48,6 +49,11 @@ import { type MockProvider, startMockProvider } from "./harness/mock-provider.ts
 
 const PROVIDER = "capture-test";
 const NO_PAYLOAD = { status: "incomplete", reason: "No provider payload was observed for this request." };
+/** Leaves text unstyled, so rendered views read as plain lines. */
+const PLAIN_THEME = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as unknown as Theme;
+
+/** What a command passes to `ctx.ui.custom()` to open a view. */
+type ViewFactory = Parameters<ExtensionUIContext["custom"]>[0];
 
 /** Runtime options; defaults give one in-memory session on the `vision` model. */
 interface RuntimeOptions {
@@ -68,6 +74,8 @@ interface Runtime {
 	 * `lateEdits` allows them.
 	 */
 	settled(options?: { readonly lateEdits?: boolean }): Promise<RequestSnapshot[]>;
+	/** The last opened view's first frame at 120 columns and 60 rows, unstyled. */
+	renderView(): Promise<string[]>;
 }
 
 suite("structured capture calibration", { concurrency: true }, () => {
@@ -331,7 +339,7 @@ suite("structured edits", { concurrency: true }, () => {
 });
 
 suite("Injections composition", { concurrency: true }, () => {
-	test("the first snapshot rebuilds its baseline and marks the request-only changes", async (t) => {
+	test("a snapshot rebuilds its baseline at its leaf and marks the request-only changes", async (t) => {
 		const provider = await startProvider(t);
 		const fixtures = [contextAdd, contextModify, systemAppend, sectionPatch, sectionDelete];
 		const runtime = await createRuntime(t, provider, { factories: [...fixtures, monitorSlot] });
@@ -340,7 +348,7 @@ suite("Injections composition", { concurrency: true }, () => {
 		const [first] = await runtime.settled();
 		const composition = buildInjectionsSnapshot({
 			snapshot: first,
-			// Later entries do not change the first snapshot's baseline
+			// Later entries do not change the snapshot's baseline
 			entries: runtime.session.sessionManager.getEntries(),
 			filterMessages: (messages) => messages,
 			options: { cwd: "/" },
@@ -366,6 +374,40 @@ suite("Injections composition", { concurrency: true }, () => {
 			["Session", JSON.stringify([{ type: "text", text: "original text" }])],
 		]);
 	});
+
+	for (const position of ["before", "after"] as const) {
+		test(`after a probe and one prompt, Injections shows the real request (fixtures ${position})`, async (t) => {
+			const provider = await startProvider(t);
+			let responses = 0;
+			const sentinel: ExtensionFactory = (pi) => {
+				pi.on("after_provider_response", () => { responses++; });
+			};
+			const fixtures = [marker, forcedPrompt, inputTransform];
+			const factories = position === "before"
+				? [...fixtures, monitorSlot, sentinel] : [monitorSlot, ...fixtures, sentinel];
+			const runtime = await createRuntime(t, provider, { factories });
+			await runtime.session.prompt("/context injections");
+			assert.equal(responses, 0, "after_provider_response sentinel stays silent for the probe");
+			assert.equal(provider.requests.length, 0);
+			const probe = await runtime.renderView();
+			assert.ok(probe.includes("Context Injections · [Latest Request]"));
+			assert.ok(probe.some((line) => line.includes("Captured by a request probe")));
+			assert.ok(probe.some((line) => line.includes("Late edits were not checked")));
+
+			await runtime.session.prompt("real prompt");
+			// Settled real turns have a complete guard without late edits
+			const [, real] = await runtime.settled();
+			assert.equal(real?.origin, "real-turn");
+			await runtime.session.prompt("/context injections");
+			const latest = await runtime.renderView();
+			assert.ok(latest.includes("Context Injections · [Latest Request]"));
+			assert.ok(!latest.some((line) => line.includes("request probe")), "the probe snapshot was released");
+			assert.ok(!latest.some((line) => line.includes("Late edits")), "a complete guard adds no note");
+			assert.equal(provider.requests.length, 1, "opening the views makes no provider request");
+			assert.equal(responses, 1);
+			assert.deepEqual(runtime.errors, []);
+		});
+	}
 });
 
 /** Placeholder replaced by the monitor in `createRuntime`, so fixtures can be ordered around it. */
@@ -435,19 +477,28 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 	t.after(() => session.dispose());
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
+	let viewFactory: ViewFactory | undefined;
 	await session.bindExtensions({
 		mode: options.mode ?? "tui",
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
 		...(options.mode === "rpc" ? {} : {
 			uiContext: {
 				setWorkingVisible: () => undefined,
-				custom: async () => undefined,
+				// Keep the view's factory for renderView(); the view closes at once
+				custom: async (factory: ViewFactory) => { viewFactory = factory; },
 				notify: () => undefined,
 			} as unknown as ExtensionUIContext,
 		}),
 	});
 	return {
 		session, published, errors,
+		renderView: async () => {
+			const factory = viewFactory;
+			assert.ok(factory, "a view was opened");
+			const tui = { terminal: { rows: 60 }, requestRender: () => undefined } as unknown as Parameters<ViewFactory>[0];
+			const view = await factory(tui, PLAIN_THEME, undefined as unknown as Parameters<ViewFactory>[2], () => undefined);
+			return view.render(120);
+		},
 		settled: async ({ lateEdits = false } = {}) => {
 			await new Promise((resolve) => setImmediate(resolve));
 			const latest = new Map(published.map((snapshot) => [snapshot.id, snapshot]));

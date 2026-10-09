@@ -8,7 +8,7 @@ import {
 	DEFAULT_CATEGORY_COLORS,
 	FREE_SPACE_CATEGORY_ID,
 } from "../src/config.ts";
-import type { InitialSnapshot, InjectionItem, UsageCategory } from "../src/model.ts";
+import type { InjectionSnapshot, InjectionItem, UsageCategory } from "../src/model.ts";
 import { collectPreviewEntries, computeUsage, toReportedUsage } from "../src/usage.ts";
 
 /** Minimal measured item fixture. */
@@ -21,7 +21,6 @@ function item(
 ): InjectionItem {
 	return {
 		id,
-		phase: "initial",
 		kind,
 		source: { id: native ? "pi" : "npm:test", label: native ? "pi" : "npm:test", native },
 		label: id,
@@ -32,8 +31,8 @@ function item(
 	};
 }
 
-/** Frozen Initial fixture covering every prompt/tool category. */
-function snapshot(): InitialSnapshot {
+/** Snapshot fixture covering every prompt/tool category. */
+function snapshot(): InjectionSnapshot {
 	const builtins = [item("read", "tool", 3), item("bash", "tool", 5)];
 	const skills = [item("code-style", "skills", 2), item("typescript-code", "skills", 4)];
 	const contextFiles = [item("agents", "context-file", 2), item("global-agents", "context-file", 4)];
@@ -54,8 +53,6 @@ function snapshot(): InitialSnapshot {
 		item("initial-custom-message", "message", 99, false),
 	];
 	return {
-		origin: "real-turn",
-		capturedAt: new Date("2026-07-11T12:00:00Z"),
 		groups: [
 			{
 				source: { id: "pi", label: "pi", native: true },
@@ -140,7 +137,7 @@ function findCategory(categories: readonly UsageCategory[], id: string): UsageCa
 	return undefined;
 }
 
-test("computeUsage classifies Initial components and live session messages without double-counting", () => {
+test("computeUsage classifies snapshot components and live session messages without double-counting", () => {
 	const usage = computeUsage({
 		snapshot: snapshot(),
 		messages: sessionMessages(),
@@ -232,8 +229,6 @@ test("computeUsage carries measured tool parts into tool preview entries", () =>
 	const piItems = [item("base", "base-prompt", 10), item("builtins", "tool", 3, true, [builtinChild])];
 	const usage = computeUsage({
 		snapshot: {
-			origin: "real-turn",
-			capturedAt: new Date("2026-07-11T12:00:00Z"),
 			groups: [
 				{ source: { id: "pi", label: "pi", native: true }, items: piItems, totalTokens: 13 },
 				{
@@ -276,8 +271,6 @@ test("computeUsage keeps System Prompt parts as sections of one entry, not separ
 	};
 	const usage = computeUsage({
 		snapshot: {
-			origin: "real-turn",
-			capturedAt: new Date("2026-07-11T12:00:00Z"),
 			groups: [{ source: { id: "pi", label: "pi", native: true }, items: [basePrompt], totalTokens: 13 }],
 			totalTokens: 13,
 		},

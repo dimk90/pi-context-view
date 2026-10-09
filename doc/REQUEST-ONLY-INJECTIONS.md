@@ -58,7 +58,7 @@ A silent probe aborts at `turn_start`. For a physical model, structured context 
 
 ## Module layers
 
-Capture is split into layers with one-way dependencies. Consumers can move from a frozen first snapshot to a snapshot for every request without changes to capture, and probing can change from automatic to manual without changes to capture or the probe run itself.
+Capture is split into layers with one-way dependencies. SnapshotStore remains the boundary between capture and its consumers, even though it keeps only one snapshot. Consumers choose how to apply that snapshot without changes to capture, and probing can change from automatic to manual without changes to capture or the probe run itself.
 
 ```mermaid
 flowchart LR
@@ -326,7 +326,7 @@ The probe layer has three parts:
   - **Automatic:** when a consumer needs a snapshot and the store has none. At most one attempt per extension runtime, as today.
   - **Manual:** an explicit user action. One probe at a time; concurrent requests share it. Every probe leaves blank entries in the session tree and runs other extensions' handlers, so never repeat probes without a user action.
 
-Both policies wait for idle and apply the [probe preconditions](ARCHITECTURE.md#compaction-failures-and-fallback): fallback for active compaction, reported pending messages, virtual selections, idle warming, excessive known context usage, or settings that cannot be checked. No skipped case consumes the attempt. ProbeTrigger resolves when the first `synthetic-probe` snapshot published after the start has a settled guard, or with the probe's failure reason. Probes run one at a time, so that snapshot belongs to this probe.
+Both policies wait for idle and apply the [probe preconditions](ARCHITECTURE.md#compaction-failures-and-fallback): fallback for active compaction, reported pending messages, virtual selections, idle warming, excessive known context usage, or settings that cannot be checked. No skipped case consumes the attempt. ProbeTrigger resolves when the first `synthetic-probe` snapshot published after the start has a settled guard, or with the probe's failure reason. Probes run one at a time, so that snapshot belongs to this probe. The result holds only captured status, never the snapshot; consumers read the store (D11).
 
 #### What a probe run reaches
 
@@ -382,7 +382,6 @@ type CaptureOrigin = "real-turn" | "synthetic-probe";
 interface RequestSnapshot {
   readonly id: number; // local capture number; later captures have larger IDs
   readonly origin: CaptureOrigin;
-  readonly capturedAt: number;
   readonly leafId: string | null; // rebuild the baseline with buildSessionProjection(entries, leafId)
   readonly changes: StructuredChanges; // D3 and the diff algorithm
   readonly forcedPrompt?: string;
@@ -401,27 +400,26 @@ type GuardResult =
     };
 
 interface SnapshotReader {
-  first(origin?: CaptureOrigin): RequestSnapshot | undefined;
-  latest(origin?: CaptureOrigin): RequestSnapshot | undefined;
+  latest(): RequestSnapshot | undefined;
   subscribe(listener: (snapshot: RequestSnapshot) => void): () => void;
 }
 ```
 
 - **Contents.** A snapshot keeps the findings and the data consumers need to count them: changed message content, system patches, forced prompt text, guard findings and Pi's hidden tool names. Release the request copy, baseline and payload copy once processing ends. Session entries are append-only, so `buildSessionProjection(entries, leafId)` rebuilds the same baseline later.
-- **Publication.** Publish a snapshot when its structured diff is ready, with guard `pending`. When the guard settles, publish a new object with the same ID; the store replaces its retained copy. Warm refreshes publish nothing.
-- **Retention.** Keep the first and the latest snapshot for each origin, so at most four. The first snapshot of an origin stays until `session_shutdown`. Without an origin, `first()` and `latest()` choose by ID across both origins.
+- **Publication.** Publish a snapshot when its structured diff is ready, with guard `pending`. When the guard settles, publish a new object with the same ID. Warm refreshes publish nothing.
+- **Retention.** Keep one snapshot. `latest()` has no origin parameter; a publication with the same or a higher ID replaces the kept snapshot. An older publication only notifies subscribers, so an older guard update cannot replace a newer request. The first real request's snapshot releases the probe snapshot. `publish()`, `subscribe()`, and `clear()` complete the store API; `clear()` drops the snapshot at `session_shutdown`, keeping subscriptions.
 - **Updates.** `subscribe()` reports every publication, so a consumer can follow each request.
 
 #### Consumer rules
 
-- **Selection.** Initial is `first()`. A per-request consumer uses `latest()`, or `latest("real-turn")` when it should ignore probe snapshots.
+- **Selection.** Both views use `latest()`. A probe snapshot is used only until the first real request's snapshot is published. Resolve once in the command, check compaction again, then pass the result to the chosen view. ProbeTrigger returns `{ status: "captured" }` without a snapshot; the command reads it from the store, so the cached attempt retains no probe content.
 - **No snapshot.** A consumer can ask ProbeTrigger for a probe or show its own fallback. Capture never starts a probe.
-- **Freshness.** A snapshot describes one request. Modifications and deletions reference their baseline message's source entry; a change whose entry is no longer in the current projection is stale. Compare `leafId` and tool names with the current session to decide whether a snapshot still applies.
+- **Freshness.** A snapshot describes one request. Injections rebuilds its baseline at `leafId`. Usage applies conversation changes to the current projection, dropping modifications/deletions whose entries are gone; system changes and the forced prompt apply only while the replayed system state matches the snapshot's baseline. Hidden tools use the captured set for Injections and the live set for Usage, not tool-name freshness checks.
 - **Incomplete guard.** Show an incomplete or pending guard as an unavailable comparison, never as "no edits".
 
 #### Injections view
 
-Shows the selected snapshot (Initial today): structured changes with attribution, the forced prompt, late edits, and a count and alphabetical list of the declarations in Pi's captured hidden set (D7), which it leaves out of the tree. It labels probe snapshots and incomplete guards.
+Shows the latest request as it was sent, with its baseline at `leafId`: structured changes with attribution, the forced prompt, late edits, and a count and alphabetical list of the declarations in Pi's captured hidden set (D7), which it leaves out of the tree. It labels probe snapshots and incomplete guards. A tool follow-up or a one-time injection can change the view between prompts; there is no selector for the latest request that started a run. See [One Snapshot, Two Views](ARCHITECTURE.md#one-snapshot-two-views) for the differences from Usage.
 
 #### Usage view
 
@@ -448,7 +446,7 @@ Counts the replayed projection and applies the selected snapshot's conversation 
 | Capture   | Hidden tools      | `before_agent_start`, copied into each capture                                                                              | Record Pi's hidden set, including for probes with no payload (D7)                                   |
 | Capture   | DispatchConfirmer | Assistant `message_start`, `provider_stream_event`, assistant `message_end`                                                  | Record identity once per paired request; confirm the request model or supply the virtual route      |
 | Capture   | SnapshotBuilder   | Deferred                                                                                                                     | Assemble snapshots, publish them and their guard updates, release copies                            |
-| Store     | SnapshotStore     | None; the wiring clears it on `session_shutdown`                                                                             | Retain the first and latest snapshot per origin; notify subscribers                                 |
+| Store     | SnapshotStore     | None; the wiring clears it on `session_shutdown`                                                                             | Keep only the latest snapshot by ID; notify subscribers                                 |
 | Trigger   | ProbeTrigger      | Called by consumers or commands                                                                                              | Apply the automatic or manual policy and preconditions; start SilentProbe; wait for its snapshot    |
 | Consumers | Views             | `/context` command                                                                                                           | Read snapshots; sanitize, render and count                                                          |
 
@@ -632,7 +630,7 @@ Use synthetic fixtures with a local mock provider, an isolated `PI_CODING_AGENT_
 | Silent probe              | Probe before the first request with `test/fixtures/marker.ts`, `test/fixtures/forced-prompt.ts` and `test/fixtures/input-transform.ts` in both load orders; an `after_provider_response` sentinel stays silent. On a model with `supportsMidConvoSystemMessages`, system messages keep their positions after probes.                                                                                                                                                                                   |
 | Probe payload             | Pi 1.0's standard runtime produces a structured capture but no probe payload; settle its guard incomplete at settlement. Virtual selections fall back without probing. Test any nonstandard host that reaches a payload hook separately.                                                                                                                                                                                                                                                               |
 | Probe triggers            | Automatic: one attempt per runtime; concurrent consumers share it. Manual: repeated probes run one at a time. Both apply every conservative precondition from D10 without consuming an attempt.                                                                                                                                                                                                                                                                                                        |
-| Snapshot store            | Retains the first and latest snapshot per origin; guard updates replace the retained copy. Capture runs with no consumer and in RPC mode. Consumers import no capture or probe internals.                                                                                                                                                                                                                                                                                                              |
+| Snapshot store            | Keeps only the latest snapshot by ID; same-ID guard updates replace it, older updates only notify. A real request replaces a probe. Capture runs with no consumer and in RPC mode. Consumers import no capture or probe internals.                                                                                                                                                                                                                                                                                                              |
 | Cleanup and privacy       | Release pending data on settlement/shutdown; keep raw content out of logs, session entries and notifications. Persisted probe records contain only role and timestamp.                                                                                                                                                                                                                                                                                                                                 |
 
 Last checked against Pi 1.0.1. On Pi upgrades, recheck event shapes, handler order, provider adjustments, whether dispatch metadata is now exposed directly, and where Pi checks a probe's abort signal (authentication resolution in Pi 1.0).

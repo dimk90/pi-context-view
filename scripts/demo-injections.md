@@ -99,10 +99,10 @@ Pi's `-e` option for isolated checks. The group also loads `payload-delete`,
 which removes prompts containing `XYZZY_PAYLOAD_DELETE`, and
 `payload-remove-tool`, which manually removes the `write` declaration.
 
-Send the prompt **before first opening Injections**: a silent probe has no
-provider payload, and Initial stays frozen. If a probe already captured Initial,
-run `/reload`, send a prompt, then reopen the view. With `--after`, these payload
-edits run after the monitor's payload hook and are not visible; the later
+A silent probe has no provider payload. Send an ordinary prompt and reopen
+Injections to see its payload comparison; the real request replaces the probe
+snapshot. With `--after`, these payload edits run after the monitor's payload
+hook and are not visible; the later
 explicitly selected `context_with_system` edits still appear as late edits.
 `--forced` does not stop these message demos.
 
@@ -139,8 +139,8 @@ Tool-selection arguments can change that set.
 With no other fixture flags, this mode demonstrates codemode hiding alone,
 without section, conversation, or payload edits. Manual `write`-declaration
 removal runs only when the `--payload` group is explicitly selected. To inspect
-late payload edits, send a real prompt before first opening Injections; this is
-no longer necessary for codemode hiding alone.
+late payload edits, send a real prompt and reopen Injections; codemode hiding
+alone needs no real prompt.
 
 On Pi 1.1, `--payload` without codemode reports the `write` removal as a `Deleted`
 tool under `late edits`. Its normal tool row and Usage count remain unchanged,
@@ -162,10 +162,12 @@ settings. Prompts, in order:
 1. `XYZZY_CONTEXT_REORDER one`
 2. `XYZZY_CONTEXT_DELETE two`
 3. `XYZZY_PAYLOAD_DELETE three`
-4. `/reload`, so that Initial is captured from a request that has history
-5. `four`
+4. `four`
 
 Then `/context injections` and `/context usage`, including message previews.
+The older checks reloaded extensions before `four` to recapture Initial; that
+step is no longer needed now that Injections shows the latest request. The
+recorded results below are unchanged.
 The payload log confirmed that every change reached the provider request in
 both load orders; the Unreleased run logged four requests per order, with no
 extra request from opening either view.

@@ -179,7 +179,8 @@ role or `customType`, like session messages. A replacement counts and previews
 only its request version; deleted messages count nowhere and have no preview.
 Reorders count each message once. Usage marks none of these
 [request-only changes](../ARCHITECTURE.md#usage-and-attribution): Injections
-shows them for the first request.
+shows them for the same latest request, as it was sent rather than applied to
+the current branch ([differences](../ARCHITECTURE.md#one-snapshot-two-views)).
 
 Tool categories exclude Pi's live `hiddenTools` from the replayed declarations.
 For example, codemode's `only` mode hides the other callable tools; Usage

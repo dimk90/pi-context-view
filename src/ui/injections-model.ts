@@ -2,7 +2,7 @@
  * Pure presentation model for the Injections view: flattened rows and
  * list navigation/scrolling state. No pi or TUI access — unit-testable.
  */
-import type { InitialSnapshot, InjectionItem, RequestChange } from "../model.ts";
+import type { InjectionItem, InjectionSnapshot, RequestChange } from "../model.ts";
 
 /** One flattened list row derived from the snapshot hierarchy. */
 export type InjectionRow =
@@ -45,7 +45,7 @@ export type InjectionRow =
 	};
 
 /** Index snapshot items (including sub-items) by id for preview lookup. */
-export function collectItemsById(snapshot: InitialSnapshot): Map<string, InjectionItem> {
+export function collectItemsById(snapshot: InjectionSnapshot): Map<string, InjectionItem> {
 	const items = new Map<string, InjectionItem>();
 	for (const group of snapshot.groups) {
 		for (const item of group.items) {
@@ -56,8 +56,8 @@ export function collectItemsById(snapshot: InitialSnapshot): Map<string, Injecti
 	return items;
 }
 
-/** Flatten snapshot groups into rows separated from the non-selectable Initial total. */
-export function buildInjectionRows(snapshot: InitialSnapshot): InjectionRow[] {
+/** Flatten snapshot groups into rows separated from the non-selectable snapshot total. */
+export function buildInjectionRows(snapshot: InjectionSnapshot): InjectionRow[] {
 	const rows: InjectionRow[] = [];
 	for (const group of snapshot.groups) {
 		rows.push({

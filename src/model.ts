@@ -4,7 +4,7 @@
  * never parse labels to recover source, kind, or parent/child relationships.
  */
 
-import type { CaptureOrigin, LateEditLine } from "./snapshot.ts";
+import type { LateEditLine } from "./snapshot.ts";
 
 export const PI_SOURCE_ID = "pi";
 export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
@@ -104,9 +104,6 @@ export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
  */
 export type RequestChange = "added" | "modified" | "deleted" | "forced";
 
-/** The frozen lifecycle phase represented by the v0.2.0 injection model. */
-export type InjectionPhase = "initial";
-
 /** What kind of context data an injection item is. */
 export type InjectionKind =
 	| "base-prompt"
@@ -196,7 +193,6 @@ export interface InjectionSection {
 export interface InjectionItem {
 	/** Stable id, unique within a snapshot. */
 	readonly id: string;
-	readonly phase: InjectionPhase;
 	readonly kind: InjectionKind;
 	readonly source: InjectionSource;
 	/** Human-readable item label without embedded hierarchy or source. */
@@ -234,10 +230,11 @@ export interface InjectionGroup {
 	readonly totalTokens: number;
 }
 
-/** The frozen Initial snapshot presented by the Injections view. */
-export interface InitialSnapshot {
-	readonly origin: CaptureOrigin;
-	readonly capturedAt: Date;
+/**
+ * Measured contributions of one request, grouped by source: what the Injections
+ * view presents, and the prompt/tool measurement Usage classifies.
+ */
+export interface InjectionSnapshot {
 	readonly groups: readonly InjectionGroup[];
 	readonly totalTokens: number;
 	/** Names of declared tools Pi hid from the model; the groups leave them out. Absent means none. */
@@ -269,7 +266,7 @@ export interface UsageCategory {
 
 /** One content entry shown in a Usage category preview. */
 export interface UsagePreviewEntry {
-	/** Message time (epoch ms); absent for Initial-snapshot components. */
+	/** Message time (epoch ms); absent for prompt and tool components. */
 	readonly timestamp?: number;
 	/** Bracket header cells, e.g. ["assistant", "read"] or ["code-style"]. */
 	readonly breadcrumb: readonly string[];
@@ -335,16 +332,10 @@ export function groupInjections(items: readonly InjectionItem[]): InjectionGroup
 	return [...groups.values()].sort(compareGroups);
 }
 
-/** Build an owned Initial snapshot from measured items. */
-export function buildSnapshot(
-	items: readonly InjectionItem[],
-	origin: CaptureOrigin,
-	capturedAt: Date,
-): InitialSnapshot {
+/** Build an owned snapshot from measured items. */
+export function buildSnapshot(items: readonly InjectionItem[]): InjectionSnapshot {
 	const groups = groupInjections(items);
 	return {
-		origin,
-		capturedAt: new Date(capturedAt),
 		groups,
 		totalTokens: groups.reduce((sum, group) => sum + group.totalTokens, 0),
 	};

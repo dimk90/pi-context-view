@@ -130,8 +130,6 @@ export interface RequestSnapshot {
 	/** Local capture number; later captures have larger IDs. A guard update keeps its ID. */
 	readonly id: number;
 	readonly origin: CaptureOrigin;
-	/** Capture time in epoch milliseconds. */
-	readonly capturedAt: number;
 	/** Session leaf at capture; `buildSessionProjection(entries, leafId)` rebuilds the baseline. */
 	readonly leafId: string | null;
 	readonly changes: StructuredChanges;
@@ -145,42 +143,30 @@ export interface RequestSnapshot {
 	readonly hiddenTools?: readonly string[];
 }
 
-/** Read access for consumers. Without an origin, selection is by ID across both origins. */
+/** Read access for consumers. */
 export interface SnapshotReader {
-	first(origin?: CaptureOrigin): RequestSnapshot | undefined;
-	latest(origin?: CaptureOrigin): RequestSnapshot | undefined;
+	/** The kept snapshot: the one with the highest ID published so far, of either origin. */
+	latest(): RequestSnapshot | undefined;
 	/** Report every publication, including guard updates; returns the unsubscribe function. */
 	subscribe(listener: (snapshot: RequestSnapshot) => void): () => void;
 }
 
-/** First and latest retained snapshot of one origin. */
-interface RetainedPair {
-	first?: RequestSnapshot;
-	latest?: RequestSnapshot;
-}
-
 /**
- * Retains the first and latest snapshot per origin, so at most four. A
- * publication with a retained ID replaces that copy; the first snapshot of an
- * origin stays until `clear()`.
+ * Keeps one snapshot: the latest by ID. A publication with the same or a
+ * higher ID replaces it, so a guard update replaces its own snapshot and the
+ * first real request's snapshot releases a probe snapshot. A publication with
+ * an older ID only notifies subscribers.
  */
 export class SnapshotStore implements SnapshotReader {
-	private readonly retained: Record<CaptureOrigin, RetainedPair> = {
-		"real-turn": {},
-		"synthetic-probe": {},
-	};
+	private kept: RequestSnapshot | undefined;
 	private readonly listeners = new Set<(snapshot: RequestSnapshot) => void>();
 
-	public first(origin?: CaptureOrigin): RequestSnapshot | undefined {
-		if (origin !== undefined) return this.retained[origin].first;
-		return pickById(this.retained["real-turn"].first, this.retained["synthetic-probe"].first, "lowest");
+	/** Read the kept snapshot without transferring ownership. */
+	public latest(): RequestSnapshot | undefined {
+		return this.kept;
 	}
 
-	public latest(origin?: CaptureOrigin): RequestSnapshot | undefined {
-		if (origin !== undefined) return this.retained[origin].latest;
-		return pickById(this.retained["real-turn"].latest, this.retained["synthetic-probe"].latest, "highest");
-	}
-
+	/** Observe every publication, even when a newer snapshot is already kept. */
 	public subscribe(listener: (snapshot: RequestSnapshot) => void): () => void {
 		this.listeners.add(listener);
 		return () => {
@@ -188,30 +174,15 @@ export class SnapshotStore implements SnapshotReader {
 		};
 	}
 
-	/** Retain a new snapshot or replace the retained copy with the same ID, then notify subscribers. */
+	/** Keep a snapshot unless the kept one is newer, then notify subscribers. */
 	public publish(snapshot: RequestSnapshot): void {
-		const pair = this.retained[snapshot.origin];
-		if (pair.first === undefined || pair.first.id === snapshot.id) pair.first = snapshot;
-		if (pair.latest === undefined || pair.latest.id <= snapshot.id) pair.latest = snapshot;
+		if (this.kept === undefined || this.kept.id <= snapshot.id) this.kept = snapshot;
 		// Copy: a listener may unsubscribe while being notified
 		for (const listener of [...this.listeners]) listener(snapshot);
 	}
 
-	/** Drop every retained snapshot at session shutdown; subscriptions stay. */
+	/** Drop the kept snapshot at session shutdown; subscriptions stay. */
 	public clear(): void {
-		this.retained["real-turn"] = {};
-		this.retained["synthetic-probe"] = {};
+		this.kept = undefined;
 	}
-}
-
-/** The snapshot with the lowest or highest ID among the defined candidates. */
-function pickById(
-	a: RequestSnapshot | undefined,
-	b: RequestSnapshot | undefined,
-	which: "lowest" | "highest",
-): RequestSnapshot | undefined {
-	if (a === undefined) return b;
-	if (b === undefined) return a;
-	const aFirst = which === "lowest" ? a.id < b.id : a.id > b.id;
-	return aFirst ? a : b;
 }

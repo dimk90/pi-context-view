@@ -789,7 +789,7 @@ function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 	};
 }
 
-/** Build an initial-phase InjectionItem with derived char/token sizes. */
+/** Build an InjectionItem with derived char/token sizes. */
 function createItem(
 	id: string,
 	kind: InjectionKind,
@@ -799,7 +799,6 @@ function createItem(
 ): InjectionItem {
 	return {
 		id,
-		phase: "initial",
 		kind,
 		source,
 		label,

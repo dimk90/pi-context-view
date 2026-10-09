@@ -6,10 +6,10 @@ extension can read, and how that data reaches the two views.
 
 ## Views and Data Sources
 
-| View       | What it shows                                                                                               | When its data changes                                    |
-| ---------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Injections | First request's prompt, tools, custom messages, marked request-only changes, late edits, hidden tool names. | First snapshot's content stays fixed                     |
-| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes, excluding tools Pi hides.     | Rebuilt from the current branch and store when it opens. |
+| View       | What it shows                                                                                                | When its data changes                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Injections | Latest request's prompt, tools, custom messages, marked request-only changes, late edits, hidden tool names. | Rebuilt from the latest snapshot when it opens.          |
+| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes, excluding tools Pi hides.      | Rebuilt from the current branch and store when it opens. |
 
 Both views read request snapshots that
 [structured request capture](#structured-request-capture) publishes to
@@ -25,23 +25,28 @@ SnapshotStore for every request. A snapshot exists in two ways:
   request, but aborts before a request reaches the model provider. This is the
   [silent probe](#on-demand-silent-probe). It does not generate a model reply.
 
-**Initial in Injections** is `SnapshotStore.first()`, across real turns and
-probes. Injections rebuilds the session baseline at that snapshot's leaf.
-[Injections on snapshots](#injections-on-snapshots) describes composition,
-changes, and previews.
+SnapshotStore keeps one snapshot, the latest by ID, and both views read it
+with `SnapshotStore.latest()`. A probe snapshot is kept only until the first
+real request's snapshot replaces it.
 
-**Usage** applies `SnapshotStore.latest()` to the current session branch:
+**Injections** shows that request as it was sent: it rebuilds the session
+baseline at the snapshot's leaf. [Injections on snapshots](#injections-on-snapshots)
+describes composition, changes, and previews.
+
+**Usage** applies the same snapshot to the current session branch:
 request-only additions are counted, modifications replace their session
 message, and deletions remove it. See [Usage and Attribution](#usage-and-attribution).
+[One Snapshot, Two Views](#one-snapshot-two-views) lists where the two differ.
 
 Request-only changes are message, section, and tool versions that a request
 carried but the saved session does not. They do not update the saved
 conversation.
 
 > [!NOTE]
-> When resuming a session or reloading extensions, Initial reflects the next
-> successful capture - not the session’s beginning. Once captured, it stays
-> unchanged. Snapshots keep only changes, not ordinary conversation history.
+> When resuming a session or reloading extensions, the store is empty until
+> the next successful capture: snapshots live only in memory and are never
+> saved with the session. Snapshots keep only changes, not ordinary
+> conversation history.
 
 ## How Pi Prepares a Request
 
@@ -146,7 +151,7 @@ as supported.
 - `before_agent_start.systemPromptOptions.hiddenTools` reports Pi's hidden
   declarations to event handlers. Capture copies this list for the run and
   copies it into each request snapshot, independently of payload comparison.
-  **Goal:** leave hidden tools out of frozen Initial and count them, including
+  **Goal:** leave hidden tools out of the captured request and count them, including
   for a silent probe.
 
 - `pi.getActiveTools()` and `pi.getAllTools()` supply the active tool names,
@@ -212,9 +217,8 @@ of starting another run.
 
 This is the first part of the design in
 [REQUEST-ONLY-INJECTIONS.md](REQUEST-ONLY-INJECTIONS.md) (D2, D3, D5, D6,
-D11). It publishes request snapshots to SnapshotStore. Injections reads the
-first snapshot; Usage reads the latest. Capture runs in every mode,
-independently of either consumer.
+D11). It publishes request snapshots to SnapshotStore. Both views read the
+latest snapshot. Capture runs in every mode, independently of either consumer.
 
 **Goal:** describe every request as structured changes against the session
 projection, for any consumer, in every run mode.
@@ -302,6 +306,11 @@ or settle incomplete when no payload was observed
   Baseline and capture references are released even while a virtual request
   waits for dispatch; the converted transcript remains until comparison.
   Consumers rebuild the baseline with `buildSessionProjection(entries, leafId)`.
+  SnapshotStore keeps only one snapshot, the latest by ID. A publication with
+  the same or a higher ID replaces it; an older publication only notifies
+  subscribers. Guard updates keep their capture ID, so an older guard cannot
+  replace a newer request. The first real request's snapshot releases the probe
+  snapshot. `clear()` drops the kept snapshot at shutdown; subscriptions stay.
 
 With no request-only changes, a snapshot is empty after first and later
 prompts, tool follow-ups, resume with another model, compaction, and probes.
@@ -419,19 +428,20 @@ Blank lines and whitespace-only differences are ignored. Anthropic tool-call
 names match case-insensitively for OAuth casing. Image and opaque signature
 changes alone are deliberately outside this text-only comparison.
 
-Injections renders the findings of the first snapshot
+Injections renders the findings of the latest snapshot
 ([Injections on Snapshots](#injections-on-snapshots)). Payload findings do not
 change Usage: it filters tools by Pi's live hidden set
 ([Usage and Attribution](#usage-and-attribution)).
 
 ## Injections on Snapshots
 
-`/context injections` selects `SnapshotStore.first()` without an origin. If the
-store is empty, the command waits for idle and rechecks it before asking
-ProbeTrigger. A turn that published while the command waited supplies Initial
-without another run. A failed or skipped probe keeps the existing pi-native
-degraded fallback; it never inserts a fallback into the store. Both compaction
-checks and the TUI guard remain in the command.
+The command resolves `SnapshotStore.latest()` once, before choosing the view.
+If the store is empty, it waits for idle and rechecks it before asking
+ProbeTrigger. A turn that published while the command waited supplies the
+snapshot without another run. A failed or skipped probe keeps the existing
+pi-native degraded fallback; it never inserts a fallback into the store. Both
+compaction checks and the TUI guard remain in the command. `openInjections()`
+and `openUsage()` receive the same resolution result.
 
 `src/injections.ts` builds the composition when the view opens:
 
@@ -495,7 +505,26 @@ comparison in the description, never as "no edits". A complete guard adds no
 note; without findings, the payload matched the captured request, excluding
 Pi's known hidden declarations, up to this
 extension's own payload handler. The view is fixed while open; reopening reads
-a guard update with the same snapshot ID.
+the latest snapshot or a guard update with the same snapshot ID. A real request
+replaces a probe snapshot and removes its probe warning.
+
+### One Snapshot, Two Views
+
+Both views read the same latest request, but answer different questions:
+Injections describes its contributions as sent; Usage estimates the current
+branch.
+
+- **Baseline leaf.** Injections rebuilds at `snapshot.leafId`; Usage rebuilds at
+  the current leaf and drops modifications/deletions whose entries are gone.
+- **System changes and forced prompt.** Injections always applies them to their
+  captured baseline. Usage applies them only while the replayed system state
+  still matches that baseline.
+- **Hidden tools.** Injections uses the captured set until another request
+  replaces it. Usage uses Pi's live set on every open.
+- **Custom messages saved after the request.** They are outside Injections'
+  baseline until the next request, but Usage counts them from the current branch.
+- **Late edits.** Injections shows guard findings with changed lines. Usage does
+  not apply them, including late tool removals.
 
 ## Usage and Attribution
 
@@ -576,8 +605,9 @@ not today's loader metadata. Custom XML sections remain named System Prompt
 parts even after `cwd`; their tag does not establish extension ownership.
 
 **Usage applies the latest request's changes to the current branch.** It reads
-`SnapshotStore.latest()` across both origins, so a probe after the last real
-turn supplies the changes. `src/projection.ts` applies them when the view opens:
+`SnapshotStore.latest()`, just as Injections does. A probe supplies the changes
+only until the first real request's snapshot replaces it. `src/projection.ts`
+applies them when the view opens:
 
 - **Conversation changes, by baseline entry.** A modification replaces the
   first unchanged conversation message of its source entry with the request
@@ -632,6 +662,11 @@ used to force category estimates to match. Map rendering rules belong to
 
 ### Known Limitation: One Request's Changes
 
+Both views use one request's snapshot, not a summary of the run or session.
+A tool follow-up replaces the request that started the run, so a one-time
+injection can disappear from Injections between prompts. There is no separate
+selector for the latest request that started a run.
+
 Usage assumes the next request repeats the latest request's changes, the forced
 prompt included. A change that an extension makes only once, or only for a
 particular prompt, therefore stays counted until the next request replaces the
@@ -664,10 +699,9 @@ before a provider request. A probe uses the same capture handlers as a real
 turn, so it does not widen capture coverage. An empty-input probe
 also cannot reveal contributions that run only for a particular real prompt.
 
-If the view's snapshot exists, no probe is needed: Injections checks the store's
-first snapshot; Usage checks its latest. Either view can request the shared
-one automatic attempt when its data is missing. Never probe in the background
-or repeat it on every view open.
+If the store holds a snapshot, neither view needs a probe. Either view can
+request the shared one automatic attempt when the store is empty. Never probe
+in the background or repeat it on every view open.
 
 ### Probe Lifecycle
 
@@ -724,17 +758,19 @@ turn_end
 agent_settled
   SilentProbe: restore UI, persist probe identities, settle the attempt
   Capture: settle the probe request's guard as incomplete (no payload)
-  ProbeTrigger: resolve with that synthetic-probe snapshot; open the view
+  ProbeTrigger: resolve with captured status; the command reads the store and opens the view
 ```
 
 ProbeTrigger subscribes to SnapshotStore before it sends the probe prompt and
-resolves with the first `synthetic-probe` snapshot whose guard has settled.
-Probes run one at a time, so that snapshot belongs to this probe. SilentProbe's
+resolves with `{ status: "captured" }` once the first `synthetic-probe` snapshot's
+guard has settled. Probes run one at a time, so that snapshot belongs to this probe. SilentProbe's
 outcome only reports whether its run settled or failed; it knows nothing about
 capture. Capture settles the guard in its own `agent_settled` handler, after
 SilentProbe's, so ProbeTrigger waits up to one second after settlement before
-it reports a missing snapshot. Injections and Usage read that snapshot through
-the store's `first()` and `latest()` selections.
+it reports a missing snapshot. The cached attempt holds only the status, never
+the snapshot, so it cannot keep a replaced probe snapshot alive. The command
+reads the store's `latest()` after resolution and checks compaction again
+before opening either view.
 
 Use `sendUserMessage("")`. `pi.sendMessage(..., { triggerTurn: true })` skips
 `before_agent_start`. Abort at `turn_start`, not `before_provider_request`,
@@ -1152,7 +1188,7 @@ Persisted probe records contain only role and timestamp identities, plus
 | Path                         | Responsibility                                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `src/index.ts`               | Create the layers, register them in order, and register the command; assemble view inputs.                    |
-| `src/command.ts`             | Parse commands; resolve the first or latest snapshot through the store and ProbeTrigger.                      |
+| `src/command.ts`             | Parse commands; resolve the latest snapshot through the store and ProbeTrigger.                      |
 | `src/config.ts`              | Load, validate, cache, and explicitly create configuration.                                                   |
 | `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.                       |
 | `src/capture/register.ts`    | Capture wiring: structured capture, payload pairing, dispatch events, and cleanup.                            |
@@ -1169,14 +1205,14 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/capture/redact.ts`      | Redact image payloads and signatures from messages a snapshot retains.                                        |
 | `src/capture/builder.ts`     | SnapshotBuilder: defer the diff, publish snapshots and guard updates, release copies.                         |
 | `src/compaction.ts`          | Track the compaction lifecycle for the probe preconditions and the command refusal.                           |
-| `src/snapshot.ts`            | Define request snapshots; SnapshotStore retains the first and latest per origin.                              |
+| `src/snapshot.ts`            | Define request snapshots; SnapshotStore keeps only the latest snapshot.                              |
 | `src/probe/filter.ts`        | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.                     |
 | `src/probe/silent-probe.ts`  | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.                             |
 | `src/probe/view.ts`          | ProbeView: the run origin and probe-message filter that capture reads.                                        |
-| `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and the probe snapshot from the store.                    |
+| `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and its status from store publications.                    |
 | `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                                 |
 | `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                                            |
-| `src/injections.ts`          | Rebuild the first snapshot's baseline; measure it with marked changes and guard findings.                     |
+| `src/injections.ts`          | Rebuild the latest snapshot's baseline; measure it with marked changes and guard findings.                     |
 | `src/projection.ts`          | Rebuild filtered projections; apply the latest snapshot's conversation and fresh system changes for Usage.    |
 | `src/replay.ts`              | Replay recorded system state and changes; Usage prompt/tools and the live fallback.                           |
 | `src/message-preview.ts`     | Content-only message previews, redacting session images and omitting opaque signatures.                       |
@@ -1194,8 +1230,8 @@ Each layer's module exports its state and a `register*()` function with its pi
 handlers; `src/index.ts` creates the layers and calls those functions.
 SnapshotStore has no Pi handlers and imports Pi types only;
 `src/index.ts` clears it on `session_shutdown`. Structured capture publishes to
-it through SnapshotBuilder; Injections reads its first snapshot, Usage its
-latest. `src/ui/` and `src/usage.ts` import no capture or probe module, directly
+it through SnapshotBuilder; both views read its latest snapshot. `src/ui/` and
+`src/usage.ts` import no capture or probe module, directly
 or indirectly; a test enforces this. Register the probe layer first:
 ProbeFilter's `context_with_system` handler must run before the capture handler
 on that event. The probe layer imports no capture module; capture reads it only
@@ -1233,8 +1269,9 @@ probe request isolation and message ownership, not a relaxation of those goals.
 - Genuine messages and genuine aborts remain visible.
 - Synthetic probe entries never reach later model contexts or Usage, including
   after resume, reload, or fork.
-- Injections selects the first structured snapshot per runtime; guard updates
-  keep its ID. A fallback never enters the store.
+- SnapshotStore keeps only the latest structured snapshot, which both views
+  read; guard updates keep its ID and cannot replace a newer snapshot. A
+  fallback never enters the store. ProbeTrigger's cached result holds no snapshot.
 - Usage applies the latest snapshot's conversation changes by baseline entry,
   drops changes whose entry left the projection, and applies system changes
   and the forced prompt only while the replayed system state is unchanged

@@ -7,26 +7,39 @@ with Usage previews live in [previews.md](previews.md).
 Its header is:
 
 ```text
-Context Injections · [INITIAL]
+Context Injections · [Latest Request]
 ```
 
-`INITIAL` uses the active `mdHeading` treatment. Runtime inspection is
+`Latest Request` uses the active `mdHeading` treatment. Runtime inspection is
 roadmap-only, so no Runtime label, switching key, or Runtime status renders
-until that step lands. If the combined header does not fit, put title and label
-on separate lines with one empty row before and after the label.
+until that step lands. If the combined header does not fit (below 37 columns),
+put title and label on separate lines with one empty row before and after the
+label.
 
-## Initial request
+The list description reads:
 
-Initial is the first request snapshot of the extension runtime. Its
-composition is the session projection at the snapshot's leaf, rebuilt when the
-view opens, with the snapshot's request-only changes applied: the prompt and
-tools replayed from the recorded system messages, the forced prompt in place of
-the replayed prompt when the request had one, and the custom messages of the
-projection. Ordinary session messages are not listed unless a request-only
-change touches them.
+```text
+Injections into the model context of the latest request, with token estimates.
+```
 
-When Initial came from a silent probe, the description block carries a wrapped
-bullet with only `request probe` in `warning` color; the rest is dim:
+## Latest request
+
+The view shows the latest request snapshot of the extension runtime, the same
+one Usage applies. A silent-probe snapshot is shown only until the first real
+request's snapshot is published. Its composition is the session projection at
+the snapshot's leaf, rebuilt when the view opens, with the snapshot's
+request-only changes applied: the prompt and tools replayed from the recorded
+system messages, the forced prompt in place of the replayed prompt when the
+request had one, and the custom messages of the projection. Ordinary session
+messages are not listed unless a request-only change touches them.
+
+The view describes the request as it was sent, so a tool follow-up or a
+one-time injection can change it between two prompts. Usage instead estimates
+the current branch; [ARCHITECTURE.md](../ARCHITECTURE.md#one-snapshot-two-views)
+lists the differences.
+
+When the snapshot came from a silent probe, the description block carries a
+wrapped bullet with only `request probe` in `warning` color; the rest is dim:
 
 ```text
 - Captured by a request probe with an empty prompt. Prompt-dependent injections may be missing.
@@ -54,7 +67,7 @@ handler. Handlers after it stay invisible.
 
 ## Contribution tree
 
-Present Initial contributions in this order:
+Present the request's contributions in this order:
 
 - `pi`
   - System Prompt, including when `--system-prompt` replaced pi's default,
@@ -181,8 +194,9 @@ repeat the bullet.
 
 Capture reads Pi's `before_agent_start.systemPromptOptions.hiddenTools`, so
 the count works for a silent probe before the first ordinary prompt. It is
-independent of payload comparison and stays frozen with Initial. A degraded
-fallback without a snapshot uses the live list instead.
+independent of payload comparison and stays with the snapshot until the next
+request replaces it, even after the active tools change. A degraded fallback
+without a snapshot uses the live list instead.
 
 Pi does not report which tool's `prepareLoadout()` hid each declaration. Do
 not guess from `model-only` exposure or name a candidate. Capture's observation
@@ -202,8 +216,8 @@ Fill label/value gaps with dim dot leaders; as width shrinks, shorten or remove
 leaders before truncating labels or token values, and retain tree connectors
 where space permits.
 
-Place one empty row before `TOTAL`. It is the last row in the scrollable Initial
-list, counts only the frozen Initial snapshot, and is not selectable: cursor
+Place one empty row before `TOTAL`. It is the last row in the scrollable list,
+counts only the shown snapshot's contributions, and is not selectable: cursor
 navigation, the selectable-row counter, and Enter preview skip it.
 
 The list description survives scrolling, per the floor in

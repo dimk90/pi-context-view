@@ -9,7 +9,7 @@ import type { Tool } from "@earendil-works/pi-ai";
 import { SessionManager, type ToolInfo } from "@earendil-works/pi-coding-agent";
 
 import { buildInjectionsSnapshot, type InjectionsInput } from "../src/injections.ts";
-import type { InitialSnapshot, InjectionItem } from "../src/model.ts";
+import type { InjectionSnapshot, InjectionItem } from "../src/model.ts";
 import type {
 	ConversationChange,
 	GuardFinding,
@@ -51,7 +51,6 @@ function input(
 	const snapshot: RequestSnapshot = {
 		id: 1,
 		origin: "real-turn",
-		capturedAt: Date.UTC(2026, 6, 10),
 		leafId: session.getLeafId(),
 		changes: { conversation: changes.conversation ?? [], system: changes.system ?? [] },
 		guard: { status: "incomplete", reason: "No payload." },
@@ -69,7 +68,7 @@ function input(
 }
 
 /** Every item and child, keyed by id. */
-function itemsById(snapshot: InitialSnapshot): Map<string, InjectionItem> {
+function itemsById(snapshot: InjectionSnapshot): Map<string, InjectionItem> {
 	const items = new Map<string, InjectionItem>();
 	for (const item of snapshot.groups.flatMap((group) => group.items)) {
 		items.set(item.id, item);
@@ -79,7 +78,7 @@ function itemsById(snapshot: InitialSnapshot): Map<string, InjectionItem> {
 }
 
 /** `group / label · tokens · change` lines for message items. */
-function describeMessages(snapshot: InitialSnapshot): string[] {
+function describeMessages(snapshot: InjectionSnapshot): string[] {
 	return snapshot.groups.flatMap((group) => group.items.filter((item) => item.kind === "message")
 		.map((item) => `${group.source.label} / ${item.label} · ${item.tokens}${item.change ? ` · ${item.change}` : ""}`));
 }
@@ -106,7 +105,6 @@ test("the composition replays the recorded prompt and tools and lists session cu
 		["Preamble", "Available Tools", "Documentation", "Current Dir"]);
 	assert.equal(items.get("tool:builtin")?.label, "Built-in Tools (2)");
 	assert.deepEqual(describeMessages(snapshot), ["fixture-notes / message · 3"], "user prompts are not injections");
-	assert.equal(snapshot.origin, "real-turn");
 	assert.ok([...items.values()].every((item) => item.change === undefined));
 	assert.equal(snapshot.totalTokens, snapshot.groups.reduce((sum, group) => sum + group.totalTokens, 0));
 });
@@ -212,15 +210,15 @@ test("a branch with no recorded system state uses the live prompt", () => {
 	assert.deepEqual(hidden.hiddenTools, ["read"]);
 });
 
-test("Initial uses its leaf after later edits, branching, and tool changes", () => {
+test("Injections uses the snapshot's leaf after later edits, branching, and tool changes", () => {
 	const { session, entries } = createSession();
-	const initial = input(session);
+	const captured = input(session);
 	session.appendContextEdit(entries.custom, { content: "newer content" });
 	session.appendMessage({ role: "system", content: "", sections: { cwd: "<cwd>\n/new\n</cwd>" },
 		toolsRemoved: [{ name: "read" }], timestamp: 8 });
 	session.branch(entries.first);
 	session.appendMessage(user("another branch"));
-	const snapshot = buildInjectionsSnapshot({ ...initial, entries: session.getEntries() });
+	const snapshot = buildInjectionsSnapshot({ ...captured, entries: session.getEntries() });
 	const items = itemsById(snapshot);
 	assert.equal(items.get("message:fixture-notes:0")?.text, "stored note");
 	assert.equal(items.get("base-prompt:current-dir")?.text, "/tmp/project");

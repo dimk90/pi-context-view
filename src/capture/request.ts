@@ -64,8 +64,6 @@ export interface RequestCopy {
 export interface CapturedRequest extends RequestCopy {
 	readonly id: number;
 	readonly origin: CaptureOrigin;
-	/** Capture time in epoch milliseconds. */
-	readonly capturedAt: number;
 	readonly baseline: Baseline;
 	readonly forcedPrompt?: string;
 	/** `ctx.model` at capture: the dispatched model on a physical selection, the virtual one otherwise. */
@@ -87,7 +85,6 @@ export interface CaptureInput {
 	readonly requestModel?: GuardModel;
 	/** Pi's hidden declarations for the current run, from its `before_agent_start` options. */
 	readonly hiddenTools?: readonly string[];
-	readonly capturedAt?: number;
 }
 
 /**
@@ -100,7 +97,6 @@ export function captureRequest(input: CaptureInput): CapturedRequest {
 	return {
 		id: input.id,
 		origin: input.origin,
-		capturedAt: input.capturedAt ?? Date.now(),
 		baseline,
 		...copyRequest(baseline.messages, input.messages),
 		forcedPrompt: detectForcedPrompt(input.effectivePrompt, baseline.messages),

@@ -20,7 +20,7 @@ afterEach(() => mock.restoreAll());
 
 /** A minimal snapshot with no changes. */
 function snapshot(id: number, origin: CaptureOrigin, guard: GuardResult): RequestSnapshot {
-	return { id, origin, capturedAt: id, leafId: null, changes: { conversation: [], system: [] }, guard };
+	return { id, origin, leafId: null, changes: { conversation: [], system: [] }, guard };
 }
 
 /**
@@ -53,24 +53,33 @@ function createHarness(simulateRun: (probe: SilentProbe, store: SnapshotStore) =
 	const trigger = new ProbeTrigger({
 		pi, probe, snapshots: store, compaction: new CompactionState(), snapshotGraceMs: 1,
 	});
-	return { context, trigger, visibility, sent: () => sent, run: () => run };
+	return { context, trigger, store, visibility, sent: () => sent, run: () => run };
 }
 
-test("ProbeTrigger resolves with the probe snapshot whose guard settles after the probe", async () => {
+test("ProbeTrigger resolves once the probe snapshot's guard settles after the probe", async () => {
 	const probeSnapshot = snapshot(2, "synthetic-probe", INCOMPLETE);
+	let resolved = false;
+	let resolvedWhilePending = false;
 	const harness = createHarness(async (probe, store) => {
 		await Promise.resolve();
 		store.publish(snapshot(2, "synthetic-probe", { status: "pending" }));
 		store.publish(snapshot(1, "real-turn", INCOMPLETE));
+		// A whole macrotask gives an early resolution time to show
+		await new Promise((resolve) => setImmediate(resolve));
+		resolvedWhilePending = resolved;
 		// Pi runs SilentProbe's agent_settled handler before capture settles the guard
 		probe.settle();
 		await Promise.resolve();
 		store.publish(probeSnapshot);
 	});
 
-	const result = await harness.trigger.request(harness.context);
+	const result = await harness.trigger.request(harness.context).finally(() => {
+		resolved = true;
+	});
 
-	assert.deepEqual(result, { status: "captured", snapshot: probeSnapshot });
+	assert.equal(resolvedWhilePending, false, "neither a pending guard nor a real turn resolves the attempt");
+	assert.deepEqual(result, { status: "captured" }, "the result keeps no snapshot");
+	assert.equal(harness.store.latest(), probeSnapshot);
 	assert.equal(harness.sent(), 1);
 	assert.deepEqual(harness.visibility, [false, true]);
 });
@@ -89,7 +98,8 @@ test("ProbeTrigger shares one attempt between concurrent and later callers", asy
 	]);
 	const later = await harness.trigger.request(harness.context);
 
-	assert.deepEqual(first, { status: "captured", snapshot: probeSnapshot });
+	assert.deepEqual(first, { status: "captured" });
+	assert.equal(harness.store.latest(), probeSnapshot);
 	assert.strictEqual(concurrent, first);
 	assert.strictEqual(later, first);
 	assert.equal(harness.sent(), 1, "one probe per runtime");

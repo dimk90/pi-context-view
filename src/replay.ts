@@ -13,7 +13,7 @@ import {
 	SYSTEM_PROMPT_ITEM_ID,
 	type ToolSlice,
 } from "./measure.ts";
-import { buildSnapshot, type InitialSnapshot, type InjectionItem, type RequestChange } from "./model.ts";
+import { buildSnapshot, type InjectionItem, type InjectionSnapshot, type RequestChange } from "./model.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
 import type { RequestMessage, SystemChange } from "./snapshot.ts";
 import { type SystemMessage, systemMessageText } from "./transcript.ts";
@@ -29,7 +29,6 @@ export interface NativeSnapshotInput {
 	promptSources?: readonly PromptSourceSlice[];
 	/** Forced prompt of the request, measured instead of the prompt; tool changes still apply. */
 	forcedPrompt?: string;
-	capturedAt?: Date;
 }
 
 /** Inputs for Usage's branch-local prompt/tool estimate. */
@@ -50,16 +49,13 @@ export interface RequestSystemState {
 }
 
 /** Build a view-local pi-native fallback without starting a capture; the tools Pi hides are left out and counted. */
-export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot {
+export function buildNativeSnapshot(input: NativeSnapshotInput): InjectionSnapshot {
 	const options = copyPromptOptions(input.options);
 	const tools = splitHiddenTools(captureActiveTools(input.allTools, input.activeToolNames, input.options),
 		input.options.hiddenTools);
 	const prompt = input.forcedPrompt ?? input.systemPrompt;
 	const items = analyzeSystemPrompt(prompt, options, tools.declared, { sources: input.promptSources });
-	return {
-		...buildSnapshot(markForcedPrompt(items, input.forcedPrompt), "synthetic-probe", input.capturedAt ?? new Date()),
-		hiddenTools: tools.hiddenNames,
-	};
+	return { ...buildSnapshot(markForcedPrompt(items, input.forcedPrompt)), hiddenTools: tools.hiddenNames };
 }
 
 /**
@@ -69,7 +65,7 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot
  * currently hides from the model are left out. Only a branch with no recorded
  * system message yet uses the live fallback.
  */
-export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
+export function buildUsageSnapshot(input: UsageSnapshotInput): InjectionSnapshot {
 	const forced = input.forcedPrompt;
 	const base = getCurrentSystemMessage(input.messages);
 	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
@@ -84,10 +80,7 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 		customPrompt: undefined, sections: undefined,
 		// The replayed layout locates inline or unwrapped request sections; Usage marks no section changes
 	}, tools, { sources: input.promptSources }, forced === undefined ? { replayed: request.prompt.replayed } : {});
-	return {
-		...buildSnapshot(markForcedPrompt(items, forced), "synthetic-probe", input.capturedAt ?? new Date()),
-		hiddenTools: declarations.hiddenNames,
-	};
+	return { ...buildSnapshot(markForcedPrompt(items, forced)), hiddenTools: declarations.hiddenNames };
 }
 
 /**

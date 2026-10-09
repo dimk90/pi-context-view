@@ -51,7 +51,7 @@ function createSession(): SessionManager {
 /** A request snapshot at the session's leaf whose run forced `forcedPrompt`. */
 function forcedSnapshot(session: SessionManager, forcedPrompt: string, system: SystemChange[] = []): RequestSnapshot {
 	return {
-		id: 1, origin: "real-turn", capturedAt: 0, leafId: session.getLeafId(),
+		id: 1, origin: "real-turn", leafId: session.getLeafId(),
 		changes: { conversation: [], system },
 		forcedPrompt,
 		guard: { status: "incomplete", reason: "No payload." },

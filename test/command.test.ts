@@ -58,8 +58,8 @@ test("command registration and completions expose the supported grammar", () => 
 		["usage", "injections", "config"],
 	);
 	assert.deepEqual(
-		getContextArgumentCompletions("inj")?.map((item) => item.value),
-		["injections"],
+		getContextArgumentCompletions("inj")?.map((item) => [item.value, item.description]),
+		[["injections", "Explore the latest request's injections"]],
 	);
 	assert.deepEqual(
 		getContextArgumentCompletions(" C")?.map((item) => item.value),
@@ -158,7 +158,7 @@ test("resolveRequestSnapshot sends the synthetic prompt inside the probe token s
 
 	const store = new SnapshotStore();
 	const trigger = new ProbeTrigger({ pi, probe, snapshots: store, compaction });
-	const result = await resolveRequestSnapshot(store, trigger, context, "latest");
+	const result = await resolveRequestSnapshot(store, trigger, context);
 
 	assert.equal(sentContent, "", "the probe prompt carries no instructions of its own");
 	assert.equal(probe.isProbeInput("extension", tokenDuringSend), true, "the send must carry this attempt's token");
@@ -189,7 +189,7 @@ test("resolveRequestSnapshot skips the probe when compaction starts while waitin
 
 	const store = new SnapshotStore();
 	const trigger = new ProbeTrigger({ pi, probe, snapshots: store, compaction });
-	const result = await resolveRequestSnapshot(store, trigger, context, "first");
+	const result = await resolveRequestSnapshot(store, trigger, context);
 
 	assert.equal(waitedForIdle, true);
 	assert.equal(sentUserMessages, 0);
@@ -205,38 +205,38 @@ test("resolveRequestSnapshot skips the probe when compaction starts while waitin
 	assert.deepEqual(await unusedAttempt.completion, { status: "failed", reason: "test cleanup" });
 });
 
-/** A published snapshot with no changes; only its identity matters to Initial resolution. */
+/** A published snapshot with no changes; only its identity matters to snapshot resolution. */
 function requestSnapshot(id: number, origin: RequestSnapshot["origin"]): RequestSnapshot {
 	return {
-		id, origin, capturedAt: 0, leafId: null,
+		id, origin, leafId: null,
 		changes: { conversation: [], system: [] },
 		guard: { status: "incomplete", reason: "No payload." },
 	};
 }
 
-test("resolveRequestSnapshot returns the selected snapshot without probing", async () => {
+test("resolveRequestSnapshot returns the latest snapshot without probing", async () => {
 	const store = new SnapshotStore();
-	store.publish(requestSnapshot(1, "real-turn"));
-	store.publish(requestSnapshot(2, "synthetic-probe"));
 	const trigger = { request: async () => assert.fail("no probe while a snapshot exists") } as unknown as ProbeTrigger;
 	const context = { waitForIdle: async () => assert.fail("no wait while a snapshot exists") } as unknown as
 		ExtensionCommandContext;
 
-	const first = await resolveRequestSnapshot(store, trigger, context, "first");
-	const latest = await resolveRequestSnapshot(store, trigger, context, "latest");
+	store.publish(requestSnapshot(1, "synthetic-probe"));
+	const probe = await resolveRequestSnapshot(store, trigger, context);
+	store.publish(requestSnapshot(2, "real-turn"));
+	const real = await resolveRequestSnapshot(store, trigger, context);
 
-	assert.equal(first.type === "snapshot" ? first.snapshot.id : undefined, 1);
-	assert.equal(latest.type === "snapshot" ? latest.snapshot.id : undefined, 2, "the latest of either origin");
+	assert.equal(probe.type === "snapshot" ? probe.snapshot.origin : undefined, "synthetic-probe");
+	assert.equal(real.type === "snapshot" ? real.snapshot.id : undefined, 2, "a real request replaces the probe");
 });
 
 test("resolveRequestSnapshot takes a snapshot a running turn published before idle, without probing", async () => {
 	const store = new SnapshotStore();
-	const trigger = { request: async () => assert.fail("the running turn supplies Initial") } as unknown as ProbeTrigger;
+	const trigger = { request: async () => assert.fail("the running turn supplies the snapshot") } as unknown as ProbeTrigger;
 	const context = {
 		waitForIdle: async () => store.publish(requestSnapshot(1, "real-turn")),
 	} as unknown as ExtensionCommandContext;
 
-	const result = await resolveRequestSnapshot(store, trigger, context, "first");
+	const result = await resolveRequestSnapshot(store, trigger, context);
 
 	assert.equal(result.type === "snapshot" ? result.snapshot.origin : undefined, "real-turn");
 });
@@ -252,7 +252,7 @@ test("resolveRequestSnapshot asks ProbeTrigger once the store is empty and repor
 	} as unknown as ProbeTrigger;
 	const context = { waitForIdle: async () => undefined } as unknown as ExtensionCommandContext;
 
-	const missing = await resolveRequestSnapshot(store, failing, context, "first");
+	const missing = await resolveRequestSnapshot(store, failing, context);
 	assert.equal(probed, 1);
 	assert.deepEqual(missing, {
 		type: "missing",
@@ -261,11 +261,11 @@ test("resolveRequestSnapshot asks ProbeTrigger once the store is empty and repor
 
 	const capturing = {
 		request: async () => {
-			const snapshot = requestSnapshot(1, "synthetic-probe");
-			store.publish(snapshot);
-			return { status: "captured", snapshot };
+			store.publish(requestSnapshot(1, "synthetic-probe"));
+			return { status: "captured" };
 		},
 	} as unknown as ProbeTrigger;
-	const probe = await resolveRequestSnapshot(store, capturing, context, "latest");
-	assert.equal(probe.type === "snapshot" ? probe.snapshot.origin : undefined, "synthetic-probe");
+	const probe = await resolveRequestSnapshot(store, capturing, context);
+	assert.equal(probe.type === "snapshot" ? probe.snapshot.origin : undefined, "synthetic-probe",
+		"the probe snapshot is read from the store");
 });

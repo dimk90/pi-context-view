@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { type InitialSnapshot, type InjectionGroup, type InjectionItem, LATE_EDITS_SOURCE } from "../src/model.ts";
+import { type InjectionSnapshot, type InjectionGroup, type InjectionItem, LATE_EDITS_SOURCE } from "../src/model.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
 import { previewBodyLines } from "../src/ui/section-preview.ts";
 
@@ -43,7 +43,6 @@ function createTheme(): Theme {
 function item(id: string, sourceId: string, native: boolean, tokens: number): InjectionItem {
 	return {
 		id,
-		phase: "initial",
 		kind: "message",
 		source: { id: sourceId, label: sourceId, native },
 		label: `${id} with a moderately long label for truncation checks`,
@@ -61,13 +60,11 @@ function group(sourceId: string, native: boolean, items: InjectionItem[]): Injec
 	};
 }
 
-function snapshot(itemsPerGroup: number): InitialSnapshot {
+function snapshot(itemsPerGroup: number): InjectionSnapshot {
 	const piItems = Array.from({ length: itemsPerGroup }, (_, index) => item(`pi-${index}`, "pi", true, 1_234_567));
 	const extensionItems = Array.from({ length: itemsPerGroup }, (_, index) => item(`ext-${index}`, "npm:web", false, 42));
 	const groups = [group("pi", true, piItems), group("npm:web", false, extensionItems)];
 	return {
-		origin: "synthetic-probe",
-		capturedAt: new Date("2026-07-10T12:00:00Z"),
 		groups,
 		totalTokens: groups.reduce((sum, entry) => sum + entry.totalTokens, 0),
 	};
@@ -96,9 +93,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	const parent: InjectionItem = { ...item("parent", "pi", true, 50), children: [child] };
 	const sibling = item("sibling", "pi", true, 10);
 	const piGroup = group("pi", true, [parent, sibling]);
-	const styledSnapshot: InitialSnapshot = {
-		origin: "real-turn",
-		capturedAt: new Date("2026-07-10T12:00:00Z"),
+	const styledSnapshot: InjectionSnapshot = {
 		groups: [piGroup],
 		totalTokens: piGroup.totalTokens,
 	};
@@ -109,13 +104,13 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(lines[1], "");
 	assert.equal(lines.at(-2), "");
 	const headerIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections"));
-	const tabIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections · [INITIAL]"));
+	const tabIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections · [Latest Request]"));
 	assert.ok(headerIndex >= 0 && tabIndex === headerIndex);
 	assert.equal(lines[headerIndex + 1], "");
 	assert.equal(stripSgr(lines[headerIndex] ?? "").indexOf("Context Injections"), 0);
-	assert.equal(stripSgr(lines[tabIndex] ?? ""), "Context Injections · [INITIAL]");
+	assert.equal(stripSgr(lines[tabIndex] ?? ""), "Context Injections · [Latest Request]");
 	// Chalk emits bold SGR only on capable terminals, so derive the environment-specific nested style.
-	assert.ok((lines[tabIndex] ?? "").includes(theme.fg("mdHeading", theme.bold("[INITIAL]"))));
+	assert.ok((lines[tabIndex] ?? "").includes(theme.fg("mdHeading", theme.bold("[Latest Request]"))));
 	// Runtime stays hidden until the runtime-inspection roadmap step.
 	assert.ok(!lines.some((line) => stripSgr(line).includes("RUNTIME")));
 	assert.ok(!lines.some((line) => stripSgr(line).includes("Runtime Logging:")));
@@ -198,7 +193,7 @@ test("InjectionsView wraps narrow descriptions instead of truncating them", () =
 	assert.ok(descriptionLines.every((line) => line.startsWith("  ")));
 	assert.equal(
 		descriptionLines.map((line) => line.trim()).join(" "),
-		"Injections into the model context for the first turn, with token estimates.",
+		"Injections into the model context of the latest request, with token estimates.",
 	);
 	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
 });
@@ -248,23 +243,23 @@ test("InjectionsView keeps the description for lists shorter than the floor", ()
 	assert.ok(collapsed.some((line) => line.includes("↑↓/jk Navigate")), "the hints never collapse");
 });
 
-test("InjectionsView adds degraded INITIAL capture to the dialog description", () => {
+test("InjectionsView adds degraded capture to the dialog description", () => {
 	const plain = createView(4);
 	const plainLines = plain.render(80);
-	const plainInitialIndex = plainLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
-	assert.ok(plainInitialIndex >= 0);
-	assert.equal(stripSgr(plainLines[plainInitialIndex] ?? ""), "Context Injections · [INITIAL]");
+	const plainHeaderIndex = plainLines.findIndex((line) => stripSgr(line).includes("[Latest Request]"));
+	assert.ok(plainHeaderIndex >= 0);
+	assert.equal(stripSgr(plainLines[plainHeaderIndex] ?? ""), "Context Injections · [Latest Request]");
 	assert.ok(!plainLines.some((line) => stripSgr(line).includes("Degraded:")));
 
 	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
 	// Tall enough for the wrapped reason, the whole list, and the description block at both widths.
 	const degraded = createView(4, reason, () => 40);
 	const degradedLines = degraded.render(80);
-	const degradedInitialIndex = degradedLines.findIndex((line) => stripSgr(line).includes("INITIAL"));
-	assert.ok(degradedInitialIndex >= 0);
-	assert.equal(stripSgr(degradedLines[degradedInitialIndex] ?? ""), "Context Injections · [INITIAL]");
-	assert.equal(degradedLines[degradedInitialIndex + 1], "");
-	assert.match(stripSgr(degradedLines[degradedInitialIndex + 2] ?? ""), /Silent probe unavailable/);
+	const degradedHeaderIndex = degradedLines.findIndex((line) => stripSgr(line).includes("[Latest Request]"));
+	assert.ok(degradedHeaderIndex >= 0);
+	assert.equal(stripSgr(degradedLines[degradedHeaderIndex] ?? ""), "Context Injections · [Latest Request]");
+	assert.equal(degradedLines[degradedHeaderIndex + 1], "");
+	assert.match(stripSgr(degradedLines[degradedHeaderIndex + 2] ?? ""), /Silent probe unavailable/);
 
 	const descriptionIndex = degradedLines.findIndex((line) =>
 		stripSgr(line).includes("Injections into the model context"),
@@ -295,8 +290,17 @@ test("InjectionsView keeps Runtime inactive when label-switch keys are pressed",
 		view.handleInput(key);
 		assert.equal(view.render(80), initial);
 	}
-	assert.ok(initial.some((line) => stripSgr(line).includes("Context Injections · [INITIAL]")));
+	assert.ok(initial.some((line) => stripSgr(line).includes("Context Injections · [Latest Request]")));
 	assert.ok(!initial.some((line) => stripSgr(line).includes("RUNTIME")));
+});
+
+test("InjectionsView keeps title and label on one line down to 37 columns", () => {
+	const at = (width: number) => createView(4).render(width).map(stripSgr);
+	assert.ok(at(37).includes("Context Injections · [Latest Request]"));
+	const split = at(36);
+	const titleIndex = split.indexOf("Context Injections");
+	assert.ok(titleIndex >= 0);
+	assert.deepEqual(split.slice(titleIndex, titleIndex + 4), ["Context Injections", "", "[Latest Request]", ""]);
 });
 
 test("InjectionsView keeps every rendered line within the width", () => {
@@ -309,7 +313,7 @@ test("InjectionsView keeps every rendered line within the width", () => {
 		if (width === 24) {
 			const plain = listLines.map(stripSgr);
 			const titleIndex = plain.indexOf("Context Injections");
-			const tabsIndex = plain.indexOf("[INITIAL]");
+			const tabsIndex = plain.indexOf("[Latest Request]");
 			assert.ok(titleIndex >= 0 && tabsIndex === titleIndex + 2);
 			assert.equal(plain[titleIndex + 1], "");
 			assert.equal(plain[tabsIndex + 1], "");
@@ -475,8 +479,6 @@ test("InjectionsView preview labels every known section", () => {
 	const theme = createTheme();
 	const view = new InjectionsView(theme, {
 		snapshot: {
-			origin: "real-turn",
-			capturedAt: new Date("2026-07-10T12:00:00Z"),
 			groups: [toolGroup],
 			totalTokens: toolGroup.totalTokens,
 		},
@@ -545,8 +547,6 @@ test("InjectionsView preview expands the JSON runs the model marks", () => {
 	const toolGroup = group("npm:web", false, [schemaTool, serializedMessage]);
 	const view = new InjectionsView(createTheme(), {
 		snapshot: {
-			origin: "real-turn",
-			capturedAt: new Date("2026-07-10T12:00:00Z"),
 			groups: [toolGroup],
 			totalTokens: toolGroup.totalTokens,
 		},
@@ -611,8 +611,6 @@ test("InjectionsView preview separates aggregate children and expands each child
 	const piGroup = group("pi", true, [builtin]);
 	const view = new InjectionsView(createTheme(), {
 		snapshot: {
-			origin: "real-turn",
-			capturedAt: new Date("2026-07-10T12:00:00Z"),
 			groups: [piGroup],
 			totalTokens: piGroup.totalTokens,
 		},
@@ -659,8 +657,6 @@ test("InjectionsView omits a skill name its heading already shows", () => {
 	const piGroup = group("pi", true, [skills]);
 	const view = new InjectionsView(createTheme(), {
 		snapshot: {
-			origin: "real-turn",
-			capturedAt: new Date("2026-07-10T12:00:00Z"),
 			groups: [piGroup],
 			totalTokens: piGroup.totalTokens,
 		},
@@ -704,8 +700,6 @@ test("InjectionsView invalidation rebuilds theme-colored section subheaders", ()
 	const toolGroup = group("npm:web", false, [tool]);
 	const view = new InjectionsView(theme, {
 		snapshot: {
-			origin: "real-turn",
-			capturedAt: new Date("2026-07-10T12:00:00Z"),
 			groups: [toolGroup],
 			totalTokens: toolGroup.totalTokens,
 		},
@@ -869,7 +863,7 @@ test("InjectionsView navigation scrolls the non-selectable total and Escape clos
 });
 
 /** A snapshot whose items carry each request-only change, one of them with Request and Session parts. */
-function changedSnapshot(): InitialSnapshot {
+function changedSnapshot(): InjectionSnapshot {
 	const base = (id: string, tokens: number) => ({ ...item(id, "unattributed", false, tokens), text: `${id} text` });
 	const items: InjectionItem[] = [
 		{ ...base("added", 4), label: "added message", change: "added" },
@@ -885,7 +879,7 @@ function changedSnapshot(): InitialSnapshot {
 		{ ...base("deleted", 0), label: "deleted message", text: "deleted original", change: "deleted" },
 	];
 	const changes = group("unattributed", false, items);
-	return { origin: "real-turn", capturedAt: new Date("2026-07-10T12:00:00Z"), groups: [changes], totalTokens: 9 };
+	return { groups: [changes], totalTokens: 9 };
 }
 
 test("InjectionsView marks request-only changes after the estimate and explains them", () => {
@@ -909,8 +903,8 @@ test("InjectionsView marks request-only changes after the estimate and explains 
 test("InjectionsView marks a forced System Prompt in its row, preview header, and both legends", () => {
 	const theme = createTheme();
 	const prompt = { ...item("base-prompt", "pi", false, 7), label: "System Prompt", text: "forced text", change: "forced" as const };
-	const forced: InitialSnapshot = {
-		origin: "real-turn", capturedAt: new Date("2026-07-10T12:00:00Z"), groups: [group("pi", false, [prompt])], totalTokens: 7,
+	const forced: InjectionSnapshot = {
+		groups: [group("pi", false, [prompt])], totalTokens: 7,
 	};
 	const view = new InjectionsView(theme, { snapshot: forced }, () => {}, () => 40);
 	const lines = view.render(100);
@@ -953,7 +947,7 @@ test("InjectionsView describes a probe snapshot and notes an unavailable payload
 	const lines = new InjectionsView(theme, input, () => {}, () => 40).render(120);
 	const plain = lines.map(stripSgr);
 
-	const header = plain.findIndex((line) => line === "Context Injections · [INITIAL]");
+	const header = plain.findIndex((line) => line === "Context Injections · [Latest Request]");
 	assert.match(plain[header + 2] ?? "", /^→ pi/);
 	const description = plain.findIndex((line) => line.includes("Injections into the model context"));
 	const probeNote = lines[description + 1] ?? "";
@@ -1029,7 +1023,7 @@ test("changed Injections frames reflow without raw text leaks or partial descrip
 });
 
 /** A snapshot with one built-in tool, two tools Pi hid and the tree leaves out, and a late-edit group. */
-function guardedSnapshot(): InitialSnapshot {
+function guardedSnapshot(): InjectionSnapshot {
 	const base = (id: string, tokens: number): InjectionItem => ({ ...item(id, "pi", true, tokens), kind: "tool" });
 	const read: InjectionItem = { ...base("tool:builtin:read", 12), label: "read" };
 	const builtin: InjectionItem = {
@@ -1052,7 +1046,7 @@ function guardedSnapshot(): InitialSnapshot {
 		{ ...group("late-edits", false, lateItems), source: LATE_EDITS_SOURCE },
 	];
 	return {
-		origin: "real-turn", capturedAt: new Date("2026-07-10T12:00:00Z"), groups,
+		groups,
 		totalTokens: groups.reduce((sum, entry) => sum + entry.totalTokens, 0), hiddenTools: ["write", "bash"],
 	};
 }

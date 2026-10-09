@@ -16,7 +16,7 @@ const TOOL = { name: "read", description: "Read a file.", parameters: { type: "o
 function capture(model: GuardModel | undefined = MODEL, origin: CaptureOrigin = "real-turn"): CapturedRequest {
 	const baseline = [{ entryId: "s", message: { role: "system" as const, content: "prompt", toolsAdded: [TOOL], timestamp: 1 } }];
 	return {
-		id: 1, capturedAt: 1, origin, requestModel: model,
+		id: 1, origin, requestModel: model,
 		baseline: { leafId: "s", messages: baseline },
 		...copyRequest(baseline, baseline.map(({ message }) => message)),
 	};
@@ -181,7 +181,9 @@ test("nonstandard probe payloads pair and compare just like real requests", asyn
 	h.guard.accept(h.request, payload());
 	h.guard.confirm(1, DISPATCH, () => MODEL);
 	await flush();
-	assertCompared(h.snapshots.first("synthetic-probe"));
+	const snapshot = h.snapshots.latest();
+	assert.equal(snapshot?.origin, "synthetic-probe");
+	assertCompared(snapshot);
 });
 
 test("shutdown cancels physical and virtual deferred work, including confirmation already received", async () => {

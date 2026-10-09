@@ -185,7 +185,7 @@ test("analyzeSystemPrompt gives each path extension its own source, labelled by 
 	const tools = [tool("codemode", "/repo/fixtures/hidden-tools.ts"), tool("mark", "/repo/fixtures/marker/index.ts")];
 	const sources = tools.map((entry) => ({ source: entry.source, path: entry.sourcePath ?? "" }));
 
-	const groups = buildSnapshot(analyzeSystemPrompt(systemPrompt, {}, tools, { sources }), "real-turn", new Date())
+	const groups = buildSnapshot(analyzeSystemPrompt(systemPrompt, {}, tools, { sources }))
 		.groups.filter((group) => !group.source.native);
 	assert.deepEqual(groups.map((group) => [group.source.label, group.items.map((item) => item.label)]).sort(), [
 		["hidden-tools.ts", ["codemode"]],
@@ -446,7 +446,7 @@ test("guideline references restore prompt order without changing counted text or
 	assert.equal(base.children?.reduce((sum, child) => sum + child.tokens, 0), base.tokens);
 	assert.equal(base.sections?.map((section) => section.text).join(""), base.text);
 
-	const snapshot = buildSnapshot(items, "real-turn", new Date());
+	const snapshot = buildSnapshot(items);
 	const usage = computeUsage({ snapshot, messages: [] });
 	assert.equal(usage.estimatedTokens, snapshot.totalTokens);
 	const category = usage.categories.find((category) => category.id === "system-prompt");

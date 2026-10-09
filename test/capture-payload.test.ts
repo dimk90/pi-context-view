@@ -99,13 +99,15 @@ test("hidden names are copied at the event boundary and reset by an empty list o
 	options.hiddenTools.length = 0;
 	h.emit({ type: "context_with_system", messages: [{ ...SYSTEM, toolsAdded: [TOOL] }] });
 	await flush();
-	assert.equal(h.snapshots.first()?.guard.status, "pending");
-	assert.deepEqual(h.snapshots.first()?.hiddenTools, ["read"], "owned even before any payload");
+	const first = h.snapshots.latest();
+	assert.equal(first?.guard.status, "pending");
+	assert.deepEqual(first?.hiddenTools, ["read"], "owned even before any payload");
 
 	h.emit({ type: "before_agent_start", prompt: "", systemPrompt: "prompt", systemPromptOptions: options });
 	h.emit({ type: "context_with_system", messages: [{ ...SYSTEM, toolsAdded: [TOOL] }] });
 	await flush();
-	assert.deepEqual(h.snapshots.first()?.hiddenTools, ["read"], "Initial does not share the next run's list");
+	assert.deepEqual(first?.hiddenTools, ["read"], "an earlier snapshot does not share the next run's list");
+	assert.notEqual(h.snapshots.latest()?.id, first?.id);
 	assert.equal(h.snapshots.latest()?.hiddenTools, undefined);
 });
 
@@ -116,7 +118,9 @@ test("a new capture settles an earlier unpaired one and cannot inherit its reque
 	if (h.context.model) h.context.model.id = "changed";
 	h.emit({ type: "context_with_system", messages: [] });
 	await flush();
-	assert.deepEqual(h.snapshots.first()?.guard, { status: "incomplete", reason: NO_PAYLOAD_REASON });
+	const earlier = h.published.findLast((snapshot) => snapshot.id === 1);
+	assert.deepEqual(earlier?.guard, { status: "incomplete", reason: NO_PAYLOAD_REASON });
+	assert.equal(h.snapshots.latest()?.id, 2);
 	assert.equal(h.snapshots.latest()?.guard.status, "pending");
 	h.emit({ type: "session_shutdown", reason: "quit" });
 	const count = h.published.length;
