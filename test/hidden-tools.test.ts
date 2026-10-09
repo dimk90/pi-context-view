@@ -107,17 +107,21 @@ function listedTools(result: ReturnType<typeof usage>, id: string): string[] {
 	return (result.categories.find((category) => category.id === id)?.children ?? []).map((child) => child.label).sort();
 }
 
-/** Every Injections item, children included. */
-function injectionItems(session: SessionManager, snapshot: NonNullable<ReturnType<SnapshotStore["latest"]>>) {
-	const injections = buildInjectionsSnapshot({
+/** The Injections tree of a snapshot, built with no live hidden tools so only the snapshot's apply. */
+function injections(session: SessionManager, snapshot: NonNullable<ReturnType<SnapshotStore["latest"]>>) {
+	return buildInjectionsSnapshot({
 		...viewInput([]), snapshot, entries: session.getEntries(), filterMessages: (messages) => messages,
 	});
+}
+
+/** Every Injections item, children included. */
+function injectionItems(session: SessionManager, snapshot: NonNullable<ReturnType<SnapshotStore["latest"]>>) {
 	const flatten = (item: InjectionItem): InjectionItem[] => [item, ...(item.children ?? []).flatMap(flatten)];
-	return injections.groups.flatMap((group) => group.items).flatMap(flatten);
+	return injections(session, snapshot).groups.flatMap((group) => group.items).flatMap(flatten);
 }
 
 for (const api of ["openai-completions", "anthropic-messages"]) {
-	test(`#11 ${api}: only codemode counts; Injections marks the four tools Pi hid`, async () => {
+	test(`#11 ${api}: only codemode counts; Injections leaves out and counts the four tools Pi hid`, async () => {
 		const session = createSession();
 		const store = new SnapshotStore();
 		const before = usage(session, store, []);
@@ -137,12 +141,10 @@ for (const api of ["openai-completions", "anthropic-messages"]) {
 			.every((entry) => !BUILTIN_NAMES.some((name) => entry.text.includes(`${name} description`))));
 
 		const items = injectionItems(session, snapshot);
-		const hidden = items.find((item) => item.id === "tool:builtin");
-		assert.equal(hidden?.label, "Built-in Tools (0)");
-		assert.equal(hidden.tokens, 0);
-		assert.deepEqual(hidden.children?.map((item) => [item.label, item.change, item.tokens]).sort(),
-			BUILTIN_NAMES.map((name) => [name, "hidden", 0]).sort());
-		assert.ok(hidden.children?.every((item) => item.sections?.[0]?.change === "hidden"));
+		assert.equal(items.find((item) => item.id === "tool:builtin"), undefined, "no Built-in Tools row is left");
+		assert.deepEqual(items.filter((item) => item.kind === "tool").map((item) => item.label), ["codemode"]);
+		assert.deepEqual(injections(session, snapshot).hiddenTools, BUILTIN_NAMES);
+		assert.doesNotMatch(JSON.stringify(items), /(read|bash|edit|write) description/);
 		const sent = items.find((item) => item.label === "codemode");
 		assert.ok(sent && sent.tokens > 0 && sent.change === undefined);
 		assert.doesNotMatch(JSON.stringify([observed, items]), /__pi_deferred_placeholder__/);
@@ -161,8 +163,9 @@ test("#11: a captured tool the payload drops that Pi did not hide is a deleted l
 	const late = items.filter((item) => item.source.id === "late-edits");
 	assert.deepEqual(late.map((item) => [item.label, item.kind, item.change, item.tokens]), [["write", "tool", "deleted", 0]]);
 	const builtins = items.find((item) => item.id === "tool:builtin");
-	assert.deepEqual(builtins?.children?.map((item) => [item.label, item.change]).sort(),
-		[["bash", "hidden"], ["edit", "hidden"], ["read", "hidden"], ["write", undefined]]);
+	assert.equal(builtins?.label, "Built-in Tools (1)");
+	assert.deepEqual(builtins.children?.map((item) => [item.label, item.change]), [["write", undefined]]);
+	assert.deepEqual(injections(session, snapshot).hiddenTools, ["read", "bash", "edit"]);
 	assert.deepEqual(listedTools(usage(session, store, ["read", "bash", "edit"]), "built-in-tools"), ["write"],
 		"late removals do not affect Usage");
 });
@@ -186,8 +189,9 @@ test("#11: an incomplete payload guard does not restore hidden definitions in ei
 	assert.equal(snapshot.guard.status, "incomplete");
 	assert.deepEqual(listedTools(usage(session, store), "built-in-tools"), []);
 	assert.deepEqual(listedTools(usage(session, store), "custom-tools"), ["codemode"]);
-	assert.deepEqual(injectionItems(session, snapshot).filter((item) => item.change === "hidden")
-		.map((item) => item.label).sort(), [...BUILTIN_NAMES].sort());
+	assert.deepEqual(injectionItems(session, snapshot).filter((item) => item.kind === "tool")
+		.map((item) => item.label), ["codemode"]);
+	assert.deepEqual(injections(session, snapshot).hiddenTools, BUILTIN_NAMES);
 });
 
 test("#11: Anthropic inline additions, removals, and same-name redefinitions are not late edits", async () => {

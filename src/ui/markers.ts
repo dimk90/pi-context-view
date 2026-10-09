@@ -15,7 +15,7 @@ const MARKER_SEPARATOR = " · ";
 
 /** Markers a frame can show, in the fixed order their legend bullets render. */
 const MARKER_ORDER = [
-	"highlighted", "guess", "dropped", "moved", "forced", "added", "modified", "deleted", "hidden",
+	"highlighted", "guess", "dropped", "moved", "forced", "added", "modified", "deleted",
 ] as const;
 
 /** One marked state a description bullet explains. */
@@ -79,12 +79,6 @@ const MARKER_LEGENDS: Record<ContextMarker, MarkerLegend> = {
 		color: "toolDiffRemoved",
 		explanation: " parts were removed by an extension for this request only; the session keeps them." +
 			" They are counted nowhere.",
-	},
-	hidden: {
-		keyword: "Hidden",
-		color: "toolDiffRemoved",
-		explanation: " tools stay active and callable through another tool, such as codemode, but pi left them" +
-			" out of the request. They are counted nowhere.",
 	},
 };
 

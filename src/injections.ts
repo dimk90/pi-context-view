@@ -1,9 +1,9 @@
 /**
  * Injections composition from a request snapshot: the session projection at
  * the snapshot's leaf, rebuilt when the view opens, with the snapshot's
- * request-only changes and hidden tools marked, plus the payload guard's late
- * edits. Reads the snapshot and current Pi data only; imports no capture or
- * probe module.
+ * request-only changes marked and hidden tools left out, plus the payload
+ * guard's late edits. Reads the snapshot and current Pi data only; imports no
+ * capture or probe module.
  */
 import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import {
@@ -27,7 +27,13 @@ import {
 } from "./model.ts";
 import { type MessageFilter, type ProjectedMessage, readProjection } from "./projection.ts";
 import type { PromptSourceSlice } from "./prompt-additions.ts";
-import { applySystemChanges, buildNativeSnapshot, markForcedPrompt, replayedToolSlices } from "./replay.ts";
+import {
+	applySystemChanges,
+	buildNativeSnapshot,
+	markForcedPrompt,
+	replayedToolSlices,
+	splitHiddenTools,
+} from "./replay.ts";
 import type {
 	ConversationChange,
 	GuardFinding,
@@ -69,18 +75,22 @@ export interface InjectionsInput {
 
 /**
  * Build the Injections tree of one request: its replayed prompt and tools,
- * custom messages, and changes, with the tools Pi hid marked in place and the
- * guard's late edits in their own group.
+ * custom messages, and changes, with the guard's late edits in their own
+ * group. The tools Pi hid are left out; their names supply the description note.
  */
 export function buildInjectionsSnapshot(input: InjectionsInput): InitialSnapshot {
 	const baseline = readProjection(input.entries, input.snapshot.leafId, input.filterMessages);
 	const findings = guardFindings(input.snapshot.guard);
+	const prompt = measureRequestPrompt(input, baseline.map(({ message }) => message));
 	const items = [
-		...measureRequestPrompt(input, baseline.map(({ message }) => message)),
+		...prompt.items,
 		...measureMessages(input.snapshot.changes.conversation, baseline),
 		...measureLateEdits(findings),
 	];
-	return buildSnapshot(items, input.snapshot.origin, new Date(input.snapshot.capturedAt));
+	return {
+		...buildSnapshot(items, input.snapshot.origin, new Date(input.snapshot.capturedAt)),
+		hiddenTools: prompt.hiddenTools,
+	};
 }
 
 /** Findings of every compared channel; a pending guard has none yet. */
@@ -92,37 +102,44 @@ function guardFindings(guard: GuardResult): readonly GuardFinding[] {
 // Prompt and tools
 // ============================================================================
 
+/** Measured prompt and tool items, and names of the tools Pi hid from the model and the items leave out. */
+interface RequestPrompt {
+	readonly items: readonly InjectionItem[];
+	readonly hiddenTools: readonly string[];
+}
+
 /**
  * Measure the replayed prompt and tools with the request's system changes
  * applied. A forced prompt replaces every section, so only tool changes reach
- * it. A tool Pi hid is hidden, whatever structured change it had. A branch
+ * it. A tool Pi hid is left out, whatever structured change it had. A branch
  * with no recorded system state uses the live prompt and tools.
  */
-function measureRequestPrompt(input: InjectionsInput, baseline: readonly RequestMessage[]): InjectionItem[] {
+function measureRequestPrompt(input: InjectionsInput, baseline: readonly RequestMessage[]): RequestPrompt {
 	const hiddenTools = input.snapshot.hiddenTools ?? [];
 	const base = getCurrentSystemMessage(baseline);
 	if (base === undefined) {
 		const native = buildNativeSnapshot({
 			...input, options: { ...input.options, hiddenTools: [...hiddenTools] }, forcedPrompt: input.snapshot.forcedPrompt,
 		});
-		return native.groups.flatMap((group) => group.items);
+		return { items: native.groups.flatMap((group) => group.items), hiddenTools: native.hiddenTools ?? [] };
 	}
-	const hidden = new Set(hiddenTools);
 	const request = applySystemChanges(base, input.snapshot.changes.system);
+	const declarations = splitHiddenTools(request.declarations, hiddenTools);
 	const forced = input.snapshot.forcedPrompt;
 	const tools: ToolSlice[] = [
-		...replayedToolSlices(request.state, request.declarations, input.allTools)
-			.map((tool) => withToolChange(tool, hidden.has(tool.name) ? "hidden" : request.tools.get(tool.name))),
+		...replayedToolSlices(request.state, declarations.declared, input.allTools)
+			.map((tool) => withToolChange(tool, request.tools.get(tool.name))),
 		...replayedToolSlices(base, request.deletedTools, input.allTools)
 			.map((tool) => withToolChange(tool, "deleted")),
 	];
-	return markForcedPrompt(analyzeSystemPrompt(
+	const items = markForcedPrompt(analyzeSystemPrompt(
 		forced ?? systemMessageText(request.state),
 		{ homeDir: process.env.HOME, customPrompt: input.options.customPrompt },
 		tools,
 		{ sources: input.promptSources },
 		forced === undefined ? request.prompt : {},
 	), forced);
+	return { items, hiddenTools: declarations.hiddenNames };
 }
 
 /** The slice with a request-only change, or unchanged when there is none. */

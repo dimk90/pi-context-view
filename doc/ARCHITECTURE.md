@@ -6,10 +6,10 @@ extension can read, and how that data reaches the two views.
 
 ## Views and Data Sources
 
-| View       | What it shows                                                                                          | When its data changes                                    |
-| ---------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| Injections | First request's prompt, tools, custom messages, marked request-only changes, late edits, hidden tools. | First snapshot's content stays fixed                     |
-| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes, excluding tools Pi hides. | Rebuilt from the current branch and store when it opens. |
+| View       | What it shows                                                                                               | When its data changes                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Injections | First request's prompt, tools, custom messages, marked request-only changes, late edits, hidden tool names. | First snapshot's content stays fixed                     |
+| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes, excluding tools Pi hides.     | Rebuilt from the current branch and store when it opens. |
 
 Both views read request snapshots that
 [structured request capture](#structured-request-capture) publishes to
@@ -146,7 +146,8 @@ as supported.
 - `before_agent_start.systemPromptOptions.hiddenTools` reports Pi's hidden
   declarations to event handlers. Capture copies this list for the run and
   copies it into each request snapshot, independently of payload comparison.
-  **Goal:** mark hidden tools in frozen Initial, including a silent probe.
+  **Goal:** leave hidden tools out of frozen Initial and count them, including
+  for a silent probe.
 
 - `pi.getActiveTools()` and `pi.getAllTools()` supply the active tool names,
   definitions, and source information. `pi.getCommands()` supplies additional
@@ -440,7 +441,8 @@ checks and the TUI guard remain in the command.
 2. Replay system state with `getCurrentSystemMessage()` and apply the snapshot's
    content, section, and declaration changes. Measure the result like Usage:
    recorded declarations supply definitions, current tool metadata supplies
-   provenance and guidelines. Shared helpers live in `src/replay.ts`.
+   provenance and guidelines. Leave out the snapshot's hidden tools, as Usage
+   leaves out live ones, and count them. Shared helpers live in `src/replay.ts`.
 3. A forced prompt replaces the replayed prompt, so captured content/section
    patches do not apply to it; tool changes still apply. The System Prompt
    item carries the `forced` request-only change. Current
@@ -474,18 +476,18 @@ boundaries; adjacent additions with no separator may share an attribution guess.
 
 The snapshot also supplies hidden tools and late edits when the view opens:
 
-- **Hidden tools.** The snapshot's `hiddenTools` marks tools in place at zero
-  tokens with their definitions, independently of guard status. Hidden wins
-  over a structured change of the same tool. The marker legend explains that
-  Pi leaves them out while they remain callable through another tool; there
-  are no candidate labels or separate hidden-tool notes. A fallback without a
-  snapshot uses Pi's live hidden set instead.
+- **Hidden tools.** The tools in the snapshot's `hiddenTools` that the request
+  declared are left out of the tree, independently of guard status and of any
+  structured change of the same tool. The view-local snapshot keeps their names;
+  one description bullet reports their count and lists all names alphabetically,
+  sanitized and wrapped. There are no rows, markers, or candidate labels.
+  A fallback without a snapshot uses Pi's live hidden set instead.
 - **Late edits.** [Payload guard](#payload-guard-tool-declarations-and-messages)
   findings of each compared channel form a separate `late edits` group after
   `unattributed`. They have no entry reference or attribution. An item keeps
   the finding's changed lines for its preview; its text and estimate hold only
-  the added lines, so a deletion counts zero. Tool removals belong here, not
-  under their source as Hidden. Item kinds are `message` and `tool`.
+  the added lines, so a deletion counts zero. Tool removals Pi did not hide
+  belong here. Item kinds are `message` and `tool`.
 
 Probe snapshots carry the warning specified in [ui/injections.md](ui/injections.md).
 Pending and incomplete guards appear as an unavailable or partial late-edit

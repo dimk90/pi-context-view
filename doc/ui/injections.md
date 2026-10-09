@@ -47,7 +47,7 @@ A standard probe says `Late edits were not checked: No provider payload was
 observed for this request.` None of these means "no edits". A partial check
 still shows the [late edits](#late-edits) of the channel it compared.
 [Hidden tools](#hidden-tools) come from Pi's prompt options, independently of
-the guard, so a probe can show them too. A complete guard adds no bullet:
+the guard, so a probe counts them too. A complete guard adds no bullet:
 without late edits, the payload matched the request, excluding Pi's known
 hidden declarations, up to this extension's own `before_provider_request`
 handler. Handlers after it stay invisible.
@@ -99,9 +99,8 @@ Present Initial contributions in this order:
 
 ### Request-only changes
 
-Changes from all `context` handlers and earlier `context_with_system` handlers,
-and [hidden tools](#hidden-tools), stay in place in the tree, with a marker
-after the estimate:
+Changes from all `context` handlers and earlier `context_with_system` handlers
+stay in place in the tree, with a marker after the estimate:
 
 | Marker     | Color             | Row                                                                                   |
 | ---------- | ----------------- | ------------------------------------------------------------------------------------- |
@@ -109,7 +108,6 @@ after the estimate:
 | `Modified` | `warning`         | A message, System Prompt part, or tool whose request version differs from the session |
 | `Deleted`  | `toolDiffRemoved` | A message, System Prompt part, or tool the request removed; it reads 0 tokens         |
 | `Forced`   | `warning`         | System Prompt, when the request carried an extension's forced prompt instead of pi's  |
-| `Hidden`   | `toolDiffRemoved` | A tool the request kept active but did not declare to the model; it reads 0 tokens    |
 
 - **Messages.** An added or modified custom message sits under its
   `customType` source with the `message` label; any other message sits under
@@ -123,9 +121,9 @@ after the estimate:
   session order, before `Extension Additions`. A forced prompt replaces every
   section, so section and content changes do not apply to it. `Forced` marks
   the System Prompt row and its preview header, never its parts.
-- **Tools.** A changed declaration marks its tool. A deleted or
-  [hidden](#hidden-tools) tool keeps a 0-token row under its source;
-  `Built-in Tools (N)` counts only the tools the request declared.
+- **Tools.** A changed declaration marks its tool. A deleted tool keeps a
+  0-token row under its source; `Built-in Tools (N)` counts only the tools the
+  request declared. A [hidden](#hidden-tools) tool has no row.
 
 These source groups identify the affected content, not the extension that
 edited it. Changes to a pi part or a custom message remain unattributed to an
@@ -148,7 +146,7 @@ source, so they cannot stay in place. The `late edits` group, after
   `assistant message`, `tool call`, or `tool result`.
 - A tool declaration the payload added, removed, or describes differently: the
   tool name. A removal Pi did not report in `hiddenTools` is a `Deleted` late
-  edit, not a `Hidden` tool under its source.
+  edit, not a [hidden tool](#hidden-tools).
 
 Each row carries the `Added`, `Modified`, or `Deleted` marker of its change.
 The guard keeps only the changed lines, so a row's estimate counts the lines
@@ -163,20 +161,32 @@ group is shown, the description carries a dim bullet:
 ### Hidden tools
 
 A tool in the snapshot's `hiddenTools` is hidden: Pi leaves its declaration
-out while it stays active and callable through another tool. Its row stays
-under its source with the `Hidden` marker and reads 0 tokens, like a deleted
-tool. Its prompt lines, if the prompt still has them, stay in pi's prompt text.
+out while it stays active and callable through another tool, such as codemode.
+The tree leaves a hidden tool out, whatever structured change it had: it has no
+row, marker, or preview, and `TOTAL` does not count it. A source left without
+rows has no group, and `Built-in Tools (N)` has no row without children. Its
+prompt lines, if the prompt still has them, stay in pi's prompt text.
+
+While the request declared any hidden tool, the description carries one dim
+bullet with their count and all their names in alphabetical order, wrapping as
+needed, such as the first line below, or the second for a single tool:
+
+```text
+- 4 tools hidden by pi: bash, edit, read, write.
+- 1 tool hidden by pi: bash.
+```
+
+A hidden name the request did not declare is not counted. Previews do not
+repeat the bullet.
 
 Capture reads Pi's `before_agent_start.systemPromptOptions.hiddenTools`, so
-these markers work for a silent probe before the first ordinary prompt. They
-are independent of payload comparison and stay frozen with Initial. A degraded
+the count works for a silent probe before the first ordinary prompt. It is
+independent of payload comparison and stays frozen with Initial. A degraded
 fallback without a snapshot uses the live list instead.
 
 Pi does not report which tool's `prepareLoadout()` hid each declaration. Do
-not guess from `model-only` exposure or name a candidate. The single `Hidden`
-[legend bullet](previews.md#marker-legend) explains that the tools remain
-callable through another tool, such as codemode; there is no extra hidden-tool
-bullet. Capture's observation limits are documented in
+not guess from `model-only` exposure or name a candidate. Capture's observation
+limits are documented in
 [ARCHITECTURE.md](../ARCHITECTURE.md#structured-request-capture).
 
 Within the `pi` group, keep the fixed semantic order above and sort remaining
@@ -201,10 +211,10 @@ The list description survives scrolling, per the floor in
 collapses it by itself. When capture is degraded, wrap the precise reason below
 the header and show a `[Degraded: …]` indicator beside the description, keeping
 the fallback hierarchy usable. Below both come, when shown, the probe bullet,
-the guard-status bullet, one [legend bullet](previews.md#marker-legend) per
-marker the rows carry — `Dropped`, `Moved`, `Forced`, `Added`, `Modified`,
-`Deleted`, `Hidden`, or none — then the late-edits bullet. All of them collapse
-with the rest of the block.
+the guard-status bullet, the [hidden-tools bullet](#hidden-tools), one
+[legend bullet](previews.md#marker-legend) per marker the rows carry —
+`Dropped`, `Moved`, `Forced`, `Added`, `Modified`, `Deleted`, or none — then
+the late-edits bullet. All of them collapse with the rest of the block.
 
 ## Injection preview
 
@@ -231,7 +241,6 @@ message previews both versions:
 
 A deleted System Prompt part or tool previews the session text it removed, at 0
 tokens. A modified System Prompt part or tool shows only the request version.
-A hidden tool previews its definition at 0 tokens, like a deleted one.
 
 A late edit previews its changed lines in payload order, without labeled parts.
 A line only in the payload opens with `+ ` in `toolDiffAdded`; a line only in
@@ -239,6 +248,5 @@ the captured request opens with `- ` in `toolDiffRemoved`. The whole line takes
 that color, and wrapped continuation lines hang under its text.
 
 After the legend bullets of its markers, a late-edit preview repeats the
-late-edits bullet. A hidden tool, or `Built-in Tools (N)` with hidden children,
-needs only the `Hidden` legend. Descriptions collapse under the rules in
+late-edits bullet. Descriptions collapse under the rules in
 [previews.md](previews.md#marker-legend).

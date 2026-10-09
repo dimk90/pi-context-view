@@ -45,19 +45,21 @@ export interface RequestSystemState {
 	readonly state: Pick<SystemMessage, "content" | "sections">;
 	readonly declarations: readonly Tool[];
 	readonly prompt: PromptChanges;
-	readonly tools: ReadonlyMap<string, Exclude<RequestChange, "deleted" | "forced" | "hidden">>;
+	readonly tools: ReadonlyMap<string, Exclude<RequestChange, "deleted" | "forced">>;
 	readonly deletedTools: readonly Tool[];
 }
 
-/** Build a view-local pi-native fallback without starting a capture; tools Pi hides are marked `hidden`. */
+/** Build a view-local pi-native fallback without starting a capture; the tools Pi hides are left out and counted. */
 export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot {
 	const options = copyPromptOptions(input.options);
-	const hidden = new Set(input.options.hiddenTools);
-	const tools = captureActiveTools(input.allTools, input.activeToolNames, input.options)
-		.map((tool): ToolSlice => hidden.has(tool.name) ? { ...tool, change: "hidden" } : tool);
+	const tools = splitHiddenTools(captureActiveTools(input.allTools, input.activeToolNames, input.options),
+		input.options.hiddenTools);
 	const prompt = input.forcedPrompt ?? input.systemPrompt;
-	const items = analyzeSystemPrompt(prompt, options, tools, { sources: input.promptSources });
-	return buildSnapshot(markForcedPrompt(items, input.forcedPrompt), "synthetic-probe", input.capturedAt ?? new Date());
+	const items = analyzeSystemPrompt(prompt, options, tools.declared, { sources: input.promptSources });
+	return {
+		...buildSnapshot(markForcedPrompt(items, input.forcedPrompt), "synthetic-probe", input.capturedAt ?? new Date()),
+		hiddenTools: tools.hiddenNames,
+	};
 }
 
 /**
@@ -69,15 +71,12 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InitialSnapshot
  */
 export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 	const forced = input.forcedPrompt;
-	const hidden = new Set(input.options.hiddenTools);
 	const base = getCurrentSystemMessage(input.messages);
 	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
-	if (base === undefined) {
-		return buildNativeSnapshot({ ...input, activeToolNames: input.activeToolNames.filter((name) => !hidden.has(name)) });
-	}
+	if (base === undefined) return buildNativeSnapshot(input);
 	const request = applySystemChanges(base, input.systemChanges ?? []);
-	const declarations = request.declarations.filter((tool) => !hidden.has(tool.name));
-	const tools = replayedToolSlices(request.state, declarations, input.allTools);
+	const declarations = splitHiddenTools(request.declarations, input.options.hiddenTools);
+	const tools = replayedToolSlices(request.state, declarations.declared, input.allTools);
 	const options = copyPromptOptions(input.options);
 	const items = analyzeSystemPrompt(forced ?? systemMessageText(request.state), {
 		...options,
@@ -85,7 +84,29 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
 		customPrompt: undefined, sections: undefined,
 		// The replayed layout locates inline or unwrapped request sections; Usage marks no section changes
 	}, tools, { sources: input.promptSources }, forced === undefined ? { replayed: request.prompt.replayed } : {});
-	return buildSnapshot(markForcedPrompt(items, forced), "synthetic-probe", input.capturedAt ?? new Date());
+	return {
+		...buildSnapshot(markForcedPrompt(items, forced), "synthetic-probe", input.capturedAt ?? new Date()),
+		hiddenTools: declarations.hiddenNames,
+	};
+}
+
+/**
+ * The tools Pi declares to the model, and the names of `tools` it hid from it:
+ * they stay active and callable through another tool, such as codemode.
+ * `hiddenTools` names the hidden ones, as Pi's prompt options report them.
+ */
+export function splitHiddenTools<T extends { readonly name: string }>(
+	tools: readonly T[],
+	hiddenTools: readonly string[] | undefined,
+): { readonly declared: T[]; readonly hiddenNames: string[] } {
+	const hidden = new Set(hiddenTools);
+	const declared: T[] = [];
+	const hiddenNames: string[] = [];
+	for (const tool of tools) {
+		if (hidden.has(tool.name)) hiddenNames.push(tool.name);
+		else declared.push(tool);
+	}
+	return { declared, hiddenNames };
 }
 
 /** Items with the System Prompt marked `forced` when the request carried a forced prompt. */
@@ -98,10 +119,10 @@ export function markForcedPrompt(items: InjectionItem[], forced: string | undefi
 export function applySystemChanges(base: SystemMessage, changes: readonly SystemChange[]): RequestSystemState {
 	let content = contentText(base.content);
 	const sections: Record<string, string | null> = { ...base.sections };
-	const sectionChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced" | "hidden">>();
+	const sectionChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced">>();
 	const deletedSections: DeletedSection[] = [];
 	const declarations = [...(base.toolsAdded ?? [])];
-	const toolChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced" | "hidden">>();
+	const toolChanges = new Map<string, Exclude<RequestChange, "deleted" | "forced">>();
 	const deletedTools: Tool[] = [];
 	for (const change of changes) {
 		switch (change.type) {

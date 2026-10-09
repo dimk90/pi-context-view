@@ -5,7 +5,6 @@
 
 ### New
 * `[injections]` Show Added, Modified, and Deleted request-only injections.
-* `[injections]` Show late payload edits and tools Pi hides.
 
 ### Changed
 * `[usage]` Apply the latest request's added/modified/deleted messages instead of first-turn copies.

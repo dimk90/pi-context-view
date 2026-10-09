@@ -75,8 +75,7 @@ Every frame showing a marker also explains it, through the
 bullet opens with the keyword in the same fixed color as the marker it explains,
 so `Highlighted` uses `syntaxNumber`, `(guess)` `dim`, `Dropped`
 `toolDiffRemoved`, `Moved` `warning`, `Forced` `warning`, `Added`
-`toolDiffAdded`, `Modified` `warning`, `Deleted` `toolDiffRemoved`, and
-`Hidden` `toolDiffRemoved`.
+`toolDiffAdded`, `Modified` `warning`, and `Deleted` `toolDiffRemoved`.
 
 Moved `Available Tools` and `Guidelines` sections outside pi's normal order
 carry a fixed `warning` `Moved` marker after the estimate, in hierarchy rows,
@@ -87,7 +86,7 @@ and extension tool lines keep their own attribution. Like `Dropped`, it is not
 configurable and does not change category/map colors.
 
 Injections marks request-only changes with fixed `Added`, `Modified`,
-`Deleted`, `Forced`, and `Hidden` markers after the estimate, in hierarchy rows,
+`Deleted`, and `Forced` markers after the estimate, in hierarchy rows,
 preview subheaders, and preview headers; [ui/injections.md](ui/injections.md#request-only-changes)
 defines them. They follow the same separator, fit, and configuration rules as
 `Dropped` and `Moved`. Usage shows `Forced` the same way in its System Prompt
@@ -121,11 +120,11 @@ partial and never ellipsized.
 | Preview marker legend | `DESCRIPTION_MIN_CONTENT_ROWS` (22) content rows visible, or a shorter preview in full |
 
 Hints, borders, degraded-capture warnings, and configuration notices are not
-descriptions and never collapse. The Injections probe, guard-status, late-edit,
-and marker-legend bullets and the `[Degraded: …]` indicator belong to its
-description block and collapse with it, while the wrapped degraded reason below
-the header stays. The Usage thinking-notation explanation is view content, not a
-description, and also never collapses.
+descriptions and never collapse. The Injections probe, guard-status,
+hidden-tools, late-edit, and marker-legend bullets and the `[Degraded: …]`
+indicator belong to its description block and collapse with it, while the
+wrapped degraded reason below the header stays. The Usage thinking-notation
+explanation is view content, not a description, and also never collapses.
 
 Why the floors differ: the Usage dashboard has a bounded legend and can drop its
 description early, while the unbounded Injections list and attributed previews

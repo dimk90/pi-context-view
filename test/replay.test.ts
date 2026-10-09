@@ -5,7 +5,13 @@ import type { Tool } from "@earendil-works/pi-ai";
 import type { BuildSystemPromptOptions, ToolInfo } from "@earendil-works/pi-coding-agent";
 
 import type { InitialSnapshot } from "../src/model.ts";
-import { buildUsageSnapshot, captureActiveTools, copyPromptOptions, type UsageSnapshotInput } from "../src/replay.ts";
+import {
+	buildNativeSnapshot,
+	buildUsageSnapshot,
+	captureActiveTools,
+	copyPromptOptions,
+	type UsageSnapshotInput,
+} from "../src/replay.ts";
 
 /** ToolInfo fixture with the given provenance source and one guideline. */
 function tool(name: string, source: string): ToolInfo {
@@ -81,6 +87,17 @@ test("buildUsageSnapshot neither lists nor counts the tools Pi hides", () => {
 	assert.deepEqual(toolNames(buildUsageSnapshot({ ...input, messages: [] })), ["bash", "read"]);
 	assert.deepEqual(toolNames(buildUsageSnapshot({ ...hidden, messages: [] })), [],
 		"the live fallback without recorded state leaves them out too");
+});
+
+test("buildNativeSnapshot retains only names of active hidden tools for the description", () => {
+	const snapshot = buildNativeSnapshot({
+		systemPrompt: "live prompt",
+		options: { cwd: "/tmp", hiddenTools: ["unknown", "write", "bash"] },
+		allTools: [tool("read", "builtin"), tool("bash", "builtin"), tool("write", "builtin")],
+		activeToolNames: ["bash", "read"],
+	});
+	assert.deepEqual(snapshot.hiddenTools, ["bash"]);
+	assert.deepEqual(toolNames(snapshot), ["read"]);
 });
 
 /** Sorted names of every measured tool, built-in children included. */

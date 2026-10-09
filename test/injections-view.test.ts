@@ -1028,25 +1028,13 @@ test("changed Injections frames reflow without raw text leaks or partial descrip
 	assert.doesNotMatch(returned, /deleted original/);
 });
 
-/** A snapshot with one hidden built-in tool, one hidden extension tool, and a late-edit group. */
+/** A snapshot with one built-in tool, two tools Pi hid and the tree leaves out, and a late-edit group. */
 function guardedSnapshot(): InitialSnapshot {
 	const base = (id: string, tokens: number): InjectionItem => ({ ...item(id, "pi", true, tokens), kind: "tool" });
-	const hiddenBash: InjectionItem = {
-		...base("tool:builtin:bash", 0),
-		label: "bash", text: "", change: "hidden",
-		sections: [{ label: "Definition", text: "bash: Run commands\n{}", tokens: 0, change: "hidden" }],
-	};
 	const read: InjectionItem = { ...base("tool:builtin:read", 12), label: "read" };
 	const builtin: InjectionItem = {
-		...base("tool:builtin", 12), label: "Built-in Tools (1)", children: [read, hiddenBash],
-		sections: [
-			{ label: "read", text: read.text, tokens: 12 },
-			{ label: "bash", text: "\nbash", tokens: 0, change: "hidden" },
-		],
-	};
-	const hiddenWrite: InjectionItem = {
-		...item("tool:npm:x:write", "npm:x", false, 0),
-		kind: "tool", label: "write", text: "", change: "hidden",
+		...base("tool:builtin", 12), label: "Built-in Tools (1)", children: [read],
+		sections: [{ label: "read", text: read.text, tokens: 12 }],
 	};
 	const late = (id: string, label: string, change: "added" | "modified", lines: InjectionItem["changedLines"]) => ({
 		...item(id, "late-edits", false, 4), source: LATE_EDITS_SOURCE, label, change, changedLines: lines,
@@ -1060,35 +1048,64 @@ function guardedSnapshot(): InitialSnapshot {
 		late("late:1", "system message", "added", [{ type: "added", text: "late rule\u001b[2J" }]),
 	];
 	const groups = [
-		group("pi", true, [builtin]), group("npm:x", false, [hiddenWrite]),
+		group("pi", true, [builtin]),
 		{ ...group("late-edits", false, lateItems), source: LATE_EDITS_SOURCE },
 	];
 	return {
 		origin: "real-turn", capturedAt: new Date("2026-07-10T12:00:00Z"), groups,
-		totalTokens: groups.reduce((sum, entry) => sum + entry.totalTokens, 0),
+		totalTokens: groups.reduce((sum, entry) => sum + entry.totalTokens, 0), hiddenTools: ["write", "bash"],
 	};
 }
 
-test("InjectionsView explains late edits and hidden tools after the marker legend", () => {
-	const theme = createTheme();
-	const view = new InjectionsView(theme, { snapshot: guardedSnapshot() }, () => {}, () => 60);
-	const lines = view.render(200);
-	const plain = lines.map(stripSgr);
+test("InjectionsView counts hidden tools before the marker legend and explains late edits after it", () => {
+	const view = new InjectionsView(createTheme(), { snapshot: guardedSnapshot() }, () => {}, () => 60);
+	const plain = view.render(200).map(stripSgr);
 
-	assert.match(plain.find((line) => line.includes("bash")) ?? "", /0 · Hidden$/);
-	assert.ok(lines.some((line) => line.includes(theme.fg("toolDiffRemoved", "Hidden"))));
+	assert.ok(!plain.some((line) => line.includes("Hidden")), "hidden tools carry no marker");
 	assert.ok(plain.some((line) => line.trim().startsWith("late edits")), "late edits form their own group");
 	const bullets = plain.filter((line) => line.startsWith("  - ")).map((line) => line.slice(4));
 	assert.deepEqual(bullets, [
+		"2 tools hidden by pi: bash, write.",
 		"Added parts exist only in this request: an extension added them, and the session does not keep them." +
 			" They are counted.",
 		"Modified parts were changed by an extension for this request only; the session keeps the original. The request" +
 			" version is counted.",
-		"Hidden tools stay active and callable through another tool, such as codemode, but pi left them out of the" +
-			" request. They are counted nowhere.",
 		"Late edits were made after pi-context-view captured the request. Their sources are unknown; only changed lines" +
 			" are known, and estimates count the added lines.",
 	], "a complete guard adds no status bullet; the late-edits note follows the legend");
+});
+
+test("InjectionsView counts one hidden tool in the singular and none without a hidden tool", () => {
+	const bullets = (hiddenTools: readonly string[] | undefined): string[] => {
+		const snapshot = { ...guardedSnapshot(), hiddenTools };
+		const view = new InjectionsView(createTheme(), { snapshot }, () => {}, () => 60);
+		return view.render(200).map(stripSgr).filter((line) => line.startsWith("  - ")).map((line) => line.slice(4));
+	};
+	assert.equal(bullets(["bash"])[0], "1 tool hidden by pi: bash.");
+	for (const names of [[], undefined]) {
+		assert.ok(!bullets(names).some((line) => line.includes("hidden by pi")));
+	}
+});
+
+test("InjectionsView lists every hidden tool alphabetically without changing the snapshot", () => {
+	const hiddenTools = ["write", "search", "read", "grep", "edit", "bash"];
+	const snapshot = { ...guardedSnapshot(), hiddenTools };
+	const view = new InjectionsView(createTheme(), { snapshot }, () => {}, () => 60);
+	for (const width of [24, 60, 200]) {
+		const lines = view.render(width);
+		assert.ok(lines.every((line) => visibleWidth(line) <= width));
+		const plain = lines.map(stripSgr).join(" ").replace(/\s+/g, " ");
+		assert.ok(plain.includes("- 6 tools hidden by pi: bash, edit, grep, read, search, write."));
+	}
+	assert.deepEqual(hiddenTools, ["write", "search", "read", "grep", "edit", "bash"]);
+});
+
+test("InjectionsView sanitizes hidden tool names before rendering", () => {
+	const snapshot = { ...guardedSnapshot(), hiddenTools: ["bash\u001b[2J\nname"] };
+	const view = new InjectionsView(createTheme(), { snapshot }, () => {}, () => 60);
+	const lines = view.render(200);
+	assert.ok(lines.map(stripSgr).includes("  - 1 tool hidden by pi: bash name."));
+	assert.ok(lines.every((line) => !line.includes("\u001b[2J")));
 });
 
 test("InjectionsView reports a partial payload comparison", () => {
@@ -1124,7 +1141,7 @@ test("InjectionsView previews a late edit as colored changed lines with a hangin
 	assert.ok(plain.every((line) => visibleWidth(line) <= 60));
 	assert.ok(plain.some((line) => line.startsWith("  - Modified parts")));
 	assert.ok(plain.some((line) => line.startsWith("  - Late edits were made")));
-	assert.ok(!plain.some((line) => line.startsWith("  - Hidden")));
+	assert.ok(!plain.some((line) => line.includes("hidden by pi")), "the hidden-tools note stays in the list");
 
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[B");
@@ -1134,31 +1151,10 @@ test("InjectionsView previews a late edit as colored changed lines with a hangin
 	assert.doesNotMatch(system, /\u001b\[2J/);
 });
 
-test("InjectionsView previews a hidden tool with the Hidden legend only", () => {
-	const view = new InjectionsView(createTheme(), { snapshot: guardedSnapshot() }, () => {}, () => 60);
-	view.handleInput("\u001b[B");
-	view.handleInput("\u001b[B");
-	view.handleInput("\u001b[B");
-	view.handleInput("\r");
-	const bash = view.render(120).map(stripSgr);
-	assert.match(bash.find((line) => line.includes("bash")) ?? "", /pi · 0 tokens · Hidden/);
-	assert.ok(bash.some((line) => line.trim() === "Definition · 0 tokens · Hidden"));
-	assert.ok(bash.some((line) => line.startsWith("  - Hidden tools stay active")));
-	assert.ok(!bash.some((line) => line.startsWith("  - Late edits were made")));
-
-	view.handleInput("\u001b");
-	view.handleInput("\u001b[A");
-	view.handleInput("\u001b[A");
-	view.handleInput("\r");
-	const aggregate = view.render(120).map(stripSgr);
-	assert.ok(aggregate.some((line) => line.trim() === "bash · 0 tokens · Hidden"), "aggregate parts carry the marker");
-	assert.ok(aggregate.some((line) => line.startsWith("  - Hidden tools stay active")));
-});
-
 test("late-edit and hidden-tool frames reflow without partial descriptions", () => {
 	let height = 70;
 	const view = new InjectionsView(createTheme(), { snapshot: guardedSnapshot() }, () => {}, () => height);
-	const frames = (widths: readonly number[], lastBullet: RegExp): void => {
+	const frames = (widths: readonly number[], firstBullet: RegExp, lastBullet: RegExp): void => {
 		for (const width of widths) {
 			for (height of [1, 16, 24, 45, 70]) {
 				const frame = view.render(width);
@@ -1166,16 +1162,15 @@ test("late-edit and hidden-tool frames reflow without partial descriptions", () 
 				assert.ok(frame.every((line) => visibleWidth(line) <= width), `${width}x${height}: width`);
 				const plain = frame.map(stripSgr).join("\n").replace(/\s+/g, " ");
 				// The description renders whole or not at all: its first and last bullets come together
-				const first = /- (Added|Modified) parts/.test(plain);
-				assert.equal(first, lastBullet.test(plain), `${width}x${height}: description`);
+				assert.equal(firstBullet.test(plain), lastBullet.test(plain), `${width}x${height}: description`);
 			}
 		}
 	};
-	frames([1, 24, 60, 80, 120], /count the added lines\./);
+	frames([1, 24, 60, 80, 120], /- 2 tools hidden by pi/, /count the added lines\./);
 	height = 70;
 	view.handleInput("\u001b[F");
 	view.handleInput("\u001b[A");
 	view.handleInput("\r");
 	// Preview bodies keep a minimum wrap width, as for every other item
-	frames([24, 60, 80, 120], /count the added lines\./);
+	frames([24, 60, 80, 120], /- Modified parts/, /count the added lines\./);
 });

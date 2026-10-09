@@ -495,7 +495,7 @@ export class InjectionsView {
 	/**
 	 * Wrapped dialog description: the list sentence, the degraded-capture
 	 * indicator, request notes, one legend bullet per marker the rows show, and
-	 * the notes that explain late edits and hidden tools further.
+	 * the note that explains late edits further.
 	 */
 	private descriptionLines(width: number): string[] {
 		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "dim", width);
@@ -515,6 +515,8 @@ export class InjectionsView {
 		}
 		const guardNote = lateEditNote(this.input.guard);
 		if (guardNote !== undefined) lines.push(...noteBulletLines(this.theme, guardNote, width));
+		const hiddenNote = hiddenToolsNote(this.input.snapshot.hiddenTools ?? []);
+		if (hiddenNote !== undefined) lines.push(...noteBulletLines(this.theme, hiddenNote, width));
 		lines.push(...markerLegendLines(this.theme, this.rowMarkers(), width));
 		for (const note of findingNotes([...this.itemsById.values()])) {
 			lines.push(...noteBulletLines(this.theme, note, width));
@@ -561,6 +563,13 @@ function lateEditNote(guard: GuardResult | undefined): string | undefined {
 		default:
 			return undefined;
 	}
+}
+
+/** Count and sanitized names of tools Pi hid, alphabetically, with no note when none are hidden. */
+function hiddenToolsNote(tools: readonly string[]): string | undefined {
+	if (tools.length === 0) return undefined;
+	const names = [...tools].sort().map(normalizeInlineText).join(", ");
+	return `${tools.length} ${tools.length === 1 ? "tool" : "tools"} hidden by pi: ${names}.`;
 }
 
 /** The note that explains late edits further, after the marker legend, when any of `items` is one. */

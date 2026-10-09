@@ -101,9 +101,8 @@ export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
  *   modified   the request version differs from the session; the request version is counted
  *   deleted    the request removed it; reads 0 tokens, text is the session original
  *   forced     the request carried an extension's forced system prompt instead of pi's; counted
- *   hidden     the request kept a tool active but did not declare it to the model; reads 0 tokens
  */
-export type RequestChange = "added" | "modified" | "deleted" | "forced" | "hidden";
+export type RequestChange = "added" | "modified" | "deleted" | "forced";
 
 /** The frozen lifecycle phase represented by the v0.2.0 injection model. */
 export type InjectionPhase = "initial";
@@ -215,7 +214,7 @@ export interface InjectionItem {
 	readonly dropped?: boolean;
 	/** True when an extension moved this part out of the region pi renders it into. */
 	readonly moved?: boolean;
-	/** Request-only change of this contribution; a deleted or hidden one reads 0 tokens. */
+	/** Request-only change of this contribution; a deleted one reads 0 tokens. */
 	readonly change?: RequestChange;
 	/**
 	 * Changed lines of a late edit, in payload order. `text` holds only the
@@ -241,6 +240,8 @@ export interface InitialSnapshot {
 	readonly capturedAt: Date;
 	readonly groups: readonly InjectionGroup[];
 	readonly totalTokens: number;
+	/** Names of declared tools Pi hid from the model; the groups leave them out. Absent means none. */
+	readonly hiddenTools?: readonly string[];
 }
 
 /** How an invisible reasoning-token estimate was derived without retaining raw signature bytes. */

@@ -21,6 +21,8 @@ import { type MockApi, startMockProvider } from "./harness/mock-provider.ts";
 
 const ACTIVE = ["read", "bash", "edit", "write", "codemode"];
 const HIDDEN = ["read", "bash", "edit", "write"];
+/** Initial lists only codemode and keeps the names of the tools codemode `only` hides. */
+const INITIAL_TOOLS = { listed: ["codemode"], hidden: HIDDEN };
 
 for (const api of ["openai-completions", "anthropic-messages"] as const) {
 	test(`#11 ${api}: a first probe already leaves out the tools codemode-only hides`, async (t) => {
@@ -32,7 +34,7 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
 		assert.equal(provider.requests.length, 0);
 		assert.equal(observed.responses, 0, "after_provider_response sentinel stays silent for the probe");
 		assert.deepEqual(usageToolNames(session, store), ["codemode"]);
-		assert.deepEqual(hiddenInjections(session, store), [...HIDDEN].sort());
+		assert.deepEqual(initialTools(session, store), INITIAL_TOOLS);
 
 		await session.prompt("hi");
 		await flush();
@@ -61,14 +63,14 @@ test("#11: Usage follows Pi's hidden tools as soon as the active tools change", 
 	assert.deepEqual(usageToolNames(session, store), ["codemode"]);
 	session.setActiveToolsByName(["read", "bash", "edit", "write"]);
 	assert.deepEqual(session.getActiveToolNames(), ["read", "bash", "edit", "write"]);
-	assert.deepEqual(hiddenInjections(session, store), [...HIDDEN].sort(), "Initial keeps its captured hidden set");
+	assert.deepEqual(initialTools(session, store), INITIAL_TOOLS, "Initial keeps its captured hidden set");
 	assert.deepEqual(usageToolNames(session, store), [...ACTIVE].sort(),
 		"Pi hides nothing now and records the change at the next request, so every replayed tool counts until then");
 	await session.prompt("after active-tool change");
 	await flush();
 	assert.equal(store.latest()?.hiddenTools, undefined);
 	assert.deepEqual(usageToolNames(session, store), ["bash", "edit", "read", "write"]);
-	assert.deepEqual(hiddenInjections(session, store), [...HIDDEN].sort(), "a later request does not change Initial");
+	assert.deepEqual(initialTools(session, store), INITIAL_TOOLS, "a later request does not change Initial");
 });
 
 /** Pi's current prompt options, as a command handler reads them. */
@@ -92,8 +94,11 @@ function usageToolNames(session: AgentSession, store: SnapshotStore): string[] {
 		.flatMap((category) => category.children ?? []).map((child) => child.label).sort();
 }
 
-/** Tool names Injections marks `hidden` on the first snapshot. */
-function hiddenInjections(session: AgentSession, store: SnapshotStore): string[] {
+/** Tool names Injections lists for the first snapshot, and names of the tools Pi hid it leaves out. */
+function initialTools(
+	session: AgentSession,
+	store: SnapshotStore,
+): { listed: string[]; hidden: readonly string[] | undefined } {
 	const first = store.first();
 	assert.ok(first !== undefined);
 	const snapshot = buildInjectionsSnapshot({
@@ -102,8 +107,9 @@ function hiddenInjections(session: AgentSession, store: SnapshotStore): string[]
 		activeToolNames: session.getActiveToolNames(),
 	});
 	const flatten = (item: InjectionItem): InjectionItem[] => [item, ...(item.children ?? []).flatMap(flatten)];
-	return snapshot.groups.flatMap((group) => group.items).flatMap(flatten)
-		.filter((item) => item.kind === "tool" && item.change === "hidden").map((item) => item.label).sort();
+	const listed = snapshot.groups.flatMap((group) => group.items).flatMap(flatten)
+		.filter((item) => item.kind === "tool" && item.children === undefined).map((item) => item.label).sort();
+	return { listed, hidden: snapshot.hiddenTools };
 }
 
 /**
