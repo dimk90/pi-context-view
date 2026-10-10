@@ -13,13 +13,15 @@
 #   --forced        load forced-prompt.ts, replacing the whole system prompt
 #   --codemode-only load Pi's built-in codemode in only mode, through temporary settings
 #   --after         load pi-context-view before the selected demo extensions
+#   --local         also load locally installed extensions (omit --no-extensions)
 #
 # See scripts/demo-injections.md for each group's fixtures and behavior.
 #
 # No demo fixtures load by default. Selected groups load in flag order;
 # --codemode-only combines with any explicitly selected fixtures.
 # Place demo flags before Pi arguments. Other arguments go to pi unchanged.
-# Discovered extensions stay disabled to avoid a second installed copy.
+# Discovered extensions stay disabled unless --local is set. With --local,
+# an installed pi-context-view may load alongside this working copy.
 #
 # Send an ordinary prompt for payload demos: silent probes have no provider
 # payload. Injections shows the latest request when reopened.
@@ -63,9 +65,11 @@ main() {
     #
     local monitor_first=false
     local codemode_only=false
+    local discovery_args=(--no-extensions)
     local fixtures=()
     while (($# > 0)); do
         case "$1" in
+            --local) discovery_args=() ;;
             --after) monitor_first=true ;;
             --forced) fixtures+=(forced-prompt) ;;
             --codemode-only) codemode_only=true ;;
@@ -99,7 +103,7 @@ main() {
     fi
 
     # No exec: the EXIT trap must remove the temporary agent directory after pi exits
-    pi --no-extensions "${extension_args[@]}" "$@"
+    pi "${discovery_args[@]}" "${extension_args[@]}" "$@"
 }
 
 

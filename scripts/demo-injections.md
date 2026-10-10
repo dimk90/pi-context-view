@@ -1,8 +1,9 @@
 # Injection demo results
 
 Tracks what each version shows for the demo extensions that
-[`demo-injections.sh`](demo-injections.sh) loads. **Target** is the design in
-[REQUEST-ONLY-INJECTIONS.md](../doc/REQUEST-ONLY-INJECTIONS.md). Add a column
+[`demo-injections.sh`](demo-injections.sh) loads. **Target** is the expected
+result in each fixture's header comment, following the visibility rules in
+[capture.md](../doc/architecture/capture.md#scope). Add a column
 when a version changes a result.
 
 Columns per version:
@@ -16,6 +17,16 @@ The launcher loads only pi-context-view by default. Select related fixtures
 with group flags. Place demo flags before Pi arguments; groups load in flag
 order, with each group's fixtures in the order below. `--after` moves
 pi-context-view before all selected fixtures.
+
+Add `--local` to also load locally installed extensions: it omits Pi's
+`--no-extensions` argument but still explicitly loads this working copy of
+pi-context-view and any selected fixtures. An installed pi-context-view may
+therefore load alongside the working copy. Without `--local`, discovered
+extensions stay disabled.
+
+```sh
+./scripts/demo-injections.sh --local --system --no-session
+```
 
 | Flag              | Fixtures                                                                                                     |
 | ----------------- | ------------------------------------------------------------------------------------------------------------ |
