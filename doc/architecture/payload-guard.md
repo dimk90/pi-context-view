@@ -2,7 +2,7 @@
 
 Part of the [architecture](../ARCHITECTURE.md). The payload guard compares each
 captured request with the provider payload that reaches this extension's
-`before_provider_request` handler. It finds **late edits**: changes from
+`before_provider_request` handler. It finds **payload changes**: edits from
 `context_with_system` handlers after this extension and from
 `before_provider_request` handlers before it, which the
 [structured capture](capture.md) cannot see. It runs in every mode and
@@ -166,9 +166,9 @@ reject mismatches.
 
 Compare names and whitespace-insensitive descriptions, not schemas that Pi
 adapts for each provider. Added declarations, changed descriptions, and
-removed declarations are late tool edits; they keep the changed description
-lines. A tool Pi hid is excluded before comparison, so its absence is expected,
-not a late removal; if the payload adds it back, that is a late addition.
+removed declarations are tool payload changes; they keep the changed
+description lines. A tool Pi hid is excluded before comparison, so its absence is expected,
+not a payload removal; if the payload adds it back, that is a payload addition.
 Missing non-hidden declarations are deletions whose previews keep the removed
 description lines.
 
@@ -186,7 +186,7 @@ separately, so malformed declarations do not hide message findings.
 
 ## Pi's Own Adjustments
 
-Pi changes the request after capture. None of these changes are late edits.
+Pi changes the request after capture. None of these changes are payload changes.
 Hidden declarations and the forced prompt projection are request-only changes
 Pi makes on an extension's behalf; capture reports them
 ([hidden tools](capture.md#hidden-tools), [forced prompt](capture.md#forced-prompt)).

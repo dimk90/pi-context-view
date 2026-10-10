@@ -78,10 +78,10 @@ interface Runtime {
 	readonly errors: string[];
 	/**
 	 * Snapshots of captures after the deferred diff and guard settlement, latest
-	 * copy per ID. Real turns must compare completely without late edits, unless
-	 * `lateEdits` allows them.
+	 * copy per ID. Real turns must compare completely without payload changes, unless
+	 * `payloadChanges` allows them.
 	 */
-	settled(options?: { readonly lateEdits?: boolean }): Promise<RequestSnapshot[]>;
+	settled(options?: { readonly payloadChanges?: boolean }): Promise<RequestSnapshot[]>;
 	/** The last opened view's first frame at 120 columns and 60 rows, unstyled. */
 	renderView(): Promise<string[]>;
 }
@@ -262,12 +262,12 @@ suite("structured edits", { concurrency: true }, () => {
 			assert.ok(changes.includes(`added user: ${CONTEXT_REORDER_MARKER}: move me`));
 		});
 
-		test(`#9: each injection point is a change, a late edit, or not visible (fixture ${position})`, async (t) => {
+		test(`#9: each injection point is a change, a payload change, or not visible (fixture ${position})`, async (t) => {
 			const provider = await startProvider(t);
 			const factories = position === "before" ? [injectionPoints, monitorSlot] : [monitorSlot, injectionPoints];
 			const runtime = await createRuntime(t, provider, { factories });
 			await runtime.session.prompt("prompt");
-			const [snapshot] = await runtime.settled({ lateEdits: true });
+			const [snapshot] = await runtime.settled({ payloadChanges: true });
 			const sent = JSON.stringify(provider.requests[0]?.body);
 			for (const text of [POINT_AGENT_START_TEXT, POINT_CONTEXT_TEXT, POINT_SYSTEM_TEXT, POINT_PAYLOAD_TEXT]) {
 				assert.ok(sent.includes(text), `the request carries ${text}`);
@@ -283,9 +283,9 @@ suite("structured edits", { concurrency: true }, () => {
 				...(before ? [`added ${POINT_SYSTEM_TYPE}: ${POINT_SYSTEM_TEXT}`] : []),
 			]);
 			assert.ok(snapshot.guard.status === "complete");
-			// Before the monitor, the payload message is a late edit; after it, the custom message Pi converted to user text
+			// Before the monitor, the payload message is a payload change; after it, the custom message Pi converted to user text
 			assert.deepEqual(snapshot.guard.findings, [{
-				type: "late-edit", change: "added", part: "user",
+				type: "payload-change", change: "added", part: "user",
 				lines: [{ type: "added", text: before ? POINT_PAYLOAD_TEXT : POINT_SYSTEM_TEXT }],
 			}]);
 
@@ -295,7 +295,7 @@ suite("structured edits", { concurrency: true }, () => {
 				POINT_AGENT_START_TYPE, "message",
 				...(before ? [POINT_SYSTEM_TYPE, "message · Added"] : []),
 				"unattributed", "user message · Added",
-				"late edits", "user message · Added",
+				"payload changes", "user message · Added",
 			]);
 			assert.deepEqual(runtime.errors, []);
 		});
@@ -314,16 +314,16 @@ suite("structured edits", { concurrency: true }, () => {
 				return rows.slice(rows.indexOf("read") + 1, rows.indexOf("TOTAL"));
 			};
 
-			// The probe saves one copy; a probe has no payload, so a late edit cannot show yet
+			// The probe saves one copy; a probe has no payload, so a payload change cannot show yet
 			assert.deepEqual(await fixtureRows(), [...(before ? added : []), AGENT_START_MESSAGE_TYPE, "message"]);
 			assert.equal(provider.requests.length, 0);
 			await runtime.session.prompt("prompt");
 			assert.deepEqual(await fixtureRows(), [
 				AGENT_START_MESSAGE_TYPE, "message", "message",
-				...(before ? added : ["late edits", "user message · Added"]),
+				...(before ? added : ["payload changes", "user message · Added"]),
 			]);
 
-			const snapshots = await runtime.settled({ lateEdits: true });
+			const snapshots = await runtime.settled({ payloadChanges: true });
 			const addition = [`added ${SYSTEM_ADD_MESSAGE_TYPE}: ${SYSTEM_ADD_MESSAGE_TEXT}`];
 			for (const snapshot of snapshots) {
 				assert.deepEqual(snapshot.changes.conversation.map(describeChange), before ? addition : []);
@@ -331,7 +331,7 @@ suite("structured edits", { concurrency: true }, () => {
 			const real = snapshots[1];
 			assert.ok(real?.guard.status === "complete");
 			assert.deepEqual(real.guard.findings, before ? [] : [{
-				type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: SYSTEM_ADD_MESSAGE_TEXT }],
+				type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: SYSTEM_ADD_MESSAGE_TEXT }],
 			}]);
 			const saved = runtime.session.sessionManager.getBranch().filter((entry) =>
 				entry.type === "custom_message" && entry.customType === AGENT_START_MESSAGE_TYPE);
@@ -348,10 +348,10 @@ suite("structured edits", { concurrency: true }, () => {
 				const factories = structured ? [...fixtures, monitorSlot] : [monitorSlot, ...fixtures];
 				const runtime = await createRuntime(t, provider, { factories });
 				await runtime.session.prompt("prompt");
-				const [snapshot] = await runtime.settled({ lateEdits: !structured });
+				const [snapshot] = await runtime.settled({ payloadChanges: !structured });
 				if (!structured) {
 					assertEmpty(snapshot);
-					assertLateEdits(snapshot);
+					assertPayloadChanges(snapshot);
 					return;
 				}
 				assert.deepEqual(snapshot.guard.status === "complete" && snapshot.guard.findings, []);
@@ -397,7 +397,7 @@ suite("structured edits", { concurrency: true }, () => {
 
 			await runtime.session.prompt("ordinary prompt");
 			await runtime.session.prompt("another ordinary prompt");
-			const snapshots = await runtime.settled({ lateEdits: !structured });
+			const snapshots = await runtime.settled({ payloadChanges: !structured });
 			assert.equal(snapshots.length, 3);
 			for (const snapshot of snapshots) {
 				assert.deepEqual(snapshot.changes.system, probe.changes.system, "changes do not accumulate");
@@ -479,17 +479,17 @@ suite("Injections composition", { concurrency: true }, () => {
 			const probe = await runtime.renderView();
 			assert.ok(probe.includes("Context Injections · [Latest Request]"));
 			assert.ok(probe.some((line) => line.includes("Captured by a request probe")));
-			assert.ok(probe.some((line) => line.includes("Late edits were not checked")));
+			assert.ok(probe.some((line) => line.includes("Payload changes were not checked")));
 
 			await runtime.session.prompt("real prompt");
-			// Settled real turns have a complete guard without late edits
+			// Settled real turns have a complete guard without payload changes
 			const [, real] = await runtime.settled();
 			assert.equal(real?.origin, "real-turn");
 			await runtime.session.prompt("/context injections");
 			const latest = await runtime.renderView();
 			assert.ok(latest.includes("Context Injections · [Latest Request]"));
 			assert.ok(!latest.some((line) => line.includes("request probe")), "the probe snapshot was released");
-			assert.ok(!latest.some((line) => line.includes("Late edits")), "a complete guard adds no note");
+			assert.ok(!latest.some((line) => line.includes("Payload changes")), "a complete guard adds no note");
 			assert.equal(provider.requests.length, 1, "opening the views makes no provider request");
 			assert.equal(responses, 1);
 			assert.deepEqual(runtime.errors, []);
@@ -586,7 +586,7 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 			const view = await factory(tui, PLAIN_THEME, undefined as unknown as Parameters<ViewFactory>[2], () => undefined);
 			return view.render(120);
 		},
-		settled: async ({ lateEdits = false } = {}) => {
+		settled: async ({ payloadChanges = false } = {}) => {
 			await new Promise((resolve) => setImmediate(resolve));
 			const latest = new Map(published.map((snapshot) => [snapshot.id, snapshot]));
 			const snapshots = [...latest.values()].sort((a, b) => a.id - b.id);
@@ -594,7 +594,7 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 				if (snapshot.origin === "synthetic-probe") assert.deepEqual(snapshot.guard, NO_PAYLOAD);
 				else {
 					assert.ok(snapshot.guard.status === "complete", JSON.stringify(snapshot.guard));
-					if (!lateEdits) assert.deepEqual(snapshot.guard.findings, []);
+					if (!payloadChanges) assert.deepEqual(snapshot.guard.findings, []);
 				}
 			}
 			return snapshots;
@@ -623,11 +623,11 @@ function assertEmpty(snapshot: RequestSnapshot | undefined): void {
  * after the monitor: one modified system prompt and one modified user message,
  * each with only its changed lines.
  */
-function assertLateEdits(snapshot: RequestSnapshot): void {
+function assertPayloadChanges(snapshot: RequestSnapshot): void {
 	assert.ok(snapshot.guard.status === "complete");
 	const [system, user, ...rest] = snapshot.guard.findings;
 	assert.deepEqual(rest, []);
-	assert.ok(system?.type === "late-edit" && user?.type === "late-edit");
+	assert.ok(system?.type === "payload-change" && user?.type === "payload-change");
 	assert.deepEqual([system.change, system.part, user.change, user.part], ["modified", "system", "modified", "user"]);
 	assert.deepEqual(user.lines, [{ type: "added", text: IN_PLACE_SUFFIX }]);
 	const added = system.lines.filter((line) => line.type === "added").map((line) => line.text);

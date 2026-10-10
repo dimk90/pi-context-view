@@ -66,7 +66,7 @@ Prompt additions have no `before_agent_start` handler boundary: recorded
 structured edits already belong to the baseline, and the forced prompt is
 captured as final text ([prompt additions](measurement.md#extension-prompt-additions)).
 
-The snapshot also supplies hidden tools and late edits:
+The snapshot also supplies hidden tools and payload changes:
 
 - **Hidden tools.** The tools in the snapshot's `hiddenTools` that the request
   declared are left out of the tree, independently of guard status and of any
@@ -74,16 +74,16 @@ The snapshot also supplies hidden tools and late edits:
   names; one description bullet reports their count and lists all names
   alphabetically, sanitized and wrapped. There are no rows, markers, or
   candidate labels. A fallback without a snapshot uses Pi's live hidden set.
-- **Late edits.** [Payload guard](payload-guard.md) findings of each compared
-  channel form a separate `late edits` group after `unattributed`. They have no
-  entry reference or attribution. An item keeps the finding's changed lines for
+- **Payload changes.** [Payload guard](payload-guard.md) findings of each
+  compared channel form a separate `payload changes` group after
+  `unattributed`. They have no entry reference or attribution. An item keeps the finding's changed lines for
   its preview; its text and estimate hold only the added lines, so a deletion
   counts zero. Tool removals Pi did not hide belong here. Item kinds are
   `message` and `tool`.
 
 Probe snapshots carry the warning specified in
 [ui/injections.md](../ui/injections.md#latest-request). Pending and incomplete
-guards appear as an unavailable or partial late-edit comparison in the
+guards appear as an unavailable or partial payload-change comparison in the
 description, never as "no edits". A complete guard adds no note. The view is
 fixed while open; reopening reads the latest snapshot or a guard update with
 the same snapshot ID. A real request replaces a probe snapshot and removes its
@@ -208,8 +208,8 @@ the changes only until the first real request's snapshot replaces it.
   the payload guard is incomplete. Counted tools keep their replayed
   definitions, not payload text. Pi records active-tool changes at the next
   request: the replay can still include a recently deactivated tool until then,
-  but the hidden set updates immediately. A late payload removal does not
-  change Usage, just as other late edits do not.
+  but the hidden set updates immediately. A payload removal does not change
+  Usage, just as other payload changes do not.
 
 Without a snapshot, after a failed or skipped probe, Usage counts the current
 branch alone and shows the degraded reason. Session-backed custom messages
@@ -238,8 +238,8 @@ used to force category estimates to match. Map rendering rules belong to
 - **Custom messages saved after the request.** They are outside Injections'
   baseline until the next request, but Usage counts them from the current
   branch.
-- **Late edits.** Injections shows guard findings with changed lines. Usage
-  does not apply them, including late tool removals.
+- **Payload changes.** Injections shows guard findings with changed lines. Usage
+  does not apply them, including tool removals in the payload.
 
 ## Known Limitation: One Request's Changes
 
@@ -254,6 +254,6 @@ particular prompt, therefore stays counted until the next request replaces the
 snapshot. Additions carry no entry reference, so they remain after branch
 navigation or compaction. A modification whose entry is still projected
 replaces that entry's current message even if a later `context_edit` changed
-it. Late edits from later `context_with_system` handlers and payload rewrites
-are not applied to Usage, including late tool removals. Usage is not an exact
-view of the last or next provider request.
+it. Payload changes from later `context_with_system` handlers and payload
+rewrites are not applied to Usage, including tool removals in the payload.
+Usage is not an exact view of the last or next provider request.

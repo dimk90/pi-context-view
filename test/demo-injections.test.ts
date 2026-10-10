@@ -1,7 +1,7 @@
 /** Demo launcher argument and load-order checks, without starting a provider. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -17,7 +17,7 @@ const SELECTIONS = [
 	{ flag: "--system", fixtures: [
 		"system-append", "section-patch", "section-modify", "section-delete", "in-place-mutation",
 	] },
-	{ flag: "--payload", fixtures: ["payload-late-edits", "payload-delete", "payload-remove-tool"] },
+	{ flag: "--payload", fixtures: ["payload-changes", "payload-delete", "payload-remove-tool"] },
 	{ flag: "--message", fixtures: ["agent-start-message", "system-add-message"] },
 	{ flag: "--codemode-only", fixtures: [] },
 	{ flag: "--forced", fixtures: ["forced-prompt"] },
@@ -31,7 +31,7 @@ for (const after of [false, true]) {
 			const forwarded = ["--model", "provider/model", "--no-session", "a prompt with spaces"];
 			const args = await launcherArgs(t, [...flags, ...(after ? ["--after"] : []), ...forwarded]);
 			const fixtures = selected.flatMap((selection) => selection.fixtures);
-			const paths = fixtures.map((fixture) => fileURLToPath(new URL(`./fixtures/${fixture}.ts`, import.meta.url)));
+			const paths = fixtures.map((fixture) => fileURLToPath(new URL(`../scripts/fixtures/${fixture}.ts`, import.meta.url)));
 			const extensions = [...(after ? [MONITOR, ...paths] : [...paths, MONITOR]),
 				...(flags.includes("--codemode-only") ? [CODEMODE] : [])];
 			assert.deepEqual(args, ["--no-extensions", ...extensions.flatMap((path) => ["-e", path]), ...forwarded]);
@@ -57,6 +57,13 @@ for (const after of [false, true]) {
 		assert.deepEqual(localArgs, isolatedArgs.slice(1));
 	});
 }
+
+test("demo launcher fixtures exist as independent files beside the script", async () => {
+	for (const fixture of SELECTIONS.flatMap((selection) => selection.fixtures)) {
+		const path = new URL(`../scripts/fixtures/${fixture}.ts`, import.meta.url);
+		assert.ok((await lstat(path)).isFile(), `${fixture} must be a file, not a link to a regular test fixture`);
+	}
+});
 
 test("demo launcher --local keeps the working copy without selecting fixtures", async (t) => {
 	const args = await launcherArgs(t, ["--local", "--no-session"]);
@@ -91,7 +98,7 @@ for (const forwarded of [
 	["--force"],
 	["--context-modify"],
 	["--section-patch"],
-	["--payload-late-edits"],
+	["--payload-changes"],
 ]) {
 	test(`demo launcher leaves Pi arguments untouched: ${forwarded.join(" ")}`, async (t) => {
 		const args = await launcherArgs(t, forwarded);

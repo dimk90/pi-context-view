@@ -20,10 +20,10 @@ Rendering rules belong to [UI.md](UI.md); reasoning-token accounting to
 
 ## Views and Data Sources
 
-| View       | What it shows                                                                                                | When its data changes                                    |
-| ---------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| Injections | Latest request's prompt, tools, custom messages, marked request-only changes, late edits, hidden tool names. | Rebuilt from the latest snapshot when it opens.          |
-| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes, excluding tools Pi hides.      | Rebuilt from the current branch and store when it opens. |
+| View       | What it shows                                                                                                     | When its data changes                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Injections | Latest request's prompt, tools, custom messages, marked request-only changes, payload changes, hidden tool names. | Rebuilt from the latest snapshot when it opens.          |
+| Usage      | Replayed branch prompt/tools and messages, with the latest request's changes, excluding tools Pi hides.           | Rebuilt from the current branch and store when it opens. |
 
 Request-only changes are message, section, and tool versions that a request
 carried but the saved session does not. Pi rebuilds every request from the
@@ -104,7 +104,7 @@ flowchart TD
 | `src/capture/payload.ts`     | PayloadParser: copy payloads, select parsers by API, extract message units and replay tool declarations.      |
 | `src/capture/adjustments.ts` | Rebuild/convert the captured request and render Pi's model-dependent text adjustments.                        |
 | `src/capture/messages.ts`    | Collect message units, align whitespace-insensitive keys, and retain changed lines.                           |
-| `src/capture/tools.ts`       | Compare non-hidden declarations; report added, modified, and deleted late tool edits.                         |
+| `src/capture/tools.ts`       | Compare non-hidden declarations; report added, modified, and deleted tool payload changes.                    |
 | `src/capture/guard.ts`       | PayloadGuard: defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.     |
 | `src/capture/diff.ts`        | Differ: compare system state; trim equal ends in place, align the rest with a Myers diff.                     |
 | `src/capture/attribution.ts` | Attributor: `customType` and cooperative `details` provenance of custom messages.                             |

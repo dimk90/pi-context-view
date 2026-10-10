@@ -187,7 +187,7 @@ For example, codemode's `only` mode hides the other callable tools; Usage
 neither lists nor counts their separate declarations and marks nothing.
 This works before the first prompt, in the live fallback, and without a
 compared provider payload. The hidden set is read again each time Usage opens.
-Late payload removals do not change Usage, just as other late edits do not.
+Payload removals do not change Usage, just as other payload changes do not.
 [views.md](../architecture/views.md#applying-the-latest-request) defines the rules.
 
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than

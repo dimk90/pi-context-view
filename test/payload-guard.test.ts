@@ -53,7 +53,7 @@ test("physical guard settles before any response, confirms once, and owns its pa
 	const h = harness();
 	const body = payload();
 	h.guard.accept(h.request, body);
-	body.tools[0].function.description = "late in-place mutation";
+	body.tools[0].function.description = "in-place payload mutation";
 	assert.equal(h.published.length, 0);
 	await flush();
 	assertCompared(h.snapshots.latest());
@@ -116,27 +116,27 @@ test("unknown routed model and unsupported API settle incomplete", async () => {
 	}
 });
 
-test("a declaration Pi hid is expected to be missing; any other missing one is a late removal", async () => {
+test("a declaration Pi hid is expected to be missing; any other missing one is a payload removal", async () => {
 	for (const hiddenTools of [["read"], undefined]) {
 		const h = harness({ ...capture(), ...(hiddenTools === undefined ? {} : { hiddenTools }) });
 		h.guard.accept(h.request, { ...payload(), tools: [] });
 		await flush();
 		assert.deepEqual(h.snapshots.latest()?.guard, {
 			status: "complete", dispatch: DISPATCH, findings: hiddenTools === undefined
-				? [{ type: "late-tool-edit", change: "deleted", name: "read", lines: [{ type: "removed", text: "Read a file." }] }]
+				? [{ type: "payload-tool-change", change: "deleted", name: "read", lines: [{ type: "removed", text: "Read a file." }] }]
 				: [],
 		});
 	}
 });
 
-test("late message edits complete the guard with their findings", async () => {
+test("message payload changes complete the guard with their findings", async () => {
 	const h = harness();
 	const body = payload();
-	h.guard.accept(h.request, { ...body, messages: [...body.messages, { role: "user", content: "late" }] });
+	h.guard.accept(h.request, { ...body, messages: [...body.messages, { role: "user", content: "edit" }] });
 	await flush();
 	assert.deepEqual(h.snapshots.latest()?.guard, {
 		status: "complete", dispatch: DISPATCH,
-		findings: [{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "late" }] }],
+		findings: [{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "edit" }] }],
 	});
 });
 
@@ -161,7 +161,7 @@ function idePayload(api: string): unknown {
 }
 
 for (const api of ["openai-completions", "openai-responses", "anthropic-messages"]) {
-	test(`#9 pi-ide: ${api} editor context added to the payload is a late edit with its text`, async () => {
+	test(`#9 pi-ide: ${api} editor context added to the payload is a payload change with its text`, async () => {
 		// pi-ide's custom message reached only the payload, where Pi had already converted it to a user message
 		const model = { ...MODEL, api };
 		const baseline = [
@@ -178,7 +178,7 @@ for (const api of ["openai-completions", "openai-responses", "anthropic-messages
 		assert.deepEqual(h.snapshots.latest()?.guard, {
 			status: "complete", dispatch: { ...DISPATCH, api },
 			findings: [{
-				type: "late-edit", change: "added", part: "user",
+				type: "payload-change", change: "added", part: "user",
 				lines: IDE_CONTEXT.map((text) => ({ type: "added", text })),
 			}],
 		});
@@ -200,7 +200,7 @@ test("a request that cannot be converted keeps the tool channel's findings", asy
 	assert.deepEqual(snapshot?.guard, {
 		status: "incomplete", reason: "The captured request could not be converted for comparison.", dispatch: DISPATCH,
 		findings: [
-			{ type: "late-tool-edit", change: "deleted", name: "read", lines: [{ type: "removed", text: "Read a file." }] },
+			{ type: "payload-tool-change", change: "deleted", name: "read", lines: [{ type: "removed", text: "Read a file." }] },
 		],
 	});
 });
@@ -209,14 +209,14 @@ test("an unsupported tool channel preserves compared message findings", async ()
 	for (const api of ["openai-completions", "openai-responses", "anthropic-messages"]) {
 		const request = capture({ ...MODEL, api });
 		const h = harness(request);
-		const messages = [{ role: "system", content: "prompt" }, { role: "user", content: "late" }];
+		const messages = [{ role: "system", content: "prompt" }, { role: "user", content: "edit" }];
 		const body = api === "openai-responses" ? { input: messages } : { messages };
 		h.guard.accept(request, { ...body, tools: [{ type: "unknown" }] });
 		await flush();
 		const snapshot = h.snapshots.latest();
 		assert.ok(snapshot?.guard.status === "incomplete");
 		assert.deepEqual(snapshot.guard.findings, [
-			{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "late" }] },
+			{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "edit" }] },
 		]);
 	}
 });

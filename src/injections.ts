@@ -2,7 +2,7 @@
  * Injections composition from a request snapshot: the session projection at
  * the snapshot's leaf, rebuilt when the view opens, with the snapshot's
  * request-only changes marked and hidden tools left out, plus the payload
- * guard's late edits. Reads the snapshot and current Pi data only; imports no
+ * guard's payload changes. Reads the snapshot and current Pi data only; imports no
  * capture or probe module.
  */
 import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
@@ -21,8 +21,8 @@ import {
 	type InjectionItem,
 	type InjectionSnapshot,
 	type InjectionSource,
-	LATE_EDITS_SOURCE,
 	messageTypeSource,
+	PAYLOAD_CHANGES_SOURCE,
 	type RequestChange,
 } from "./model.ts";
 import { type MessageFilter, type ProjectedMessage, readProjection } from "./projection.ts";
@@ -44,8 +44,8 @@ import type {
 } from "./snapshot.ts";
 import { systemMessageText } from "./transcript.ts";
 
-/** Row label of a late edit, by the message part it changed. */
-const LATE_EDIT_LABELS: Readonly<Record<MessagePart, string>> = {
+/** Row label of a payload change, by the message part it changed. */
+const PAYLOAD_CHANGE_LABELS: Readonly<Record<MessagePart, string>> = {
 	system: "system message",
 	user: "user message",
 	assistant: "assistant message",
@@ -75,7 +75,7 @@ export interface InjectionsInput {
 
 /**
  * Build the Injections tree of one request: its replayed prompt and tools,
- * custom messages, and changes, with the guard's late edits in their own
+ * custom messages, and changes, with the guard's payload changes in their own
  * group. The tools Pi hid are left out; their names supply the description note.
  */
 export function buildInjectionsSnapshot(input: InjectionsInput): InjectionSnapshot {
@@ -85,7 +85,7 @@ export function buildInjectionsSnapshot(input: InjectionsInput): InjectionSnapsh
 	const items = [
 		...prompt.items,
 		...measureMessages(input.snapshot.changes.conversation, baseline),
-		...measureLateEdits(findings),
+		...measurePayloadChanges(findings),
 	];
 	return { ...buildSnapshot(items), hiddenTools: prompt.hiddenTools };
 }
@@ -215,22 +215,22 @@ function changeItem(
 }
 
 // ============================================================================
-// Late edits
+// Payload changes
 // ============================================================================
 
 /**
- * One item per late edit, in the late-edits group. The guard keeps only the
+ * One item per payload change, in the payload-changes group. The guard keeps only the
  * changed lines, so each item counts the lines the payload added; a deletion
  * reads 0 tokens.
  */
-function measureLateEdits(findings: readonly GuardFinding[]): InjectionItem[] {
+function measurePayloadChanges(findings: readonly GuardFinding[]): InjectionItem[] {
 	return findings.map((finding, index): InjectionItem => {
 		const text = finding.lines.filter((line) => line.type === "added").map((line) => line.text).join("\n");
 		return {
-			id: `late:${index}`,
-			kind: finding.type === "late-edit" ? "message" : "tool",
-			source: LATE_EDITS_SOURCE,
-			label: finding.type === "late-edit" ? LATE_EDIT_LABELS[finding.part] : finding.name,
+			id: `payload:${index}`,
+			kind: finding.type === "payload-change" ? "message" : "tool",
+			source: PAYLOAD_CHANGES_SOURCE,
+			label: finding.type === "payload-change" ? PAYLOAD_CHANGE_LABELS[finding.part] : finding.name,
 			chars: text.length,
 			tokens: textTokens(text),
 			text,

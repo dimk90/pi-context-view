@@ -1,5 +1,5 @@
 /**
- * Demo extension: a `context` handler that adds a request-only user message.
+ * Verification fixture: a `context` handler that adds a request-only user message.
  * Unlike a custom message, it has no `customType` to name its source.
  *
  * Expected result:

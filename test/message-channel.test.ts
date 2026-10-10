@@ -58,26 +58,26 @@ test("empty text units are skipped as Pi skips them, but an empty tool result co
 	const before = [unit("assistant", "  \n"), unit("tool-result", "")];
 	assert.deepEqual(compareMessageUnits(before, [unit("tool-result", "")], EXACT), []);
 	assert.deepEqual(compareMessageUnits(before, [], EXACT),
-		[{ type: "late-edit", change: "deleted", part: "tool-result", lines: [] }]);
+		[{ type: "payload-change", change: "deleted", part: "tool-result", lines: [] }]);
 });
 
 test("findings report deleted, modified, and added units with only the differing lines", () => {
 	const before = [unit("system", "a\nb\nc"), unit("user", "first"), unit("user", "second")];
 	const after = [unit("system", "a\nB\n\nc"), unit("user", "second"), unit("user", "new — 新")];
 	assert.deepEqual(compareMessageUnits(before, after, EXACT), [
-		{ type: "late-edit", change: "deleted", part: "user", lines: [{ type: "removed", text: "first" }] },
-		{ type: "late-edit", change: "modified", part: "system", lines: [
+		{ type: "payload-change", change: "deleted", part: "user", lines: [{ type: "removed", text: "first" }] },
+		{ type: "payload-change", change: "modified", part: "system", lines: [
 			{ type: "removed", text: "b" }, { type: "added", text: "B" },
 		] },
-		{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "new — 新" }] },
+		{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "new — 新" }] },
 	]);
 });
 
 test("a moved unit is a deletion plus an addition, never a modification", () => {
 	const [first, reply, second] = [unit("user", "one"), unit("assistant", "ok"), unit("user", "two")];
 	assert.deepEqual(compareMessageUnits([first, reply, second], [second, first, reply], EXACT), [
-		{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "two" }] },
-		{ type: "late-edit", change: "deleted", part: "user", lines: [{ type: "removed", text: "two" }] },
+		{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "two" }] },
+		{ type: "payload-change", change: "deleted", part: "user", lines: [{ type: "removed", text: "two" }] },
 	]);
 });
 
@@ -86,7 +86,7 @@ test("tool-call names match without case only when asked, as for Anthropic OAuth
 	const after = [unit("tool-call", "{}", "Read")];
 	assert.deepEqual(compareMessageUnits(before, after, { ignoreNameCase: true }), []);
 	assert.deepEqual(compareMessageUnits(before, after, EXACT), [{
-		type: "late-edit", change: "modified", part: "tool-call",
+		type: "payload-change", change: "modified", part: "tool-call",
 		lines: [{ type: "removed", text: "read {}" }, { type: "added", text: "Read {}" }],
 	}]);
 });
@@ -111,7 +111,7 @@ test("image placeholders are Pi's only for a model without image input", () => {
 	];
 	assert.deepEqual(compareMessageUnits(expected(messages, TEXT), sent, EXACT), []);
 	assert.deepEqual(compareMessageUnits(expected(messages, VISION), sent, EXACT), [{
-		type: "late-edit", change: "modified", part: "user",
+		type: "payload-change", change: "modified", part: "user",
 		lines: [{ type: "added", text: "(image omitted: model does not support images)" }],
 	}]);
 	const converted = convertCapturedRequest(capture(messages), { blockImages: false });

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { type InjectionSnapshot, type InjectionGroup, type InjectionItem, LATE_EDITS_SOURCE } from "../src/model.ts";
+import { type InjectionSnapshot, type InjectionGroup, type InjectionItem, PAYLOAD_CHANGES_SOURCE } from "../src/model.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
 import { previewBodyLines } from "../src/ui/section-preview.ts";
 
@@ -958,16 +958,16 @@ test("InjectionsView describes a probe snapshot and notes an unavailable payload
 	assert.ok(probeNote.includes(`${theme.getFgAnsi("dim")} with an empty prompt.`));
 	assert.equal(probeNote.split(theme.getFgAnsi("warning")).length, 2);
 	assert.ok(plain.some((line) =>
-		line === "  - Late edits were not checked: No provider payload was observed for this request."));
+		line === "  - Payload changes were not checked: No provider payload was observed for this request."));
 
 	const pending = new InjectionsView(theme, { snapshot: snapshot(2), guard: { status: "pending" } }, () => {}, () => 40);
 	const pendingLines = pending.render(120).map(stripSgr);
-	assert.ok(pendingLines.some((line) => line.includes("Late edits are not checked yet")));
+	assert.ok(pendingLines.some((line) => line.includes("Payload changes are not checked yet")));
 	assert.ok(!pendingLines.some((line) => line.includes("request probe")));
 
 	// Both notes belong to the description and collapse with it
 	const short = new InjectionsView(theme, input, () => {}, () => 16).render(120).map(stripSgr);
-	assert.ok(!short.some((line) => line.includes("Late edits")));
+	assert.ok(!short.some((line) => line.includes("Payload changes")));
 	assert.ok(!short.some((line) => line.includes("request probe")));
 });
 
@@ -1011,7 +1011,7 @@ test("changed Injections frames reflow without raw text leaks or partial descrip
 	}
 	height = 70;
 	const expanded = view.render(120).map(stripSgr).join("\n");
-	assert.match(expanded, /Late edits were not checked/);
+	assert.match(expanded, /Payload changes were not checked/);
 	assert.match(expanded, /Deleted parts/);
 	view.handleInput("\u001b[F");
 	view.handleInput("\r");
@@ -1022,7 +1022,7 @@ test("changed Injections frames reflow without raw text leaks or partial descrip
 	assert.doesNotMatch(returned, /deleted original/);
 });
 
-/** A snapshot with one built-in tool, two tools Pi hid and the tree leaves out, and a late-edit group. */
+/** A snapshot with one built-in tool, two tools Pi hid and the tree leaves out, and a payload-change group. */
 function guardedSnapshot(): InjectionSnapshot {
 	const base = (id: string, tokens: number): InjectionItem => ({ ...item(id, "pi", true, tokens), kind: "tool" });
 	const read: InjectionItem = { ...base("tool:builtin:read", 12), label: "read" };
@@ -1030,20 +1030,20 @@ function guardedSnapshot(): InjectionSnapshot {
 		...base("tool:builtin", 12), label: "Built-in Tools (1)", children: [read],
 		sections: [{ label: "read", text: read.text, tokens: 12 }],
 	};
-	const late = (id: string, label: string, change: "added" | "modified", lines: InjectionItem["changedLines"]) => ({
-		...item(id, "late-edits", false, 4), source: LATE_EDITS_SOURCE, label, change, changedLines: lines,
+	const payloadItem = (id: string, label: string, change: "added" | "modified", lines: InjectionItem["changedLines"]) => ({
+		...item(id, "payload-changes", false, 4), source: PAYLOAD_CHANGES_SOURCE, label, change, changedLines: lines,
 		text: (lines ?? []).filter((line) => line.type === "added").map((line) => line.text).join("\n"),
 	});
-	const lateItems = [
-		late("late:0", "user message", "modified", [
+	const payloadItems = [
+		payloadItem("payload:0", "user message", "modified", [
 			{ type: "removed", text: "before the edit" },
 			{ type: "added", text: `after the edit ${"long ".repeat(30)}end` },
 		]),
-		late("late:1", "system message", "added", [{ type: "added", text: "late rule\u001b[2J" }]),
+		payloadItem("payload:1", "system message", "added", [{ type: "added", text: "edit rule\u001b[2J" }]),
 	];
 	const groups = [
 		group("pi", true, [builtin]),
-		{ ...group("late-edits", false, lateItems), source: LATE_EDITS_SOURCE },
+		{ ...group("payload-changes", false, payloadItems), source: PAYLOAD_CHANGES_SOURCE },
 	];
 	return {
 		groups,
@@ -1051,12 +1051,12 @@ function guardedSnapshot(): InjectionSnapshot {
 	};
 }
 
-test("InjectionsView counts hidden tools before the marker legend and explains late edits after it", () => {
+test("InjectionsView counts hidden tools before the marker legend and explains payload changes after it", () => {
 	const view = new InjectionsView(createTheme(), { snapshot: guardedSnapshot() }, () => {}, () => 60);
 	const plain = view.render(200).map(stripSgr);
 
 	assert.ok(!plain.some((line) => line.includes("Hidden")), "hidden tools carry no marker");
-	assert.ok(plain.some((line) => line.trim().startsWith("late edits")), "late edits form their own group");
+	assert.ok(plain.some((line) => line.trim().startsWith("payload changes")), "payload changes form their own group");
 	const bullets = plain.filter((line) => line.startsWith("  - ")).map((line) => line.slice(4));
 	assert.deepEqual(bullets, [
 		"2 tools hidden by pi: bash, write.",
@@ -1064,9 +1064,8 @@ test("InjectionsView counts hidden tools before the marker legend and explains l
 			" They are counted.",
 		"Modified parts were changed by an extension for this request only; the session keeps the original. The request" +
 			" version is counted.",
-		"Late edits were made after pi-context-view captured the request. Their sources are unknown; only changed lines" +
-			" are known, and estimates count the added lines.",
-	], "a complete guard adds no status bullet; the late-edits note follows the legend");
+		"Payload changes appear only in the provider payload. Their sources are unknown.",
+	], "a complete guard adds no status bullet; the payload-changes note follows the legend");
 });
 
 test("InjectionsView counts one hidden tool in the singular and none without a hidden tool", () => {
@@ -1111,11 +1110,11 @@ test("InjectionsView reports a partial payload comparison", () => {
 	}, () => {}, () => 60);
 	const plain = view.render(200).map(stripSgr);
 	assert.ok(plain.includes(
-		"  - Late edits were checked only in part: The captured request could not be converted for comparison."));
+		"  - Payload changes were checked only in part: The captured request could not be converted for comparison."));
 	assert.ok(!plain.some((line) => line.includes("were not checked")));
 });
 
-test("InjectionsView previews a late edit as colored changed lines with a hanging indent", () => {
+test("InjectionsView previews a payload change as colored changed lines with a hanging indent", () => {
 	const theme = createTheme();
 	const view = new InjectionsView(theme, { snapshot: guardedSnapshot() }, () => {}, () => 60);
 	view.handleInput("\u001b[F");
@@ -1124,7 +1123,7 @@ test("InjectionsView previews a late edit as colored changed lines with a hangin
 	const lines = view.render(60);
 	const plain = lines.map(stripSgr);
 
-	assert.match(plain.find((line) => line.includes("user message")) ?? "", /late edits · 4 tokens · Modified/);
+	assert.match(plain.find((line) => line.includes("user message")) ?? "", /payload changes · 4 tokens · Modified/);
 	const removed = plain.findIndex((line) => line === "  - before the edit");
 	assert.ok(removed >= 0);
 	assert.ok(lines[removed]?.includes(theme.fg("toolDiffRemoved", "- before the edit")));
@@ -1134,18 +1133,18 @@ test("InjectionsView previews a late edit as colored changed lines with a hangin
 	assert.ok(lines[removed + 2]?.includes(theme.getFgAnsi("toolDiffAdded")));
 	assert.ok(plain.every((line) => visibleWidth(line) <= 60));
 	assert.ok(plain.some((line) => line.startsWith("  - Modified parts")));
-	assert.ok(plain.some((line) => line.startsWith("  - Late edits were made")));
+	assert.ok(plain.some((line) => line.startsWith("  - Payload changes appear only")));
 	assert.ok(!plain.some((line) => line.includes("hidden by pi")), "the hidden-tools note stays in the list");
 
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
 	const system = view.render(60).map(stripSgr).join("\n");
-	assert.match(system, /\+ late rule/);
+	assert.match(system, /\+ edit rule/);
 	assert.doesNotMatch(system, /\u001b\[2J/);
 });
 
-test("late-edit and hidden-tool frames reflow without partial descriptions", () => {
+test("payload-change and hidden-tool frames reflow without partial descriptions", () => {
 	let height = 70;
 	const view = new InjectionsView(createTheme(), { snapshot: guardedSnapshot() }, () => {}, () => height);
 	const frames = (widths: readonly number[], firstBullet: RegExp, lastBullet: RegExp): void => {
@@ -1160,11 +1159,11 @@ test("late-edit and hidden-tool frames reflow without partial descriptions", () 
 			}
 		}
 	};
-	frames([1, 24, 60, 80, 120], /- 2 tools hidden by pi/, /count the added lines\./);
+	frames([1, 24, 60, 80, 120], /- 2 tools hidden by pi/, /Their sources are unknown\./);
 	height = 70;
 	view.handleInput("\u001b[F");
 	view.handleInput("\u001b[A");
 	view.handleInput("\r");
 	// Preview bodies keep a minimum wrap width, as for every other item
-	frames([24, 60, 80, 120], /- Modified parts/, /count the added lines\./);
+	frames([24, 60, 80, 120], /- Modified parts/, /Their sources are unknown\./);
 });

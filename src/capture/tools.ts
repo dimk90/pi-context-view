@@ -40,7 +40,10 @@ export function compareToolDeclarations(input: ToolComparisonInput): GuardFindin
 	for (const tool of input.expected) {
 		if (declaredNames.has(tool.name)) continue;
 		findings.push({
-			type: "late-tool-edit", change: "deleted", name: tool.name, lines: diffLines(tool.description ?? "", ""),
+			type: "payload-tool-change",
+			change: "deleted",
+			name: tool.name,
+			lines: diffLines(tool.description ?? "", ""),
 		});
 	}
 	for (const declaration of declared) {
@@ -49,7 +52,7 @@ export function compareToolDeclarations(input: ToolComparisonInput): GuardFindin
 		const after = declaration.description ?? "";
 		if (tool !== undefined && normalizeText(before) === normalizeText(after)) continue;
 		findings.push({
-			type: "late-tool-edit",
+			type: "payload-tool-change",
 			change: tool === undefined ? "added" : "modified",
 			name: declaration.name,
 			lines: diffLines(before, after),

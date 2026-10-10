@@ -82,7 +82,7 @@ for (const first of ["message_start", "provider_stream_event", "message_end"] as
 		const snapshot = h.snapshots.latest();
 		assert.equal(snapshot?.origin, "synthetic-probe");
 		assert.ok(snapshot?.guard.status === "complete");
-		assert.deepEqual(snapshot.guard.findings, [], "the tool Pi hid is not a late removal");
+		assert.deepEqual(snapshot.guard.findings, [], "the tool Pi hid is not a payload removal");
 		assert.deepEqual(snapshot.hiddenTools, ["read"]);
 		const count = h.published.length;
 		h.emit({ type: "message_start", message: assistant() });

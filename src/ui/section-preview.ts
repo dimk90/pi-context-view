@@ -8,7 +8,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { InjectedReference, InjectionSection, JsonSpan, RequestChange } from "../model.ts";
-import type { LateEditLine } from "../snapshot.ts";
+import type { PayloadChangeLine } from "../snapshot.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { shiftJsonSpan } from "./json-preview.ts";
 import { BODY_INDENT, calculateViewport, descriptionBlockRows } from "./layout.ts";
@@ -45,8 +45,8 @@ export interface SectionedContent {
 	readonly moved?: boolean;
 	/** Request-only change of this content; Usage shows only `forced`. */
 	readonly change?: RequestChange;
-	/** Changed lines of a late edit; rendered as a diff instead of the text. */
-	readonly changedLines?: readonly LateEditLine[];
+	/** Changed lines of a payload change; rendered as a diff instead of the text. */
+	readonly changedLines?: readonly PayloadChangeLine[];
 }
 
 /** Space shared by uncapped preview content, its counter, and the marker legend. */
@@ -118,7 +118,7 @@ export function previewBodyLines(
  * Changed lines in payload order, each wholly in its diff color after its
  * prefix; wrapped continuation lines hang under the text.
  */
-function changedLineRows(theme: Theme, lines: readonly LateEditLine[], wrapWidth: number): string[] {
+function changedLineRows(theme: Theme, lines: readonly PayloadChangeLine[], wrapWidth: number): string[] {
 	return lines.flatMap((line) => {
 		const added = line.type === "added";
 		const prefix = added ? ADDED_LINE_PREFIX : REMOVED_LINE_PREFIX;

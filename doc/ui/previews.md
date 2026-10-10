@@ -124,7 +124,7 @@ A bullet renders only where its mark is visible on that frame:
 The Usage category stream inspects all entries; full content, opened directly or
 from a block, inspects only its open entry.
 
-An Injections preview of a late edit adds the dim note bullet
+An Injections preview of a payload change adds the dim note bullet
 that [explains it](injections.md#injection-preview) after its legend bullets.
 The note belongs to the same block and follows the same collapse rules.
 

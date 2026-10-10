@@ -43,7 +43,7 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
 		assert.deepEqual(real?.hiddenTools, HIDDEN);
 		assert.equal(real?.guard.status, "complete");
 		assert.deepEqual(real?.guard.status === "complete" ? real.guard.findings : undefined, [],
-			"tools Pi hid are not late removals");
+			"tools Pi hid are not payload removals");
 		assert.deepEqual(usageToolNames(session, store), ["codemode"]);
 		assert.deepEqual(injectionTools(session, store), CODEMODE_ONLY_TOOLS, "the real request hides them too");
 		assert.equal(provider.requests.length, 1);

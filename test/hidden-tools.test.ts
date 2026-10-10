@@ -151,23 +151,23 @@ for (const api of ["openai-completions", "anthropic-messages"]) {
 	});
 }
 
-test("#11: a captured tool the payload drops that Pi did not hide is a deleted late edit", async () => {
+test("#11: a captured tool the payload drops that Pi did not hide is a deleted payload change", async () => {
 	const session = createSession();
 	const store = new SnapshotStore();
 	const snapshot = await publish(session, store, "openai-completions", payload(session, "openai-completions"),
 		["read", "bash", "edit"]);
 	assert.deepEqual(snapshot.guard.status === "complete" && snapshot.guard.findings, [{
-		type: "late-tool-edit", change: "deleted", name: "write", lines: [{ type: "removed", text: "write description" }],
+		type: "payload-tool-change", change: "deleted", name: "write", lines: [{ type: "removed", text: "write description" }],
 	}]);
 	const items = injectionItems(session, snapshot);
-	const late = items.filter((item) => item.source.id === "late-edits");
-	assert.deepEqual(late.map((item) => [item.label, item.kind, item.change, item.tokens]), [["write", "tool", "deleted", 0]]);
+	const changes = items.filter((item) => item.source.id === "payload-changes");
+	assert.deepEqual(changes.map((item) => [item.label, item.kind, item.change, item.tokens]), [["write", "tool", "deleted", 0]]);
 	const builtins = items.find((item) => item.id === "tool:builtin");
 	assert.equal(builtins?.label, "Built-in Tools (1)");
 	assert.deepEqual(builtins.children?.map((item) => [item.label, item.change]), [["write", undefined]]);
 	assert.deepEqual(injections(session, snapshot).hiddenTools, ["read", "bash", "edit"]);
 	assert.deepEqual(listedTools(usage(session, store, ["read", "bash", "edit"]), "built-in-tools"), ["write"],
-		"late removals do not affect Usage");
+		"payload removals do not affect Usage");
 });
 
 test("#11: Usage leaves out Pi's live hidden tools without a snapshot or recorded system state", () => {
@@ -194,7 +194,7 @@ test("#11: an incomplete payload guard does not restore hidden definitions in ei
 	assert.deepEqual(injections(session, snapshot).hiddenTools, BUILTIN_NAMES);
 });
 
-test("#11: Anthropic inline additions, removals, and same-name redefinitions are not late edits", async () => {
+test("#11: Anthropic inline additions, removals, and same-name redefinitions are not payload changes", async () => {
 	const session = createSession();
 	const store = new SnapshotStore();
 	const body = payload(session, "anthropic-messages");

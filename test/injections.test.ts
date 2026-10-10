@@ -290,35 +290,35 @@ function complete(findings: GuardFinding[]): { guard: GuardResult } {
 	return { guard: { status: "complete", dispatch, findings } };
 }
 
-test("late edits form the last group and count only the lines the payload added", () => {
+test("payload changes form the last group and count only the lines the payload added", () => {
 	const { session } = createSession();
 	const snapshot = buildInjectionsSnapshot(input(session, {
 		conversation: [{ type: "added", message: user("added user text"), attribution: {} }],
 	}, complete([
-		{ type: "late-edit", change: "added", part: "user", lines: [
-			{ type: "added", text: "XYZZY late line" }, { type: "added", text: "second" },
+		{ type: "payload-change", change: "added", part: "user", lines: [
+			{ type: "added", text: "XYZZY edit line" }, { type: "added", text: "second" },
 		] },
-		{ type: "late-edit", change: "modified", part: "system", lines: [
+		{ type: "payload-change", change: "modified", part: "system", lines: [
 			{ type: "removed", text: "old rule" }, { type: "added", text: "new rule!" },
 		] },
-		{ type: "late-edit", change: "deleted", part: "tool-result", lines: [{ type: "removed", text: "gone" }] },
-		{ type: "late-tool-edit", change: "added", name: "late_tool", lines: [{ type: "added", text: "Late tool." }] },
-		{ type: "late-tool-edit", change: "deleted", name: "bash", lines: [{ type: "removed", text: "Run commands" }] },
+		{ type: "payload-change", change: "deleted", part: "tool-result", lines: [{ type: "removed", text: "gone" }] },
+		{ type: "payload-tool-change", change: "added", name: "edit_tool", lines: [{ type: "added", text: "Edit tool." }] },
+		{ type: "payload-tool-change", change: "deleted", name: "bash", lines: [{ type: "removed", text: "Run commands" }] },
 	])));
 
 	assert.deepEqual(snapshot.groups.map((group) => group.source.label),
-		["pi", "fixture-notes", "unattributed", "late edits"]);
-	assert.equal(itemsById(snapshot).get("tool:builtin:bash")?.change, undefined, "a late removal does not stay in place");
-	const late = snapshot.groups.at(-1);
-	assert.deepEqual(late?.items.map((item) => [item.label, item.kind, item.tokens, item.change]), [
-		["late_tool", "tool", 3, "added"],
+		["pi", "fixture-notes", "unattributed", "payload changes"]);
+	assert.equal(itemsById(snapshot).get("tool:builtin:bash")?.change, undefined, "a payload removal does not stay in place");
+	const changes = snapshot.groups.at(-1);
+	assert.deepEqual(changes?.items.map((item) => [item.label, item.kind, item.tokens, item.change]), [
+		["edit_tool", "tool", 3, "added"],
 		["bash", "tool", 0, "deleted"],
 		["user message", "message", 6, "added"],
 		["system message", "message", 3, "modified"],
 		["tool result", "message", 0, "deleted"],
 	], "tools come first, then messages by size");
-	assert.equal(late?.totalTokens, 12);
-	const modified = late?.items.find((item) => item.change === "modified");
+	assert.equal(changes?.totalTokens, 12);
+	const modified = changes?.items.find((item) => item.change === "modified");
 	assert.equal(modified?.text, "new rule!", "the counted text holds only the added lines");
 	assert.deepEqual(modified?.changedLines, [
 		{ type: "removed", text: "old rule" }, { type: "added", text: "new rule!" },
@@ -342,18 +342,18 @@ test("tools Pi hid are left out and their names are retained for the description
 	assert.equal(items.get("tool:unattributed:grep"), undefined, "hiding wins over the structured addition");
 	assert.deepEqual(snapshot.hiddenTools, ["bash", "grep"], "a hidden name the request did not declare is left out");
 	assert.deepEqual(buildInjectionsSnapshot(input(session)).hiddenTools, []);
-	assert.ok(snapshot.groups.every((group) => group.source.label !== "late edits"));
+	assert.ok(snapshot.groups.every((group) => group.source.label !== "payload changes"));
 });
 
 test("only compared channels contribute findings; a pending guard has none", () => {
 	const { session } = createSession();
 	const finding: GuardFinding = {
-		type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "x" }],
+		type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "x" }],
 	};
 	const partial = buildInjectionsSnapshot(input(session, {}, {
 		guard: { status: "incomplete", reason: "Message channel failed.", findings: [finding] },
 	}));
-	assert.equal(partial.groups.at(-1)?.source.label, "late edits");
+	assert.equal(partial.groups.at(-1)?.source.label, "payload changes");
 	const pending = buildInjectionsSnapshot(input(session, {}, { guard: { status: "pending" } }));
-	assert.ok(pending.groups.every((group) => group.source.label !== "late edits"));
+	assert.ok(pending.groups.every((group) => group.source.label !== "payload changes"));
 });

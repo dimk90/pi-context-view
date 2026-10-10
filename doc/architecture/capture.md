@@ -190,7 +190,7 @@ extension that edited it.
 
 Neither `customType` nor `details` proves ownership: any extension can reuse
 them. `customType` disappears during provider conversion, so this attribution
-exists only in structured capture, never for late edits.
+exists only in structured capture, never for payload changes.
 
 ## Hidden Tools
 

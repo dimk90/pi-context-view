@@ -76,29 +76,29 @@ export interface Dispatch {
  */
 export type MessagePart = "system" | "user" | "assistant" | "tool-call" | "tool-result";
 
-/** One changed line of a late edit: only in the payload (`added`) or only in the captured request (`removed`). */
-export interface LateEditLine {
+/** One changed line of a payload change: only in the payload (`added`) or only in the captured request (`removed`). */
+export interface PayloadChangeLine {
 	readonly type: "added" | "removed";
 	readonly text: string;
 }
 
 /**
  * A payload difference the structured capture cannot explain:
- *   late-edit        message text added, changed, or removed after the monitor,
- *                    without structure or attribution
- *   late-tool-edit   a declaration the payload adds, removes, or describes differently
- *                    after the monitor; tools Pi hid are not removals
+ *   payload-change        message text added, changed, or removed after the monitor,
+ *                         without structure or attribution
+ *   payload-tool-change   a declaration the payload adds, removes, or describes differently
+ *                         after the monitor; tools Pi hid are not removals
  */
 export type GuardFinding =
 	| {
-		readonly type: "late-edit";
+		readonly type: "payload-change";
 		readonly change: "added" | "modified" | "deleted";
 		readonly part: MessagePart;
 		/** Changed lines; a modification lists only the lines that differ, ignoring whitespace. */
-		readonly lines: readonly LateEditLine[];
+		readonly lines: readonly PayloadChangeLine[];
 	}
 	| {
-		readonly type: "late-tool-edit";
+		readonly type: "payload-tool-change";
 		readonly change: "added" | "modified" | "deleted";
 		readonly name: string;
 		/**
@@ -106,12 +106,12 @@ export type GuardFinding =
 		 * every captured line for a deletion, and only the lines that differ for a
 		 * modification, ignoring whitespace.
 		 */
-		readonly lines: readonly LateEditLine[];
+		readonly lines: readonly PayloadChangeLine[];
 	};
 
 /**
  * Payload comparison state. Pending and incomplete mean the comparison is
- * unavailable, never that the request had no late edits. An incomplete result
+ * unavailable, never that the request had no payload changes. An incomplete result
  * with `findings` compared only some channels: the findings hold, and `reason`
  * names what was not compared.
  */

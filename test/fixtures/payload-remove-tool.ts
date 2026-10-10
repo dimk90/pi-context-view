@@ -4,7 +4,7 @@
  * This removal has no marker text: look for the missing declaration instead.
  *
  * Expected result:
- *   before the monitor   Deleted tool under late edits; Usage is unchanged
+ *   before the monitor   Deleted tool under payload changes; Usage is unchanged
  *   after the monitor    not visible
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

@@ -5,7 +5,7 @@
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import { type InjectionItem, type InjectionSnapshot, LATE_EDITS_SOURCE_ID } from "../model.ts";
+import { type InjectionItem, type InjectionSnapshot, PAYLOAD_CHANGES_SOURCE_ID } from "../model.ts";
 import type { GuardResult } from "../snapshot.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import {
@@ -44,8 +44,7 @@ import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines }
 const LIST_FIXED_LINE_COUNT = 8;
 const PREVIEW_FIXED_LINE_COUNT = 8;
 const LIST_DESCRIPTION = "Injections into the model context of the latest request, with token estimates.";
-const LATE_EDITS_NOTE = "Late edits were made after pi-context-view captured the request. Their sources are" +
-	" unknown; only changed lines are known, and estimates count the added lines.";
+const PAYLOAD_CHANGES_NOTE = "Payload changes appear only in the provider payload. Their sources are unknown.";
 /** List rows that must stay visible for the description to keep its own rows. */
 const LIST_DESCRIPTION_MIN_ROWS = 26;
 const CURSOR_COLUMN_WIDTH = 2;
@@ -495,7 +494,7 @@ export class InjectionsView {
 	/**
 	 * Wrapped dialog description: the list sentence, the degraded-capture
 	 * indicator, request notes, one legend bullet per marker the rows show, and
-	 * the note that explains late edits further.
+	 * the note that explains payload changes further.
 	 */
 	private descriptionLines(width: number): string[] {
 		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "dim", width);
@@ -513,7 +512,7 @@ export class InjectionsView {
 			);
 			lines.push(...noteBulletLines(this.theme, note, width));
 		}
-		const guardNote = lateEditNote(this.input.guard);
+		const guardNote = payloadCheckNote(this.input.guard);
 		if (guardNote !== undefined) lines.push(...noteBulletLines(this.theme, guardNote, width));
 		const hiddenNote = hiddenToolsNote(this.input.snapshot.hiddenTools ?? []);
 		if (hiddenNote !== undefined) lines.push(...noteBulletLines(this.theme, hiddenNote, width));
@@ -546,19 +545,19 @@ export class InjectionsView {
 
 /**
  * Description note for a payload comparison that is unavailable or partial, so
- * a missing comparison never reads as "no late edits". A complete comparison
+ * a missing comparison never reads as "no payload changes". A complete comparison
  * has none: its findings render as rows.
  */
-function lateEditNote(guard: GuardResult | undefined): string | undefined {
+function payloadCheckNote(guard: GuardResult | undefined): string | undefined {
 	switch (guard?.status) {
 		case "pending":
-			return "Late edits are not checked yet: the payload comparison is pending.";
+			return "Payload changes are not checked yet: the comparison is pending.";
 		case "incomplete": {
 			const reason = normalizeInlineText(guard.reason);
 			// Findings, even none, mean one channel was compared
 			return guard.findings === undefined
-				? `Late edits were not checked: ${reason}`
-				: `Late edits were checked only in part: ${reason}`;
+				? `Payload changes were not checked: ${reason}`
+				: `Payload changes were checked only in part: ${reason}`;
 		}
 		default:
 			return undefined;
@@ -572,7 +571,7 @@ function hiddenToolsNote(tools: readonly string[]): string | undefined {
 	return `${tools.length} ${tools.length === 1 ? "tool" : "tools"} hidden by pi: ${names}.`;
 }
 
-/** The note that explains late edits further, after the marker legend, when any of `items` is one. */
+/** The note that explains payload changes further, after the marker legend, when any of `items` is one. */
 function findingNotes(items: readonly InjectionItem[]): string[] {
-	return items.some((item) => item.source.id === LATE_EDITS_SOURCE_ID) ? [LATE_EDITS_NOTE] : [];
+	return items.some((item) => item.source.id === PAYLOAD_CHANGES_SOURCE_ID) ? [PAYLOAD_CHANGES_NOTE] : [];
 }

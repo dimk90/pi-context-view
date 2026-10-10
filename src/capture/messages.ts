@@ -2,9 +2,9 @@
  * PayloadGuard's message channel: compare the text units a payload sends
  * with the units Pi would send for the captured request. Keys ignore
  * whitespace; an LCS alignment matches them, and every unit left over is a
- * late edit with its changed lines. Pure functions over process-local data.
+ * payload change with its changed lines. Pure functions over process-local data.
  */
-import type { GuardFinding, LateEditLine, MessagePart } from "../snapshot.ts";
+import type { GuardFinding, MessagePart, PayloadChangeLine } from "../snapshot.ts";
 import { alignSequences } from "./diff.ts";
 
 /** Unpaired UTF-16 surrogates; Pi removes them from text before sending it. */
@@ -92,7 +92,7 @@ export function compareMessageUnits(
  * Lines that differ between two texts, ignoring whitespace and blank lines:
  * removed lines of `before`, then added lines of `after`, for each gap.
  */
-export function diffLines(before: string, after: string): LateEditLine[] {
+export function diffLines(before: string, after: string): PayloadChangeLine[] {
 	const beforeLines = splitLines(before);
 	const afterLines = splitLines(after);
 	return findGaps(beforeLines, afterLines, normalizeText)
@@ -153,23 +153,24 @@ function classifyGap(gap: Gap<MessageUnit>): GuardFinding[] {
 		pairs.set(position, unit);
 		searchFrom = position + 1;
 	}
-	const findings: GuardFinding[] = unpaired.map((unit) => lateEdit("deleted", unit, unitLines(unit).map(removedLine)));
+	const findings: GuardFinding[] = unpaired.map((unit) =>
+		payloadChange("deleted", unit, unitLines(unit).map(removedLine)));
 	for (const [index, unit] of gap.added.entries()) {
 		const original = pairs.get(index);
 		findings.push(original === undefined
-			? lateEdit("added", unit, unitLines(unit).map(addedLine))
-			: lateEdit("modified", unit, diffLines(displayText(original), displayText(unit))));
+			? payloadChange("added", unit, unitLines(unit).map(addedLine))
+			: payloadChange("modified", unit, diffLines(displayText(original), displayText(unit))));
 	}
 	return findings;
 }
 
-/** A late-edit finding for one unit. */
-function lateEdit(
+/** A payload-change finding for one unit. */
+function payloadChange(
 	change: "added" | "modified" | "deleted",
 	unit: MessageUnit,
-	lines: readonly LateEditLine[],
+	lines: readonly PayloadChangeLine[],
 ): GuardFinding {
-	return { type: "late-edit", change, part: unit.part, lines };
+	return { type: "payload-change", change, part: unit.part, lines };
 }
 
 /** Non-blank lines of a unit as findings show it. */
@@ -199,11 +200,11 @@ function splitLines(text: string): string[] {
 }
 
 /** A line only in the payload. */
-function addedLine(text: string): LateEditLine {
+function addedLine(text: string): PayloadChangeLine {
 	return { type: "added", text };
 }
 
 /** A line only in the captured request. */
-function removedLine(text: string): LateEditLine {
+function removedLine(text: string): PayloadChangeLine {
 	return { type: "removed", text };
 }

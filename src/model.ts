@@ -4,11 +4,11 @@
  * never parse labels to recover source, kind, or parent/child relationships.
  */
 
-import type { LateEditLine } from "./snapshot.ts";
+import type { PayloadChangeLine } from "./snapshot.ts";
 
 export const PI_SOURCE_ID = "pi";
 export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
-export const LATE_EDITS_SOURCE_ID = "late-edits";
+export const PAYLOAD_CHANGES_SOURCE_ID = "payload-changes";
 
 /** Everything pi itself assembles: its prompt, context files, skills, and built-in tools. */
 export const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", native: true };
@@ -24,9 +24,9 @@ export const AGGREGATE_SOURCE: InjectionSource = {
  * Payload differences the structured capture cannot explain: no structure and
  * no source, so they are grouped instead of staying in place.
  */
-export const LATE_EDITS_SOURCE: InjectionSource = {
-	id: LATE_EDITS_SOURCE_ID,
-	label: "late edits",
+export const PAYLOAD_CHANGES_SOURCE: InjectionSource = {
+	id: PAYLOAD_CHANGES_SOURCE_ID,
+	label: "payload changes",
 	native: false,
 };
 
@@ -213,10 +213,10 @@ export interface InjectionItem {
 	/** Request-only change of this contribution; a deleted one reads 0 tokens. */
 	readonly change?: RequestChange;
 	/**
-	 * Changed lines of a late edit, in payload order. `text` holds only the
+	 * Changed lines of a payload change, in payload order. `text` holds only the
 	 * added lines, which the estimate counts.
 	 */
-	readonly changedLines?: readonly LateEditLine[];
+	readonly changedLines?: readonly PayloadChangeLine[];
 	/** Preview-only extension prompt lines for a standalone System Prompt part child. */
 	readonly injectedReferences?: readonly InjectedReference[];
 	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
@@ -307,8 +307,8 @@ export interface ContextUsageSnapshot {
 
 /**
  * Group measured items by source. Pi-native components come first, extension
- * sources follow by total size, then the unattributable aggregate, and late
- * edits come last.
+ * sources follow by total size, then the unattributable aggregate, and payload
+ * changes come last.
  * Items inside each group follow the order pi assembles them into a request
  * (base prompt, appended prompt, context files, skills, built-in tools, other
  * tools, then everything else by size). Returned objects own all nested data;
@@ -406,7 +406,7 @@ function itemRank(item: InjectionItem): number {
 	}
 }
 
-/** Order groups: pi-native first, then extensions by size, the aggregate, and late edits last. */
+/** Order groups: pi-native first, then extensions by size, the aggregate, and payload changes last. */
 function compareGroups(a: InjectionGroup, b: InjectionGroup): number {
 	const rankDelta = groupRank(a.source) - groupRank(b.source);
 	if (rankDelta !== 0) return rankDelta;
@@ -417,5 +417,5 @@ function compareGroups(a: InjectionGroup, b: InjectionGroup): number {
 function groupRank(source: InjectionSource): number {
 	if (source.native) return 0;
 	if (source.id === AGGREGATE_SOURCE_ID) return 2;
-	return source.id === LATE_EDITS_SOURCE_ID ? 3 : 1;
+	return source.id === PAYLOAD_CHANGES_SOURCE_ID ? 3 : 1;
 }

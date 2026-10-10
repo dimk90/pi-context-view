@@ -50,18 +50,18 @@ compares tool declarations and message text with the provider payload. While
 that comparison is pending or incomplete, the description block carries one dim
 guard-status bullet with the reason:
 
-| Guard                        | Bullet                                                               |
-| ---------------------------- | -------------------------------------------------------------------- |
-| Pending                      | `Late edits are not checked yet: the payload comparison is pending.` |
-| Incomplete, nothing compared | `Late edits were not checked: <reason>`                              |
-| Incomplete, one channel only | `Late edits were checked only in part: <reason>`                     |
+| Guard                        | Bullet                                                            |
+| ---------------------------- | ----------------------------------------------------------------- |
+| Pending                      | `Payload changes are not checked yet: the comparison is pending.` |
+| Incomplete, nothing compared | `Payload changes were not checked: <reason>`                      |
+| Incomplete, one channel only | `Payload changes were checked only in part: <reason>`             |
 
-A standard probe says `Late edits were not checked: No provider payload was
-observed for this request.` None of these means "no edits". A partial check
-still shows the [late edits](#late-edits) of the channel it compared.
+A standard probe says `Payload changes were not checked: No provider payload was
+observed for this request.` None of these means "no changes". A partial check
+still shows the [payload changes](#payload-changes) of the channel it compared.
 [Hidden tools](#hidden-tools) come from Pi's prompt options, independently of
 the guard, so a probe counts them too. A complete guard adds no bullet:
-without late edits, the payload matched the request, excluding Pi's known
+without payload changes, the payload matched the request, excluding Pi's known
 hidden declarations, up to this extension's own `before_provider_request`
 handler. Handlers after it stay invisible.
 
@@ -107,8 +107,8 @@ Present the request's contributions in this order:
   - injected messages identified by `customType` where available
 - `unattributed` for prompt additions no signal could attribute, and for
   request-only changes to messages without a `customType`
-- `late edits` for changes found only in the provider payload
-  ([Late edits](#late-edits))
+- `payload changes` for changes found only in the provider payload
+  ([Payload changes](#payload-changes))
 
 ### Request-only changes
 
@@ -147,19 +147,19 @@ A row can carry `Moved` and a change marker together; markers keep the order
 `TOTAL` covers these contributions only, not unchanged ordinary conversation;
 it is not a provider-payload size.
 
-### Late edits
+### Payload changes
 
-Late edits are payload differences the structured capture cannot explain: they
-come from `context_with_system` handlers after this extension, or from
-`before_provider_request` handlers before it. They carry no structure or
-source, so they cannot stay in place. The `late edits` group, after
+Payload changes are payload differences the structured capture cannot
+explain: they come from `context_with_system` handlers after this extension,
+or from `before_provider_request` handlers before it. They carry no structure
+or source, so they cannot stay in place. The `payload changes` group, after
 `unattributed`, lists one row per finding:
 
 - A changed message part: `system message`, `user message`,
   `assistant message`, `tool call`, or `tool result`.
 - A tool declaration the payload added, removed, or describes differently: the
-  tool name. A removal Pi did not report in `hiddenTools` is a `Deleted` late
-  edit, not a [hidden tool](#hidden-tools).
+  tool name. A removal Pi did not report in `hiddenTools` is a `Deleted`
+  payload change, not a [hidden tool](#hidden-tools).
 
 Each row carries the `Added`, `Modified`, or `Deleted` marker of its change.
 The guard keeps only the changed lines, so a row's estimate counts the lines
@@ -168,7 +168,7 @@ toward the group and `TOTAL`. Rows sort like other source groups. While the
 group is shown, the description carries a dim bullet:
 
 ```text
-- Late edits were made after pi-context-view captured the request. Their sources are unknown; only changed lines are known, and estimates count the added lines.
+- Payload changes appear only in the provider payload. Their sources are unknown.
 ```
 
 ### Hidden tools
@@ -228,7 +228,7 @@ the fallback hierarchy usable. Below both come, when shown, the probe bullet,
 the guard-status bullet, the [hidden-tools bullet](#hidden-tools), one
 [legend bullet](previews.md#marker-legend) per marker the rows carry —
 `Dropped`, `Moved`, `Forced`, `Added`, `Modified`, `Deleted`, or none — then
-the late-edits bullet. All of them collapse with the rest of the block.
+the payload-changes bullet. All of them collapse with the rest of the block.
 
 ## Injection preview
 
@@ -256,11 +256,11 @@ message previews both versions:
 A deleted System Prompt part or tool previews the session text it removed, at 0
 tokens. A modified System Prompt part or tool shows only the request version.
 
-A late edit previews its changed lines in payload order, without labeled parts.
-A line only in the payload opens with `+ ` in `toolDiffAdded`; a line only in
-the captured request opens with `- ` in `toolDiffRemoved`. The whole line takes
+A payload change previews its changed lines in payload order, without labeled
+parts. A line only in the payload opens with `+ ` in `toolDiffAdded`; a line
+only in the captured request opens with `- ` in `toolDiffRemoved`. The whole line takes
 that color, and wrapped continuation lines hang under its text.
 
-After the legend bullets of its markers, a late-edit preview repeats the
-late-edits bullet. Descriptions collapse under the rules in
+After the legend bullets of its markers, a payload-change preview repeats the
+payload-changes bullet. Descriptions collapse under the rules in
 [previews.md](previews.md#marker-legend).

@@ -152,7 +152,7 @@ test("#9: capture handlers return nothing and leave event.messages and the paylo
 			{ role: "system", content: "system prompt" },
 			{ role: "user", content: "hello" },
 			{ role: "user", content: "request-only note" },
-			{ role: "user", content: [{ type: "text", text: "late note" }] },
+			{ role: "user", content: [{ type: "text", text: "edit note" }] },
 		],
 	};
 	const payloadMessages = [...payload.messages];
@@ -170,6 +170,6 @@ test("#9: capture handlers return nothing and leave event.messages and the paylo
 	assert.equal(latest?.changes.conversation[0]?.type, "added");
 	assert.deepEqual(latest?.guard, {
 		status: "complete", dispatch: { provider: "mock", api: "openai-completions", model: "text" },
-		findings: [{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: "late note" }] }],
+		findings: [{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "edit note" }] }],
 	});
 });

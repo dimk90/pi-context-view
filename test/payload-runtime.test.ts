@@ -20,9 +20,9 @@ import forcedPrompt from "./fixtures/forced-prompt.ts";
 import hiddenTools from "./fixtures/hidden-tools.ts";
 import inputTransform from "./fixtures/input-transform.ts";
 import marker from "./fixtures/marker.ts";
-import payloadLateEdits, {
-	PAYLOAD_LATE_ADDED, PAYLOAD_LATE_DELETED, PAYLOAD_LATE_MODIFIED, PAYLOAD_LATE_ORIGINAL,
-} from "./fixtures/payload-late-edits.ts";
+import payloadChanges, {
+	PAYLOAD_CHANGE_ADDED, PAYLOAD_CHANGE_DELETED, PAYLOAD_CHANGE_MODIFIED, PAYLOAD_CHANGE_ORIGINAL,
+} from "./fixtures/payload-changes.ts";
 import { type MockApi, type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
 
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
@@ -30,8 +30,8 @@ const MCP_SERVER = fileURLToPath(new URL("./fixtures/mcp-server.ts", import.meta
 /** A 1×1 PNG for image-input checks. */
 const PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 /** Text that payload editors add, so findings are easy to match. */
-const LATE_LINE = "XYZZY_LATE: appended in the provider payload — 末尾.";
-const LATE_MESSAGE = "XYZZY_LATE: a user message added to the provider payload.";
+const PAYLOAD_LINE = "XYZZY_PAYLOAD: appended in the provider payload — 末尾.";
+const PAYLOAD_MESSAGE = "XYZZY_PAYLOAD: a user message added to the provider payload.";
 
 /** Physical model supplied by the runtime. */
 type Model = NonNullable<ExtensionContext["model"]>;
@@ -81,7 +81,7 @@ for (const api of APIS) {
 					const payload = event.payload as { tools: Array<Record<string, unknown>> };
 					const read = payload.tools[0];
 					const definition = api === "openai-completions" ? read.function as Record<string, unknown> : read;
-					definition.description = "Changed late — 工具";
+					definition.description = "Changed in payload — 工具";
 					const extra = { ...structuredClone(read), ...(api === "openai-completions"
 						? { function: { ...definition, name: "extra" } } : { name: "extra" }) };
 					payload.tools.splice(1, 1, extra);
@@ -90,20 +90,20 @@ for (const api of APIS) {
 			const runtime = await createRuntime(t, { api, [order]: [editor] });
 			await runtime.session.prompt("tool edits");
 			const [snapshot] = await runtime.snapshots();
-			const changed = [{ type: "added", text: "Changed late — 工具" }];
+			const changed = [{ type: "added", text: "Changed in payload — 工具" }];
 			// The modification also lists every line of read's built-in description as removed
-			const added = findings(snapshot).map((finding) => finding.type === "late-tool-edit"
+			const added = findings(snapshot).map((finding) => finding.type === "payload-tool-change"
 				? { ...finding, lines: finding.lines.filter((line) => line.type === "added") }
 				: finding);
 			assert.deepEqual(added, order === "after" ? [] : [
-				{ type: "late-tool-edit", change: "deleted", name: "write", lines: [] },
-				{ type: "late-tool-edit", change: "modified", name: "read", lines: changed },
-				{ type: "late-tool-edit", change: "added", name: "extra", lines: changed },
+				{ type: "payload-tool-change", change: "deleted", name: "write", lines: [] },
+				{ type: "payload-tool-change", change: "modified", name: "read", lines: changed },
+				{ type: "payload-tool-change", change: "added", name: "extra", lines: changed },
 			]);
 			if (order === "before") {
 				for (const change of ["deleted", "modified"]) {
-					const edit = findings(snapshot).find((finding) => finding.type === "late-tool-edit" && finding.change === change);
-					assert.ok(edit?.type === "late-tool-edit");
+					const edit = findings(snapshot).find((finding) => finding.type === "payload-tool-change" && finding.change === change);
+					assert.ok(edit?.type === "payload-tool-change");
 					assert.ok(edit.lines.some((line) => line.type === "removed"), `${change} lists the captured lines`);
 				}
 			}
@@ -128,13 +128,13 @@ for (const mode of ["on", "only"] as const) {
 }
 
 for (const order of ["before", "after"] as const) {
-	test(`demo fixtures ${order} the monitor keep probes provider-free`, async (t) => {
+	test(`verification fixtures ${order} the monitor keep probes provider-free`, async (t) => {
 		let responses = 0;
 		const sentinel: ExtensionFactory = (pi) => {
 			pi.on("after_provider_response", () => { responses++; });
 		};
 		const runtime = await createRuntime(t, {
-			[order]: [payloadLateEdits, hiddenTools, marker, forcedPrompt, inputTransform, sentinel],
+			[order]: [payloadChanges, hiddenTools, marker, forcedPrompt, inputTransform, sentinel],
 		});
 		await runtime.session.bindExtensions({
 			mode: "tui",
@@ -184,7 +184,7 @@ test("hidden-tools demo keeps nested calls available and subject to permission g
 	for (const snapshot of await runtime.snapshots()) findings(snapshot);
 });
 
-test("MCP direct tools are recorded declarations, not late edits", async (t) => {
+test("MCP direct tools are recorded declarations, not payload changes", async (t) => {
 	const directory = await temporaryDirectory(t);
 	const runtime = await createRuntime(t, {
 		before: [
@@ -327,24 +327,24 @@ for (const api of ["openai-completions", "openai-responses"] as const) {
 
 for (const api of APIS) {
 	for (const order of ["before", "after"] as const) {
-		test(`${api}: automatic late-edit demo ${order} the monitor needs no marker prompt`, async (t) => {
-			const runtime = await createRuntime(t, { api, [order]: [payloadLateEdits] });
+		test(`${api}: automatic payload-change fixture ${order} the monitor needs no marker prompt`, async (t) => {
+			const runtime = await createRuntime(t, { api, [order]: [payloadChanges] });
 			for (const prompt of ["ordinary prompt", "another prompt"]) {
 				await runtime.session.prompt(prompt);
 				const snapshot = (await runtime.snapshots()).at(-1);
 				assert.deepEqual(findings(snapshot), order === "after" ? [] : [
-					{ type: "late-edit", change: "modified", part: "user", lines: [
-						{ type: "removed", text: PAYLOAD_LATE_ORIGINAL },
-						{ type: "added", text: PAYLOAD_LATE_MODIFIED },
+					{ type: "payload-change", change: "modified", part: "user", lines: [
+						{ type: "removed", text: PAYLOAD_CHANGE_ORIGINAL },
+						{ type: "added", text: PAYLOAD_CHANGE_MODIFIED },
 					] },
-					{ type: "late-edit", change: "deleted", part: "user", lines: [{ type: "removed", text: PAYLOAD_LATE_DELETED }] },
-					{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: PAYLOAD_LATE_ADDED }] },
+					{ type: "payload-change", change: "deleted", part: "user", lines: [{ type: "removed", text: PAYLOAD_CHANGE_DELETED }] },
+					{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: PAYLOAD_CHANGE_ADDED }] },
 				]);
 				const sent = JSON.stringify(runtime.provider.requests.at(-1)?.body);
-				assert.ok(sent.includes(PAYLOAD_LATE_ADDED) && sent.includes(PAYLOAD_LATE_MODIFIED));
-				assert.ok(!sent.includes(PAYLOAD_LATE_DELETED) && !sent.includes(PAYLOAD_LATE_ORIGINAL));
+				assert.ok(sent.includes(PAYLOAD_CHANGE_ADDED) && sent.includes(PAYLOAD_CHANGE_MODIFIED));
+				assert.ok(!sent.includes(PAYLOAD_CHANGE_DELETED) && !sent.includes(PAYLOAD_CHANGE_ORIGINAL));
 				assert.ok(sent.includes(prompt), "real prompts are preserved");
-				assert.ok(!JSON.stringify(runtime.session.sessionManager.getBranch()).includes("XYZZY_PAYLOAD_LATE"),
+				assert.ok(!JSON.stringify(runtime.session.sessionManager.getBranch()).includes("XYZZY_PAYLOAD_CHANGE"),
 					"synthetic notes and payload edits never enter session history");
 			}
 			assert.equal(runtime.provider.requests.length, 2);
@@ -362,17 +362,17 @@ for (const api of APIS) {
 			assert.equal(runtime.session.settingsManager.getSettings().codemode?.mode, "on");
 		});
 
-		test(`${api}: payload message edits ${order} the monitor are late edits only before it`, async (t) => {
+		test(`${api}: payload message edits ${order} the monitor are payload changes only before it`, async (t) => {
 			const runtime = await createRuntime(t, { api, [order]: [payloadMessageEditor(api)] });
 			await runtime.session.prompt("first prompt");
 			await runtime.session.prompt("second prompt");
 			const snapshots = await runtime.snapshots();
 			const sent = JSON.stringify(runtime.provider.requests.at(-1)?.body);
-			assert.ok(sent.includes(LATE_MESSAGE) && !sent.includes("first prompt"), "the editor changed the sent payload");
+			assert.ok(sent.includes(PAYLOAD_MESSAGE) && !sent.includes("first prompt"), "the editor changed the sent payload");
 			assert.deepEqual(findings(snapshots[1]), order === "after" ? [] : [
-				{ type: "late-edit", change: "deleted", part: "user", lines: [{ type: "removed", text: "first prompt" }] },
-				{ type: "late-edit", change: "modified", part: "user", lines: [{ type: "added", text: LATE_LINE }] },
-				{ type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: LATE_MESSAGE }] },
+				{ type: "payload-change", change: "deleted", part: "user", lines: [{ type: "removed", text: "first prompt" }] },
+				{ type: "payload-change", change: "modified", part: "user", lines: [{ type: "added", text: PAYLOAD_LINE }] },
+				{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: PAYLOAD_MESSAGE }] },
 			]);
 		});
 	}
@@ -428,7 +428,7 @@ const ADJUSTMENT_CASES: readonly AdjustmentCase[] = [
 
 for (const adjustment of ADJUSTMENT_CASES) {
 	const { api, ...variant } = adjustment;
-	test(`${api}: Pi's adjustments are not late edits ${JSON.stringify(variant)}`, async (t) => {
+	test(`${api}: Pi's adjustments are not payload changes ${JSON.stringify(variant)}`, async (t) => {
 		const runtime = await createRuntime(t, {
 			api, modelId: adjustment.modelId, compat: adjustment.compat, oauth: adjustment.oauth,
 			before: [...(adjustment.forced ? [forcedPrompt] : []), ...(adjustment.codemode ? [createCodemodeExtension()] : [])],
@@ -542,11 +542,11 @@ function payloadMessageEditor(api: MockApi): ExtensionFactory {
 			const last = users.at(-1);
 			if (users.length < 2 || last === undefined) return;
 			messages.splice(messages.indexOf(users[0]), 1);
-			if (typeof last.content === "string") last.content = `${last.content}\n${LATE_LINE}`;
-			else (last.content as unknown[]).push({ type: api === "openai-responses" ? "input_text" : "text", text: LATE_LINE });
+			if (typeof last.content === "string") last.content = `${last.content}\n${PAYLOAD_LINE}`;
+			else (last.content as unknown[]).push({ type: api === "openai-responses" ? "input_text" : "text", text: PAYLOAD_LINE });
 			messages.push(api === "openai-responses"
-				? { role: "user", content: [{ type: "input_text", text: LATE_MESSAGE }] }
-				: { role: "user", content: LATE_MESSAGE });
+				? { role: "user", content: [{ type: "input_text", text: PAYLOAD_MESSAGE }] }
+				: { role: "user", content: PAYLOAD_MESSAGE });
 		});
 	};
 }
@@ -568,7 +568,7 @@ async function exerciseToolChanges(runtime: Runtime): Promise<void> {
 		assert.deepEqual(findings(snapshots[index]), []);
 		assert.deepEqual(snapshots[index].changes, { conversation: [], system: [] });
 	}
-	// A same-name redefinition is recorded by Pi, not reported as a late edit
+	// A same-name redefinition is recorded by Pi, not reported as a payload change
 	await runtime.session.prompt("/redefine");
 	await runtime.session.prompt("after redefinition");
 	assert.deepEqual(findings((await runtime.snapshots()).at(-1)), []);
