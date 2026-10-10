@@ -274,6 +274,78 @@ test("Anthropic message units: OAuth identity, held system text, merged blocks, 
 		[{ part: "system", text: `${CLAUDE_CODE_IDENTITY} Custom.` }]);
 });
 
+/** Cases of #9's provider-to-agent message converter, as payloads in one API's representation. */
+interface ConverterCases {
+	/** User text in two text blocks. */
+	readonly textBlocks: unknown;
+	/** User text with an image. */
+	readonly mixedContent: unknown;
+	/** Assistant text and a tool call. */
+	readonly assistantBlocks: unknown;
+	/** System prompt as a text block. */
+	readonly systemBlocks: unknown;
+	/** A tool result under a role the API does not have. */
+	readonly unknownRole: unknown;
+}
+
+const CONVERTER_CASES: Readonly<Record<string, ConverterCases>> = {
+	"openai-completions": {
+		textBlocks: { messages: [{ role: "user", content: [
+			{ type: "text", text: "hello" }, { type: "text", text: "world" },
+		] }] },
+		mixedContent: { messages: [{ role: "user", content: [
+			{ type: "text", text: "look at this image" }, { type: "image_url", image_url: { url: IMAGE_DATA } },
+		] }] },
+		assistantBlocks: { messages: [{
+			role: "assistant", content: [{ type: "text", text: "done" }],
+			tool_calls: [{ id: "a", type: "function", function: { name: "read", arguments: '{"path":"x"}' } }],
+		}] },
+		systemBlocks: { messages: [{ role: "system", content: [{ type: "text", text: "you are pi" }] }] },
+		unknownRole: { messages: [{ role: "toolResult", tool_call_id: "a", content: [{ type: "text", text: "result" }] }] },
+	},
+	"openai-responses": {
+		textBlocks: { input: [{ role: "user", content: [
+			{ type: "input_text", text: "hello" }, { type: "input_text", text: "world" },
+		] }] },
+		mixedContent: { input: [{ role: "user", content: [
+			{ type: "input_text", text: "look at this image" }, { type: "input_image", image_url: IMAGE_DATA },
+		] }] },
+		assistantBlocks: { input: [
+			{ type: "message", role: "assistant", content: [{ type: "output_text", text: "done", annotations: [] }] },
+			{ type: "function_call", call_id: "a", name: "read", arguments: '{"path":"x"}' },
+		] },
+		systemBlocks: { input: [{ role: "system", content: [{ type: "input_text", text: "you are pi" }] }] },
+		unknownRole: { input: [{ role: "toolResult", content: [{ type: "input_text", text: "result" }] }] },
+	},
+	"anthropic-messages": {
+		textBlocks: { messages: [{ role: "user", content: [
+			{ type: "text", text: "hello" }, { type: "text", text: "world" },
+		] }] },
+		mixedContent: { messages: [{ role: "user", content: [
+			{ type: "text", text: "look at this image" },
+			{ type: "image", source: { type: "base64", media_type: "image/png", data: IMAGE_DATA } },
+		] }] },
+		assistantBlocks: { messages: [{ role: "assistant", content: [
+			{ type: "text", text: "done" }, { type: "tool_use", id: "a", name: "read", input: { path: "x" } },
+		] }] },
+		systemBlocks: { system: [{ type: "text", text: "you are pi" }], messages: [] },
+		unknownRole: { messages: [{ role: "toolResult", content: [{ type: "text", text: "result" }] }] },
+	},
+};
+
+for (const [api, cases] of Object.entries(CONVERTER_CASES)) {
+	test(`${api}: #9 converter cases become message units without image data`, () => {
+		assert.deepEqual(units(api, cases.textBlocks), [{ part: "user", text: "hello\nworld" }]);
+		assert.deepEqual(units(api, cases.mixedContent), [{ part: "user", text: "look at this image" }]);
+		assert.deepEqual(units(api, cases.assistantBlocks), [
+			{ part: "assistant", text: "done" }, { part: "tool-call", name: "read", text: '{"path":"x"}' },
+		]);
+		assert.deepEqual(units(api, cases.systemBlocks), [{ part: "system", text: "you are pi" }]);
+		// The converter passed unknown roles through; the parser cannot know what the model sees
+		assert.equal(parsePayloadMessages(api, cases.unknownRole).status, "unsupported");
+	});
+}
+
 test("unknown message parts, items, and blocks leave the message channel unsupported", () => {
 	const cases: Array<[string, unknown]> = [
 		["openai-completions", { messages: [{ role: "user", content: [{ type: "input_audio", input_audio: {} }] }] }],

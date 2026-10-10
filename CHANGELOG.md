@@ -16,6 +16,7 @@
 * `[package]` Require Pi 1.1 and report older versions, drop the pre-0.86 prompt parser.
 
 ### Fixed
+* `[injections]` Fixed the issue reported in PR [#9](https://github.com/dimk90/pi-context-view/pull/9) by [@Drakejiejie](https://github.com/Drakejiejie) and adopted the PR’s tests.
 * `[usage]` Leave out tools hidden from the model, such as by codemode `only` ([#11](https://github.com/dimk90/pi-context-view/issues/11)).
 * `[usage]` Count request replacements once and exclude removals ([#6](https://github.com/dimk90/pi-context-view/issues/6)).
 * `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).

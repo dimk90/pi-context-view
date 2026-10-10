@@ -140,6 +140,51 @@ test("late message edits complete the guard with their findings", async () => {
 	});
 });
 
+/** Session prompt and editor context of the pi-ide simulation from #9; the selection keeps non-ASCII text. */
+const IDE_PROMPT = "What is the text in my selection?";
+const IDE_CONTEXT = ["<editor>todo.md</editor>", "<selection>Prompts and ACP — résumé notes</selection>"];
+
+/** The simulation's payload in the representation of `api`: the session prompt, then the editor context. */
+function idePayload(api: string): unknown {
+	const text = IDE_CONTEXT.join("\n");
+	if (api === "openai-responses") {
+		return { input: [
+			{ role: "developer", content: "you are pi" },
+			{ role: "user", content: [{ type: "input_text", text: IDE_PROMPT }] },
+			{ role: "user", content: [{ type: "input_text", text }] },
+		] };
+	}
+	const messages = [{ role: "user", content: IDE_PROMPT }, { role: "user", content: [{ type: "text", text }] }];
+	return api === "anthropic-messages"
+		? { system: "you are pi", messages }
+		: { messages: [{ role: "system", content: "you are pi" }, ...messages] };
+}
+
+for (const api of ["openai-completions", "openai-responses", "anthropic-messages"]) {
+	test(`#9 pi-ide: ${api} editor context added to the payload is a late edit with its text`, async () => {
+		// pi-ide's custom message reached only the payload, where Pi had already converted it to a user message
+		const model = { ...MODEL, api };
+		const baseline = [
+			{ entryId: "s", message: { role: "system" as const, content: "you are pi", timestamp: 1 } },
+			{ entryId: "u", message: { role: "user" as const, content: IDE_PROMPT, timestamp: 2 } },
+		];
+		const request: CapturedRequest = {
+			id: 1, origin: "real-turn", requestModel: model, baseline: { leafId: "u", messages: baseline },
+			...copyRequest(baseline, baseline.map(({ message }) => message)),
+		};
+		const h = harness(request);
+		h.guard.accept(request, idePayload(api));
+		await flush();
+		assert.deepEqual(h.snapshots.latest()?.guard, {
+			status: "complete", dispatch: { ...DISPATCH, api },
+			findings: [{
+				type: "late-edit", change: "added", part: "user",
+				lines: IDE_CONTEXT.map((text) => ({ type: "added", text })),
+			}],
+		});
+	});
+}
+
 test("a request that cannot be converted keeps the tool channel's findings", async () => {
 	const request = capture();
 	// An earlier handler's malformed message reaches the copied middle of the request

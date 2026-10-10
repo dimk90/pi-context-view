@@ -28,6 +28,9 @@ import { buildUsageSnapshot } from "../src/replay.ts";
 import type { ConversationChange, RequestSnapshot, SystemChange } from "../src/snapshot.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
+import agentStartMessage, {
+	AGENT_START_MESSAGE_TEXT, AGENT_START_MESSAGE_TYPE,
+} from "./fixtures/agent-start-message.ts";
 import contextAdd, { CONTEXT_ADD_TEXT, CONTEXT_ADD_TYPE } from "./fixtures/context-add.ts";
 import contextAddUser, { CONTEXT_ADD_USER_TEXT } from "./fixtures/context-add-user.ts";
 import contextDelete, { CONTEXT_DELETE_MARKER } from "./fixtures/context-delete.ts";
@@ -39,11 +42,16 @@ import contextReplaceRemove, {
 } from "./fixtures/context-replace-remove.ts";
 import forcedPrompt, { FORCED_SYSTEM_PROMPT } from "./fixtures/forced-prompt.ts";
 import inPlaceMutation, { IN_PLACE_SUFFIX } from "./fixtures/in-place-mutation.ts";
+import injectionPoints, {
+	POINT_AGENT_START_TEXT, POINT_AGENT_START_TYPE, POINT_CONTEXT_TEXT, POINT_PAYLOAD_TEXT, POINT_SYSTEM_TEXT,
+	POINT_SYSTEM_TYPE,
+} from "./fixtures/injection-points.ts";
 import inputTransform from "./fixtures/input-transform.ts";
 import marker from "./fixtures/marker.ts";
 import sectionDelete, { SECTION_DELETE_NAME, SECTION_DELETE_SECTIONS } from "./fixtures/section-delete.ts";
 import sectionModify, { SECTION_MODIFY_SECTIONS, SECTION_MODIFY_TEXT } from "./fixtures/section-modify.ts";
 import sectionPatch, { SECTION_PATCH_SECTIONS } from "./fixtures/section-patch.ts";
+import systemAddMessage, { SYSTEM_ADD_MESSAGE_TEXT, SYSTEM_ADD_MESSAGE_TYPE } from "./fixtures/system-add-message.ts";
 import systemAppend, { SYSTEM_APPEND_TEXT } from "./fixtures/system-append.ts";
 import { type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
 
@@ -252,6 +260,85 @@ suite("structured edits", { concurrency: true }, () => {
 			assert.equal(changes.filter((change) => change === "deleted").length, 2);
 			assert.equal(changes.filter((change) => change.startsWith("added ")).length, 2);
 			assert.ok(changes.includes(`added user: ${CONTEXT_REORDER_MARKER}: move me`));
+		});
+
+		test(`#9: each injection point is a change, a late edit, or not visible (fixture ${position})`, async (t) => {
+			const provider = await startProvider(t);
+			const factories = position === "before" ? [injectionPoints, monitorSlot] : [monitorSlot, injectionPoints];
+			const runtime = await createRuntime(t, provider, { factories });
+			await runtime.session.prompt("prompt");
+			const [snapshot] = await runtime.settled({ lateEdits: true });
+			const sent = JSON.stringify(provider.requests[0]?.body);
+			for (const text of [POINT_AGENT_START_TEXT, POINT_CONTEXT_TEXT, POINT_SYSTEM_TEXT, POINT_PAYLOAD_TEXT]) {
+				assert.ok(sent.includes(text), `the request carries ${text}`);
+			}
+			const persisted = runtime.session.sessionManager.getBranch().some((entry) =>
+				entry.type === "custom_message" && entry.customType === POINT_AGENT_START_TYPE);
+			assert.ok(persisted, "the before_agent_start message is persisted, so it belongs to the baseline");
+
+			const before = position === "before";
+			assert.deepEqual(snapshot.changes.system, []);
+			assert.deepEqual(snapshot.changes.conversation.map(describeChange), [
+				`added user: ${POINT_CONTEXT_TEXT}`,
+				...(before ? [`added ${POINT_SYSTEM_TYPE}: ${POINT_SYSTEM_TEXT}`] : []),
+			]);
+			assert.ok(snapshot.guard.status === "complete");
+			// Before the monitor, the payload message is a late edit; after it, the custom message Pi converted to user text
+			assert.deepEqual(snapshot.guard.findings, [{
+				type: "late-edit", change: "added", part: "user",
+				lines: [{ type: "added", text: before ? POINT_PAYLOAD_TEXT : POINT_SYSTEM_TEXT }],
+			}]);
+
+			await runtime.session.prompt("/context injections");
+			const rows = treeRows(await runtime.renderView());
+			assert.deepEqual(rows.slice(rows.indexOf(POINT_AGENT_START_TYPE), rows.indexOf("TOTAL")), [
+				POINT_AGENT_START_TYPE, "message",
+				...(before ? [POINT_SYSTEM_TYPE, "message · Added"] : []),
+				"unattributed", "user message · Added",
+				"late edits", "user message · Added",
+			]);
+			assert.deepEqual(runtime.errors, []);
+		});
+
+		test(`--message demo: a saved message and a context_with_system addition (fixtures ${position})`, async (t) => {
+			const provider = await startProvider(t);
+			const fixtures = [agentStartMessage, systemAddMessage];
+			const factories = position === "before" ? [...fixtures, monitorSlot] : [monitorSlot, ...fixtures];
+			const runtime = await createRuntime(t, provider, { factories });
+			const before = position === "before";
+			const added = [SYSTEM_ADD_MESSAGE_TYPE, "message · Added"];
+			/** Rows of the fixtures' groups in the rendered Injections view, after pi's own rows. */
+			const fixtureRows = async () => {
+				await runtime.session.prompt("/context injections");
+				const rows = treeRows(await runtime.renderView());
+				return rows.slice(rows.indexOf("read") + 1, rows.indexOf("TOTAL"));
+			};
+
+			// The probe saves one copy; a probe has no payload, so a late edit cannot show yet
+			assert.deepEqual(await fixtureRows(), [...(before ? added : []), AGENT_START_MESSAGE_TYPE, "message"]);
+			assert.equal(provider.requests.length, 0);
+			await runtime.session.prompt("prompt");
+			assert.deepEqual(await fixtureRows(), [
+				AGENT_START_MESSAGE_TYPE, "message", "message",
+				...(before ? added : ["late edits", "user message · Added"]),
+			]);
+
+			const snapshots = await runtime.settled({ lateEdits: true });
+			const addition = [`added ${SYSTEM_ADD_MESSAGE_TYPE}: ${SYSTEM_ADD_MESSAGE_TEXT}`];
+			for (const snapshot of snapshots) {
+				assert.deepEqual(snapshot.changes.conversation.map(describeChange), before ? addition : []);
+			}
+			const real = snapshots[1];
+			assert.ok(real?.guard.status === "complete");
+			assert.deepEqual(real.guard.findings, before ? [] : [{
+				type: "late-edit", change: "added", part: "user", lines: [{ type: "added", text: SYSTEM_ADD_MESSAGE_TEXT }],
+			}]);
+			const saved = runtime.session.sessionManager.getBranch().filter((entry) =>
+				entry.type === "custom_message" && entry.customType === AGENT_START_MESSAGE_TYPE);
+			assert.equal(saved.length, 2, "the probe and the prompt each save one copy");
+			const sent = JSON.stringify(provider.requests[0]?.body);
+			assert.ok(sent.includes(AGENT_START_MESSAGE_TEXT) && sent.includes(SYSTEM_ADD_MESSAGE_TEXT));
+			assert.deepEqual(runtime.errors, []);
 		});
 
 		const structured = position === "before";
@@ -513,6 +600,15 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 			return snapshots;
 		},
 	};
+}
+
+/** Rendered tree rows as `label` or `label · marker`, without tree lines, leader dots, or token counts. */
+function treeRows(lines: readonly string[]): string[] {
+	return lines.flatMap((line) => {
+		const row = /^[→│├└─\s]*(.+?) \.+ \d+(?: · (\w+))?$/.exec(line);
+		if (row === null) return [];
+		return [row[2] === undefined ? row[1] : `${row[1]} · ${row[2]}`];
+	});
 }
 
 /** Assert a snapshot found no request-only change. */
