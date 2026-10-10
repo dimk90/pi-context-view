@@ -18,6 +18,7 @@ const SELECTIONS = [
 		"system-append", "section-patch", "section-modify", "section-delete", "in-place-mutation",
 	] },
 	{ flag: "--payload", fixtures: ["payload-late-edits", "payload-delete", "payload-remove-tool"] },
+	{ flag: "--message", fixtures: ["agent-start-message", "system-add-message"] },
 	{ flag: "--codemode-only", fixtures: [] },
 	{ flag: "--forced", fixtures: ["forced-prompt"] },
 ];
@@ -70,8 +71,8 @@ test("demo launcher keeps the real agent directory without --codemode-only", asy
 });
 
 for (const forwarded of [
-	["--", "--context", "--system", "--payload", "--codemode-only", "--after", "--forced"],
-	["--model", "provider/model", "--context", "--system", "--payload", "--codemode-only", "--forced"],
+	["--", "--context", "--system", "--payload", "--message", "--codemode-only", "--after", "--forced"],
+	["--model", "provider/model", "--context", "--system", "--payload", "--message", "--codemode-only", "--forced"],
 	["--force"],
 	["--context-modify"],
 	["--section-patch"],

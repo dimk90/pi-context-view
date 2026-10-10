@@ -9,6 +9,7 @@
 #   --context       load conversation additions, modifications, deletions, reordering
 #   --system        load system prompt and section edits
 #   --payload       load late message edits and manual tool-declaration removal
+#   --message       load a saved before_agent_start message and a context_with_system message
 #   --forced        load forced-prompt.ts, replacing the whole system prompt
 #   --codemode-only load Pi's built-in codemode in only mode, through temporary settings
 #   --after         load pi-context-view before the selected demo extensions
@@ -74,6 +75,8 @@ main() {
                 fixtures+=(system-append section-patch section-modify section-delete in-place-mutation) ;;
             --payload)
                 fixtures+=(payload-late-edits payload-delete payload-remove-tool) ;;
+            --message)
+                fixtures+=(agent-start-message system-add-message) ;;
             *) break ;;
         esac
         shift

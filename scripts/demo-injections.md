@@ -22,6 +22,7 @@ pi-context-view before all selected fixtures.
 | `--context`       | `context-modify`, `context-in-place`, `context-delete`, `context-reorder`, `context-add`, `context-add-user` |
 | `--system`        | `system-append`, `section-patch`, `section-modify`, `section-delete`, `in-place-mutation`                    |
 | `--payload`       | `payload-late-edits`, `payload-delete`, `payload-remove-tool`                                                |
+| `--message`       | `agent-start-message`, `system-add-message`                                                                  |
 | `--forced`        | `forced-prompt` (forced system prompt)                                                                       |
 | `--codemode-only` | none; Pi's built-in codemode in `only` mode                                                                  |
 
@@ -106,6 +107,31 @@ hook and are not visible; the later
 explicitly selected `context_with_system` edits still appear as late edits.
 `--forced` does not stop these message demos.
 
+## Automatic message demo
+
+Run `./scripts/demo-injections.sh --message --no-session`, open
+`/context injections`, send an ordinary prompt, then open it again. These two
+fixtures cover the part of the [#9](https://github.com/dimk90/pi-context-view/pull/9)
+example that the other groups do not:
+
+| Fixture               | Event                 | Target: before                              | Target: after                              |
+| --------------------- | --------------------- | ------------------------------------------- | ------------------------------------------ |
+| `agent-start-message` | `before_agent_start`  | no change: a saved message, no marker       | same as before                             |
+| `system-add-message`  | `context_with_system` | addition, `context-view-fixture-system-add` | edited after monitor: `Added` user message |
+
+Pi saves the `before_agent_start` message in the session, so Injections lists
+it under `context-view-fixture-agent-message` like any saved custom message.
+Every run saves one more copy, the silent probe included: after the probe and
+one prompt, the group has two messages.
+
+Before the monitor, the `context_with_system` message is `Added` under its
+`customType`, in the probe and in real requests. After the monitor, the probe
+does not show it, because a probe has no provider payload. After a real
+prompt, it is an `Added` user message in `late edits`: Pi has already turned
+the custom message into a user message, so its `customType` is lost.
+
+Checked with Pi 1.1.0 by `test/capture-runtime.test.ts`, in both load orders.
+
 ## Optional codemode hidden-tools demo
 
 ```sh
@@ -113,8 +139,8 @@ explicitly selected `context_with_system` edits still appear as late edits.
 ```
 
 `--codemode-only` loads Pi's built-in codemode with `-e builtin:codemode`,
-without adding fixtures. Add `--forced`, `--context`, `--system`, or
-`--payload` to include those demos. Pi loads explicit `builtin:` entries after
+without adding fixtures. Add `--forced`, `--context`, `--system`, `--payload`,
+or `--message` to include those demos. Pi loads explicit `builtin:` entries after
 other `-e` paths, so `--after` moves only pi-context-view and the fixtures.
 
 Pi reads codemode settings only from settings files, so the launcher runs pi
