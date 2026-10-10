@@ -1,5 +1,5 @@
 /**
- * Attributor: best-effort sources for conversation changes (D6). Pi exposes
+ * Attributor: best-effort sources for conversation changes. Pi exposes
  * no per-handler observation, so only a custom message's own fields can name
  * a source; every other change stays unattributed.
  */

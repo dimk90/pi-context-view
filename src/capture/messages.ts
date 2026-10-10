@@ -1,5 +1,5 @@
 /**
- * PayloadGuard's message channel (D4): compare the text units a payload sends
+ * PayloadGuard's message channel: compare the text units a payload sends
  * with the units Pi would send for the captured request. Keys ignore
  * whitespace; an LCS alignment matches them, and every unit left over is a
  * late edit with its changed lines. Pure functions over process-local data.

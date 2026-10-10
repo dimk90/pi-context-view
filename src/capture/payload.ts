@@ -1,6 +1,6 @@
 /**
  * PayloadParser: copies a provider payload in `before_provider_request` and
- * extracts its tool-declaration and message channels (D4). The API of the
+ * extracts its tool-declaration and message channels. The API of the
  * request or dispatched model selects the parser, never the payload's shape:
  * the shape is only checked against that API, and a payload that does not
  * match it is not compared. Pure functions over process-local data.

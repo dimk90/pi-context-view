@@ -1,5 +1,5 @@
 /**
- * PayloadGuard's tool-declaration channel (D4, D7): compare the declarations a
+ * PayloadGuard's tool-declaration channel: compare the declarations a
  * payload carries with the tools the structured capture replayed, less the ones
  * Pi hid. Pure functions over process-local data.
  */

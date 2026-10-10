@@ -1,6 +1,6 @@
 /**
  * ProjectionReader and TranscriptCapture: the synchronous part of a structured
- * capture in `context_with_system` (D2, D3). Everything here runs inside the
+ * capture in `context_with_system`. Everything here runs inside the
  * handler, before later handlers can mutate the shared request messages.
  */
 import {

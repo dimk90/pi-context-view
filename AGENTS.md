@@ -12,7 +12,7 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 
 | Path                  | Read before                                                                                                                                                                                              |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doc/ARCHITECTURE.md` | Changing lifecycle capture, silent probes, attribution, usage accounting, the semantic model, configuration semantics, or privacy behavior.                                                              |
+| `doc/ARCHITECTURE.md` | Changing lifecycle capture, silent probes, attribution, usage accounting, the semantic model, configuration semantics, or privacy behavior. Its page table names the `doc/architecture/` page to load.   |
 | `doc/UI.md`           | Changing the shared frame, colors, casing, descriptions, interaction, responsive behavior, or release media. Per-view rules live in `doc/ui/usage.md`, `doc/ui/injections.md`, and `doc/ui/previews.md`. |
 | `doc/THINKING.md`     | Changing reasoning-token accounting, signature handling, or thinking-preview notation.                                                                                                                   |
 | `doc/PLAN.md`         | Adding commands, configuration, runtime inspection, or other roadmap work.                                                                                                                               |
@@ -20,11 +20,11 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 
 ## Repository rules
 
-- **Architecture contract.** Preserve the invariants in `doc/ARCHITECTURE.md`; update that document with any lifecycle, capture, attribution, or usage behavior change.
+- **Architecture contract.** Preserve the invariants in `doc/ARCHITECTURE.md`; update the owning `doc/architecture/` page with any lifecycle, capture, attribution, or usage behavior change.
 - **Privacy gate.** Keep raw prompts and messages process-local and terminal-sanitized; expose them only after explicit Enter preview, and never log them, persist extra copies, include them in notifications, or inject them into later requests.
-- **Module boundaries.** Keep `src/index.ts` to wiring: create the layers, call their `register*()` functions in the required order, and register the command. Put independently testable state, measurement, and rendering behavior in focused modules under `src/`, `src/probe/`, and `src/ui/`.
+- **Module boundaries.** Keep `src/index.ts` to wiring: create the layers, call their `register*()` functions in the required order, and register the command. Put independently testable state, measurement, and rendering behavior in focused modules under `src/`, `src/capture/`, `src/probe/`, and `src/ui/`.
 - **Command contract.** Keep parsing, completions, registration text, README usage, and command tests synchronized whenever the `/context` grammar or mode guard changes.
-- **Config contract.** Keep user-configurable state override-only: defaults in code, no auto-created or default-backfilled config file, invalid entries degrading to defaults. `doc/ARCHITECTURE.md` holds the full load and write contract.
+- **Config contract.** Keep user-configurable state override-only: defaults in code, no auto-created or default-backfilled config file, invalid entries degrading to defaults. `doc/architecture/privacy.md` holds the full load and write contract.
 - **UI contract.** Treat `doc/UI.md` and `doc/ui/` as canonical; update the owning page and focused tests whenever the specified TUI behavior changes.
 - **Dependency contract.** Keep all four Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) as `"*"` peer dependencies and exact development pins matching `pi --version`; run `pnpm install` after changing any pin.
 
@@ -34,5 +34,5 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 pnpm check
 ```
 
-- **Lifecycle changes.** Load `test/fixtures/marker.ts`, `test/fixtures/forced-prompt.ts`, and `test/fixtures/input-transform.ts` in both extension orders and use an `after_provider_response` sentinel to prove a probe makes no provider request.
+- **Lifecycle changes.** Load `test/fixtures/marker.ts`, `test/fixtures/forced-prompt.ts`, and `test/fixtures/input-transform.ts` in both extension orders and use an `after_provider_response` sentinel to prove a probe makes no provider request. Runtime tests use the mock provider in `test/harness/`; `doc/architecture/validation.md` maps each validation case to its tests.
 - **TUI changes.** Follow the `pi-extension` skill for real-PTY and provider smoke tests, and exercise the dimensions and interactions required by `doc/UI.md`.

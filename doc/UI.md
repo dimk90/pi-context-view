@@ -158,8 +158,8 @@ keyboard-only and never advertise an affordance one mode lacks.
 
 Navigation skips non-selectable rows and remains bounded after terminal resize.
 All content is terminal-sanitized before rendering and raw content appears only
-after explicit Enter selection; [ARCHITECTURE.md](ARCHITECTURE.md) owns the full
-privacy contract.
+after explicit Enter selection; [architecture/privacy.md](architecture/privacy.md)
+owns the full privacy contract.
 
 ## Responsive rendering
 

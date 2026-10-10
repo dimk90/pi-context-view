@@ -1,5 +1,5 @@
 /**
- * ProbeTrigger: the automatic probe policy (D10). It waits for idle, applies
+ * ProbeTrigger: the automatic probe policy. It waits for idle, applies
  * the probe preconditions, starts the one SilentProbe attempt of this runtime,
  * and waits for its snapshot in SnapshotStore. It imports no capture module and
  * applies no run-mode guard; consumers decide when to ask for a probe.

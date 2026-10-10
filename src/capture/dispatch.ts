@@ -1,6 +1,6 @@
 /**
- * DispatchConfirmer: records the dispatch identity of each paired request once
- * (D4). Assistant `message_start` and `provider_stream_event` both carry it,
+ * DispatchConfirmer: records the dispatch identity of each paired request once.
+ * Assistant `message_start` and `provider_stream_event` both carry it,
  * in no fixed order; assistant `message_end` is the fallback, as for a request
  * that fails before streaming. Handlers only read the identity and return.
  */

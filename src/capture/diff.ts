@@ -1,7 +1,7 @@
 /**
  * Differ: compares a captured request with its baseline. System state and
- * conversation are compared separately (see "Diff algorithm" in
- * REQUEST-ONLY-INJECTIONS.md). Pure functions over process-local data.
+ * conversation are compared separately (see "Diff" in
+ * doc/architecture/capture.md). Pure functions over process-local data.
  */
 import { declarationsEqual, getCurrentSystemMessage, type SystemMessage, type Tool } from "@earendil-works/pi-ai";
 

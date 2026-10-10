@@ -1,6 +1,6 @@
 /**
- * Consumers read the store, never capture or probe internals (D11 in
- * REQUEST-ONLY-INJECTIONS.md). The check follows relative imports
+ * Consumers read the store, never capture or probe internals ("Layers" in
+ * doc/ARCHITECTURE.md). The check follows relative imports
  * transitively, so an indirect dependency fails too.
  */
 import assert from "node:assert/strict";

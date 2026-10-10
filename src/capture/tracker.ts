@@ -1,7 +1,7 @@
 /**
  * RequestTracker: numbers captures and pairs each agent payload with the
  * latest capture still waiting for one. `turnIndex` restarts with every agent
- * run, so only a local number identifies a request (D4).
+ * run, so only a local number identifies a request.
  */
 import { hasWarmOutputLimit } from "./payload.ts";
 

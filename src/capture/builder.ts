@@ -1,6 +1,6 @@
 /**
  * SnapshotBuilder: runs the deferred part of a capture off the request's
- * critical path (D5), then publishes the snapshot and its guard update (D11).
+ * critical path, then publishes the snapshot and its guard update.
  */
 import type { ConversationChange, GuardResult, RequestSnapshot, StructuredChanges } from "../snapshot.ts";
 import { attributeMessage } from "./attribution.ts";

@@ -1,9 +1,10 @@
 /**
- * Pi behavior the payload guard relies on (D4 in doc/REQUEST-ONLY-INJECTIONS.md),
- * checked in a real in-process runtime against the mock provider: which model
- * `ctx.model` names while a request is prepared, which events carry the
- * dispatch identity, what `ctx.modelRegistry.find()` returns for a routed
- * model, and how each API serializes a request. Only Pi and test extensions
+ * Pi behavior the payload guard relies on ("Evidence" in
+ * doc/architecture/payload-guard.md), checked in a real in-process runtime
+ * against the mock provider: which model `ctx.model` names while a request is
+ * prepared, which events carry the dispatch identity, what
+ * `ctx.modelRegistry.find()` returns for a routed model, and how each API
+ * serializes a request. Only Pi and test extensions
  * load; the monitor itself is not involved.
  */
 import assert from "node:assert/strict";

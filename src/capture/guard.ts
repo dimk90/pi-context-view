@@ -1,6 +1,6 @@
 /**
  * PayloadGuard: deferred comparison of the tool-declaration and message
- * channels, and dispatch confirmation (D4, D7). Physical selections parse
+ * channels, and dispatch confirmation. Physical selections parse
  * immediately after the payload copy; virtual selections keep the copy until
  * dispatch supplies the model.
  */

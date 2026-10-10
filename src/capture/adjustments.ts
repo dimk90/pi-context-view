@@ -1,9 +1,10 @@
 /**
- * Pi's own adjustments to the message channel (D4). The captured request is
- * rebuilt as the monitor saw it, converted as Pi converts every request, and
- * rendered as the text units the selected API sends. Only adjustments that
- * the model's capabilities, its API, or the image-blocking setting decide are
- * applied; provider serializers are reproduced only as far as their text.
+ * Pi's own adjustments to the message channel (see
+ * doc/architecture/payload-guard.md). The captured request is rebuilt as the
+ * monitor saw it, converted as Pi converts every request, and rendered as the
+ * text units the selected API sends. Only adjustments that the model's
+ * capabilities, its API, or the image-blocking setting decide are applied;
+ * provider serializers are reproduced only as far as their text.
  */
 import {
 	type AssistantMessage,

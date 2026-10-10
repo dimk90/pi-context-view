@@ -22,7 +22,8 @@ injected by other extensions.
   category (tools, skills, messages, and more).
 
 - **Context injections** - explore the hidden parts of the context: the
-  system prompt, tool definitions, and extension injections.
+  system prompt, tool definitions, and extension injections, including
+  changes that extensions make only to the request sent to the model.
 
 ## Commands
 
@@ -99,7 +100,7 @@ You can configure the number of rows and columns in the `Context Usage` map:
 ## Context Footprint
 
 `pi-context-view` adds nothing to the model context. Opening a view before the
-first turn may run one [silent probe](doc/ARCHITECTURE.md#on-demand-silent-probe)
+first turn may run one [silent probe](doc/architecture/probe.md)
 that sends no request and leaves only blank entries, omitted from future context.
 
 ## My Other Stuff

@@ -1,6 +1,6 @@
 /**
  * Request snapshots and the SnapshotStore that decouples capture from its
- * consumers (D11 in REQUEST-ONLY-INJECTIONS.md). Capture publishes; views read.
+ * consumers (doc/architecture/capture.md). Capture publishes; views read.
  * Imports Pi types only, so the store runs and is tested without a Pi runtime.
  */
 import type { Tool } from "@earendil-works/pi-ai";
@@ -13,7 +13,7 @@ export type CaptureOrigin = "real-turn" | "synthetic-probe";
 export type RequestMessage = ContextEvent["messages"][number];
 
 /**
- * Best-effort source of a conversation change (D6). Neither field proves
+ * Best-effort source of a conversation change. Neither field proves
  * ownership: any extension can reuse them. Both absent means unattributed.
  * For a modification or deletion they describe the affected message, which
  * names its owner, not the extension that edited it.

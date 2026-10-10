@@ -2,7 +2,7 @@
  * Capture layer wiring: reads Pi's hidden tools in `before_agent_start`,
  * observes every agent request in `context_with_system`, pairs it with its
  * provider payload in `before_provider_request`, and confirms
- * the dispatch from assistant and provider stream events. Observe only (D5):
+ * the dispatch from assistant and provider stream events. Observe only:
  * handlers return nothing and never change provider-bound data. Runs in every
  * run mode, without any consumer, and imports no trigger or consumer code.
  */

@@ -46,7 +46,22 @@ for (const after of [false, true]) {
 		assert.deepEqual(extensions.map((path) => basename(path, ".ts")),
 			[...(after ? ["index", ...fixtures] : [...fixtures, "index"]), CODEMODE]);
 	});
+
+	test(`demo launcher --local enables discovered extensions without changing explicit paths, after=${after}`, async (t) => {
+		const flags = [...SELECTIONS].reverse().map(({ flag }) => flag);
+		const forwarded = ["--model", "provider/model", "--no-session", "a prompt with spaces"];
+		const demoArgs = [...flags, ...(after ? ["--after"] : [])];
+		const isolatedArgs = await launcherArgs(t, [...demoArgs, ...forwarded]);
+		const localArgs = await launcherArgs(t, [...demoArgs, "--local", ...forwarded]);
+		assert.equal(isolatedArgs[0], "--no-extensions");
+		assert.deepEqual(localArgs, isolatedArgs.slice(1));
+	});
 }
+
+test("demo launcher --local keeps the working copy without selecting fixtures", async (t) => {
+	const args = await launcherArgs(t, ["--local", "--no-session"]);
+	assert.deepEqual(args, ["-e", MONITOR, "--no-session"]);
+});
 
 test("demo launcher --codemode-only adds codemode settings in a temporary agent directory", async (t) => {
 	const settings = JSON.stringify({ theme: "dark", codemode: { inlineBudget: 5 }, defaultTools: ["read"] });
@@ -71,8 +86,8 @@ test("demo launcher keeps the real agent directory without --codemode-only", asy
 });
 
 for (const forwarded of [
-	["--", "--context", "--system", "--payload", "--message", "--codemode-only", "--after", "--forced"],
-	["--model", "provider/model", "--context", "--system", "--payload", "--message", "--codemode-only", "--forced"],
+	["--", "--context", "--system", "--payload", "--message", "--codemode-only", "--after", "--forced", "--local"],
+	["--model", "provider/model", "--context", "--system", "--payload", "--message", "--codemode-only", "--forced", "--local"],
 	["--force"],
 	["--context-modify"],
 	["--section-patch"],

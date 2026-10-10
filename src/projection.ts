@@ -1,8 +1,8 @@
 /**
  * Session projections for the views: the filtered projection at a leaf with
  * each message's source entry, and the latest request snapshot, forced prompt
- * included, applied to the current projection for Usage (D11 in
- * REQUEST-ONLY-INJECTIONS.md). Reads snapshots and Pi data only; imports no
+ * included, applied to the current projection for Usage
+ * (doc/architecture/views.md). Reads snapshots and Pi data only; imports no
  * capture or probe module.
  */
 import { declarationsEqual, getCurrentSystemMessage, type SystemMessage } from "@earendil-works/pi-ai";

@@ -113,7 +113,7 @@ test("only context_with_system observes requests: the filter returns a result, c
 	assert.equal(sessionReads, 3);
 });
 
-test("#9: capture handlers return nothing and leave event.messages and the payload unchanged (D5)", async () => {
+test("#9: capture handlers return nothing and leave event.messages and the payload unchanged", async () => {
 	const system = { role: "system", content: "system prompt", timestamp: 1 } satisfies ContextEvent["messages"][number];
 	const entries: SessionEntry[] = [
 		{ type: "message", id: "s", parentId: null, timestamp: "2026-08-22T10:00:00Z", message: system },

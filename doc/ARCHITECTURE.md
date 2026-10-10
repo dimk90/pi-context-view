@@ -1,8 +1,22 @@
-# Capture and Usage Architecture
+# Architecture
 
-This document describes the current implementation, its limits, and the rules
-that changes must preserve. It covers how pi builds a request, what this
-extension can read, and how that data reaches the two views.
+How `pi-context-view` observes Pi's requests and turns them into the two views,
+and the rules that changes must preserve. This file holds the overview, the
+layers, the module boundaries, and the required invariants.
+
+| Document                                                       | Covers                                                                                             |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [architecture/pi-requests.md](architecture/pi-requests.md)     | How Pi prepares a request, handler order, supported Pi versions, Pi APIs used, side effects        |
+| [architecture/capture.md](architecture/capture.md)             | Structured request capture: baseline, request copy, diff, attribution, hidden tools, SnapshotStore |
+| [architecture/payload-guard.md](architecture/payload-guard.md) | Payload pairing, dispatch confirmation, parsers, tool and message channels, Pi's own adjustments   |
+| [architecture/views.md](architecture/views.md)                 | Injections and Usage on snapshots, the differences between them, the one-request limitation        |
+| [architecture/probe.md](architecture/probe.md)                 | Silent probe: trigger, lifecycle, run identity, probe messages, preconditions, side effects        |
+| [architecture/measurement.md](architecture/measurement.md)     | Token estimates, prompt parts, tool ownership, prompt additions, totals                            |
+| [architecture/privacy.md](architecture/privacy.md)             | Raw content, images, signatures, persisted records; configuration loading and writes               |
+| [architecture/validation.md](architecture/validation.md)       | Test harness, fixtures, validation matrix, lifecycle smoke tests, rechecks after a Pi upgrade      |
+
+Rendering rules belong to [UI.md](UI.md); reasoning-token accounting to
+[THINKING.md](THINKING.md).
 
 ## Views and Data Sources
 
@@ -11,1208 +25,100 @@ extension can read, and how that data reaches the two views.
 | Injections | Latest request's prompt, tools, custom messages, marked request-only changes, late edits, hidden tool names. | Rebuilt from the latest snapshot when it opens.          |
 | Usage      | Replayed branch prompt/tools and messages, with the latest request's changes, excluding tools Pi hides.      | Rebuilt from the current branch and store when it opens. |
 
-Both views read request snapshots that
-[structured request capture](#structured-request-capture) publishes to
-SnapshotStore for every request. A snapshot exists in two ways:
-
-- **You send a prompt.** While pi prepares each model request, `pi-context-view`
-  records how the request differs from the saved session. The request then
-  continues normally. This is capture during a real turn.
-
-- **You open Usage or Injections before anything has been captured.**
-  `pi-context-view` can start a run with an empty user message so pi and other
-  extensions execute their request-preparation handlers. It captures that run's
-  request, but aborts before a request reaches the model provider. This is the
-  [silent probe](#on-demand-silent-probe). It does not generate a model reply.
-
-SnapshotStore keeps one snapshot, the latest by ID, and both views read it
-with `SnapshotStore.latest()`. A probe snapshot is kept only until the first
-real request's snapshot replaces it.
-
-**Injections** shows that request as it was sent: it rebuilds the session
-baseline at the snapshot's leaf. [Injections on snapshots](#injections-on-snapshots)
-describes composition, changes, and previews.
-
-**Usage** applies the same snapshot to the current session branch:
-request-only additions are counted, modifications replace their session
-message, and deletions remove it. See [Usage and Attribution](#usage-and-attribution).
-[One Snapshot, Two Views](#one-snapshot-two-views) lists where the two differ.
-
 Request-only changes are message, section, and tool versions that a request
-carried but the saved session does not. They do not update the saved
-conversation.
+carried but the saved session does not. Pi rebuilds every request from the
+saved session, so reading the session alone misses them.
 
-> [!NOTE]
-> When resuming a session or reloading extensions, the store is empty until
-> the next successful capture: snapshots live only in memory and are never
-> saved with the session. Snapshots keep only changes, not ordinary
-> conversation history.
+Both views read request snapshots. A snapshot exists in two ways:
 
-## How Pi Prepares a Request
+- **You send a prompt.** While Pi prepares each model request,
+  [capture](architecture/capture.md) records how the request differs from the
+  saved session and publishes a snapshot. The request continues unchanged.
+- **You open a view before anything has been captured.** One
+  [silent probe](architecture/probe.md) starts a run with an empty prompt, so
+  Pi and other extensions run their request-preparation handlers. Capture
+  records that run's request, and the probe aborts it before a request reaches
+  the model provider.
 
-The following flow was checked against pi `1.1.0`. The notes on the right show
-which parts `pi-context-view` uses or skips.
+SnapshotStore keeps one snapshot, the latest by ID, and both views read it.
+A probe snapshot is kept only until the first real request's snapshot replaces
+it. Snapshots live only in memory: after resume or reload, the store is empty
+until the next capture.
 
-```text
-Canonical session projection
-  Read through buildSessionProjection()         USE: session branch baseline
-  (branch, compaction, context edits, custom messages)
-  |
-  + New user message and pending messages
-  |
-  v
-before_agent_start handlers                     PROBE: claim the probe run
-  Inject messages, change structured prompt options
-  Read systemPromptOptions.hiddenTools           CAPTURE: Pi's hidden tools
-  |
-  + Persist system-section patches and tool changes
-  |
-  v
-context handlers, in extension load order       NOT observed directly; every
-  Conversation only; Pi restores system state     result reaches the next step
-  |
-  v
-context_with_system handlers                    FILTER: known probe identities
-  Full transcript, with system positions intact OBSERVE: structured snapshot
-  |
-  v
-convertToLlm()                                  USE: estimates/previews and guard
-  Convert custom, bash, and summary messages
-  to LLM-compatible format
-  Drop bash executions excluded from context
-  |
-  v
-Settings-specific conversion                    GUARD: read images.blockImages
-  For example, replace blocked images
-  with a text placeholder
-  |
-  v
-Messages + effective prompt + active tools      READ: forced prompt, tool APIs
-  |
-  v
-Provider-specific serialization                 GUARD: normalize text below
-  Convert messages, system prompt, and tools
-  into the provider's request format
-  |
-  v
-before_provider_request handlers                OBSERVE: paired payload copy,
-  May replace the outgoing payload                compare tools and messages
-  |
-  v
-Send to provider
+**Injections** shows that request as it was sent; **Usage** applies it to the
+current session branch. [views.md](architecture/views.md) describes both and
+where they differ.
+
+## Layers
+
+Capture is split into layers with one-way dependencies. SnapshotStore is the
+boundary between capture and its consumers: consumers choose how to apply a
+snapshot without changes to capture, and probing policy can change without
+changes to capture or to the probe run.
+
+```mermaid
+flowchart TD
+    E["Pi events"] --> P["Probe layer<br/>ProbeFilter, SilentProbe"]
+    E --> C["Capture layer<br/>structured capture,<br/>payload guard"]
+    P -->|"run origin,<br/>probe-message filter"| C
+    C -->|"publish snapshots"| S["SnapshotStore"]
+    S -->|"latest()"| V["Command and views<br/>Injections, Usage"]
+    V -->|"ask for a probe"| T["ProbeTrigger"]
+    T -->|"start"| P
+    S -->|"subscribe"| T
 ```
 
-This is a simplified flow. Pi rebuilds each request from the canonical session
-projection. It can also compact history, route virtual models, and deliver
-queued messages between requests. `before_agent_start` runs for a new
-prompt, while `context` runs before each model call, including tool follow-ups.
-
-Pi's `context` handler chain starts with a deep copy of the messages. Its result
-is used for that request, not written back into session history. Rebuilding the
-session branch later cannot recover those request-only changes.
-
-### Supported Pi Versions
-
-This extension requires Pi `1.1.0` or newer. It relies on `context_with_system`
-filtering, `turn_end` omission edits, `hiddenTools` in Pi's prompt options, and
-the probe's abort form described below. The Pi packages stay `"*"` peer dependencies, so an older Pi can still
-load the extension. The factory therefore compares pi's `VERSION` with
-`MIN_PI_VERSION` and, on an older Pi, registers no lifecycle handlers: nothing
-is captured, probed, or filtered. Every `/context` form, including `config`,
-then reports the required and running versions as an error and does nothing
-else. A version without a numeric `major.minor.patch` core is treated
-as supported.
-
-### Pi APIs Use
-
-- Use `ctx.sessionManager.buildSessionProjection().messages` to obtain the
-  current branch's conversation messages, with compaction and context edits
-  applied. Do not estimate usage
-  directly from `buildContextEntries()`: it also returns bookkeeping records
-  such as model changes, bookmarks, and saved extension state. Pi does not send
-  those records to the model, so they must not contribute to token estimates.
-  **Goal:** count current session messages in Usage and identify request-only
-  changes by comparing this list, with source entry IDs, with each captured
-  request.
-
-- `ctx.getSystemPrompt()` reads Pi's effective prompt during a run, including
-  `before_agent_start` edits and a forced prompt, which Pi renders instead of
-  the structured sections. Pi clears per-run options on settlement, so an idle
-  read is not the prompt used by the last request. It does not expose later
-  provider-payload rewrites.
-  **Goal:** detect a forced prompt during capture, and provide a view fallback
-  only when the branch has no system messages.
-
-- `ctx.getSystemPromptOptions()` reads the base prompt construction options in
-  a command handler, including `hiddenTools` from Pi's current loadout.
-  **Goal:** keep `customPrompt` Dropped markers in Injections, measure the
-  live fallback, and leave out hidden tools in Usage before any provider request.
-
-- `before_agent_start.systemPromptOptions.hiddenTools` reports Pi's hidden
-  declarations to event handlers. Capture copies this list for the run and
-  copies it into each request snapshot, independently of payload comparison.
-  **Goal:** leave hidden tools out of the captured request and count them, including
-  for a silent probe.
-
-- `pi.getActiveTools()` and `pi.getAllTools()` supply the active tool names,
-  definitions, and source information. `pi.getCommands()` supplies additional
-  extension source information for prompt attribution.
-  **Goal:** provide the views' live fallback and tool provenance.
-  For transcript-backed views, recorded declarations supply definitions and the
-  active set; current registration metadata supplies provenance and guideline
-  attribution only. Unregistered recorded tools stay visible as unattributed.
-  Tool and command source information also supports prompt-addition guesses.
-
-- `convertToLlm()` supplies the text pi sends for bash and summary messages.
-  It does not run extension handlers or build the final provider payload.
-  **Goal:** estimate bash and summary messages using pi's formatted text, and
-  build captured bash previews without unrelated message metadata. The payload
-  guard also uses it to convert the rebuilt captured request before comparison.
-
-- `ctx.getContextUsage()` supplies pi's reported usage and context window
-  separately from this extension's category estimates.
-  **Goal:** show pi's usage in the header and scale the map against the model's
-  context window, without replacing the category estimates.
-
-### Why Preparing a Model Request Can Have Side Effects
-
-Before pi sends a request to the model, other extensions can change its system
-prompt, active tools, or messages. They do this in functions registered for
-pi events such as `before_agent_start` and `context`. These functions are the
-**event handlers** mentioned in this document.
-
-`pi-context-view` needs to observe the results of these handlers to capture
-injected content and estimate its size. Reading the saved conversation alone
-is not enough: an extension can add or replace content only in the outgoing
-request, without saving those changes in the conversation.
-
-However, running the handlers again to refresh a view would execute extension
-code, not just read data. For example, a handler could:
-
-- Add a message to the saved conversation.
-- Update its own state, changing what it does on the next real turn.
-- Write a file, create a checkpoint, show a notification, or make a network call.
-
-Opening `/context` should not repeat those actions every time. Pi copies the
-messages before running `context` handlers, but that copy only protects the
-original message list. It does not prevent the other actions above.
-
-Starting a new run also delivers pending messages and calls `input`,
-`before_agent_start`, and turn handlers. Aborting before the model request is
-sent does not undo actions that those handlers have already performed.
-**Pi has no API for extensions to prepare the complete next request without
-risking such side effects.**
-
-`pi-context-view` normally captures requests while pi is already preparing
-them for your prompts. This avoids starting another run - and repeating other
-extensions’ actions - just to inspect the context.
-
-If the user opens a view before any request snapshot exists, it can make one explicit
-[silent probe](#on-demand-silent-probe). That probe still
-runs other extensions' handlers, so it is limited to one attempt per extension
-runtime. Later view opens read the existing capture and current pi data instead
-of starting another run.
-
-## Structured Request Capture
-
-This is the first part of the design in
-[REQUEST-ONLY-INJECTIONS.md](REQUEST-ONLY-INJECTIONS.md) (D2, D3, D5, D6,
-D11). It publishes request snapshots to SnapshotStore. Both views read the
-latest snapshot. Capture runs in every mode, independently of either consumer.
-
-**Goal:** describe every request as structured changes against the session
-projection, for any consumer, in every run mode.
-
-```text
-context_with_system, after ProbeFilter's handler     every request: prompts,
-  Settle the previous unpaired capture's guard         tool follow-ups, probes
-  Number the capture; origin from ProbeView
-  Read buildSessionProjection(), filter probe messages per entry,
-  keep each message's source entry ID and the leaf ID
-  Compare in place: drop non-system messages equal at both ends
-  structuredClone the rest, replayed system state, and historical declarations
-  Copy system text/sections with positions; retain the matched prefix length
-  Forced prompt: ctx.getSystemPrompt() differs from
-  getCurrentSystemPrompt(baseline)
-  Return nothing
-  |
-  v  setImmediate, off the request's critical path
-Align the rest, diff system state, attribute, redact,
-publish with guard "pending"
-  |
-  v  before_provider_request, or next capture / agent_settled
-Pair the payload and compare tool declarations and message text (below),
-or settle incomplete when no payload was observed
-```
-
-- **Observe only.** The handler returns nothing and changes no event data.
-  It compares and copies synchronously because later handlers share and may
-  edit the same message objects, tool schemas included. Messages equal to the
-  baseline at both ends of the conversation are compared in place and never
-  copied. The copy also keeps system text/sections with their positions and
-  each historically declared tool's last definition: serializers can retain
-  these instead of collapsing them. The matched prefix length locates the
-  copied middle for reconstruction. A request whose differing messages cannot
-  be cloned is not captured.
-  `session_shutdown` cancels scheduled diffs.
-
-- **Coverage.** The compared request holds every `context` change and the
-  `context_with_system` changes of extensions loaded before this one. Later
-  `context_with_system` handlers and payload rewrites are not visible in the
-  structured diff. The payload guard compares their tool declarations and
-  message text, up to this extension's own payload handler.
-
-- **System state.** Both sides are replayed with Pi's
-  `getCurrentSystemMessage()`, so Pi's collapse of system messages after a
-  changing `context` handler is not a change. Changed plain content, sections,
-  and tool declarations are reported separately. A forced prompt is recorded
-  as its effective text; the run's options outlive the request until settlement,
-  so this also works in probe runs.
-
-- **Conversation.** System messages are excluded. Each message is keyed by role,
-  `customType`, and canonical JSON of its model-facing part; timestamps,
-  `details`, `display`, and usage are ignored. The handler removes the equal
-  ends with a direct comparison that agrees with these keys; anything outside
-  plain JSON data falls back to comparing the keys. A Myers diff aligns the
-  keys of the rest, so the edits match a diff of both whole sides.
-  An unmatched request message is an addition and an unmatched baseline message
-  a deletion. A deletion and an addition with the same role between the same
-  aligned messages are a modification. A message whose exact copy is deleted
-  elsewhere is never paired, so a reorder stays a deletion plus an addition.
-  Modifications and deletions reference their baseline message's source entry.
-
-- **Attribution.** Only a custom message names a source: its `customType`,
-  plus `details.source` and `details.reason` when an extension provides them.
-  Everything else is unattributed. For a modification or deletion, these
-  fields describe the affected message, not the extension that edited it.
-
-- **Hidden tools.** Capture reads `systemPromptOptions.hiddenTools` in
-  `before_agent_start` and freezes the names into each request snapshot.
-  These are Pi's `prepareLoadout()` exclusions, not guesses from a setting or
-  tool name. Pi does not report which tool requested them, so there are no
-  candidate-source labels. A probe records them without a provider payload.
-  Event contexts have no `getSystemPromptOptions()` method: capture retains
-  the last observed list until the next `before_agent_start`, or shutdown.
-  A later handler or mid-run tool change can make it stale; a continuation
-  without that event uses the last list (initially empty). Usage instead reads
-  the live list in its command handler and is not subject to this limitation.
-
-- **Retention.** A snapshot keeps changed request messages, entry IDs, system
-  changes, hidden tool names, and the forced prompt, with the [redaction](#images-and-provider-signatures)
-  below. The builder releases its request copy after building. RequestTracker
-  holds the unpaired capture until a payload or settlement; the guard's first
-  deferred job reduces it to non-hidden tool names/descriptions, grammar input
-  properties, and a converted transcript without image or signature bytes.
-  Baseline and capture references are released even while a virtual request
-  waits for dispatch; the converted transcript remains until comparison.
-  Consumers rebuild the baseline with `buildSessionProjection(entries, leafId)`.
-  SnapshotStore keeps only one snapshot, the latest by ID. A publication with
-  the same or a higher ID replaces it; an older publication only notifies
-  subscribers. Guard updates keep their capture ID, so an older guard cannot
-  replace a newer request. The first real request's snapshot releases the probe
-  snapshot. `clear()` drops the kept snapshot at shutdown; subscriptions stay.
-
-With no request-only changes, a snapshot is empty after first and later
-prompts, tool follow-ups, resume with another model, compaction, and probes.
-
-## Payload Guard: Tool Declarations and Messages
-
-The payload guard implements D4 and D7 of
-[REQUEST-ONLY-INJECTIONS.md](REQUEST-ONLY-INJECTIONS.md). It runs in every mode
-and publishes through the same SnapshotBuilder. The guard is `complete` only
-when both the tool-declaration and message channels were compared. Otherwise
-it is `incomplete`, with a fixed reason and findings from any channel that
-succeeded. A complete guard may have findings; complete does not mean no edits.
-Pi's captured hidden tools are excluded from the expected tool channel.
-
-- **Pairing.** RequestTracker pairs each payload with the latest unpaired local
-  capture ID, not `turnIndex`. Agent retries produce new captures; provider
-  retries resend one payload without another payload hook. A capture left
-  unpaired at the next capture or `agent_settled` settles incomplete.
-- **Warm refreshes.** A `cache_warming_decision` after the latest capture plus
-  a one-token output limit identifies a refresh. OpenAI Responses raises that
-  limit to 16, which is accepted too. No payload copy, comparison, or findings
-  are produced. Its stream events cannot confirm the waiting
-  agent request; assistant events can. A payload without a waiting capture is
-  ignored even if its adapter omits or changes the limit. The marker is a
-  heuristic: a warm decision alone cannot reveal a later handler's action.
-- **Observe only.** The payload hook synchronously copies arrays and plain
-  objects, sharing immutable strings. It returns nothing and changes no event
-  data. Copy failures use a fixed reason, never exception text containing raw
-  payload content. Parsing and publication run in `setImmediate` jobs.
-- **Physical selections.** Capture copies `ctx.model`'s provider/API/model
-  identity, `input`, and top-level `compat` flags. The guard parses with that
-  API and its capabilities right after copying, without waiting
-  for a response. Assistant `message_start` or `provider_stream_event`, whichever
-  comes first, confirms the identity; assistant `message_end` is the fallback.
-  A mismatch replaces the guard with an incomplete result and drops provisional
-  findings, without reparsing. Hidden tools are unaffected. This detects `pi.setModel()`
-  during preparation. Missing dispatch metadata also invalidates the result.
-- **Virtual selections.** The guard retains the payload copy until dispatch
-  supplies an identity, then looks up the physical model with
-  `ctx.modelRegistry.find()`. Missing or mismatched catalog metadata settles
-  incomplete. The stream handler reads only identity fields, never `event.data`,
-  and returns without parsing.
-- **Parsing.** Supported APIs are `openai-completions`, `openai-responses`, and
-  `anthropic-messages`. The selected API chooses the parser; shape checks only
-  reject mismatches. Unsupported APIs or malformed declarations leave the tool
-  channel incomplete and record no names. Function and grammar declarations are
-  supported for OpenAI; unknown provider-native Responses tools are incomplete.
-  Anthropic inline `tool_addition` / `tool_removal` blocks are replayed in order,
-  with later definitions winning. Responses `additional_tools` and
-  `tool_search_output` declarations, and Completions system-message tool
-  additions, are folded into the same channel. `__pi_deferred_placeholder__`
-  is excluded. Anthropic names match case-insensitively, as for OAuth casing.
-- **Findings.** Compare names and whitespace-insensitive descriptions, not
-  schemas that Pi adapts for each provider. Added declarations, changed
-  descriptions, and removed declarations are late tool edits; they keep the
-  changed description lines, like message findings. A tool Pi hid is excluded
-  before comparison, so its absence is expected, not a late removal. If the
-  payload adds it back, it is a late addition. Missing non-hidden declarations
-  are deletions; their previews keep the removed description lines.
-  A standard probe observes no payload and cannot check late edits; a
-  nonstandard host that reaches the hook pairs a probe payload normally.
-- **Retention.** Physical payload copies are released after parsing; only the
-  snapshot and identity wait for confirmation. Virtual copies are released after
-  dispatch parsing or settlement. SnapshotBuilder allows guard replacements
-  until dispatch finishes, then releases its copy. Shutdown cancels deferred
-  work and drops all pending data. Neither payload copies nor guard findings
-  are logged or persisted.
-
-### Message Channel
-
-`src/capture/payload.ts` extracts ordered text units: system, user, assistant,
-tool call, and tool result. Text blocks merge within one message part, not
-across message boundaries. Tool calls keep their name and canonical JSON
-arguments, or raw grammar input. Tool IDs, unsent metadata, images, reasoning
-blocks, and inline declaration changes are not message text. Only the exact
-leading Claude Code identity block is skipped in Anthropic's `system` array.
-Unknown message roles, item types, or content blocks leave the channel
-unsupported rather than silently disappearing. Tool-channel support is checked
-separately, so malformed declarations need not hide message findings.
-
-`src/capture/adjustments.ts` rebuilds the captured request from its baseline
-ends, copied middle, and system text positions. It applies the forced prompt
-projection and Pi's exported `convertToLlm()`, then reproduces only the text
-behavior of the supported adapters, checked on Pi 1.0.4:
-
-- Read `images.blockImages` through `pi.getSettings()` at the payload hook.
-  Only an enabled setting justifies `Image reading is disabled.` Unreadable
-  settings count as off. Without `image` in the dispatched model's `input`,
-  image runs become Pi's user/tool-result placeholders. With image input,
-  unexplained placeholder text remains a finding.
-- Collapse system messages unless `compat.supportsMidConvoSystemMessages`
-  keeps them. Render later section patches as updates. Move system messages
-  past outstanding tool results, and on Anthropic hold them until the next
-  assistant message, or the transcript end.
-- Apply cross-model thinking-to-text conversion and redacted/empty thinking
-  omission. Drop error/aborted assistant messages and synthesize
-  `No result provided` for unanswered tool calls. Tool-call ID changes do not
-  affect text keys.
-- Account for OpenAI empty/image-only result fillers, Completions' attached-image
-  user message, `requiresAssistantAfterToolResult`, and `requiresThinkingAsText`.
-  OpenAI grammar inputs require `supportsOpenAIGrammarTools` and a captured
-  grammar declaration with one required string property. Declarations come from
-  the captured request, not an approximation from baseline tool history.
-- Anthropic's unsigned thinking becomes text unless `allowEmptySignature`
-  accepts it as thinking. Signed and redacted thinking remains outside the text
-  channel. Inline tool additions/removals are handled by the declaration channel.
-
-`src/capture/messages.ts` aligns whitespace-insensitive unit keys with the same
-LCS helper as structured capture. Keys also remove unpaired UTF-16 surrogates,
-as Pi does. Empty system/user/assistant text does not count; empty tool results
-do. In each unmatched gap, units of the same part pair in order as modifications;
-unpaired units are additions or deletions. Findings retain the message part,
-change kind, and added/removed lines, without attribution or baseline entry IDs.
-Blank lines and whitespace-only differences are ignored. Anthropic tool-call
-names match case-insensitively for OAuth casing. Image and opaque signature
-changes alone are deliberately outside this text-only comparison.
-
-Injections renders the findings of the latest snapshot
-([Injections on Snapshots](#injections-on-snapshots)). Payload findings do not
-change Usage: it filters tools by Pi's live hidden set
-([Usage and Attribution](#usage-and-attribution)).
-
-## Injections on Snapshots
-
-The command resolves `SnapshotStore.latest()` once, before choosing the view.
-If the store is empty, it waits for idle and rechecks it before asking
-ProbeTrigger. A turn that published while the command waited supplies the
-snapshot without another run. A failed or skipped probe keeps the existing
-pi-native degraded fallback; it never inserts a fallback into the store. Both
-compaction checks and the TUI guard remain in the command. `openInjections()`
-and `openUsage()` receive the same resolution result.
-
-`src/injections.ts` builds the composition when the view opens:
-
-1. Rebuild `buildSessionProjection(entries, snapshot.leafId)` and filter known
-   probe messages, retaining source entry IDs. Later messages, context edits,
-   branch navigation, and compaction do not change this historical baseline.
-2. Replay system state with `getCurrentSystemMessage()` and apply the snapshot's
-   content, section, and declaration changes. Measure the result like Usage:
-   recorded declarations supply definitions, current tool metadata supplies
-   provenance and guidelines. Leave out the snapshot's hidden tools, as Usage
-   leaves out live ones, and count them. Shared helpers live in `src/replay.ts`.
-3. A forced prompt replaces the replayed prompt, so captured content/section
-   patches do not apply to it; tool changes still apply. The System Prompt
-   item carries the `forced` request-only change. Current
-   `getSystemPromptOptions().customPrompt` preserves Dropped markers for
-   `--system-prompt`. Other live prompt options do not replace recorded sections.
-4. Keep session-backed custom messages. Replace their rows when modified or
-   deleted. Add every request-only conversation change under its `customType`
-   source or `unattributed`; unchanged ordinary conversation stays out of the
-   Injections tree.
-
-Added and modified rows count their request version. Deleted rows count zero.
-A modified message previews `Request` and `Session` parts: only Request counts;
-a deletion previews its session original. Message previews use the
-content-only extraction in `src/message-preview.ts`. Snapshot
-images already hold size markers; session originals are redacted on extraction.
-Neither source's opaque signature bytes reach a preview.
-
-System changes mark the affected prompt part or tool in place. These groups
-identify the affected content, **not the editing extension**. Marking a pi part
-never attributes its editor to pi. The replay supplies exact section boundaries,
-including inline XML, empty or unwrapped sections, so repeated text cannot move
-a marker onto another section. Deleted sections retain their original text at
-zero tokens, after sent parts and before Extension Additions. A deleted tool
-keeps its definition at zero tokens. The total counts only this view's
-contributions, not unchanged ordinary history or provider serialization.
-
-Prompt additions have no `before_agent_start` handler boundary: recorded
-structured edits already belong to the baseline, and the forced prompt is
-captured as final text. Unwrapped additions split at blank lines and section
-boundaries; adjacent additions with no separator may share an attribution guess.
-
-The snapshot also supplies hidden tools and late edits when the view opens:
-
-- **Hidden tools.** The tools in the snapshot's `hiddenTools` that the request
-  declared are left out of the tree, independently of guard status and of any
-  structured change of the same tool. The view-local snapshot keeps their names;
-  one description bullet reports their count and lists all names alphabetically,
-  sanitized and wrapped. There are no rows, markers, or candidate labels.
-  A fallback without a snapshot uses Pi's live hidden set instead.
-- **Late edits.** [Payload guard](#payload-guard-tool-declarations-and-messages)
-  findings of each compared channel form a separate `late edits` group after
-  `unattributed`. They have no entry reference or attribution. An item keeps
-  the finding's changed lines for its preview; its text and estimate hold only
-  the added lines, so a deletion counts zero. Tool removals Pi did not hide
-  belong here. Item kinds are `message` and `tool`.
-
-Probe snapshots carry the warning specified in [ui/injections.md](ui/injections.md).
-Pending and incomplete guards appear as an unavailable or partial late-edit
-comparison in the description, never as "no edits". A complete guard adds no
-note; without findings, the payload matched the captured request, excluding
-Pi's known hidden declarations, up to this
-extension's own payload handler. The view is fixed while open; reopening reads
-the latest snapshot or a guard update with the same snapshot ID. A real request
-replaces a probe snapshot and removes its probe warning.
-
-### One Snapshot, Two Views
-
-Both views read the same latest request, but answer different questions:
-Injections describes its contributions as sent; Usage estimates the current
-branch.
-
-- **Baseline leaf.** Injections rebuilds at `snapshot.leafId`; Usage rebuilds at
-  the current leaf and drops modifications/deletions whose entries are gone.
-- **System changes and forced prompt.** Injections always applies them to their
-  captured baseline. Usage applies them only while the replayed system state
-  still matches that baseline.
-- **Hidden tools.** Injections uses the captured set until another request
-  replaces it. Usage uses Pi's live set on every open.
-- **Custom messages saved after the request.** They are outside Injections'
-  baseline until the next request, but Usage counts them from the current branch.
-- **Late edits.** Injections shows guard findings with changed lines. Usage does
-  not apply them, including late tool removals.
-
-## Usage and Attribution
-
-Usage is built when `/context` or `/context usage` opens. It does not capture a
-new transformed request on each open.
-
-```text
-                             Open Usage
-                                 |
-                                 v
-     Resolve the latest snapshot: existing one, one probe, or none
-                                 |
-                                 v
-                        Collect view inputs
-                                 |
-         +-----------------------+---------------------------+
-         |                       |                           |
-         v                       v                           v
-Live prompt/tool fallback   Latest snapshot           Current session branch
-         |                       |                           |
-         |                       |                           v
-         |                       |                  buildSessionProjection()
-         |                       |                  Filter probe messages,
-         |                       |                  keep source entry IDs
-         |                       |                           |
-         |                       +-------------+-------------+
-         |                                     |
-         |                                     v
-         |                           applyRequestSnapshot()
-         |                  Conversation changes by entry; drop stale ones
-         |                  System changes and forced prompt
-         |                  only while still fresh
-         |                                     |
-         +-------------------------------------+
-                                 |
-                                 v
-                       buildUsageSnapshot()
-                  Replay system sections and tool deltas,
-                  then the fresh request-only system changes;
-                  a fresh forced prompt replaces the prompt text;
-                  Pi's live hidden tools are left out
-                  (live fallback only without system state)
-                                 |
-                                 v
-                           computeUsage()
-                  Skip already-replayed system messages
-                                 |
-                                 v
-                    Category estimates + previews
-                                 |
-                                 v
-                     Usage map and breakdown
-                                 ^
-                                 |
-                  Separate inputs: pi's reported usage/window,
-                  model, auto-compaction reserve, display config
-```
-
-**Usage counts the replayed current state once, not the history of changes.**
-`buildUsageSnapshot()` replays the branch's system messages in order with Pi's
-`getCurrentSystemMessage()`: plain
-`content` appends, `sections` replaces values by name (`null` removes one), and
-`toolsRemoved` applies before `toolsAdded`. Replacing a tool uses its recorded
-name, description, and schema, not today's registered definition. Removed tools
-and superseded sections no longer contribute. An explicitly empty system state
-is still authoritative; it must not revive the live prompt or active tools.
-
-`buildSessionProjection()` already selects the current branch and applies compaction.
-Its compaction checkpoint replaces earlier system messages, including system
-messages in the retained range. The same replay therefore works after resume,
-branch navigation, and compaction without a separate mutable state cache.
-
-Only a branch with no recorded system message yet, such as a new session
-before its first prompt, uses `buildNativeSnapshot()` and the caller's live
-prompt/tools. Neither path reruns extension handlers.
-Generated instruction-file and skill records are read from the recorded prompt,
-not today's loader metadata. Custom XML sections remain named System Prompt
-parts even after `cwd`; their tag does not establish extension ownership.
-
-**Usage applies the latest request's changes to the current branch.** It reads
-`SnapshotStore.latest()`, just as Injections does. A probe supplies the changes
-only until the first real request's snapshot replaces it. `src/projection.ts`
-applies them when the view opens:
-
-- **Conversation changes, by baseline entry.** A modification replaces the
-  first unchanged conversation message of its source entry with the request
-  version; a deletion removes it; an addition is appended and classified like
-  any other message by role or `customType`. The replaced or deleted session
-  original contributes neither tokens nor a Usage preview. A reorder, captured
-  as a deletion plus an addition, is counted once. A modification or deletion
-  whose entry is no longer in the current projection, after compaction or
-  branch navigation, is stale and dropped: the current message is counted
-  instead. Additions have no entry and always apply.
-- **System changes, while fresh.** Content, section, and tool changes are
-  deltas against the snapshot's replayed system state. They apply after the
-  branch replay only while the current replayed state equals the state rebuilt
-  at the snapshot's `leafId`; any recorded system change since capture drops
-  them until the next request. Usage marks none of these changes.
-- **Forced prompt, while fresh.** Pi 1.0 turns every `systemPrompt` returned
-  from `before_agent_start` into a forced prompt, including the common
-  `event.systemPrompt` plus appended text. Pi never records that text, and an
-  idle read of the prompt returns the structured one, so only the snapshot
-  holds it. The forced text renders the snapshot's system state, so it follows
-  the same freshness rule as system changes. While it applies, Usage measures
-  it in place of the replayed prompt, also in the live fallback. As Pi does,
-  section and content changes do not apply to it, and tool changes still do.
-  Pi's sections inside it are
-  [measured as usual](#prompt-parts-and-moved-blocks), so appended text counts
-  as an extension addition. Like Injections, Usage marks the System Prompt item
-  `forced`, and its previews [show the marker](ui/usage.md#forced-prompt).
-- **Hidden tools, from Pi's live loadout.** Every time Usage opens, it reads
-  `ctx.getSystemPromptOptions().hiddenTools`. After applying fresh request-only
-  tool changes, it leaves out those names, without markers. The same filtering
-  applies to the live fallback, before any prompt, and when a probe fails or
-  the payload guard is incomplete. No payload-declared names, baseline-name
-  sets, or freshness checks are retained for this purpose. Counted tools keep
-  their replayed definitions, not payload text. Pi records active-tool changes
-  at the next request: the replay can still include a recently deactivated
-  tool until then, but the hidden set updates immediately. A late payload
-  removal does not change Usage, just as other late edits do not.
-
-Without a snapshot, after a failed or skipped probe, Usage counts the current
-branch alone and shows the degraded reason. Session-backed custom messages
-count from the current branch once. `computeUsage()` skips system messages
-because the prompt/tool snapshot already accounts for them.
-
-This is a provider-independent semantic estimate, not a wire-size estimate.
-Some providers keep earlier section versions or tool declarations in the cached
-transcript; others collapse them. Usage deliberately does not count that history,
-patch framing, or provider-specific serialization.
-
-The UI receives `ctx.getContextUsage()` separately. Its reported total is not
-used to force category estimates to match. Map rendering rules belong to
-[ui/usage.md](ui/usage.md#context-map).
-
-### Known Limitation: One Request's Changes
-
-Both views use one request's snapshot, not a summary of the run or session.
-A tool follow-up replaces the request that started the run, so a one-time
-injection can disappear from Injections between prompts. There is no separate
-selector for the latest request that started a run.
-
-Usage assumes the next request repeats the latest request's changes, the forced
-prompt included. A change that an extension makes only once, or only for a
-particular prompt, therefore stays counted until the next request replaces the
-snapshot. Additions carry no
-entry reference, so they remain after branch navigation or compaction. A
-modification whose entry is still projected replaces that entry's current
-message even if a later `context_edit` changed it. Late edits from later
-`context_with_system` handlers and payload rewrites are not applied to Usage,
-including late tool removals. Usage is not an exact view of the last or
-next provider request.
-
-## On-demand Silent Probe
-
-### Why it is Needed
-
-Before a real turn, pi's APIs can supply the current prompt, tools, and saved
-session messages. That is enough for a partial view, but not for a request
-snapshot's observation of extension handlers.
-
-Without running a turn, this extension cannot observe:
-
-- `before_agent_start` changes for that run: prompt edits, injected messages,
-  and tool activation;
-- request-only messages and transformations from `context` handlers and earlier
-  `context_with_system` handlers.
-
-Reading session history or calling `convertToLlm()` does not run those handlers.
-The silent probe starts the lifecycle so capture can see them, then aborts
-before a provider request. A probe uses the same capture handlers as a real
-turn, so it does not widen capture coverage. An empty-input probe
-also cannot reveal contributions that run only for a particular real prompt.
-
-If the store holds a snapshot, neither view needs a probe. Either view can
-request the shared one automatic attempt when the store is empty. Never probe
-in the background or repeat it on every view open.
-
-### Probe Lifecycle
-
-ProbeTrigger (`src/probe/trigger.ts`) applies the automatic policy: at most one
-attempt per extension runtime, and concurrent and later callers share its
-result. The command asks it only while the store holds no snapshot.
-ProbeTrigger has no run-mode guard; the command keeps the TUI-only check.
-
-```text
-/context
-  Refuse the view if compaction is active
-  Ask ProbeTrigger when the store holds no snapshot yet
-  |
-  v
-ProbeTrigger
-  Wait for idle
-  Check compaction, pending messages, model, auth, and Pi settings
-  If unsafe, report why without consuming the attempt; the command
-  shows a partial fallback
-  Otherwise subscribe to SnapshotStore, hide the working row, and call
-  sendUserMessage("") inside this attempt's probe-token scope
-  |
-  v
-input
-  Empty the probe prompt again if an earlier transform added text to it
-  |
-  v
-before_agent_start
-  Claim this run if it carries the token, otherwise fail the attempt
-  and leave the run alone
-  |
-  v
-turn_start
-  Abort before the provider; context processing still reaches our handler
-  |
-  v
-message_end (user)
-  Blank the synthetic prompt before Pi persists it
-  |
-  v
-context_with_system
-  Filter the request without changing system-message positions;
-  capture then records the probe request
-  |
-  v
-message_end (assistant)
-  Blank the recorded abort result before Pi persists it
-  |
-  v
-turn_end
-  Append context_edit omissions for known probe entries on this branch
-  |
-  v
-agent_settled
-  SilentProbe: restore UI, persist probe identities, settle the attempt
-  Capture: settle the probe request's guard as incomplete (no payload)
-  ProbeTrigger: resolve with captured status; the command reads the store and opens the view
-```
-
-ProbeTrigger subscribes to SnapshotStore before it sends the probe prompt and
-resolves with `{ status: "captured" }` once the first `synthetic-probe` snapshot's
-guard has settled. Probes run one at a time, so that snapshot belongs to this probe. SilentProbe's
-outcome only reports whether its run settled or failed; it knows nothing about
-capture. Capture settles the guard in its own `agent_settled` handler, after
-SilentProbe's, so ProbeTrigger waits up to one second after settlement before
-it reports a missing snapshot. The cached attempt holds only the status, never
-the snapshot, so it cannot keep a replaced probe snapshot alive. The command
-reads the store's `latest()` after resolution and checks compaction again
-before opening either view.
-
-Use `sendUserMessage("")`. `pi.sendMessage(..., { triggerTurn: true })` skips
-`before_agent_start`. Abort at `turn_start`, not `before_provider_request`,
-because some transports skip the latter. On Pi 1.0's standard runtime path,
-authentication rejects the already-aborted signal before provider headers and
-payload serialization. Structured context handlers still run for physical
-models, but a probe normally has no provider payload. A router honoring the
-aborted signal can stop before context handlers; virtual selections are skipped.
-
-“Silent” means no provider request and no transcript text of the probe's own.
-This depends on correct run recognition: the
-[nested-send limitation](#known-limitation-nested-sends) can break that guarantee.
-It does **not** mean no side effects: other extensions see the lifecycle, and probe
-entries remain in pi's session tree. This is why the probe is explicit and
-limited to one attempt, rather than a way to refresh Usage repeatedly.
-
-### Identifying the Probe Run
-
-The probe has to know which agent run is its own. Prompt text cannot answer
-that question: any other extension can rewrite the text in an `input` transform
-before pi reports it. Emptying the prompt in this extension's own `input`
-handler does not settle it either, because that only undoes transforms from
-extensions loaded before this one.
-
-Use the call's async context to correlate the run. Each attempt gets its own
-token, and the command sends the synthetic prompt inside an `AsyncLocalStorage`
-scope holding that token. Pi emits `input` and `before_agent_start` from inside
-that same call, so both handlers can read the token even after an input
-transform changes the prompt. One run may claim a token and after that, no later
-run can. This assumes no nested send claims the token first: async context is
-not a unique per-prompt identity.
-
-Treat every run without the token as someone else's. Fail the attempt and show
-the fallback, but let that run continue: it may be the user's prompt or another
-extension's message, so never abort or rewrite it.
-
-Keep watching for the probe run after the attempt ends. The attempt can end
-early, on timeout or because a foreign run failed it, while the probe's own run
-is still on its way. That run still carries the token, so it is still claimed,
-aborted, and sanitized.
-
-The token stays in this process. Never persist, render, or log it.
-
-### Known Limitation: Nested Sends
-
-`AsyncLocalStorage` propagates the token to async work started inside its scope,
-including another extension's nested `pi.sendUserMessage()` call. It does not
-identify only the original synthetic prompt, and descendant work can retain
-the token after the outer `sendUserMessage()` call returns.
-
-For example, another extension's async `input` handler can send a separate
-message and wait briefly before returning:
-
-1. The nested send inherits the probe token. While the probe is waiting, its
-   input handler can erase the nested message's text.
-2. The nested run reaches `before_agent_start` first and claims the token. It
-   is aborted, and its messages are blanked and recorded as probe identities.
-3. If that run settles before the original input handler returns, the probe
-   state becomes `settled`.
-4. The original synthetic prompt then reaches `before_agent_start`, but cannot
-   claim the already-used token. Its abort guard stays inactive, so it can
-   make a provider request and remain in later context as an ordinary message.
-
-The token approach is more robust against text transforms than the previous
-empty-input checks, which lost recognition when another extension added text
-([issue #5](https://github.com/dimk90/pi-context-view/issues/5)). It also avoids
-claiming unrelated empty inputs outside the token scope. It is **not fail-safe**,
-however: nested sends can be mistaken for the probe, including non-empty sends
-that the old checks would have left alone. A timeout or fallback does not fix
-that ownership mistake or guarantee that the original probe is aborted.
-
-
-### Keeping Probe Messages Out of Real Context
-
-Track synthetic user and assistant messages by exact role and timestamp.
-Never identify them by empty content: genuine empty messages and genuine aborts
-must remain visible.
-
-Blank both recorded probe messages in `message_end`: the synthetic prompt,
-which may carry text an input transform added, and the assistant abort result.
-Blanking removes their content before Pi stores the messages.
-
-At the owned run's `turn_end`, append `context_edit` drafts with
-`replacement: null` and the exact session entry IDs of known probe messages that
-are still visible in `event.context.contextEntries`. That boundary projection
-already applies compaction, earlier edits, and earlier handlers' drafts, so each
-visible target is omitted once. Preserve other handlers' proposed entries and do
-not request continuation. Pi applies
-these omissions to future context even when this extension is absent. The raw
-blank messages remain in the session tree. Use `turn_end`, not
-`agent_before_settle`: an explicit abort skips the latter boundary.
-
-Targets include identities restored from earlier runtimes. An omission persists
-in the session file and outlives this extension, so a genuine message whose role
-and timestamp match a probe identity would stay omitted, not only filtered in
-memory. Such a collision needs the same millisecond timestamp; exact identities
-keep it unlikely.
-
-Keep identity filtering for Usage, capture comparison inputs, and requests.
-Omission edits are branch-relative: navigating before an edit can reveal a probe
-entry again. Old sessions and an interrupted run may also lack omissions.
-Request filtering runs in `context_with_system`, returning nothing when no
-identity matches. A changed `context` result would collapse Pi's system messages
-into a leading checkpoint; filtering the full transcript preserves their
-positions and cached prefixes. `context` handlers and earlier
-`context_with_system` handlers can still see blank probe entries that have not
-been omitted from the projection.
-
-Pi reports the probe's `turn_start` abort with an `error` stop reason:
-authentication rejects the already-aborted signal before streaming. Its error
-message is the `AbortError` text of the JavaScript runtime that runs pi:
-
-| Runtime                    | Error message                |
-| -------------------------- | ---------------------------- |
-| Node.js                    | `This operation was aborted` |
-| Bun (standalone pi binary) | `The operation was aborted.` |
-
-Blank such an error only for a recorded probe assistant with one of these exact
-messages. Any other stop reason, including `aborted`, provider errors, and
-cancellations of runs the probe does not own remain visible. A runtime with other wording leaves the error row visible: add
-its exact message instead of matching abort text loosely.
-
-Blanking cleans agent state, later model contexts, and the saved session, but
-not the current screen: pi renders a user row when the message starts and does
-not repaint it for a `message_end` replacement. Text another extension's input
-transform added to the probe prompt therefore stays visible for that run and
-disappears on reload or resume. Nothing of that text is sent or stored.
-
-Persist only role-and-timestamp identities in `pi-context-view:probe-identities`
-custom entries on `agent_settled` and `session_shutdown`. Restore all prior
-identities on `session_start`, including after resume, reload, and fork. Omission
-edits persist only target entry IDs and `null`. Neither record stores content.
-
-### Compaction, Failures and Fallback
-
-Pi 1.0's `waitForIdle()` includes compaction. Still recheck the tracked lifecycle
-after waiting, because compaction can start before the probe is sent. Track
-`session_before_compact` until its signal aborts or Pi reports `session_compact`
-or `session_compact_failed`; do not infer completion from a later agent run.
-
-Pi runs extension commands at once during compaction, so `/context` checks the
-tracked lifecycle itself. While compaction is active, both views are refused
-with a warning and do not open: compaction is about to replace the session
-projection they read. The command checks before resolving its snapshot, so it never
-waits for compaction, and again after, because compaction can start while it
-waits for idle. The second check replaces that probe fallback with the refusal.
-
-Before starting or consuming an attempt, use the fallback when:
-
-- compaction is active or `ctx.hasPendingMessages()` reports queued input;
-- the selected model is virtual (`api: "pi-virtual"`), since routing can make
-  classifier calls or fail before capture;
-- idle cache warming is enabled, since its refresh uses a separate abort signal;
-- known context usage exceeds `contextWindow - reserveTokens` while automatic
-  compaction is enabled, using Pi's `shouldCompact()` and per-model settings;
-- Pi settings cannot be checked safely.
-
-Compaction settings come from `pi.getSettings()`, so runtime changes apply; the
-Usage map's auto-compaction reserve reads the same source. The warming check
-also reads global settings with project settings disabled: Pi's warming mode is
-global-only, but the merged API can hide it under an ignored project override.
-An idle value in either source triggers fallback. Extensions cannot see an SDK
-host's custom agent directory, so this file read uses Pi's default directory,
-which honors `PI_CODING_AGENT_DIR`; an unsaved runtime warming change hidden by
-a project override is also missed. Never write or change Pi settings to make a
-probe possible.
-
-These are conservative checks, not a lock on Pi or other extensions. Unknown
-usage does not block probing; pre-prompt overflow recovery, hidden `nextTurn`
-messages (not reported by `hasPendingMessages()`), later model/settings changes,
-and arbitrary extension side effects remain possible. Default `streaming`
-warming remains enabled in Pi and stops on settlement; slow handlers or other
-extensions can still affect it. The nested-send ownership limitation also
-remains. Strict zero-provider-request guarantees require passive capture.
-
-Any skipped precondition above, a missing model, missing authentication, a
-startup failure, a timeout, or a probe that settles without a request snapshot
-reports a precise reason that extension additions were not observed.
-Injections then shows a current prompt/tool snapshot; Usage counts the current
-branch without request changes. Neither fallback enters the store.
-
-Always restore the working-row state in `finally`. If the probe times out,
-keep tracking its run until it settles: delayed synthetic messages must still
-be sanitized and filtered.
-
-## Measurement and Source Attribution
-
-Attribution means deciding which source owns a contribution. Store source,
-kind, and hierarchy in typed model fields. Never recover these facts by parsing
-display labels.
-
-### Token Estimates
-
-Estimates need not match pi or provider totals. Tokenizers, images, provider
-serialization, compaction timing, handler order, and payload rewrites can all
-change the result.
-
-- Do not add guessed token constants for message roles or content-block framing.
-- Do not count protocol metadata just because it appears in the request.
-  Examples include `ToolCall.id`, `ToolResultMessage.toolCallId`, and
-  `ToolResultMessage.toolName`.
-- Estimate compaction summaries, branch summaries, and context-visible bash
-  messages with `estimateTokens(convertToLlm([message])[0])`. Conversion adds
-  wrapper text that the provider receives. Exclude messages conversion drops.
-  This estimate can intentionally exceed pi's own heuristic.
-- Follow [THINKING.md](THINKING.md) for reasoning counts, opaque signatures,
-  model retention, and thinking-preview notation. That page is the source of
-  truth for the thinking formula and its measurement evidence.
-
-### Prompt Parts and Moved Blocks
-
-Pi wraps independently replaceable sections in XML. Map `tools`, `rules`,
-`docs`, `addendum`, and `cwd` to Available Tools, Guidelines, Documentation,
-Appended Prompt, and Current Dir. Keep the unwrapped preamble separately.
-Read `project_context` instruction records and `skills` records as their existing
-aggregates. Overridden content that is not those generated records stays visible
-as a System Prompt part; never substitute stale loader content.
-
-Custom `systemPromptOptions.sections` use their literal tag names as part labels;
-overrides of known names retain existing labels. Sections can follow `cwd`, so
-that section is not the end of structured content. Ignore nested tags and fenced
-examples when locating top-level sections. The first occurrence of a tag owns
-the part; later duplicates are unwrapped additions, not a second counted part.
-Unwrapped text between or after sections uses the existing addition attribution.
-
-Count and preview section bodies without the outer XML transport wrappers.
-The tool sections retain leading bullet newlines for exact line attribution.
-The counted parts concatenate back to the item's text and share its estimate.
-Native tool surfaces use consecutive bullets and keep actual section order;
-relocated `tools` and `rules` retain the Moved marker and tool references.
-A custom prefix may restore individual native sections, so only absent ones
-are marked Dropped.
-
-A section after one pi normally renders later gets typed `moved` metadata.
-This records position only: it does not prove who moved it or that its text is
-unchanged. Moved native text still counts under System Prompt, and extension
-tool lines keep their usual tool ownership. Never invent missing or withheld
-tool lines.
-
-Pi always renders a `cwd` section, so only a forced prompt can have no sections.
-Measure such a prompt as one undivided System Prompt part. Text shaped like
-pi's own blocks is not evidence of them there: it has no Moved, Dropped, or
-Extension Additions parts, and its tools keep only their definitions. A forced
-prompt that contains sections is measured like any other sectioned prompt.
-
-### Tool Ownership and Preview References
-
-Use `ToolInfo.sourceInfo` for tool ownership. A package source (`npm:`, `git:`)
-identifies its extension. The path kinds `cli`, `local`, and `auto` do not, so
-tools and prompt additions from such an extension are owned by its kind and
-entry path, and labelled by path against every extension that registered a
-tool or command.
-
-Separate a tool's complete prompt bullets only from the first `tools` and
-`rules` sections, including moved ones. Never match unrelated text or only a prefix
-of a longer bullet. Give each shared guideline bullet to the first tool that
-declares it in pi's active-tool order, so it counts once. Pi's own bullets stay
-in the base prompt.
-
-For each separated extension line, retain its original position, source, and
-owning tool as a typed preview reference. Keep that reference on the System
-Prompt section and standalone child from which the line was removed. This
-applies to both Available Tools snippets and Guidelines bullets.
-
-References restore prompt order for inspection. They add no counted text,
-characters, or tokens to the base item; the owning tool counts the content.
-Only exactly matched, rendered lines receive references, except for the
-explicit dropped-block case below.
-
-### Blocks Dropped by a Custom System Prompt
-
-When `--system-prompt` drops Available Tools, Guidelines, or Documentation,
-keep those parts in the model and mark them as dropped. They must contain no
-pi-authored counted text. They may contain preview references to extension
-lines that pi would otherwise have rendered.
-
-Each tool also keeps its dropped snippet and guideline sections. Every dropped
-part or section has zero tokens and contributes no counted text, characters,
-or token shares. Do not count text pi never sent.
-
-### Extension Prompt Additions
-
-For unwrapped gaps between or after XML sections:
-
-- Split at blank lines and ignore whitespace-only gaps. Keep gaps on opposite
-  sides of a section separate, so unrelated source evidence cannot mix.
-- There is no `before_agent_start` handler boundary: adjacent unwrapped
-  additions without a blank line may share a block.
-- Name a source only when the text contains exactly one loaded package
-  specifier or extension path from `getAllTools()`/`getCommands()` source data.
-  Always mark that name as a guess: pi does not record who made each prompt edit.
-- Add a tool or slash-command qualifier only when exactly one registered name
-  from that same extension appears as a complete token. A path segment, a
-  command without its slash, or a name shorter than three characters does not
-  qualify. The qualifier changes only the display label.
-- Keep everything else unattributed.
-
-Count an addition under its assigned source, never again under pi's own prompt.
-System Prompt holds these additions only as references in its Extension
-Additions part.
-
-### Totals and Structured Previews
-
-- Children break down their parent; they are never extra tokens in a total.
-- Labeled preview sections hold shares of the parent estimate. Their tokens
-  must sum to the parent, not add to it.
-- An item with children exposes each child as a labeled preview part with its
-  estimate and any marked JSON range.
-- Mark JSON ranges when capture or classification serializes them: tool
-  schemas, tool-call arguments, and non-string message content. Do not guess
-  whether preview text is JSON by inspecting its appearance.
-- Compact provider-bound JSON backs the estimate. Expanding it for display is
-  covered by [ui/previews.md](ui/previews.md#marked-json).
-
-## Configuration
-
-### Defaults and Loading
-
-Defaults live in code. The global file at
-`getAgentDir()/extensions/pi-context-view.json` holds overrides, so omitted
-keys follow later default changes.
-
-Never auto-create the file or write missing defaults into an existing file.
-Load it only when a view needs it, not in the extension factory: the factory
-also runs in commands that never start a session. Cache per runtime and reload
-when the file's modification time changes.
-
-- An absent file or omitted key silently uses the default.
-- An unreadable or unparseable file, unknown key, invalid color, or out-of-range
-  value falls back to the applicable default. Warn once per file revision,
-  never fail the view.
-- A renamed key keeps its old name as a silently accepted alias. If both names
-  are present, the current name wins.
-
-### Explicit Writes
-
-`/context config` is the create-only action. It writes every default with one
-atomic `O_EXCL` create and never overwrites or modifies an existing path. It
-works in every run mode on a [supported Pi](#supported-pi-versions). Only the views require
-`ctx.mode === "tui"`.
-
-Any later action that updates an existing file must debounce writes and merge
-over a fresh read, preserving concurrent edits and unknown keys.
-
-Configuration stores preferences only, never captured prompts or messages.
-See [CONFIG.md](CONFIG.md) for the settings, [UI.md](UI.md#color-and-casing)
-for colors, and [ui/usage.md](ui/usage.md#context-map) for map geometry.
-
-## Privacy
-
-### Raw text and Message Previews
-
-Keep raw prompt and message content in this process only. Sanitize it before
-terminal rendering, and reveal it only after explicit Enter preview. Never log
-it, include it in notifications, persist extra copies, or inject it into a
-later model request.
-
-Capture message content, not the whole message object:
-
-- System previews contain plain `content` followed by non-deleted section text,
-  even when `content` is empty. Omit text-block signatures. Deleted sections
-  have no preview text or text-token contribution.
-- Branch and compaction previews contain only `summary`.
-- Bash previews use pi's `convertToLlm` text, including failure/cancellation
-  notices and truncated-output file references.
-- A bash message excluded from context has no preview text.
-- Fields such as `timestamp`, `fromId`, and `tokensBefore` are not preview
-  content.
-
-This extraction does not change source messages, baseline matching, or token
-estimates.
-
-### Images and Provider Signatures
-
-Never retain or render captured image payloads. Before serializing a preview,
-replace an image block's base64 `data` with its captured size. Keep the rest of
-the block, including `mimeType`, as captured. The size measures the base64 text,
-not the decoded image; token estimates still use pi's image proxy.
-
-Treat `textSignature`, `thinkingSignature`, and `thoughtSignature` as opaque
-provider metadata. Gemini can also store reasoning data in `textSignature` on
-text blocks. For accounting, inspect signature bytes only for length. The payload guard
-also checks absence, emptiness, and whitespace-only content to follow Pi's
-thinking-to-text rules; it retains only those states, never the bytes.
-Never tokenize, render, preview, or log the bytes themselves.
-
-Strip those fields from assistant text, thinking, and tool-call blocks,
-respectively, before serializing injected-message previews. This includes
-request-only replacements. Do not change the provider-bound message or tool
-arguments, even if an argument has the same name as a signature field.
-
-Request snapshots redact the messages they retain before publication, so no
-consumer receives these bytes: image `data` becomes the same
-`<size omitted>` marker, `textSignature` is removed, and `thinkingSignature`
-and `thoughtSignature` become filler of the same length. Only that length
-remains, for the [signature-size proxy](THINKING.md#counting-architecture).
-Token estimates do not change: Pi counts images by a fixed proxy and never
-counts signatures. The short-lived request copy used for the diff is raw and
-released after building and payload pairing or settlement. It holds only the
-replayed system state, historical declarations, positioned system text, and
-messages that differ from the baseline. Payload copies duplicate arrays and
-objects, sharing string values (including image and signature strings) until
-parsing. The tool parser retains only declared names and descriptions. The
-message parser excludes image data and opaque signatures; findings keep only
-changed model-facing text lines. The guard's converted transcript strips image
-data and replaces signature bytes with presence/emptiness states before waiting
-for a virtual dispatch. All comparison inputs are released after comparison or
-settlement.
-
-Persisted probe records contain only role and timestamp identities, plus
-`context_edit` target entry IDs with null replacements.
+| Layer         | Depends on                                | Must not depend on                 |
+| ------------- | ----------------------------------------- | ---------------------------------- |
+| Probe         | Pi events                                 | Capture, store, trigger, consumers |
+| Capture       | Pi events, ProbeView, store               | Trigger, command, views            |
+| SnapshotStore | Snapshot types; Pi types only             | Probe, capture, consumers          |
+| ProbeTrigger  | SilentProbe, store reader                 | Capture                            |
+| Consumers     | Store; the command also asks ProbeTrigger | Capture and probe internals        |
+
+- **Probe interface.** Capture reads the probe layer only through ProbeView:
+  whether SilentProbe owns the current run, and the probe-message filter.
+  ProbeFilter stays active even when no probe runs: sessions keep probe
+  messages from earlier runtimes.
+- **Run modes.** Capture, the probe layer, and the store work in every run
+  mode and without any consumer. The command applies the TUI-only guard of
+  both views; ProbeTrigger has none.
+- **Wiring.** Each layer's module exports its state and a `register*()`
+  function with its Pi handlers. `src/index.ts` creates the layers, calls those
+  functions, registers the command, and clears the store on `session_shutdown`.
+  Register the probe layer first: ProbeFilter's `context_with_system` handler
+  must run before capture's.
 
 ## Module Boundaries
 
 | Path                         | Responsibility                                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `src/index.ts`               | Create the layers, register them in order, and register the command; assemble view inputs.                    |
-| `src/command.ts`             | Parse commands; resolve the latest snapshot through the store and ProbeTrigger.                      |
+| `src/command.ts`             | Parse commands; resolve the latest snapshot through the store and ProbeTrigger.                               |
 | `src/config.ts`              | Load, validate, cache, and explicitly create configuration.                                                   |
 | `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.                       |
 | `src/capture/register.ts`    | Capture wiring: structured capture, payload pairing, dispatch events, and cleanup.                            |
 | `src/capture/tracker.ts`     | RequestTracker: number captures, pair payloads, and mark warm refreshes.                                      |
 | `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline, positioned request copy, forced prompt, model capabilities. |
 | `src/capture/dispatch.ts`    | DispatchConfirmer: accept one identity per paired request, consuming warm stream events.                      |
-| `src/capture/payload.ts`     | Copy payloads, select parsers by API, extract message units and replay tool declarations.                     |
+| `src/capture/payload.ts`     | PayloadParser: copy payloads, select parsers by API, extract message units and replay tool declarations.      |
 | `src/capture/adjustments.ts` | Rebuild/convert the captured request and render Pi's model-dependent text adjustments.                        |
 | `src/capture/messages.ts`    | Collect message units, align whitespace-insensitive keys, and retain changed lines.                           |
 | `src/capture/tools.ts`       | Compare non-hidden declarations; report added, modified, and deleted late tool edits.                         |
-| `src/capture/guard.ts`       | Defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.                   |
+| `src/capture/guard.ts`       | PayloadGuard: defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.     |
 | `src/capture/diff.ts`        | Differ: compare system state; trim equal ends in place, align the rest with a Myers diff.                     |
 | `src/capture/attribution.ts` | Attributor: `customType` and cooperative `details` provenance of custom messages.                             |
 | `src/capture/redact.ts`      | Redact image payloads and signatures from messages a snapshot retains.                                        |
 | `src/capture/builder.ts`     | SnapshotBuilder: defer the diff, publish snapshots and guard updates, release copies.                         |
 | `src/compaction.ts`          | Track the compaction lifecycle for the probe preconditions and the command refusal.                           |
-| `src/snapshot.ts`            | Define request snapshots; SnapshotStore keeps only the latest snapshot.                              |
+| `src/snapshot.ts`            | Define request snapshots; SnapshotStore keeps only the latest snapshot.                                       |
 | `src/probe/filter.ts`        | ProbeFilter: hold and restore probe identities; filter requests in `context_with_system`.                     |
 | `src/probe/silent-probe.ts`  | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.                             |
 | `src/probe/view.ts`          | ProbeView: the run origin and probe-message filter that capture reads.                                        |
-| `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and its status from store publications.                    |
+| `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and its status from store publications.                   |
 | `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                                 |
 | `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                                            |
-| `src/injections.ts`          | Rebuild the latest snapshot's baseline; measure it with marked changes and guard findings.                     |
+| `src/injections.ts`          | Rebuild the latest snapshot's baseline; measure it with marked changes and guard findings.                    |
 | `src/projection.ts`          | Rebuild filtered projections; apply the latest snapshot's conversation and fresh system changes for Usage.    |
 | `src/replay.ts`              | Replay recorded system state and changes; Usage prompt/tools and the live fallback.                           |
 | `src/message-preview.ts`     | Content-only message previews, redacting session images and omitting opaque signatures.                       |
@@ -1224,27 +130,22 @@ Persisted probe records contain only role and timestamp identities, plus
 | `src/model.ts`               | Define types, ownership, hierarchy, and grouping.                                                             |
 | `src/text.ts`                | Sanitize dynamic text before terminal display.                                                                |
 | `src/ui/`                    | Handle navigation, layout, previews, and fullscreen rendering.                                                |
-| `test/fixtures/`             | Test capture visibility, forced prompts, and extension load order.                                            |
+| `test/harness/`              | Mock provider and RPC driver for runtime tests; see [validation.md](architecture/validation.md).              |
+| `test/fixtures/`             | Extensions that change requests at each lifecycle point, for both load orders.                                |
 
-Each layer's module exports its state and a `register*()` function with its pi
-handlers; `src/index.ts` creates the layers and calls those functions.
-SnapshotStore has no Pi handlers and imports Pi types only;
-`src/index.ts` clears it on `session_shutdown`. Structured capture publishes to
-it through SnapshotBuilder; both views read its latest snapshot. `src/ui/` and
-`src/usage.ts` import no capture or probe module, directly
-or indirectly; a test enforces this. Register the probe layer first:
-ProbeFilter's `context_with_system` handler must run before the capture handler
-on that event. The probe layer imports no capture module; capture reads it only
-through ProbeView. Capture imports no view, command, or trigger code.
-ProbeTrigger imports SilentProbe and the store's reader, never capture.
-Keep state machines, measurement, and rendering in focused modules
-that can be tested independently.
+`src/ui/` and `src/usage.ts` import no capture or probe module, directly or
+indirectly; `test/module-boundaries.test.ts` enforces this. The probe layer
+imports no capture module, and capture imports no view, command, or trigger
+code. ProbeTrigger imports SilentProbe and the store's reader, never capture.
+Keep state machines, measurement, and rendering in focused modules that can be
+tested independently.
 
 ## Required Invariants
 
-Lifecycle or accounting changes must preserve these rules. The current
-[nested-send limitation](#known-limitation-nested-sends) is a known violation of
-probe request isolation and message ownership, not a relaxation of those goals.
+Lifecycle or accounting changes must preserve these rules. The
+[nested-send limitation](architecture/probe.md#known-limitation-nested-sends)
+is a known violation of probe request isolation and message ownership, not a
+relaxation of those goals.
 
 - Normal turns are unchanged when inspection is not invoked. Capture handlers
   return nothing and never change provider-bound data.
@@ -1257,7 +158,8 @@ probe request isolation and message ownership, not a relaxation of those goals.
   findings, never the hidden names captured from Pi.
 - Message normalization requires evidence from Pi's API behavior, the model's
   capabilities, or the payload-time image-blocking setting, never text alone.
-- Warm refreshes publish nothing. Standard probes have no payload but record Pi's hidden tools.
+- Warm refreshes publish nothing. Standard probes have no payload but record
+  Pi's hidden tools.
 - On a Pi version older than `MIN_PI_VERSION`, no lifecycle handler is registered.
 - Probes make no provider request, and their messages are blanked in agent
   state, in every later model context, and in the saved session.
@@ -1282,9 +184,3 @@ probe request isolation and message ownership, not a relaxation of those goals.
 - Usage counts the replayed branch prompt/tool state once, never again as system
   messages or historical patches. Explicit removals cannot revive live defaults.
 - Every rendered line respects width, and views reflow with width and height.
-
-For lifecycle smoke tests, load `test/fixtures/marker.ts`,
-`test/fixtures/forced-prompt.ts`, and `test/fixtures/input-transform.ts` before
-and after this extension. Use an
-`after_provider_response` sentinel to detect provider calls.
-Follow [UI.md](UI.md#responsive-rendering) for the rendering test matrix.

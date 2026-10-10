@@ -35,7 +35,7 @@ messages are not listed unless a request-only change touches them.
 
 The view describes the request as it was sent, so a tool follow-up or a
 one-time injection can change it between two prompts. Usage instead estimates
-the current branch; [ARCHITECTURE.md](../ARCHITECTURE.md#one-snapshot-two-views)
+the current branch; [views.md](../architecture/views.md#one-snapshot-two-views)
 lists the differences.
 
 When the snapshot came from a silent probe, the description block carries a
@@ -201,7 +201,7 @@ without a snapshot uses the live list instead.
 Pi does not report which tool's `prepareLoadout()` hid each declaration. Do
 not guess from `model-only` exposure or name a candidate. Capture's observation
 limits are documented in
-[ARCHITECTURE.md](../ARCHITECTURE.md#structured-request-capture).
+[capture.md](../architecture/capture.md#hidden-tools).
 
 Within the `pi` group, keep the fixed semantic order above and sort remaining
 prompt additions by size. Children break down parent contributions and do not

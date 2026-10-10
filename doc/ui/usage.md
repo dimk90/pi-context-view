@@ -67,7 +67,7 @@ can render, so [Responsive rendering](../UI.md#responsive-rendering) always wins
 over a requested size.
 
 The configured `mapCols` and `mapRows` ([configuration
-contract](../ARCHITECTURE.md#configuration)) request a size; each frame renders
+contract](../architecture/privacy.md#configuration)) request a size; each frame renders
 the largest geometry that still fits:
 
 - columns shrink until the legend keeps `MIN_DETAIL_WIDTH` (32) columns beside
@@ -178,9 +178,9 @@ Messages the latest request added or modified count in the category of their
 role or `customType`, like session messages. A replacement counts and previews
 only its request version; deleted messages count nowhere and have no preview.
 Reorders count each message once. Usage marks none of these
-[request-only changes](../ARCHITECTURE.md#usage-and-attribution): Injections
+[request-only changes](../architecture/views.md#applying-the-latest-request): Injections
 shows them for the same latest request, as it was sent rather than applied to
-the current branch ([differences](../ARCHITECTURE.md#one-snapshot-two-views)).
+the current branch ([differences](../architecture/views.md#one-snapshot-two-views)).
 
 Tool categories exclude Pi's live `hiddenTools` from the replayed declarations.
 For example, codemode's `only` mode hides the other callable tools; Usage
@@ -188,7 +188,7 @@ neither lists nor counts their separate declarations and marks nothing.
 This works before the first prompt, in the live fallback, and without a
 compared provider payload. The hidden set is read again each time Usage opens.
 Late payload removals do not change Usage, just as other late edits do not.
-[ARCHITECTURE.md](../ARCHITECTURE.md#usage-and-attribution) defines the rules.
+[views.md](../architecture/views.md#applying-the-latest-request) defines the rules.
 
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
 the smaller middle dot `·`. Keep aggregate breakdowns collapsed except Tool
@@ -241,7 +241,7 @@ the estimate.
 ### Forced prompt
 
 When System Prompt measures the latest request's
-[forced prompt](../ARCHITECTURE.md#usage-and-attribution), every System Prompt
+[forced prompt](../architecture/views.md#applying-the-latest-request), every System Prompt
 preview level shows it as the Injections System Prompt preview does: the
 [`Forced` marker](../UI.md#color-and-casing) after the category metadata in
 its header, and the `Forced` bullet in its
