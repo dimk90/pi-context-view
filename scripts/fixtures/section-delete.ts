@@ -1,6 +1,6 @@
 /**
- * Verification fixture: removes `docs` and two seeded sections from every request.
- * `before_agent_start` records originals so deletions have a baseline
+ * Demo extension: removes `docs` and two seeded sections from every request.
+ * `before_agent_start` records demo originals so deletions have a baseline
  * even in a fresh session. The request-only patch sets each section to `null`.
  *
  * Expected result:
@@ -12,7 +12,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 /** Pi section that the fixture removes. */
 export const SECTION_DELETE_NAME = "docs";
 
-/** Baseline-only sections retained for Deleted preview assertions, not sent. */
+/** Baseline-only demo sections retained for Deleted previews, not sent. */
 export const SECTION_DELETE_SECTIONS = {
 	"context-view-fixture-obsolete": "<context-view-fixture-obsolete>\n"
 		+ "XYZZY_SECTION_DELETE_OBSOLETE: This migration note is outdated.\n</context-view-fixture-obsolete>",

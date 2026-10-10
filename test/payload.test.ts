@@ -139,23 +139,23 @@ test("tool comparison reports additions, changed descriptions, and removed decla
 		expected: [{ ...READ, description: "Read a file.\nKeep this line." }, WRITE, { name: "bare_removed" }],
 		declarations: [
 			{ ...READ, description: "Read any file.\nKeep  this line." },
-			{ name: "late", description: "Added later.\n\nSecond line." },
+			{ name: "added", description: "Added later.\n\nSecond line." },
 			{ name: "bare" },
 		],
 		ignoreNameCase: false,
 	});
 	assert.deepEqual(result, [
-		{ type: "late-tool-edit", change: "deleted", name: "write", lines: [{ type: "removed", text: "Write a file." }] },
-		{ type: "late-tool-edit", change: "deleted", name: "bare_removed", lines: [] },
+		{ type: "payload-tool-change", change: "deleted", name: "write", lines: [{ type: "removed", text: "Write a file." }] },
+		{ type: "payload-tool-change", change: "deleted", name: "bare_removed", lines: [] },
 		{
-			type: "late-tool-edit", change: "modified", name: "read",
+			type: "payload-tool-change", change: "modified", name: "read",
 			lines: [{ type: "removed", text: "Read a file." }, { type: "added", text: "Read any file." }],
 		},
 		{
-			type: "late-tool-edit", change: "added", name: "late",
+			type: "payload-tool-change", change: "added", name: "added",
 			lines: [{ type: "added", text: "Added later." }, { type: "added", text: "Second line." }],
 		},
-		{ type: "late-tool-edit", change: "added", name: "bare", lines: [] },
+		{ type: "payload-tool-change", change: "added", name: "bare", lines: [] },
 	]);
 });
 

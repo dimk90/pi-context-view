@@ -1,5 +1,5 @@
 /**
- * Verification fixture: a `before_provider_request` handler that removes one tool
+ * Demo extension: a `before_provider_request` handler that removes one tool
  * declaration from the provider payload. The tool stays active and callable.
  * This removal has no marker text: look for the missing declaration instead.
  *

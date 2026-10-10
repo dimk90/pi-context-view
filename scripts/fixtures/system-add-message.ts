@@ -1,5 +1,5 @@
 /**
- * Verification fixture: a `context_with_system` handler that adds a request-only
+ * Demo extension: a `context_with_system` handler that adds a request-only
  * custom message. Nothing is saved, so only the request contains it. After the
  * monitor, Pi has already turned it into a user message when the payload guard
  * sees it, so its `customType` is lost.

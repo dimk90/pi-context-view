@@ -1,5 +1,5 @@
 /**
- * Verification fixture: a `context` handler that swaps the first user message that
+ * Demo extension: a `context` handler that swaps the first user message that
  * contains a marker with the latest user message, for the request only. The
  * swap keeps user and assistant messages alternating. Send a marked prompt,
  * then at least one more prompt.

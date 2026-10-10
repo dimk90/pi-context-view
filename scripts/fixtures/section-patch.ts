@@ -1,5 +1,5 @@
 /**
- * Verification fixture: a `context_with_system` handler that appends a system
+ * Demo extension: a `context_with_system` handler that appends a system
  * message adding three named prompt sections for the request only.
  *
  * Expected result:
@@ -11,7 +11,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export const SECTION_PATCH_NAME = "context-view-fixture";
 export const SECTION_PATCH_TEXT = "<context-view-fixture>XYZZY_SECTION_PATCH: request-only section.</context-view-fixture>";
 
-/** Request-only sections with distinct content for preview assertions. */
+/** Request-only sections with distinct content for the demo previews. */
 export const SECTION_PATCH_SECTIONS = {
 	[SECTION_PATCH_NAME]: SECTION_PATCH_TEXT,
 	"context-view-fixture-checklist": "<context-view-fixture-checklist>\nXYZZY_SECTION_PATCH_CHECKLIST:\n"

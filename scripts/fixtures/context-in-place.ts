@@ -1,5 +1,5 @@
 /**
- * Verification fixture: a `context` handler that edits the latest user message in
+ * Demo extension: a `context` handler that edits the latest user message in
  * place and returns nothing. Pi keeps the edit because later handlers share
  * the same message objects; the session keeps the original text.
  *

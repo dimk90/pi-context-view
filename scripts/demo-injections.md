@@ -4,6 +4,12 @@ Demo instructions and expected results for the fixtures loaded by
 [`demo-injections.sh`](demo-injections.sh). Expected results follow each
 fixture's header comment and the [capture visibility rules](../doc/architecture/capture.md#scope).
 
+The launcher loads demo-only extensions from [`scripts/fixtures/`](fixtures/).
+Regular tests use independent fixtures in `test/fixtures/`; neither set imports
+or re-exports the other. Change the demo fixtures without changing regular test
+behavior. The launcher tests check selection and paths, and `pnpm check`
+typechecks both sets and checks their import boundaries.
+
 Load orders:
 
 - **Before:** selected fixtures load before pi-context-view (default).
@@ -23,7 +29,7 @@ load explicitly, so an installed pi-context-view may load alongside them.
 | ----------------- | ------------------------------------------------------------------------------------------------------------ |
 | `--context`       | `context-modify`, `context-in-place`, `context-delete`, `context-reorder`, `context-add`, `context-add-user` |
 | `--system`        | `system-append`, `section-patch`, `section-modify`, `section-delete`, `in-place-mutation`                    |
-| `--payload`       | `payload-late-edits`, `payload-delete`, `payload-remove-tool`                                                |
+| `--payload`       | `payload-changes`, `payload-delete`, `payload-remove-tool`                                                   |
 | `--message`       | `agent-start-message`, `system-add-message`                                                                  |
 | `--forced`        | `forced-prompt` (forced system prompt)                                                                       |
 | `--codemode-only` | none; Pi's built-in codemode in `only` mode                                                                  |
@@ -34,14 +40,15 @@ Flags combine without enabling unselected groups:
 ./scripts/demo-injections.sh --codemode-only --forced --no-session
 ```
 
-For isolated checks, load any fixture directly with Pi's `-e` option.
+For isolated demo checks, load a file from `scripts/fixtures/` directly with
+Pi's `-e` option, for example `pi -e ./scripts/fixtures/section-patch.ts`.
 `--forced` replaces the system prompt; conversation and payload demos still run.
 
 ## Viewing the demos
 
 Opening `/context injections` before the first prompt attempts a silent probe.
 This requires a configured model, credentials, and the usual probe safety checks.
-Probes have no provider payload, so late edits require an ordinary prompt.
+Probes have no provider payload, so payload changes require an ordinary prompt.
 Reopen the view afterwards: the latest real request replaces the probe snapshot.
 
 ## Automatic section demo
@@ -65,21 +72,21 @@ the request text; Deleted previews keep the original at zero tokens. With normal
 Pi defaults, the first capture gives three examples of each section change.
 
 With `--after`, these edits are not marked in the structured view; they appear
-as late edits only after a real prompt. For conversation deletion and reordering,
+as payload changes only after a real prompt. For conversation deletion and reordering,
 select `--context` and send their marker prompts (`XYZZY_CONTEXT_DELETE` and
 `XYZZY_CONTEXT_REORDER`).
 
-## Automatic late-edit demo
+## Automatic payload-change demo
 
 Run `./scripts/demo-injections.sh --payload --no-session`, send an ordinary
-prompt, then open `/context injections`. `payload-late-edits` produces one of each marker in
-`late edits` on the first real request:
+prompt, then open `/context injections`. `payload-changes` produces one of each marker in
+`payload changes` on the first real request:
 
-| Change   | Preview                                                              |
-| -------- | -------------------------------------------------------------------- |
-| Modified | `-` original `XYZZY_PAYLOAD_LATE_MODIFY` note, `+` replacement note. |
-| Deleted  | `-` `XYZZY_PAYLOAD_LATE_DELETE` note, at 0 tokens.                   |
-| Added    | `+` `XYZZY_PAYLOAD_LATE_ADD` note.                                   |
+| Change   | Preview                                                                |
+| -------- | ---------------------------------------------------------------------- |
+| Modified | `-` original `XYZZY_PAYLOAD_CHANGE_MODIFY` note, `+` replacement note. |
+| Deleted  | `-` `XYZZY_PAYLOAD_CHANGE_DELETE` note, at 0 tokens.                   |
+| Added    | `+` `XYZZY_PAYLOAD_CHANGE_ADD` note.                                   |
 
 The fixture seeds the modification and deletion originals in `context`, with
 an unchanged separator to keep them distinct in the payload diff. These are
@@ -92,7 +99,7 @@ The group also includes `payload-delete` (removes prompts containing
 
 With `--after`, payload edits run after the monitor's payload hook and are not
 visible. If `--system` is also selected, its later `context_with_system` edits
-still appear as late edits.
+still appear as payload changes.
 
 ## Automatic message demo
 
@@ -109,7 +116,7 @@ Pi saves one `agent-start-message` per run under
 and one prompt, the group has two messages.
 
 With `--after`, `system-add-message` is absent from the probe. After a real
-prompt, it appears in `late edits`: provider conversion turns the custom
+prompt, it appears in `payload changes`: provider conversion turns the custom
 message into a user message, losing its `customType`.
 
 ## Optional codemode hidden-tools demo
@@ -136,7 +143,7 @@ they remain callable through codemode scripts. With the default tool selection,
 Tool-selection arguments can change that set.
 
 `--payload` without codemode reports its manual `write` removal as a `Deleted`
-tool under `late edits`, not a hidden tool. Its normal tool row and Usage count
+tool under `payload changes`, not a hidden tool. Its normal tool row and Usage count
 remain unchanged.
 
 ## Comparison with v0.6.0
@@ -183,7 +190,7 @@ Prompts, in order: `XYZZY_CONTEXT_REORDER one`, `XYZZY_CONTEXT_DELETE two`,
    message, so its preview also compares against the wrong session message.
    After the monitor, that marker is absent from the snapshot.
 
-At that Unreleased revision, late-edit detection was not implemented. The view
+At that Unreleased revision, payload-change detection was not implemented. The view
 reported an incomplete payload comparison in both load orders, although the
 external payload log confirmed that the edits reached the provider request.
 

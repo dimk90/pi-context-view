@@ -1,5 +1,5 @@
 /**
- * Verification fixture: a `before_agent_start` handler that adds a custom message to
+ * Demo extension: a `before_agent_start` handler that adds a custom message to
  * every run, including a silent probe. Pi saves the message in the session, so
  * it belongs to the baseline and is not a request-only change; each run saves
  * one more copy.

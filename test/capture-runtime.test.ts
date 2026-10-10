@@ -300,7 +300,7 @@ suite("structured edits", { concurrency: true }, () => {
 			assert.deepEqual(runtime.errors, []);
 		});
 
-		test(`--message demo: a saved message and a context_with_system addition (fixtures ${position})`, async (t) => {
+		test(`a saved message and a context_with_system addition (fixtures ${position})`, async (t) => {
 			const provider = await startProvider(t);
 			const fixtures = [agentStartMessage, systemAddMessage];
 			const factories = position === "before" ? [...fixtures, monitorSlot] : [monitorSlot, ...fixtures];
@@ -363,7 +363,7 @@ suite("structured edits", { concurrency: true }, () => {
 			});
 		});
 
-		test(`section demos run automatically in a fresh probe (fixture ${position})`, async (t) => {
+		test(`section fixtures run automatically in a fresh probe (fixture ${position})`, async (t) => {
 			const provider = await startProvider(t);
 			let responses = 0;
 			const sentinel: ExtensionFactory = (pi) => {

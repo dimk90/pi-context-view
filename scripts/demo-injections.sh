@@ -8,13 +8,14 @@
 #
 #   --context       load conversation additions, modifications, deletions, reordering
 #   --system        load system prompt and section edits
-#   --payload       load late message edits and manual tool-declaration removal
+#   --payload       load message payload changes and manual tool-declaration removal
 #   --message       load a saved before_agent_start message and a context_with_system message
 #   --forced        load forced-prompt.ts, replacing the whole system prompt
 #   --codemode-only load Pi's built-in codemode in only mode, through temporary settings
 #   --after         load pi-context-view before the selected demo extensions
 #   --local         also load locally installed extensions (omit --no-extensions)
 #
+# Fixtures live in scripts/fixtures/, independently of regular test fixtures.
 # See scripts/demo-injections.md for each group's fixtures and behavior.
 #
 # No demo fixtures load by default. Selected groups load in flag order;
@@ -78,7 +79,7 @@ main() {
             --system)
                 fixtures+=(system-append section-patch section-modify section-delete in-place-mutation) ;;
             --payload)
-                fixtures+=(payload-late-edits payload-delete payload-remove-tool) ;;
+                fixtures+=(payload-changes payload-delete payload-remove-tool) ;;
             --message)
                 fixtures+=(agent-start-message system-add-message) ;;
             *) break ;;
@@ -89,7 +90,7 @@ main() {
     local extension_args=()
     local fixture
     for fixture in "${fixtures[@]}"; do
-        extension_args+=(-e "$_DEMO_REPO_ROOT/test/fixtures/$fixture.ts")
+        extension_args+=(-e "$_DEMO_REPO_ROOT/scripts/fixtures/$fixture.ts")
     done
     if [[ "$monitor_first" == true ]]; then
         extension_args=(-e "$_DEMO_MONITOR" "${extension_args[@]}")

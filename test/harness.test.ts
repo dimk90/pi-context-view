@@ -11,6 +11,7 @@ import { suite, test, type TestContext } from "node:test";
 
 import { startMockProvider, type MockProvider, type RecordedRequest } from "./harness/mock-provider.ts";
 import { MOCK_PROVIDERS, startPi, type PiOptions, type PiProcess } from "./harness/pi-rpc.ts";
+import { AGENT_START_MESSAGE_TEXT } from "./fixtures/agent-start-message.ts";
 import { CONTEXT_ADD_TEXT } from "./fixtures/context-add.ts";
 import { CONTEXT_ADD_USER_TEXT } from "./fixtures/context-add-user.ts";
 import { CONTEXT_DELETE_MARKER } from "./fixtures/context-delete.ts";
@@ -18,6 +19,9 @@ import { CONTEXT_IN_PLACE_SUFFIX } from "./fixtures/context-in-place.ts";
 import { CONTEXT_MODIFY_PREFIX } from "./fixtures/context-modify.ts";
 import { CONTEXT_REORDER_MARKER } from "./fixtures/context-reorder.ts";
 import { IN_PLACE_SUFFIX } from "./fixtures/in-place-mutation.ts";
+import {
+	PAYLOAD_CHANGE_ADDED, PAYLOAD_CHANGE_DELETED, PAYLOAD_CHANGE_MODIFIED, PAYLOAD_CHANGE_ORIGINAL,
+} from "./fixtures/payload-changes.ts";
 import { PAYLOAD_DELETE_MARKER } from "./fixtures/payload-delete.ts";
 import { PAYLOAD_LOG_VARIABLE } from "./fixtures/payload-logger.ts";
 import { PAYLOAD_MODIFY_SUFFIX } from "./fixtures/payload-modify.ts";
@@ -26,6 +30,7 @@ import { PAYLOAD_REWRITE_TEXT } from "./fixtures/payload-rewrite.ts";
 import { SECTION_DELETE_NAME, SECTION_DELETE_SECTIONS } from "./fixtures/section-delete.ts";
 import { SECTION_MODIFY_SECTIONS, SECTION_MODIFY_TEXT } from "./fixtures/section-modify.ts";
 import { SECTION_PATCH_SECTIONS } from "./fixtures/section-patch.ts";
+import { SYSTEM_ADD_MESSAGE_TEXT } from "./fixtures/system-add-message.ts";
 import { SYSTEM_APPEND_TEXT } from "./fixtures/system-append.ts";
 
 /** A 1×1 PNG for image-input checks. */
@@ -169,6 +174,33 @@ suite("harness fixtures change the provider request", { concurrency: true }, () 
 		}
 		assert.ok(request.includes("<cwd>"), "other sections stay");
 	});
+
+	for (const api of ["openai-completions", "openai-responses", "anthropic-messages"] as const) {
+		const model = `${MOCK_PROVIDERS[api]}/vision`;
+
+		for (const { name, text } of [
+			{ name: "agent-start-message", text: AGENT_START_MESSAGE_TEXT },
+			{ name: "system-add-message", text: SYSTEM_ADD_MESSAGE_TEXT },
+		]) {
+			test(`${api}: ${name} addition`, async (t) => {
+				const { provider, client } = await startHarness(t, { model, extensions: [fixture(name)] });
+				await client.promptAndWait("ordinary prompt");
+				assert.ok(requestText(provider.requests[0]).includes(text));
+			});
+		}
+
+		test(`${api}: automatic payload additions, modifications, and deletions`, async (t) => {
+			const { provider, client } = await startHarness(t, { model, extensions: [fixture("payload-changes")] });
+			for (const prompt of ["ordinary prompt", "another prompt"]) {
+				await client.promptAndWait(prompt);
+				const sent = requestText(provider.requests.at(-1));
+				assert.ok(sent.includes(PAYLOAD_CHANGE_MODIFIED) && sent.includes(PAYLOAD_CHANGE_ADDED));
+				assert.ok(!sent.includes(PAYLOAD_CHANGE_ORIGINAL) && !sent.includes(PAYLOAD_CHANGE_DELETED));
+				assert.ok(sent.includes(prompt), "real prompts stay unchanged");
+			}
+			assert.equal(provider.requests.length, 2);
+		});
+	}
 
 	for (const api of ["openai-completions", "anthropic-messages"] as const) {
 		const model = `${MOCK_PROVIDERS[api]}/vision`;

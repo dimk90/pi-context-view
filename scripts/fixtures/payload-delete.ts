@@ -1,5 +1,5 @@
 /**
- * Verification fixture: a `before_provider_request` handler that removes every user
+ * Demo extension: a `before_provider_request` handler that removes every user
  * message containing a marker from the provider payload. The session and the
  * structured request keep the message.
  *

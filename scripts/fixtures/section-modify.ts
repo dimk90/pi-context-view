@@ -1,6 +1,6 @@
 /**
- * Verification fixture: changes `cwd` and two seeded sections for the request only.
- * `before_agent_start` records the originals in Pi's structured prompt;
+ * Demo extension: changes `cwd` and two seeded sections for the request only.
+ * `before_agent_start` records the demo originals in Pi's structured prompt;
  * `context_with_system` replaces them without changing the saved baseline.
  *
  * Expected result:
@@ -12,7 +12,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export const SECTION_MODIFY_TEXT = "XYZZY_SECTION_MODIFY: request-only line in the cwd section.";
 
-/** Original and replacement bodies for automatic modification assertions. */
+/** Original and replacement bodies for automatically demonstrated modifications. */
 export const SECTION_MODIFY_SECTIONS = [
 	{
 		name: "context-view-fixture-review",

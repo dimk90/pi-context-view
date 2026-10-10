@@ -1,5 +1,5 @@
 /**
- * Verification fixture: a `context_with_system` handler that appends plain text to
+ * Demo extension: a `context_with_system` handler that appends plain text to
  * the system prompt for the request only. A system message with `content` and
  * no sections adds instructions after the replayed prompt.
  *
