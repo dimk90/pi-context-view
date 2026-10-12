@@ -1,0 +1,138 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { test } from "node:test";
+
+import { type ExtensionAPI, type ExtensionCommandContext, SettingsManager } from "@earendil-works/pi-coding-agent";
+
+import { CompactionState } from "../src/compaction.ts";
+import { ProbeFilter } from "../src/probe/filter.ts";
+import { SilentProbe } from "../src/probe/silent-probe.ts";
+import { ProbeTrigger } from "../src/probe/trigger.ts";
+import { SnapshotStore } from "../src/snapshot.ts";
+import { useSettings } from "./harness/settings.ts";
+
+/** Settings accepted by Pi's in-memory manager. */
+type Settings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
+
+/** A safe idle command context; a send ends immediately instead of running an agent. */
+function createHarness(settings: Settings = {}) {
+	const probe = new SilentProbe(new ProbeFilter());
+	const sent: string[] = [];
+	const visibility: boolean[] = [];
+	const pi = {
+		getSettings: () => settings,
+		sendUserMessage: (content: string) => {
+			sent.push(content);
+			probe.fail("Test run ended.");
+		},
+	} as unknown as ExtensionAPI;
+	const context = {
+		// Never created; global settings are registered per directory
+		cwd: `/probe-guards/${randomUUID()}`,
+		model: { provider: "test", id: "model", api: "openai-completions", contextWindow: 100_000 },
+		modelRegistry: { hasConfiguredAuth: () => true },
+		hasPendingMessages: () => false,
+		getContextUsage: () => ({ tokens: 0, contextWindow: 100_000, percent: 0 }),
+		waitForIdle: async () => undefined,
+		ui: { setWorkingVisible: (visible: boolean) => visibility.push(visible) },
+	} as unknown as ExtensionCommandContext;
+	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction: new CompactionState() });
+	return { context, probe, trigger, sent, visibility };
+}
+
+/** Ask the trigger for a probe as a consumer would. */
+async function resolve(harness: ReturnType<typeof createHarness>) {
+	return harness.trigger.request(harness.context);
+}
+
+/** A skipped probe sends nothing and does not consume the runtime's attempt. */
+async function assertSkipped(harness: ReturnType<typeof createHarness>, reason: string): Promise<void> {
+	const result = await resolve(harness);
+	assert.deepEqual(result, { status: "failed", reason: `Silent probe unavailable: ${reason}` });
+	assert.deepEqual(harness.sent, []);
+	assert.deepEqual(harness.visibility, []);
+	const attempt = harness.probe.start();
+	assert.equal(attempt.started, true);
+	harness.probe.fail("cleanup");
+	await attempt.completion;
+}
+
+test("probe guards recheck pending messages after waiting for idle", async () => {
+	const harness = createHarness();
+	harness.context.waitForIdle = async () => {
+		harness.context.hasPendingMessages = () => true;
+	};
+	await assertSkipped(harness, "messages are waiting to be delivered.");
+});
+
+test("probe guards reject a virtual selection before checking its authentication", async () => {
+	const harness = createHarness();
+	assert.ok(harness.context.model);
+	harness.context.model.api = "pi-virtual";
+	harness.context.modelRegistry.hasConfiguredAuth = () => { throw new Error("Must not check auth"); };
+	await assertSkipped(harness, "a virtual model is selected.");
+});
+
+test("probe guards reject idle warming from the live settings snapshot", async () => {
+	await assertSkipped(createHarness({ cacheWarming: "idle" }), "idle cache warming is enabled.");
+});
+
+test("a project warming override cannot hide the global idle setting", async (t) => {
+	const harness = createHarness({ cacheWarming: "off" });
+	useSettings(t, harness.context.cwd, (_cwd, _agentDir, options) => {
+		assert.equal(options?.projectTrusted, false);
+		return SettingsManager.inMemory({ cacheWarming: "idle" });
+	});
+	await assertSkipped(harness, "idle cache warming is enabled.");
+});
+
+test("probe guards use Pi's default auto-compaction reserve", async () => {
+	const harness = createHarness();
+	harness.context.getContextUsage = () => ({ tokens: 83_617, contextWindow: 100_000, percent: 83.617 });
+	await assertSkipped(harness, "context exceeds the auto-compaction threshold.");
+});
+
+test("probe guards honor per-model compaction overrides", async () => {
+	const harness = createHarness({ compaction: {
+		reserveTokens: 1_000,
+		modelOverrides: { "test/model": { reserveTokens: 50_000 } },
+	} });
+	harness.context.getContextUsage = () => ({ tokens: 50_001, contextWindow: 100_000, percent: 50.001 });
+	await assertSkipped(harness, "context exceeds the auto-compaction threshold.");
+});
+
+test("probe guards fail closed on invalid compaction settings", async () => {
+	await assertSkipped(createHarness({ compaction: { reserveTokens: -1 } }), "Pi settings could not be checked.");
+});
+
+test("probe guards fail closed on unreadable global warming settings without exposing the error", async (t) => {
+	const harness = createHarness();
+	useSettings(t, harness.context.cwd, () => { throw new Error("sensitive file contents"); });
+	await assertSkipped(harness, "Pi settings could not be checked.");
+});
+
+for (const scenario of [
+	{ name: "exact threshold", settings: {}, tokens: 83_616 },
+	{ name: "disabled auto-compaction", settings: { compaction: { enabled: false } }, tokens: 100_000 },
+	{ name: "unknown post-compaction usage", settings: {}, tokens: null },
+	{ name: "streaming cache warming", settings: { cacheWarming: "streaming" }, tokens: 0 },
+	{ name: "disabled cache warming", settings: { cacheWarming: "off" }, tokens: 0 },
+] satisfies Array<{ name: string; settings: Settings; tokens: number | null }>) {
+	test(`probe guards allow ${scenario.name}`, async () => {
+		const harness = createHarness(scenario.settings);
+		harness.context.getContextUsage = () => ({ tokens: scenario.tokens, contextWindow: 100_000, percent: null });
+		await resolve(harness);
+		assert.deepEqual(harness.sent, [""]);
+		assert.deepEqual(harness.visibility, [false, true]);
+	});
+}
+
+test("clearing a guard allows the still-unused probe attempt", async () => {
+	const settings: Settings = { cacheWarming: "idle" };
+	const harness = createHarness(settings);
+	await resolve(harness);
+	assert.deepEqual(harness.sent, []);
+	settings.cacheWarming = "off";
+	await resolve(harness);
+	assert.deepEqual(harness.sent, [""]);
+});

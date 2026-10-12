@@ -9,9 +9,9 @@ import {
 	BUILT_IN_TOOLS_LABEL,
 	type ContextUsageSnapshot,
 	INSTRUCTION_FILES_LABEL,
-	type InvisibleReasoningEstimate,
-	type InitialSnapshot,
 	type InjectionItem,
+	type InjectionSnapshot,
+	type InvisibleReasoningEstimate,
 	type ReportedContextUsage,
 	SKILLS_LABEL,
 	SYSTEM_PROMPT_LABEL,
@@ -19,9 +19,12 @@ import {
 	type UsagePreviewEntry,
 } from "./model.ts";
 
-/** Everything computeUsage needs; messages must already be synthetic-filtered. */
+/**
+ * Everything computeUsage needs; messages must already be synthetic-filtered and
+ * carry the latest request's conversation changes.
+ */
 export interface UsageInputs {
-	snapshot: InitialSnapshot;
+	snapshot: InjectionSnapshot;
 	messages: ContextEvent["messages"];
 	reported?: ReportedContextUsage;
 	modelLabel?: string;
@@ -33,15 +36,14 @@ export interface UsageInputs {
 /**
  * Estimate the current/next-request context composition. Prompt and tool
  * categories come from the caller's current-state snapshot; message categories are
- * classified from the live session context. System messages have already been
+ * classified from the session messages with the latest request's changes. System messages have already been
  * replayed into that snapshot and must not count again. Empty categories are dropped and
  * every aggregate equals the exact sum of its children.
  */
 export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
-	const prompt = classifyPromptCategories(inputs.snapshot);
 	const categories = [
-		...prompt.categories,
-		...classifyMessages(inputs.messages, requestOnlyMessages(inputs.snapshot), prompt.promptAdditions),
+		...classifyPromptCategories(inputs.snapshot),
+		...classifyMessages(inputs.messages),
 	].filter((category) => category.tokens > 0);
 	return {
 		computedAt: inputs.computedAt ?? new Date(),
@@ -81,17 +83,12 @@ export function toReportedUsage(usage: ContextUsage | undefined): ReportedContex
 	};
 }
 
-/** Prompt-derived categories, plus the additions the Extensions category adopts. */
-interface PromptCategories {
-	readonly categories: UsageCategory[];
-	/** Prompt text appended by extensions, kept out of pi's own System Prompt total. */
-	readonly promptAdditions: UsageCategory[];
-}
-
-/** Map frozen snapshot items to prompt/tool/instruction/skill categories. */
-function classifyPromptCategories(snapshot: InitialSnapshot): PromptCategories {
+/**
+ * Map frozen snapshot items to prompt/tool/instruction/skill categories. System
+ * Prompt counts all of its text, including what extensions added to it.
+ */
+function classifyPromptCategories(snapshot: InjectionSnapshot): UsageCategory[] {
 	const systemPrompt: UsageCategory[] = [];
-	const promptAdditions: UsageCategory[] = [];
 	const builtInTools: UsageCategory[] = [];
 	const customTools: UsageCategory[] = [];
 	const mcpTools: UsageCategory[] = [];
@@ -103,10 +100,6 @@ function classifyPromptCategories(snapshot: InitialSnapshot): PromptCategories {
 				case "base-prompt":
 				case "append-prompt":
 					systemPrompt.push(leafFromItem(item));
-					break;
-				case "prompt-addition":
-					// Named by owner, because Extensions groups contributors rather than content.
-					promptAdditions.push({ ...leafFromItem(item), label: item.source.label });
 					break;
 				case "tool":
 					if (item.source.native) builtInTools.push(...breakdownFromItem(item));
@@ -120,24 +113,21 @@ function classifyPromptCategories(snapshot: InitialSnapshot): PromptCategories {
 					skills.push(...breakdownFromItem(item));
 					break;
 				case "message":
-					// Initial custom messages live in the session; classifyMessages counts them.
+					// Custom messages live in the session; classifyMessages counts them.
 					break;
 			}
 		}
 	}
 	// Categories follow the order pi assembles them into a request: prompt text,
 	// context files, and skills first, then the tool definitions sent alongside.
-	return {
-		categories: withoutEmpty([
-			aggregate("system-prompt", SYSTEM_PROMPT_LABEL, systemPrompt),
-			aggregate("context-files", INSTRUCTION_FILES_LABEL, contextFiles),
-			aggregate("skills", SKILLS_LABEL, skills),
-			aggregate("built-in-tools", BUILT_IN_TOOLS_LABEL, builtInTools),
-			aggregate("custom-tools", "Custom Tools", customTools),
-			aggregate("mcp-tools", "MCP Tools", mcpTools),
-		]),
-		promptAdditions,
-	};
+	return withoutEmpty([
+		aggregate("system-prompt", SYSTEM_PROMPT_LABEL, systemPrompt),
+		aggregate("context-files", INSTRUCTION_FILES_LABEL, contextFiles),
+		aggregate("skills", SKILLS_LABEL, skills),
+		aggregate("built-in-tools", BUILT_IN_TOOLS_LABEL, builtInTools),
+		aggregate("custom-tools", "Custom Tools", customTools),
+		aggregate("mcp-tools", "MCP Tools", mcpTools),
+	]);
 }
 
 /** Best-effort MCP attribution from the only public provenance field available. */
@@ -145,19 +135,8 @@ function isMcpTool(item: InjectionItem): boolean {
 	return /(^|[^a-z])mcp([^a-z]|$)/i.test(`${item.source.id} ${item.source.label}`);
 }
 
-/** Collect frozen messages that existed only in the captured outgoing request. */
-function requestOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
-	return snapshot.groups.flatMap((group) =>
-		group.items.filter((item) => item.kind === "message" && item.requestOnly === true && item.systemMessage === undefined)
-	);
-}
-
-/** Classify live session messages and frozen request-only injections with preview entries. */
-function classifyMessages(
-	messages: ContextEvent["messages"],
-	requestOnly: readonly InjectionItem[],
-	promptAdditions: readonly UsageCategory[],
-): UsageCategory[] {
+/** Classify session and request messages with preview entries. */
+function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
 	const user: UsagePreviewEntry[] = [];
 	const assistantText: UsagePreviewEntry[] = [];
 	const assistantThinking: UsagePreviewEntry[] = [];
@@ -167,14 +146,6 @@ function classifyMessages(
 	const toolResults = new Map<string, UsagePreviewEntry[]>();
 	const customMessages = new Map<string, UsagePreviewEntry[]>();
 
-	for (const item of requestOnly) {
-		appendEntry(customMessages, item.source.label, {
-			breadcrumb: [item.label],
-			tokens: item.tokens,
-			text: item.text,
-			jsonSpan: item.jsonSpan,
-		});
-	}
 	for (const message of messages) {
 		switch (message.role) {
 			case "system":
@@ -264,11 +235,8 @@ function classifyMessages(
 		leaf("assistant-thinking", "Assistant Thinking", assistantThinking),
 		leaf("tool-calls", "Tool Calls", assistantToolCalls),
 		toolOutput,
-		// One category per contributing extension, whether it sent messages or appended prompt text.
-		aggregate("extensions", "Extensions", [
-			...promptAdditions,
-			...leavesFromMap("custom-message", customMessages),
-		]),
+		// One category per injected customType
+		aggregate("extensions", "Extensions", leavesFromMap("custom-message", customMessages)),
 		leaf("compacted-data", "Compacted Data", compacted),
 	]);
 }
@@ -296,6 +264,7 @@ function leafFromItem(item: InjectionItem): UsageCategory {
 			jsonSpan: item.jsonSpan,
 			// Tool parts stay a preview breakdown of the same estimate, never separate entries.
 			sections: item.sections,
+			change: item.change,
 		}],
 	};
 }

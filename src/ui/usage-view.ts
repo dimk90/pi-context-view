@@ -38,6 +38,7 @@ import {
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
+import { forcedMarker } from "./markers.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, calculateFitMapScale, type UsageMap, type UsageMapCell } from "./usage-map.ts";
@@ -931,16 +932,20 @@ export class UsageView {
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
-	/** Accent category title with its token and percentage metadata, shared by both preview levels. */
+	/**
+	 * Accent category title with its token and percentage metadata, shared by
+	 * both preview levels. A forced prompt adds its `Forced` marker, dropped whole
+	 * when it does not fit, as in the Injections preview header.
+	 */
 	private categoryHeaderLine(row: CategoryLegendRow, width: number): string {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(row.category.label)));
 		const percent = this.plainLegendPercent(row.category.tokens);
-		const meta = theme.fg(
-			"muted",
-			`${formatTokens(row.category.tokens)}${percent === "" ? "" : ` · ${percent}`} `,
-		);
-		return spreadLine(title, meta, width);
+		const meta = theme.fg("muted", `${formatTokens(row.category.tokens)}${percent === "" ? "" : ` · ${percent}`}`);
+		const forced = this.previewEntries(row).some((entry) => entry.change === "forced");
+		const marker = forced ? forcedMarker(theme) : "";
+		const fitsMarker = visibleWidth(title) + visibleWidth(meta) + visibleWidth(marker) + 2 <= width;
+		return spreadLine(title, `${meta}${fitsMarker ? marker : ""} `, width);
 	}
 
 	/** Visible window of the block stream, or the message an empty category shows instead. */

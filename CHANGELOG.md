@@ -1,6 +1,38 @@
 # Changelog
 
 
+## `[v0.7.0]` - 12.10.2026
+
+Injection capture has been redesigned for Pi 1.1. Instead of freezing the first request (Initial),
+it now captures every request and compares it with the saved session. This shows request-only
+injections that were invisible before: changes from later handlers, deleted or modified messages,
+forced prompts, and tools Pi hides.
+
+### New
+* `[injections]` Use the latest request instead of the frozen Initial snapshot.
+* `[injections]` Show payload changes and tools Pi hides.
+* `[injections]` Update the injections view UI: clearer grouping, `+N`/`-N` diffs indicators, and previews.
+
+### Changed
+* `[usage]` Apply the latest request's added/modified/deleted messages instead of first-turn copies.
+* `[usage]` Count the latest request's forced system prompt and mark it as Forced in the System Prompt preview.
+* `[probe]` Skip probing for queued input, virtual models, and idle warming.
+* `[probe]` Skip probing above the auto-compaction threshold or when settings cannot be checked.
+* `[context]` Refuse both views with a warning while compaction is in progress.
+* `[package]` Require Pi 1.1 and report older versions, drop the pre-0.86 prompt parser.
+* `[injections]` Keep filenames visible by shortening the middle of long instruction-file paths.
+* `[injections]` Group messages and payload changes into single rows with (N) counter.
+* `[injections]` Keep TOTAL visible below the scrollable contribution tree.
+
+### Fixed
+* `[injections]` Fixed the issue reported in PR [#9](https://github.com/dimk90/pi-context-view/pull/9) by [@Drakejiejie](https://github.com/Drakejiejie) and adopted the PR’s tests.
+* `[usage]` Leave out tools hidden from the model, such as by codemode `only` ([#11](https://github.com/dimk90/pi-context-view/issues/11)).
+* `[usage]` Count request replacements once and exclude removals ([#6](https://github.com/dimk90/pi-context-view/issues/6)).
+* `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).
+* `[probe]` Preserve system-message positions when filtering and persist probe context omissions.
+* `[views]` Group and label path-loaded extensions by file, not as one `cli` or `local` source.
+
+
 ## `[v0.6.0]` - 20.09.2026
 
 ### New

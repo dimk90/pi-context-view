@@ -22,14 +22,15 @@ injected by other extensions.
   category (tools, skills, messages, and more).
 
 - **Context injections** - explore the hidden parts of the context: the
-  system prompt, tool definitions, and extension injections.
+  system prompt, tool definitions, and extension injections, including
+  changes that extensions make only to the request sent to the model.
 
 ## Commands
 
 - `/context` - shorthand for `/context usage`.
 - `/context usage` - open the context usage visualization.
-- `/context injections` - show the hidden parts of the context captured at
-  session start or resume.
+- `/context injections` - explore the latest request's injections: its system
+  prompt, tool definitions, and extension contributions.
 - `/context config` - create the global configuration file populated with
   defaults, useful for
   [customization](https://github.com/dimk90/pi-context-view#customization).
@@ -98,7 +99,9 @@ You can configure the number of rows and columns in the `Context Usage` map:
 
 ## Context Footprint
 
-`pi-context-view` does not add any instructions or messages to the model context.
+`pi-context-view` adds nothing to the model context. Opening a view before the
+first turn may run one [silent probe](doc/architecture/probe.md)
+that sends no request and leaves only blank entries, omitted from future context.
 
 ## My Other Stuff
 

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildSnapshot, groupInjections, type InjectionItem, type InjectionKind } from "../src/model.ts";
+import {
+	buildSnapshot,
+	extensionSource,
+	groupInjections,
+	type InjectionItem,
+	type InjectionKind,
+} from "../src/model.ts";
 
 /** InjectionItem fixture with sizes derived from the token count. */
 function item(
@@ -10,11 +16,10 @@ function item(
 	sourceLabel: string,
 	native: boolean,
 	tokens: number,
-	kind: InjectionKind = "message",
+	kind: InjectionKind = "base-prompt",
 ): InjectionItem {
 	return {
 		id,
-		phase: "initial",
 		kind,
 		source: { id: sourceId, label: sourceLabel, native },
 		label: id,
@@ -67,36 +72,49 @@ test("groupInjections orders pi items by provider payload section", () => {
 	);
 });
 
+test("groupInjections orders unattributed rows: tools, system prompt, messages, then payload changes", () => {
+	const [unattributed] = groupInjections([
+		item("payload-changes", "aggregate:extensions", "unattributed", false, 90, "payload-change"),
+		item("messages", "aggregate:extensions", "unattributed", false, 80, "message"),
+		item("system-prompt:aggregate:extensions", "aggregate:extensions", "unattributed", false, 0, "prompt-addition"),
+		item("tool:unattributed:grep", "aggregate:extensions", "unattributed", false, 1, "tool"),
+	]);
+	assert.deepEqual(unattributed?.items.map((entry) => entry.kind),
+		["tool", "prompt-addition", "message", "payload-change"]);
+});
+
 test("buildSnapshot owns nested input data and computes the total", () => {
-	const source = { id: "message-type:test", label: "test", native: false };
-	const sections = [{ label: "Definition", text: "hello world!", tokens: 3 }];
+	const source = { id: "aggregate:extensions", label: "unattributed", native: false };
+	const lines = [{ type: "added" as const, text: "hello world!" }];
+	const sections = [{ label: "user message", text: "hello world!", tokens: 3, changedLines: lines }];
 	const input: InjectionItem = {
-		id: "message:test:0",
-		phase: "initial",
-		kind: "message",
+		id: "payload-changes",
+		kind: "payload-change",
 		source,
-		label: "message",
+		label: "payload changes (1)",
 		chars: 12,
 		tokens: 3,
 		text: "hello world!",
 		sections,
 	};
-	const capturedAt = new Date("2026-07-10T12:00:00Z");
-	const snapshot = buildSnapshot([input], "real-turn", capturedAt);
+	const snapshot = buildSnapshot([input]);
 
 	source.label = "changed";
-	sections[0]!.label = "changed";
-	capturedAt.setFullYear(2000);
+	const section = sections[0];
+	const line = lines[0];
+	assert.ok(section && line);
+	section.label = "changed";
+	line.text = "changed";
 
-	assert.equal(snapshot.groups[0]?.source.label, "test");
-	assert.equal(snapshot.groups[0]?.items[0]?.sections?.[0]?.label, "Definition");
-	assert.equal(snapshot.capturedAt.toISOString(), "2026-07-10T12:00:00.000Z");
+	assert.equal(snapshot.groups[0]?.source.label, "unattributed");
+	assert.equal(snapshot.groups[0]?.items[0]?.sections?.[0]?.label, "user message");
+	assert.equal(snapshot.groups[0]?.items[0]?.sections?.[0]?.changedLines?.[0]?.text, "hello world!");
 	assert.equal(snapshot.totalTokens, 3);
 });
 
 test("buildSnapshot owns injected references on sections and standalone children", () => {
 	const source = { id: "tool-source:npm:web", label: "npm:web", native: false };
-	const reference = { offset: 12, text: "\n- Cite sources", itemId: "tool:npm:web:search", source };
+	const reference = { start: 12, end: 27, source, tool: "search" };
 	const references = [reference];
 	const child = { ...item("guidelines", "pi", "pi", true, 3), injectedReferences: references };
 	const input = {
@@ -104,17 +122,53 @@ test("buildSnapshot owns injected references on sections and standalone children
 		sections: [{ label: "Guidelines", text: child.text, tokens: 3, injectedReferences: references }],
 		children: [child],
 	};
-	const snapshot = buildSnapshot([input], "real-turn", new Date());
-	reference.offset = 0;
-	reference.text = "changed";
+	const snapshot = buildSnapshot([input]);
+	reference.start = 0;
+	reference.tool = "changed";
 	source.label = "changed";
 	references.length = 0;
 	const base = snapshot.groups[0]?.items[0];
 	for (const owned of [base?.sections?.[0]?.injectedReferences, base?.children?.[0]?.injectedReferences]) {
 		assert.equal(owned?.length, 1);
-		assert.equal(owned?.[0]?.offset, 12);
-		assert.equal(owned?.[0]?.text, "\n- Cite sources");
+		assert.equal(owned?.[0]?.start, 12);
+		assert.equal(owned?.[0]?.tool, "search");
 		assert.equal(owned?.[0]?.source.label, "npm:web");
 	}
 	assert.equal(snapshot.totalTokens, 3);
+});
+
+test("extensionSource labels path extensions by their shortest unique path tail", () => {
+	const fixture = { source: "cli", path: "/repo/test/fixtures/hidden-tools.ts" };
+	const folder = { source: "auto", path: "/home/tester/.pi/agent/extensions/my-ext/index.ts" };
+	const first = { source: "local", path: "/a/tools/web.ts" };
+	const second = { source: "cli", path: "/b/tools/web.ts" };
+	const roster = [fixture, folder, first, second, { source: "npm:web", path: "/pkgs/web/web.ts" }];
+
+	assert.deepEqual(extensionSource({ source: "npm:web", path: "/pkgs/web/index.ts" }, roster),
+		{ id: "tool-source:npm:web", label: "npm:web", native: false });
+	assert.deepEqual(extensionSource(fixture, roster),
+		{ id: "tool-source:cli:/repo/test/fixtures/hidden-tools.ts", label: "hidden-tools.ts", native: false });
+	assert.equal(extensionSource(folder, roster).label, "my-ext");
+	// Package paths never collide with loose files, which need just enough of their path to differ.
+	assert.equal(extensionSource(first, roster).label, "a/tools/web.ts");
+	assert.equal(extensionSource(second, roster).label, "b/tools/web.ts");
+	assert.equal(extensionSource(second).label, "web.ts");
+	assert.notEqual(extensionSource(first).id, extensionSource({ ...second, source: "local" }).id);
+});
+
+test("buildSnapshot owns editor records and their source metadata, including child editors", () => {
+	const source = { id: "ext", label: "npm:web", native: false };
+	const editor = { type: "extension" as const, source, attribution: "guess" as const };
+	const editors = [editor, { type: "unknown" as const }];
+	const child: InjectionItem = { ...item("child", "pi", "pi", true, 3), editors };
+	const parent = { ...child, id: "parent", children: [child] };
+	const snapshot = buildSnapshot([parent]);
+	source.label = "changed";
+	editors.length = 0;
+	for (const owned of [snapshot.groups[0]?.items[0], snapshot.groups[0]?.items[0]?.children?.[0]]) {
+		assert.deepEqual(owned?.editors, [
+			{ type: "extension", source: { id: "ext", label: "npm:web", native: false }, attribution: "guess" },
+			{ type: "unknown" },
+		]);
+	}
 });

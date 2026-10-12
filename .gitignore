@@ -1,3 +1,4 @@
+.worktree/
 node_modules/
 *:Zone.Identifier
 *.log

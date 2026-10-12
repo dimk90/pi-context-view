@@ -1,19 +1,14 @@
 /**
- * `/context` command grammar, argument completions, and Initial capture
- * resolution shared by the Usage and Injections views.
+ * `/context` command grammar, argument completions, and resolution of the
+ * latest request snapshot that both views read.
  */
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
-import {
-	buildNativeSnapshot,
-	type CompactionState,
-	type InitialCaptureState,
-	type SilentProbeState,
-} from "./capture.ts";
 import type { ConfigCreationResult } from "./config.ts";
-import type { InitialSnapshot } from "./model.ts";
-import { runWithProbeToken } from "./probe-token.ts";
+import { MIN_PI_VERSION } from "./pi-version.ts";
+import type { ProbeTrigger } from "./probe/trigger.ts";
+import type { RequestSnapshot, SnapshotReader } from "./snapshot.ts";
 import { normalizePreviewText } from "./text.ts";
 
 const COMMAND_USAGE = "Usage: /context [usage|injections|config]";
@@ -28,7 +23,7 @@ const MAX_REPORTED_MESSAGE_LENGTH = 500;
 const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
-	{ value: "injections", label: "injections", description: "Explore initial context injections" },
+	{ value: "injections", label: "injections", description: "Explore the latest request's injections" },
 	{ value: "config", label: "config", description: "Create config file populated with defaults" },
 ] satisfies AutocompleteItem[];
 
@@ -41,11 +36,10 @@ export type ContextCommand =
 	| { readonly type: "config" }
 	| { readonly type: "invalid"; readonly message: string };
 
-/** Resolved Initial capture, possibly degraded to the pi-native fallback. */
-export interface InitialCaptureResult {
-	readonly snapshot: InitialSnapshot;
-	readonly degradedReason?: string;
-}
+/** The latest request snapshot, or why the view must degrade without one. */
+export type RequestSnapshotResult =
+	| { readonly type: "snapshot"; readonly snapshot: RequestSnapshot }
+	| { readonly type: "missing"; readonly degradedReason: string };
 
 /** Parse the complete, intentionally small `/context` argument grammar. */
 export function parseContextCommand(argumentsText: string): ContextCommand {
@@ -72,47 +66,28 @@ export function getContextArgumentCompletions(argumentPrefix: string): Autocompl
 	return matches.length > 0 ? matches.map((option) => ({ ...option })) : null;
 }
 
-/** Obtain Initial through passive capture, one silent probe, or a pi-native fallback. */
-export async function resolveInitialCapture(
-	pi: ExtensionAPI,
-	capture: InitialCaptureState,
-	probe: SilentProbeState,
-	compaction: CompactionState,
+/**
+ * Obtain the latest request snapshot of this runtime, asking ProbeTrigger
+ * only when the store has none after the agent is idle: a real turn that was
+ * running publishes one without a probe. A probe's snapshot is read from the
+ * store, not from the probe result.
+ */
+export async function resolveRequestSnapshot(
+	snapshots: SnapshotReader,
+	trigger: ProbeTrigger,
 	context: ExtensionCommandContext,
-): Promise<InitialCaptureResult> {
-	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
-
+): Promise<RequestSnapshotResult> {
+	const existing = snapshots.latest();
+	if (existing !== undefined) return { type: "snapshot", snapshot: existing };
 	await context.waitForIdle();
-	if (capture.snapshot !== undefined) return { snapshot: capture.snapshot };
+	const afterIdle = snapshots.latest();
+	if (afterIdle !== undefined) return { type: "snapshot", snapshot: afterIdle };
 
-	const unavailableReason = getProbeUnavailableReason(context, compaction.isActive);
-	if (unavailableReason !== undefined) {
-		return createFallback(pi, context, unavailableReason);
-	}
-
-	const attempt = probe.start();
-	if (attempt.started) {
-		context.ui.setWorkingVisible(false);
-		try {
-			// Pi emits `input` and `before_agent_start` from inside this call, so the
-			// token reaches both handlers and identifies the run even when another
-			// extension's input transform rewrites the prompt text.
-			runWithProbeToken(attempt.token, () => pi.sendUserMessage(""));
-		} catch (error) {
-			probe.fail(error instanceof Error ? error.message : String(error));
-		}
-	}
-
-	try {
-		const outcome = await attempt.completion;
-		if (outcome.status === "captured" && capture.snapshot !== undefined) {
-			return { snapshot: capture.snapshot };
-		}
-		const reason = outcome.status === "failed" ? outcome.reason : "Silent probe did not capture Initial.";
-		return createFallback(pi, context, reason);
-	} finally {
-		if (attempt.started) context.ui.setWorkingVisible(true);
-	}
+	const result = await trigger.request(context);
+	const probed = snapshots.latest();
+	if (probed !== undefined) return { type: "snapshot", snapshot: probed };
+	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture a request.";
+	return { type: "missing", degradedReason: `${reason} Extension additions were not observed.` };
 }
 
 /**
@@ -138,6 +113,22 @@ export function reportTuiOnly(context: ExtensionCommandContext, view: ContextVie
 	reportCommandMessage(context, `/context ${view} is available in TUI mode only.`, "warning");
 }
 
+/**
+ * Refuse a view while compaction is active: the session projection both views
+ * read is about to be replaced, and a probe could not run safely anyway.
+ */
+export function reportCompactionInProgress(context: ExtensionCommandContext, view: ContextView): void {
+	reportCommandMessage(context, `/context ${view} is unavailable while compaction is in progress.`, "warning");
+}
+
+/** Refuse any `/context` form on a Pi version whose lifecycle this extension does not capture. */
+export function reportUnsupportedPi(context: ExtensionCommandContext, version: string): void {
+	reportCommandMessage(context,
+		`/context requires Pi ${MIN_PI_VERSION} or newer; this is Pi ${version}. Nothing was captured.`,
+		"error",
+	);
+}
+
 /** Report the outcome of the explicit create-only configuration command. */
 export function reportConfigCreation(context: ExtensionCommandContext, result: ConfigCreationResult): void {
 	switch (result.type) {
@@ -161,34 +152,4 @@ export function reportConfigCreation(context: ExtensionCommandContext, result: C
 /** Shorten over-long text with an ellipsis marker. */
 function truncate(text: string, maxLength: number): string {
 	return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
-}
-
-/** Explain why a silent probe cannot run now, or undefined when it can. */
-function getProbeUnavailableReason(
-	context: ExtensionCommandContext,
-	compactionInProgress: boolean,
-): string | undefined {
-	if (compactionInProgress) return "Silent probe unavailable: context compaction is in progress.";
-	if (context.model === undefined) return "Silent probe unavailable: no model is selected.";
-	if (!context.modelRegistry.hasConfiguredAuth(context.model)) {
-		return `Silent probe unavailable: ${context.model.provider} has no configured authentication.`;
-	}
-	return undefined;
-}
-
-/** Build a degraded pi-native snapshot when passive capture and probing both failed. */
-function createFallback(
-	pi: ExtensionAPI,
-	context: ExtensionCommandContext,
-	reason: string,
-): InitialCaptureResult {
-	return {
-		snapshot: buildNativeSnapshot({
-			systemPrompt: context.getSystemPrompt(),
-			options: context.getSystemPromptOptions(),
-			allTools: pi.getAllTools(),
-			activeToolNames: pi.getActiveTools(),
-		}),
-		degradedReason: `${reason} Extension additions were not observed.`,
-	};
 }

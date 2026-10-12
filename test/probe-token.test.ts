@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createProbeToken, readProbeToken, runWithProbeToken } from "../src/probe-token.ts";
+import { createProbeToken, readProbeToken, runWithProbeToken } from "../src/probe/token.ts";
 
 test("createProbeToken issues a distinct token per attempt", () => {
 	assert.notEqual(createProbeToken(), createProbeToken());

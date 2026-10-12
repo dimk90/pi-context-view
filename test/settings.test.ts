@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { SettingsManager } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-import { type CompactionModel, resolveAutoCompactReserveTokens } from "../src/settings.ts";
+import { type CompactionModel, readAutoCompactReserveTokens, resolveAutoCompactReserveTokens } from "../src/settings.ts";
 
 /** Pi's built-in reserve, used when neither an override nor an ordinary setting applies. */
 const PI_DEFAULT_RESERVE_TOKENS = 16_384;
@@ -95,4 +95,15 @@ test("resolveAutoCompactReserveTokens reports no reserve for invalid settings", 
 		compaction: { reserveTokens: "large" as unknown as number },
 	});
 	assert.equal(resolveAutoCompactReserveTokens(invalidOrdinary, SONNET), undefined);
+});
+
+test("readAutoCompactReserveTokens reads Pi's live settings, not the settings files", (t) => {
+	// A pass-through spy: concurrent tests in the same process keep their settings answers
+	const create = t.mock.method(SettingsManager, "create");
+	const settings: SettingsOverrides = { compaction: { reserveTokens: 20_000 } };
+	const pi = { getSettings: () => settings } as unknown as ExtensionAPI;
+	assert.equal(readAutoCompactReserveTokens(pi, SONNET), 20_000);
+	settings.compaction = { enabled: false };
+	assert.equal(readAutoCompactReserveTokens(pi, SONNET), undefined, "a runtime toggle applies without a reload");
+	assert.equal(create.mock.callCount(), 0, "settings files are never read");
 });

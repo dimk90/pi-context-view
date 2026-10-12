@@ -18,9 +18,10 @@ section as the GitHub release notes.
    ```
 
 1. Check the local pi version and update the exact
-   `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` development
-   pins in `package.json` to match it. Keep both peer dependencies as `"*"`,
-   then refresh `pnpm-lock.yaml`:
+   `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`,
+   `@earendil-works/pi-ai`, and `@earendil-works/pi-agent-core` development
+   pins in `package.json` to match it. Keep all four peer dependencies as
+   `"*"`, then refresh `pnpm-lock.yaml`:
 
    ```bash
    pi --version

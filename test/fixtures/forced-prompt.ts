@@ -3,6 +3,10 @@
  * one run, the way a `before_agent_start` handler returning `systemPrompt`
  * does. Pi keeps recording the structured sections and projects this text onto
  * the request after the `context` handlers.
+ *
+ * Expected result:
+ *   before the monitor   structured forced prompt, unattributed
+ *   after the monitor    structured forced prompt, unattributed
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

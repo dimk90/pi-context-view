@@ -12,7 +12,7 @@ touches:
 | Document | Covers |
 | --- | --- |
 | This file | Frame, color, casing, descriptions, interaction, responsive rendering |
-| [ui/previews.md](ui/previews.md) | Labeled parts, restored extension lines, marker legend, repeated headings, marked JSON |
+| [ui/previews.md](ui/previews.md) | Labeled parts, extension lines, marker legend, repeated headings, marked JSON |
 | [ui/usage.md](ui/usage.md) | Context Usage: header, notices, map, map scale, legend, category preview |
 | [ui/injections.md](ui/injections.md) | Context Injections: contribution tree, injection preview |
 
@@ -28,7 +28,9 @@ is authoritative.
 | Usage entry and block model | `src/ui/usage-preview.ts` |
 | Injections tree model / rendering | `src/ui/injections-model.ts`, `src/ui/injections-view.ts` |
 | Labeled parts, preview legend | `src/ui/section-preview.ts` |
-| State markers and legend bullets | `src/ui/markers.ts` |
+| Message and payload diff bodies | `src/ui/diff-preview.ts` |
+| State markers and preview legend bullets | `src/ui/markers.ts` |
+| Selected-row status bar | `src/ui/status-bar.ts` |
 | Marked JSON, skill badges, wheel | `src/ui/json-preview.ts`, `src/ui/skill-preview.ts`, `src/ui/wheel.ts` |
 
 ## Style rules
@@ -70,19 +72,36 @@ Every marker keyword hangs off a `dim` ` · ` separator: like the ` · ` joining
 hint pairs and header labels, the separator is punctuation and never takes the
 color of the text around it. Only the keyword carries the marker's fixed color.
 
-Every frame showing a marker also explains it, through the
-[marker legend](ui/previews.md#marker-legend) in its description block. A legend
+Previews explain their markers through the
+[marker legend](ui/previews.md#marker-legend) in their description block. The
+Injections list instead explains the selected row's changes and markers in its
+non-collapsing [status bar](ui/injections.md#selected-row-status-bar). A legend
 bullet opens with the keyword in the same fixed color as the marker it explains,
 so `Highlighted` uses `syntaxNumber`, `(guess)` `dim`, `Dropped`
-`toolDiffRemoved`, and `Moved` `warning`.
+`toolDiffRemoved`, `Moved` `warning`, `Forced` `warning`, `+N` `toolDiffAdded`
+and `-N` `toolDiffRemoved` in one `+N -N` keyword, and `Request-Only` `dim`.
 
-Recovered `Available Tools` and `Guidelines` blocks outside pi's normal order
+Moved `Available Tools` and `Guidelines` sections outside pi's normal order
 carry a fixed `warning` `Moved` marker after the estimate, in hierarchy rows,
 preview subheaders, and the standalone part preview's metadata. A narrow row or
 standalone header omits the whole marker when it will not fit. It describes
 position, not ownership or a dropped contribution: these parts count normally,
 and extension tool lines keep their own attribution. Like `Dropped`, it is not
 configurable and does not change category/map colors.
+
+Injections shows the tokens extensions added or removed as fixed `+N`
+(`toolDiffAdded`) and `-N` (`toolDiffRemoved`)
+[token diffs](ui/injections.md#token-diffs): in their own columns after the
+estimate in hierarchy rows, and after the estimate behind a dim ` · ` in preview
+headers and subheaders. Diff-only `system prompt` rows have no estimate: their
+list leaders fill the value column, and their preview metadata says where
+those tokens count; [ui/injections.md](ui/injections.md#system-prompt-rows)
+owns the exception. After the diff, hierarchy rows, preview headers, and
+part subheaders carry two fixed change markers: `Forced` (`warning`) and
+`Request-Only` (`dim`), which marks content the session does not keep.
+[ui/injections.md](ui/injections.md#request-only-changes) defines them. They follow the same separator, fit, and configuration rules as
+`Dropped` and `Moved`. Usage shows `Forced` the same way in its System Prompt
+previews; [ui/usage.md](ui/usage.md#forced-prompt) defines where.
 
 A user-configurable color names either a pi theme color key, which tracks the
 active theme, or a literal `#rgb`/`#rrggbb` value, which pins the element across
@@ -108,14 +127,23 @@ partial and never ellipsized.
 | Description | Renders while |
 | --- | --- |
 | Usage dashboard | Map, complete legend, and full key all fit |
-| Injections list | `LIST_DESCRIPTION_MIN_ROWS` (26) rows visible, or a shorter list in full |
+| Injections list | `LIST_DESCRIPTION_MIN_ROWS` (26) contribution rows visible, or a shorter list in full |
 | Preview marker legend | `DESCRIPTION_MIN_CONTENT_ROWS` (22) content rows visible, or a shorter preview in full |
 
-Hints, borders, capture warnings, and configuration notices are not descriptions
-and never collapse. The Injections `[Degraded: …]` indicator belongs to its
-description block and collapses with it, while the wrapped reason below the
-header stays. The Usage thinking-notation explanation is view content, not a
-description, and also never collapses.
+Hints, borders, degraded-capture warnings, configuration notices, and the
+Injections capture header, fixed total, and selected-row status bar are not
+descriptions and never collapse. The Injections detailed probe, guard-status,
+hidden-tools, and payload-change bullets and the `Degraded: …` indicator belong to its description
+block and collapse with it, while the compact request-origin label, payload
+status, and wrapped degraded reason near the header stay. Hidden tools have no
+header status. The fixed total reserves its own row and separator outside the
+scrollable list. The selected-row bar explains changes instead of marker-legend
+bullets, reserves its own wrapped height, and reduces the list viewport. On
+exceptionally short terminals the list compacts its frame to keep capture status,
+the degraded reason, the total, and the bar whenever physically possible; its
+[per-view contract](ui/injections.md#selected-row-status-bar) owns that fallback.
+The Usage thinking-notation explanation is view content, not a description,
+and also never collapses.
 
 Why the floors differ: the Usage dashboard has a bounded legend and can drop its
 description early, while the unbounded Injections list and attributed previews
@@ -149,8 +177,8 @@ keyboard-only and never advertise an affordance one mode lacks.
 
 Navigation skips non-selectable rows and remains bounded after terminal resize.
 All content is terminal-sanitized before rendering and raw content appears only
-after explicit Enter selection; [ARCHITECTURE.md](ARCHITECTURE.md) owns the full
-privacy contract.
+after explicit Enter selection; [architecture/privacy.md](architecture/privacy.md)
+owns the full privacy contract.
 
 ## Responsive rendering
 
@@ -168,4 +196,9 @@ UI cases `pnpm check` must cover, beyond the general matrix in
 - both map scales, the header label's line-splitting fallback, the conditions
   hiding the zoom binding, and every map-key degradation;
 - a configured map size larger than the width and the height can render;
-- overflow navigation, preview return position, and theme invalidation.
+- overflow navigation, fixed Injections total, preview return position, and
+  theme invalidation;
+- selected-row status changes, empty reserved lines, diff-only accounting,
+  unknown editors, wrapping, and the compact short-terminal frame;
+- persistent capture-origin and payload status, partial comparisons with no
+  findings, narrow header wrapping, and degraded reasons in compact frames.

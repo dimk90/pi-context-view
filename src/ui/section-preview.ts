@@ -1,32 +1,38 @@
 /**
  * Shared preview body rendering for content that carries labeled parts, e.g. a
- * tool's prompt snippet, guideline bullets, and definition. Both the Injections
- * item preview and the Usage block stream present those parts the same way:
- * a bold subheader with its token share above each part. Pure string logic.
+ * tool's dropped prompt lines and definition. Both the Injections item preview
+ * and the Usage block stream present those parts the same way: a bold
+ * subheader with its token share above each part. Pure string logic.
  */
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { InjectedReference, InjectionSection, JsonSpan } from "../model.ts";
+import type { InjectedReference, InjectionSection, JsonSpan, RequestChange, TokenDiff } from "../model.ts";
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
+import { messageDiffLines, payloadDiffLines } from "./diff-preview.ts";
 import { shiftJsonSpan } from "./json-preview.ts";
 import { BODY_INDENT, calculateViewport, descriptionBlockRows } from "./layout.ts";
 import {
 	type ContextMarker,
-	droppedMarker,
+	type DiffBase,
+	diffMarker,
 	guessMarker,
 	markerLegendLines,
-	movedMarker,
+	noteBulletLines,
+	partMarkers,
+	stateMarkers,
 } from "./markers.ts";
 
 /**
- * Arrow introducing a restored line's source label. Non-breaking spaces bind
+ * Arrow introducing an extension line's source label. Non-breaking spaces bind
  * the preceding word, arrow, and label into one wrapping unit. Units wider
  * than the content width still hard-wrap, possibly just after the arrow.
  */
 const SOURCE_ARROW = "\u00A0<-\u00A0";
 /** Keep a normal block's worth of content visible before making room for its explanation. */
 const DESCRIPTION_MIN_CONTENT_ROWS = 22;
+/** Dim prefix of a tool declaration part, so it reads apart from a `tool call` part. */
+const TOOL_LABEL_PREFIX = "tool:";
 
 /** Raw preview content plus the labeled parts it decomposes into, when known. */
 export interface SectionedContent {
@@ -38,6 +44,12 @@ export interface SectionedContent {
 	readonly dropped?: boolean;
 	/** True when an extension moved this content out of the region pi renders it into. */
 	readonly moved?: boolean;
+	/** Request-only change of this content; only `forced` has a marker. */
+	readonly change?: RequestChange;
+	/** Tokens this content gained and lost against its base; only Injections measures them. */
+	readonly diff?: TokenDiff;
+	/** True when the request sent other content than the session keeps; only Injections measures it. */
+	readonly requestOnly?: boolean;
 }
 
 /** Space shared by uncapped preview content, its counter, and the marker legend. */
@@ -51,19 +63,25 @@ export interface PreviewDescriptionLayout {
 
 /**
  * One fixed legend for the markers a preview shows, never part of its raw
- * content. Collapse it whole when fewer than `DESCRIPTION_MIN_CONTENT_ROWS`
- * content rows would remain, or when a shorter preview would no longer fit in
- * full. Uncapped line counts keep the collapse decision independent of the
- * Usage cap it helps determine.
+ * content, followed by `notes` that explain the shown item further. `diffBase`
+ * names what the shown token diffs compare with. Collapse it whole when fewer
+ * than `DESCRIPTION_MIN_CONTENT_ROWS` content rows would remain, or when a
+ * shorter preview would no longer fit in full. Uncapped line counts keep the
+ * collapse decision independent of the Usage cap it helps determine.
  */
 export function previewLegendLines(
 	theme: Theme,
 	contents: readonly SectionedContent[],
 	layout: PreviewDescriptionLayout,
+	notes: readonly string[] = [],
+	diffBase?: DiffBase,
 ): string[] {
 	const markers = previewMarkers(contents);
-	if (markers.length === 0) return [];
-	const lines = markerLegendLines(theme, markers, layout.width);
+	if (markers.length === 0 && notes.length === 0) return [];
+	const lines = [
+		...markerLegendLines(theme, markers, layout.width, diffBase),
+		...notes.flatMap((note) => noteBulletLines(theme, note, layout.width)),
+	];
 	const availableRows = layout.availableRows - descriptionBlockRows(lines);
 	const viewport = calculateViewport(layout.contentLineCount, availableRows, 0);
 	const floor = Math.min(DESCRIPTION_MIN_CONTENT_ROWS, layout.contentLineCount);
@@ -72,7 +90,8 @@ export function previewLegendLines(
 
 /**
  * Preview body lines for one item or entry: labeled parts under their
- * subheaders, or the raw text when no breakdown exists. The caller supplies
+ * subheaders, or the raw text when no breakdown exists. A payload change's
+ * part renders its changed lines instead of its text. The caller supplies
  * `wrapText` so each view keeps its own sanitizing, wrapping, indentation, and
  * choice of whether the marked JSON run is expanded at this level, and
  * `heading` so an undivided body can drop a line the heading already shows.
@@ -94,13 +113,15 @@ export function previewBodyLines(
 			lines.push("", "");
 		}
 		lines.push(...sectionHeaderLines(theme, section, wrapWidth));
-		lines.push(...contentBodyLines(theme, section, wrapWidth, wrapText, section.label));
+		if (section.message !== undefined) lines.push(...messageDiffLines(theme, section, wrapWidth));
+		else if (section.changedLines !== undefined) lines.push(...payloadDiffLines(theme, section.changedLines, wrapWidth));
+		else lines.push(...contentBodyLines(theme, section, wrapWidth, wrapText, section.label));
 	}
 	return lines;
 }
 
 /**
- * Markers one preview renders: restored lines and their inferred owners come
+ * Markers one preview renders: extension lines and their inferred owners come
  * from reference metadata, while state markers follow the subheaders and
  * metadata rows that show them, whether or not that part carries references.
  */
@@ -109,9 +130,9 @@ function previewMarkers(contents: readonly SectionedContent[]): ContextMarker[] 
 	const marked = contents.flatMap((content) => [content, ...(content.sections ?? [])]);
 	const markers: ContextMarker[] = [];
 	if (referenced.length > 0) markers.push("highlighted");
-	if (referenced.some(hasGuessedReferences)) markers.push("guess");
-	if (marked.some((part) => part.dropped === true)) markers.push("dropped");
-	if (marked.some((part) => part.moved === true)) markers.push("moved");
+	if (referenced.some(hasGuessedReferences) || marked.some(isGuessedPart)) markers.push("guess");
+	// The legend orders and deduplicates markers itself
+	markers.push(...marked.flatMap(partMarkers));
 	return markers;
 }
 
@@ -125,12 +146,17 @@ function hasGuessedReferences(part: SectionedContent): boolean {
 	return part.injectedReferences?.some((reference) => reference.attribution === "guess") === true;
 }
 
+/** Whether a part's diff belongs to an owner inferred from the text itself, marked on its subheader. */
+function isGuessedPart(part: SectionedContent | InjectionSection): boolean {
+	return "attribution" in part && part.attribution === "guess";
+}
+
 /** Body parts carrying reference metadata: the item's sections, or the item itself. */
 function referenceParts(content: SectionedContent): readonly SectionedContent[] {
 	return content.sections?.length ? content.sections : [content];
 }
 
-/** Render referenced prompt lines locally; other content keeps the caller's JSON/skill transformations. */
+/** Render annotated extension lines locally; other content keeps the caller's JSON/skill transformations. */
 function contentBodyLines(
 	theme: Theme,
 	content: SectionedContent,
@@ -143,9 +169,10 @@ function contentBodyLines(
 	let text = "";
 	let offset = 0;
 	for (const reference of references) {
-		text += normalizePreviewText(content.text.slice(offset, reference.offset));
-		// A part that opens with a reference drops its captured lead, as plain text does.
-		const line = text.length === 0 ? reference.text.replace(/^\n+/, "") : reference.text;
+		text += normalizePreviewText(content.text.slice(offset, reference.start));
+		const captured = content.text.slice(reference.start, reference.end);
+		// A part that opens with an extension line drops its captured lead, as plain text does.
+		const line = text.trim().length === 0 ? captured.replace(/^\n+/, "") : captured;
 		text += theme.fg("syntaxNumber", normalizePreviewText(line));
 		text += theme.fg("borderMuted", SOURCE_ARROW);
 		text += theme.fg("mdLink", normalizeInlineText(reference.source.label));
@@ -153,7 +180,7 @@ function contentBodyLines(
 			text += theme.fg("mdLinkUrl", `:${normalizeInlineText(reference.tool)}`);
 		}
 		if (reference.attribution === "guess") text += guessMarker(theme);
-		offset = reference.offset;
+		offset = reference.end;
 	}
 	text += normalizePreviewText(content.text.slice(offset));
 	const body = withoutRepeatedHeading(text.replace(/^\n+/, ""), heading);
@@ -163,7 +190,7 @@ function contentBodyLines(
 
 /**
  * One body part, wrapped after dropping the lead its heading already carries:
- * the newline that separated a carved prompt line, and a first line repeating
+ * the newline that separated a prompt line, and a first line repeating
  * the heading itself, as a skill block opens with its own name.
  */
 function bodyLines(
@@ -197,13 +224,21 @@ function headingKey(text: string): string {
 }
 
 /**
- * Bold subheader naming one part and its share of the parent estimate. Parts use
- * `syntaxKeyword` rather than the usual `mdHeading` subheader color, because they
- * nest under item and entry headings that already carry `mdHeading`.
+ * Bold subheader naming one part, its share of the parent estimate, its token
+ * diff, a guessed owner, and its markers. A diff-only part has no share, and a
+ * tool declaration's name follows a dim `tool:` prefix.
+ * Parts use `syntaxKeyword` rather than the usual `mdHeading` subheader color,
+ * because they nest under item and entry headings that already carry `mdHeading`.
  */
 function sectionHeaderLines(theme: Theme, section: InjectionSection, wrapWidth: number): string[] {
-	const label = theme.fg("syntaxKeyword", theme.bold(normalizeInlineText(section.label)));
-	const tokens = theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
-	const marker = section.dropped === true ? droppedMarker(theme) : section.moved === true ? movedMarker(theme) : "";
-	return wrapTextWithAnsi(`${label}${tokens}${marker}`, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
+	const prefix = section.toolDeclaration === true ? theme.fg("dim", TOOL_LABEL_PREFIX) : "";
+	const label = prefix + theme.fg("syntaxKeyword", theme.bold(normalizeInlineText(section.label)));
+	const prompt = section.message?.userPrompt;
+	const number = prompt === undefined ? "" : theme.fg("muted", ` · user prompt #${prompt}`);
+	const tokens = section.diffOnly === true
+		? ""
+		: theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
+	const guess = section.attribution === "guess" ? guessMarker(theme) : "";
+	const header = `${label}${number}${tokens}${diffMarker(theme, section.diff)}${guess}${stateMarkers(theme, section)}`;
+	return wrapTextWithAnsi(header, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
 }

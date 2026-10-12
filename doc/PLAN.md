@@ -1,6 +1,5 @@
 
 ## `Backlog`
 
-- [ ] Refuse to show usage during compaction:
-  - Current behavior: "If compaction is active, return a partial fallback without probing".
-  - Show warning message without opening usage map?
+- [ ] **Fix Visualization for > 100% After Model Switch**:
+  - e.g. Opus 1M (50%) -> switch -> Sol 200k (120%).

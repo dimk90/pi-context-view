@@ -67,7 +67,7 @@ can render, so [Responsive rendering](../UI.md#responsive-rendering) always wins
 over a requested size.
 
 The configured `mapCols` and `mapRows` ([configuration
-contract](../ARCHITECTURE.md#configuration)) request a size; each frame renders
+contract](../architecture/privacy.md#configuration)) request a size; each frame renders
 the largest geometry that still fits:
 
 - columns shrink until the legend keeps `MIN_DETAIL_WIDTH` (32) columns beside
@@ -121,9 +121,9 @@ When auto-compaction is enabled, the tail of the map shows the settings
 `reserveTokens` reserve as `⛝` cells after the free cells: tokens content will
 never occupy because compaction triggers first. The buffer shrinks once
 estimated content grows into the reserve, and disappears when auto-compaction is
-disabled or settings are unreadable. Read the reserve from pi's merged
-global/project settings at view-open time, honoring project trust and the
-current model: `compaction.modelOverrides["<provider>/<id>"].reserveTokens`
+disabled or settings are invalid. Read the reserve from pi's live merged
+settings (`pi.getSettings()`) at view-open time, so runtime changes apply, and
+honor the current model: `compaction.modelOverrides["<provider>/<id>"].reserveTokens`
 wins over `compaction.reserveTokens`, which wins over pi's default. A model
 switch changes the buffer on the next open. At Fit scale
 the reserve lies past the mapped range, so no `⛝` cells render while the
@@ -169,10 +169,26 @@ assembles them into a request, and both views name them identically:
 - Tool Output and Extensions;
 - Compacted Data and Free Space.
 
-Extensions groups what extensions contributed outside their tool definitions:
-one child per injected `customType`, plus one per source whose system-prompt
-additions were attributed, named by that source. Those additions stay out of the
-System Prompt total, which counts pi's own prompt alone.
+Extensions groups the messages extensions injected: one child per injected
+`customType`. System Prompt counts all its text, including the tool lines and
+additions extensions put into it; Custom Tools and MCP Tools count only tool
+definitions.
+
+Messages the latest request added or modified count in the category of their
+role or `customType`, like session messages. A replacement counts and previews
+only its request version; deleted messages count nowhere and have no preview.
+Reorders count each message once. Usage marks none of these
+[request-only changes](../architecture/views.md#applying-the-latest-request): Injections
+shows them for the same latest request, as it was sent rather than applied to
+the current branch ([differences](../architecture/views.md#one-snapshot-two-views)).
+
+Tool categories exclude Pi's live `hiddenTools` from the replayed declarations.
+For example, codemode's `only` mode hides the other callable tools; Usage
+neither lists nor counts their separate declarations and marks nothing.
+This works before the first prompt, in the live fallback, and without a
+compared provider payload. The hidden set is read again each time Usage opens.
+Payload removals do not change Usage, just as other payload changes do not.
+[views.md](../architecture/views.md#applying-the-latest-request) defines the rules.
 
 Prefix each Tool Output breakdown row with a full-size `•` bullet rather than
 the smaller middle dot `·`. Keep aggregate breakdowns collapsed except Tool
@@ -222,6 +238,16 @@ defining `≈`, `~`, and `Encoded`; the per-block cap shrinks around it. Never
 render, preview, or log raw signature bytes. [THINKING.md](../THINKING.md) owns
 the estimate.
 
+### Forced prompt
+
+When System Prompt measures the latest request's
+[forced prompt](../architecture/views.md#applying-the-latest-request), every System Prompt
+preview level shows it as the Injections System Prompt preview does: the
+[`Forced` marker](../UI.md#color-and-casing) after the category metadata in
+its header, and the `Forced` bullet in its
+[marker legend](previews.md#marker-legend). The header drops the whole marker
+when it does not fit. The dashboard rows and other categories never show it.
+
 ### Single-entry categories
 
 When the selected category contains exactly one preview entry, including across
@@ -265,8 +291,8 @@ paging alone reaches `(1/n)` and `(n/n)`. Home/End select the first or last
 block.
 
 Indent content two spaces after the gutter and separate blocks with one blank
-row. An entry carrying labeled parts — a tool's prompt lines and definition, the
-System Prompt's sections — renders them inside its own block under the
+row. An entry carrying labeled parts — a tool's definition and dropped prompt lines,
+the System Prompt's sections — renders them inside its own block under the
 [labeled part rules](previews.md#labeled-parts), never as separate blocks, and
 its entry header keeps the whole estimate. In User Messages only, replace
 complete attached `<skill name="…">…</skill>` expansions with pi-colored
