@@ -3,7 +3,7 @@
 Part of the [architecture](../ARCHITECTURE.md). This page describes the Pi
 behavior that capture and the probe rely on: the request flow, handler order,
 the supported Pi versions, the Pi APIs this extension reads, and why running
-request preparation has side effects. Checked against Pi `1.1.0`.
+request preparation has side effects. Checked against Pi `1.2.0`.
 
 ## Request Flow
 
@@ -13,7 +13,7 @@ have no fixed order.
 
 ```mermaid
 flowchart TD
-    BEFORE["New prompt<br/>before_agent_start"]
+    BEFORE["User prompt or idle custom message<br/>before_agent_start"]
     subgraph REQUEST["Each agent model call, including tool follow-ups"]
         TURN["turn_start"]
         MESSAGES["Persist prompt/tool updates<br/>and deliver messages"]
@@ -50,7 +50,7 @@ flowchart TD
 
 | Step | pi-context-view |
 | ---- | --------------- |
-| `before_agent_start` | Probe claims its run; capture copies Pi's `hiddenTools` ([hidden tools](capture.md#hidden-tools)). Pi's handlers can inject messages and change prompt options. |
+| `before_agent_start` | Starts each run, for a user prompt or an idle custom message. Probe claims only a user-message run carrying its token ([run identity](probe.md#identifying-the-probe-run)); capture copies Pi's `hiddenTools` ([hidden tools](capture.md#hidden-tools)). Pi's handlers can inject messages and change prompt options. |
 | `turn_start` | Probe aborts its run; context preparation still continues ([probe lifecycle](probe.md#probe-lifecycle)). |
 | Message delivery | Persistent prompt/tool updates and delivered messages enter the baseline. Probe blanks its own messages in `message_end`. |
 | Session projection | Capture reads the branch baseline inside `context_with_system`, including compaction, context edits, and custom messages ([baseline](capture.md#baseline)). |
@@ -74,8 +74,17 @@ This is a simplified flow. Pi rebuilds each request from the canonical session
 projection. It can also compact history, route virtual models, and deliver
 queued messages between requests. If the routed physical model requires
 compaction, Pi compacts and rebuilds before it continues.
-`before_agent_start` runs for a new prompt, while `context` and
-`context_with_system` run before each model call, including tool follow-ups.
+`before_agent_start` runs once per agent run, for a user prompt or an idle
+`pi.sendMessage(..., { triggerTurn: true })` custom message; its `messageType`
+is `"user"` or `"custom"`. `context` and `context_with_system` run before each
+model call, including tool follow-ups.
+
+Pi counts the session as busy as soon as a run starts, before the pre-prompt
+compaction check and `before_agent_start`. `waitForIdle()` therefore waits
+through both. Messages sent meanwhile, for example from a `before_agent_start`
+handler, are queued into the starting run, and a `sendUserMessage()` without
+`deliverAs` is rejected. Pi delivers one queued message per turn: the first
+with the starting messages, each further one in an extra turn.
 
 Pi's `context` handler chain starts with a deep copy of the messages. Its result
 is used for that request, not written back into session history. Rebuilding the
@@ -146,9 +155,10 @@ Pi's `hiddenTools` ([hidden tools](capture.md#hidden-tools)).
 
 ## Supported Pi Versions
 
-This extension requires Pi `1.1.0` or newer. It relies on `context_with_system`
-filtering, `turn_end` omission edits, `hiddenTools` in Pi's prompt options, and
-the probe's [abort form](probe.md#keeping-probe-messages-out-of-real-context).
+This extension requires Pi `1.2.0` or newer. It relies on `context_with_system`
+filtering, `turn_end` omission edits, `hiddenTools` in Pi's prompt options,
+`before_agent_start.messageType`, and the probe's
+[abort form](probe.md#keeping-probe-messages-out-of-real-context).
 The Pi packages stay `"*"` peer dependencies, so an older Pi can still load
 the extension. The factory therefore compares Pi's `VERSION` with
 `MIN_PI_VERSION` and, on an older Pi, registers no lifecycle handlers: nothing

@@ -4,10 +4,11 @@
  * messages, and records and persists their identities through ProbeFilter.
  */
 import type {
+	BeforeAgentStartEvent,
 	ContextEditEntryDraft,
 	ContextEvent,
 	ExtensionAPI,
-	InputSource,
+	InputEvent,
 	ProjectedSessionEntry,
 } from "@earendil-works/pi-coding-agent";
 
@@ -45,6 +46,13 @@ export interface ProbeAttempt {
 type ProbePhase = "idle" | "waiting" | "running" | "settled";
 
 /**
+ * Progress of the owned run's prompt, its first user message, through its
+ * message events. A message sent while the run started follows the prompt and
+ * can share its millisecond timestamp, so only this order tells them apart.
+ */
+type PromptProgress = "pending" | "started" | "ended";
+
+/**
  * State for one on-demand silent probe. It owns the correlation token and the
  * timeout, and records the exact synthetic message identities in ProbeFilter.
  * Pi API calls stay in `registerSilentProbe()` and ProbeTrigger.
@@ -56,6 +64,7 @@ export class SilentProbe {
 	private resolveCompletion: ((outcome: ProbeOutcome) => void) | undefined;
 	private outcome: ProbeOutcome | undefined;
 	private timeout: NodeJS.Timeout | undefined;
+	private promptProgress: PromptProgress = "pending";
 	/** Identities this runtime recorded since its last persisted entry. */
 	private unpersistedCount = 0;
 
@@ -92,22 +101,31 @@ export class SilentProbe {
 	/**
 	 * Whether this input event is the probe's own synthetic prompt. Recognition
 	 * is causal rather than textual: the token is visible only inside the async
-	 * context of this extension's own `sendUserMessage()` call.
+	 * context of this extension's own `sendUserMessage()` call. The probe sends
+	 * while idle, so queued input is never its own, even with the token another
+	 * extension's send from `before_agent_start` inherits.
 	 */
-	public isProbeInput(source: InputSource, token: ProbeToken | undefined): boolean {
-		return this.phase === "waiting" && source === "extension" && this.ownsToken(token);
+	public isProbeInput(
+		input: Pick<InputEvent, "source" | "streamingBehavior">,
+		token: ProbeToken | undefined,
+	): boolean {
+		return this.phase === "waiting"
+			&& input.source === "extension"
+			&& input.streamingBehavior === undefined
+			&& this.ownsToken(token);
 	}
 
 	/**
-	 * Claim the run this probe started, identified by the token it carries. A run
-	 * without the token is not provably ours, so it fails the attempt instead of
+	 * Claim the run this probe started: a user-message run carrying the token.
+	 * Any other run is not provably ours, so it fails the attempt instead of
 	 * activating the abort guard: it may belong to the user or to another
-	 * extension and must run untouched. Ownership stays open afterwards so a
-	 * delayed probe run is still claimed.
+	 * extension and must run untouched. A custom-message run is foreign even
+	 * with the token, which another extension's nested `sendMessage()` inherits.
+	 * Ownership stays open afterwards so a delayed probe run is still claimed.
 	 */
-	public beginRun(token: ProbeToken | undefined): boolean {
+	public beginRun(messageType: BeforeAgentStartEvent["messageType"], token: ProbeToken | undefined): boolean {
 		if (this.phase !== "waiting") return false;
-		if (!this.ownsToken(token)) {
+		if (messageType !== "user" || !this.ownsToken(token)) {
 			this.fail("Another agent run started before the silent probe was recognized.");
 			return false;
 		}
@@ -115,9 +133,21 @@ export class SilentProbe {
 		return true;
 	}
 
-	/** Record probe user/assistant identities as their message events arrive. */
+	/**
+	 * Record the owned run's prompt and abort identities as their message events
+	 * arrive. Pi emits the run's starting messages before queued ones, so only
+	 * the first user message is the probe's; later ones were sent while the run
+	 * started. Every assistant message is a probe abort: the probe aborts each
+	 * turn at `turn_start`, including the extra turns Pi runs for queued messages.
+	 */
 	public recordMessage(message: ContextEvent["messages"][number]): void {
-		if (!this.isCurrentRun || (message.role !== "user" && message.role !== "assistant")) return;
+		if (!this.isCurrentRun) return;
+		if (message.role === "user") {
+			if (this.promptProgress !== "pending") return;
+			this.promptProgress = "started";
+		} else if (message.role !== "assistant") {
+			return;
+		}
 		if (this.filter.record({ role: message.role, timestamp: message.timestamp })) this.unpersistedCount++;
 	}
 
@@ -138,16 +168,14 @@ export class SilentProbe {
 	/**
 	 * Omit known probe entries still visible in Pi's boundary projection at an
 	 * owned run's `turn_end`. The projection already applies compaction, earlier
-	 * edits, and earlier handlers' drafts, so each target is omitted once.
+	 * edits, and earlier handlers' drafts, so each target is omitted once. Each
+	 * entry is matched by its stored message, which a replacement does not change.
 	 */
 	public createContextEdits(contextEntries: readonly ProjectedSessionEntry[]): ContextEditEntryDraft[] {
 		if (!this.isCurrentRun) return [];
 		const edits: ContextEditEntryDraft[] = [];
 		for (const { sourceEntry, messages } of contextEntries) {
-			if (messages.length > 0
-				&& sourceEntry.type === "message"
-				&& (sourceEntry.message.role === "user" || sourceEntry.message.role === "assistant")
-				&& this.filter.has(sourceEntry.message)) {
+			if (messages.length > 0 && sourceEntry.type === "message" && this.filter.matches(sourceEntry.message)) {
 				edits.push({ type: "context_edit", targetId: sourceEntry.id, replacement: null });
 			}
 		}
@@ -183,11 +211,14 @@ export class SilentProbe {
 
 	/**
 	 * Empty the synthetic prompt so no stored message keeps text another
-	 * extension's input transform added to it.
+	 * extension's input transform added to it. Only the first user message of
+	 * the run is the prompt, even when a later one has the same timestamp.
 	 */
 	private blankProbePrompt(
 		message: Extract<ContextEvent["messages"][number], { role: "user" }>,
 	): ContextEvent["messages"][number] | undefined {
+		if (this.promptProgress !== "started") return undefined;
+		this.promptProgress = "ended";
 		if (message.content.length === 0 || !this.filter.has(message)) return undefined;
 		return { ...message, content: [] };
 	}
@@ -234,12 +265,12 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 	pi.on("input", (event) => {
 		// Reset text earlier input transforms added to our own synthetic prompt:
 		// the probe carries no instructions, and its run is identified by token.
-		if (event.text === "" || !probe.isProbeInput(event.source, readProbeToken())) return undefined;
+		if (event.text === "" || !probe.isProbeInput(event, readProbeToken())) return undefined;
 		return { action: "transform", text: "" } as const;
 	});
 
-	pi.on("before_agent_start", () => {
-		probe.beginRun(readProbeToken());
+	pi.on("before_agent_start", (event) => {
+		probe.beginRun(event.messageType, readProbeToken());
 	});
 
 	pi.on("turn_start", (_event, ctx) => {

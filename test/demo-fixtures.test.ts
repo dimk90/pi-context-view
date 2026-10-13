@@ -18,7 +18,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-import { startDemoMockProvider } from "../scripts/demo-mock-provider.ts";
+import { startDemoMockProvider } from "../scripts/demo-injections/demo-mock-provider.ts";
 import registerExtension from "../src/index.ts";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import type { InjectionSnapshot } from "../src/model.ts";
@@ -216,7 +216,7 @@ async function createDemoRuntime(
 		cwd: directory, agentDir: directory, settingsManager,
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 		additionalExtensionPaths: fixtures.map((fixture) =>
-			fileURLToPath(new URL(`../scripts/fixtures/${fixture}.ts`, import.meta.url))),
+			fileURLToPath(new URL(`../scripts/demo-injections/${fixture}.ts`, import.meta.url))),
 		extensionFactories: [
 			(pi) => pi.registerProvider(model.provider, {
 				api, baseUrl: model.baseUrl, apiKey: "mock-key", models: [model],

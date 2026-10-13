@@ -4,7 +4,8 @@ Demo instructions and expected results for the fixtures loaded by
 [`demo-injections.sh`](demo-injections.sh). Expected results follow each
 fixture's header comment and the [capture visibility rules](../doc/architecture/capture.md#scope).
 
-The launcher loads demo-only extensions from [`scripts/fixtures/`](fixtures/).
+The launcher loads demo-only extensions from [`scripts/demo-injections/`](demo-injections/),
+which also holds the `--mock` runner (`demo-mock*.ts`).
 Regular tests use independent fixtures in `test/fixtures/`; neither set imports
 or re-exports the other. Change the demo fixtures without changing regular test
 behavior. The launcher tests check selection and paths. `demo-fixtures.test.ts` loads
@@ -45,8 +46,8 @@ Flags combine without enabling unselected groups:
 ./scripts/demo-injections.sh --codemode-only --forced --no-session
 ```
 
-For isolated demo checks, load a file from `scripts/fixtures/` directly with
-Pi's `-e` option, for example `pi -e ./scripts/fixtures/section-patch.ts`.
+For isolated demo checks, load a file from `scripts/demo-injections/` directly with
+Pi's `-e` option, for example `pi -e ./scripts/demo-injections/section-patch.ts`.
 The overlapping edits, in-place mutations, reordering, extra message additions,
 and marker-triggered payload deletion remain available this way, but no longer
 load with the overview groups.

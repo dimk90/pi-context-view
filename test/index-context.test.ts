@@ -134,7 +134,7 @@ test("#9: capture handlers return nothing and leave event.messages and the paylo
 	const { emit } = registerOnFakePi(ctx, snapshots);
 	emit({ type: "session_start", reason: "new" });
 	emit({
-		type: "before_agent_start", prompt: "hello", systemPrompt: "system prompt",
+		type: "before_agent_start", messageType: "user", prompt: "hello", systemPrompt: "system prompt",
 		systemPromptOptions: { cwd: "/tmp", hiddenTools: [] } as unknown as BeforeAgentStartEvent["systemPromptOptions"],
 	});
 

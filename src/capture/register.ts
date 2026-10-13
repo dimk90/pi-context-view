@@ -30,8 +30,8 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 		blockImages: () => readBlockImages(pi),
 	});
 	/**
-	 * Pi's hidden declarations for the current run. Only `before_agent_start`
-	 * reports them to event handlers, so a run without it keeps the last ones.
+	 * Pi's hidden declarations, as every run's `before_agent_start` reports them.
+	 * Only a later handler or a mid-run tool change can make this copy stale.
 	 */
 	let hiddenTools: readonly string[] = [];
 

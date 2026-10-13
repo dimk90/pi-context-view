@@ -217,10 +217,10 @@ Pi does not report which tool requested each exclusion, so there are no
 candidate-source labels; do not guess one from `model-only` exposure.
 
 Event contexts have no `getSystemPromptOptions()` method, so capture retains
-the last observed list until the next `before_agent_start`, or shutdown. A later
-handler or mid-run tool change can make it stale; a continuation without that
-event uses the last list (initially empty). Usage instead reads the live list
-in its command handler and is not subject to this limitation.
+the last observed list until the next `before_agent_start`, or shutdown. Every
+run reports it; only a later handler or a mid-run tool change can make it
+stale. Usage instead reads the live list in its command handler and is not
+subject to this limitation.
 
 ## Snapshots and SnapshotStore
 

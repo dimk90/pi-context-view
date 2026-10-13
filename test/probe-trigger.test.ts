@@ -33,7 +33,7 @@ function createHarness(simulateRun: (probe: SilentProbe, store: SnapshotStore) =
 		getSettings: () => ({}),
 		sendUserMessage: () => {
 			sent++;
-			probe.beginRun(readProbeToken());
+			probe.beginRun("user", readProbeToken());
 			run = simulateRun(probe, store);
 		},
 	} as unknown as ExtensionAPI;

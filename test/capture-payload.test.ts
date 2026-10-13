@@ -68,7 +68,9 @@ for (const first of ["message_start", "provider_stream_event", "message_end"] as
 		const beforePayload = structuredClone(payload);
 		// Capture reads only the hidden tools of Pi's normalized options
 		const options = { hiddenTools: ["read"] } as unknown as BeforeAgentStartEvent["systemPromptOptions"];
-		h.emit({ type: "before_agent_start", prompt: "", systemPrompt: "prompt", systemPromptOptions: options });
+		h.emit({
+			type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt", systemPromptOptions: options,
+		});
 		h.emit({ type: "context_with_system", messages });
 		h.emit({ type: "before_provider_request", payload });
 		assert.deepEqual(messages, beforeMessages);
@@ -95,7 +97,9 @@ for (const first of ["message_start", "provider_stream_event", "message_end"] as
 test("hidden names are copied at the event boundary and reset by an empty list on the next run", async () => {
 	const h = harness(true);
 	const options = { hiddenTools: ["read"] } as unknown as BeforeAgentStartEvent["systemPromptOptions"];
-	h.emit({ type: "before_agent_start", prompt: "", systemPrompt: "prompt", systemPromptOptions: options });
+	h.emit({
+		type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt", systemPromptOptions: options,
+	});
 	options.hiddenTools.length = 0;
 	h.emit({ type: "context_with_system", messages: [{ ...SYSTEM, toolsAdded: [TOOL] }] });
 	await flush();
@@ -103,7 +107,9 @@ test("hidden names are copied at the event boundary and reset by an empty list o
 	assert.equal(first?.guard.status, "pending");
 	assert.deepEqual(first?.hiddenTools, ["read"], "owned even before any payload");
 
-	h.emit({ type: "before_agent_start", prompt: "", systemPrompt: "prompt", systemPromptOptions: options });
+	h.emit({
+		type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt", systemPromptOptions: options,
+	});
 	h.emit({ type: "context_with_system", messages: [{ ...SYSTEM, toolsAdded: [TOOL] }] });
 	await flush();
 	assert.deepEqual(first?.hiddenTools, ["read"], "an earlier snapshot does not share the next run's list");

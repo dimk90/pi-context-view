@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import {
-	type AgentSession, createAgentSession, createCodemodeExtension, DefaultResourceLoader, type ExtensionContext,
+	type AgentSession, createAgentSession, createCodemodeExtension, DefaultResourceLoader, type ExtensionAPI,
+	type ExtensionContext,
 	type ExtensionFactory, type ExtensionUIContext, ModelRuntime, SessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
@@ -17,6 +18,7 @@ import { applyRequestSnapshot } from "../src/projection.ts";
 import { buildUsageSnapshot } from "../src/replay.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
 import { computeUsage } from "../src/usage.ts";
+import forcedPrompt, { FORCED_SYSTEM_PROMPT } from "./fixtures/forced-prompt.ts";
 import { type MockApi, startMockProvider } from "./harness/mock-provider.ts";
 import { useSettings } from "./harness/settings.ts";
 
@@ -77,6 +79,32 @@ test("#11: Usage follows Pi's hidden tools at once, Injections at the next reque
 		"the next request declares the four tools and hides none");
 });
 
+for (const placement of ["before", "after"] as const) {
+	test(`a custom-message run reports the hidden tools after a change, forced prompt ${placement}`, async (t) => {
+		let sender: ExtensionAPI | undefined;
+		const capture: ExtensionFactory = (pi) => { sender = pi; };
+		const { session, store, provider, errors, observed } = await createRuntime(t, "openai-completions",
+			{ [placement]: [forcedPrompt, capture] });
+		await session.prompt("hi");
+		await flush();
+		assert.deepEqual(store.latest()?.hiddenTools, HIDDEN);
+
+		session.setActiveToolsByName(["read", "bash", "codemode"]);
+		assert.ok(sender !== undefined);
+		sender.sendMessage({ customType: "wake", content: "wake", display: true }, { triggerTurn: true });
+		assert.equal(session.isIdle, false, "the custom run starts at once");
+		await session.waitForIdle();
+		await flush();
+		const custom = store.latest();
+		assert.equal(custom?.origin, "real-turn");
+		assert.deepEqual(custom?.hiddenTools, ["read", "bash"], "the custom run's before_agent_start reports the new set");
+		assert.equal(custom?.forcedPrompt, FORCED_SYSTEM_PROMPT);
+		assert.equal(provider.requests.length, 2);
+		assert.equal(observed.responses, 2);
+		assert.deepEqual(errors, []);
+	});
+}
+
 /** Pi's current prompt options, as a command handler reads them. */
 function liveOptions(session: AgentSession) {
 	return session.extensionRunner.createCommandContext().getSystemPromptOptions();
@@ -116,11 +144,17 @@ function injectionTools(
 	return { listed, hidden: snapshot.hiddenTools };
 }
 
+/** Extensions loaded right before or right after the monitor. */
+interface ExtraExtensions {
+	readonly before?: ExtensionFactory[];
+	readonly after?: ExtensionFactory[];
+}
+
 /**
- * Real SDK runtime with codemode `only`, the monitor, and a last-loaded
- * payload logger and `after_provider_response` sentinel.
+ * Real SDK runtime with codemode `only`, the monitor with `extra` around it,
+ * and a last-loaded payload logger and `after_provider_response` sentinel.
  */
-async function createRuntime(t: TestContext, api: MockApi) {
+async function createRuntime(t: TestContext, api: MockApi, extra: ExtraExtensions = {}) {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
 	const directory = await mkdtemp(join(tmpdir(), "context-hidden-tools-"));
@@ -153,7 +187,8 @@ async function createRuntime(t: TestContext, api: MockApi) {
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 		extensionFactories: [
 			(pi) => pi.registerProvider("mock", { api, baseUrl: model.baseUrl, apiKey: "mock-key", models: [model] }),
-			createCodemodeExtension(), (pi) => registerExtension(pi, store), logger,
+			createCodemodeExtension(), ...extra.before ?? [], (pi) => registerExtension(pi, store), ...extra.after ?? [],
+			logger,
 		],
 	});
 	await resourceLoader.reload();

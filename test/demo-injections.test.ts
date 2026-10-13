@@ -28,7 +28,7 @@ for (const after of [false, true]) {
 			const forwarded = ["--model", "provider/model", "--no-session", "a prompt with spaces"];
 			const args = await launcherArgs(t, [...flags, ...(after ? ["--after"] : []), ...forwarded]);
 			const fixtures = selected.flatMap((selection) => selection.fixtures);
-			const paths = fixtures.map((fixture) => fileURLToPath(new URL(`../scripts/fixtures/${fixture}.ts`, import.meta.url)));
+			const paths = fixtures.map((fixture) => fileURLToPath(new URL(`../scripts/demo-injections/${fixture}.ts`, import.meta.url)));
 			const extensions = [...(after ? [MONITOR, ...paths] : [...paths, MONITOR]),
 				...(flags.includes("--codemode-only") ? [CODEMODE] : [])];
 			assert.deepEqual(args, ["--no-extensions", ...extensions.flatMap((path) => ["-e", path]), ...forwarded]);
@@ -57,7 +57,7 @@ for (const after of [false, true]) {
 
 test("demo launcher fixtures exist as independent files beside the script", async () => {
 	for (const fixture of SELECTIONS.flatMap((selection) => selection.fixtures)) {
-		const path = new URL(`../scripts/fixtures/${fixture}.ts`, import.meta.url);
+		const path = new URL(`../scripts/demo-injections/${fixture}.ts`, import.meta.url);
 		assert.ok((await lstat(path)).isFile(), `${fixture} must be a file, not a link to a regular test fixture`);
 	}
 });

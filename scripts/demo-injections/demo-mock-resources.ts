@@ -1,7 +1,7 @@
 /** Resolve installed global resources without executing extension code or installing packages. */
 import { DefaultPackageManager, type ResolvedPaths, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-// Pi 1.1's CLI built-ins; resolve their enabled state with the same global filters as file extensions
+// Pi 1.2's CLI built-ins; resolve their enabled state with the same global filters as file extensions
 const BUILTIN_EXTENSIONS = ["mcp", "llama.cpp", "codemode", "tool-search"];
 
 /** Original global configuration and an isolated directory to use instead of project discovery. */

@@ -58,8 +58,8 @@ flowchart TD
     SAFE{"Safe to probe?"}
     SKIP["Report reason<br/>Attempt not consumed"]
     SEND["ProbeTrigger<br/>Start attempt, subscribe, hide working row<br/>Send empty prompt in token scope"]
-    INPUT["input · SilentProbe<br/>Undo earlier prompt transforms"]
-    OWN{"before_agent_start · SilentProbe<br/>Run carries the probe token?"}
+    INPUT["input · SilentProbe<br/>Undo earlier transforms of idle probe input"]
+    OWN{"before_agent_start · SilentProbe<br/>User-message run carrying the probe token?"}
     FOREIGN["Fail attempt<br/>Leave foreign run untouched"]
     ABORT["SilentProbe<br/>turn_start: abort before provider<br/>message_end (user): blank prompt"]
     CONTEXT["context_with_system<br/>ProbeFilter removes probe messages<br/>Capture records request and defers diff"]
@@ -92,8 +92,10 @@ compaction refuses the view instead of opening either the view or its fallback.
 ProbeTrigger restores the working row in `finally` on every started attempt's
 outcome.
 
-Use `sendUserMessage("")`. `pi.sendMessage(..., { triggerTurn: true })` skips
-`before_agent_start`. Abort at `turn_start`, not `before_provider_request`:
+Use `sendUserMessage("")`, not `pi.sendMessage(..., { triggerTurn: true })`:
+a custom-message run skips `input` and handlers limited to
+`messageType === "user"`, so it is a worse approximation of a user prompt.
+Abort at `turn_start`, not `before_provider_request`:
 some transports skip the payload hook, and a standard probe never reaches it
 ([below](#what-a-probe-run-reaches)).
 
@@ -128,6 +130,8 @@ A probe snapshot approximates the next request for a user prompt:
 - The prompt is empty, so contributions that depend on its text are missing or
   different.
 - Tool follow-up requests skip `before_agent_start` and may differ.
+- Contributions limited to custom-message runs, such as handlers that check
+  `messageType === "custom"`, are missing.
 - The probe run delivers pending messages and persists the prompt and tool
   loadout update. Later snapshots see them in the baseline.
 
@@ -146,13 +150,20 @@ Use the call's async context to correlate the run. Each attempt gets its own
 token, and the command sends the synthetic prompt inside an `AsyncLocalStorage`
 scope holding that token. Pi emits `input` and `before_agent_start` from inside
 that same call, so both handlers can read the token even after an input
-transform changes the prompt. One run may claim a token, and after that no
-later run can. This assumes no nested send claims the token first: async
-context is not a unique per-prompt identity.
+transform changes the prompt. Only a user-message run carrying the token is
+claimed. One run may claim a token, and after that no later run can. This
+assumes no nested send claims the token first: async context is not a unique
+per-prompt identity.
 
-Treat every run without the token as someone else's. Fail the attempt and show
-the fallback, but let that run continue: it may be the user's prompt or another
-extension's message, so never abort or rewrite it.
+The `input` handler resets only idle input. The probe sends while idle, so
+queued input is never its own, even when it inherits the token, for example
+from another extension's send in `before_agent_start`.
+
+Treat every other run as someone else's: a run without the token, and a
+custom-message run even with the token, which another extension's nested
+`pi.sendMessage()` inherits. Fail the attempt and show the fallback, but let
+that run continue: it may be the user's prompt or another extension's message,
+so never abort or rewrite it.
 
 Keep watching for the probe run after the attempt ends. The attempt can end
 early, on timeout or because a foreign run failed it, while the probe's own run
@@ -164,47 +175,58 @@ The token stays in this process. Never persist, render, or log it.
 ### Known Limitation: Nested Sends
 
 `AsyncLocalStorage` propagates the token to async work started inside its
-scope, including another extension's nested `pi.sendUserMessage()` call. It
-does not identify only the original synthetic prompt, and descendant work can
-keep the token after the outer `sendUserMessage()` call returns.
+scope, including another extension's nested send. It does not identify only
+the original synthetic prompt, and descendant work can keep the token after
+the outer `sendUserMessage()` call returns. A nested custom-message run is
+never claimed ([run identity](#identifying-the-probe-run)); a nested
+`pi.sendUserMessage()` remains a problem.
 
 For example, another extension's async `input` handler can send a separate
-message and wait briefly before returning:
+user message and wait until its run settles before returning:
 
 1. The nested send inherits the probe token. While the probe is waiting, its
-   input handler can erase the nested message's text.
-2. The nested run reaches `before_agent_start` first and claims the token. It
-   is aborted, and its messages are blanked and recorded as probe identities.
-3. If that run settles before the original input handler returns, the probe
-   state becomes `settled`.
-4. The original synthetic prompt then reaches `before_agent_start`, but cannot
-   claim the already-used token. Its abort guard stays inactive, so it can
-   make a provider request and remain in later context as an ordinary message.
+   input handler erases the nested message's text.
+2. The nested run claims the token. It is aborted, and its messages are
+   blanked and recorded as probe identities.
+3. Pi rejects the original send while the nested run is active, so the
+   original synthetic prompt reaches `before_agent_start` only after that run
+   settled. It cannot claim the already-used token. Its abort guard stays
+   inactive, so it can make a provider request and remain in later context as
+   an ordinary message.
 
 The token approach is more robust against text transforms than the previous
 empty-input checks, which lost recognition when another extension added text
 ([issue #5](https://github.com/dimk90/pi-context-view/issues/5)). It also avoids
 claiming unrelated empty inputs outside the token scope. It is **not
-fail-safe**, however: nested sends can be mistaken for the probe, including
-non-empty sends that the old checks would have left alone. A timeout or
-fallback does not fix that ownership mistake or guarantee that the original
-probe is aborted.
+fail-safe**, however: nested user-message sends can be mistaken for the
+probe, including non-empty sends that the old checks would have left alone. A
+timeout or fallback does not fix that ownership mistake or guarantee that the
+original probe is aborted.
 
 ## Keeping Probe Messages Out of Real Context
 
 Track synthetic user and assistant messages by exact role and timestamp.
-Never identify them by empty content: genuine empty messages and genuine aborts
-must remain visible.
+Never identify them by empty content alone: genuine empty messages and genuine
+aborts must remain visible.
 
-Blank both recorded probe messages in `message_end`: the synthetic prompt,
-which may carry text an input transform added, and the assistant abort result.
-Blanking removes their content before Pi stores the messages.
+Record only the owned run's first user message, the synthetic prompt: Pi
+emits the run's starting messages before queued ones. A message queued while
+the probe run starts usually shares the prompt's millisecond timestamp, so a
+recorded user identity also matches only a blank message. Record every
+assistant message of the run: the probe aborts each of its turns at
+`turn_start`, including the extra turns Pi runs for queued messages.
+
+Blank the recorded probe messages in `message_end`: the synthetic prompt,
+which may carry text an input transform added, and the assistant abort results.
+Only the run's first user message is blanked. Blanking removes their content
+before Pi stores the messages.
 
 At the owned run's `turn_end`, append `context_edit` drafts with
 `replacement: null` and the exact session entry IDs of known probe messages that
 are still visible in `event.context.contextEntries`. That boundary projection
 already applies compaction, earlier edits, and earlier handlers' drafts, so each
-visible target is omitted once. Preserve other handlers' proposed entries and do
+visible target is omitted once. Each entry is checked by its stored message,
+which a `context_edit` replacement does not change. Preserve other handlers' proposed entries and do
 not request continuation. Pi applies these omissions to future context even
 when this extension is absent. The raw blank messages remain in the session
 tree. Use `turn_end`, not `agent_before_settle`: an explicit abort skips the
@@ -228,6 +250,10 @@ on every request. `context` handlers and earlier `context_with_system` handlers
 can still see blank probe entries that have not been omitted from the
 projection. During the probe itself, the filter removes its prompt from the
 request.
+
+The blank-content check has a trade-off. If a later `message_end` handler adds
+content to the blank prompt, neither requests nor omission recognize it. If a
+`context_edit` replacement adds content, requests no longer filter it.
 
 Pi reports the probe's `turn_start` abort with an `error` stop reason:
 authentication rejects the already-aborted signal before streaming. Its error
@@ -338,3 +364,10 @@ Usage repeatedly:
   until a later response reports usage again.
 - Omission edits persist in the session and outlive the extension; raw blank
   entries remain in history.
+- In the TUI, `ctx.abort()` goes through Pi's interactive abort handler, which
+  clears the queues at the probe's first `turn_start`. User messages queued
+  while the probe run starts go back to the editor, and queued custom messages
+  are dropped. Messages queued later, or on hosts without that handler, are
+  delivered into the probe run, stay visible, and get no reply. Pi delivers
+  one queued message per turn, the first with the probe prompt, so each
+  further one adds one more aborted turn.

@@ -15,6 +15,7 @@ import {
 	resolveRequestSnapshot,
 } from "../src/command.ts";
 import { CompactionState } from "../src/compaction.ts";
+import { MIN_PI_VERSION } from "../src/pi-version.ts";
 import { ProbeFilter } from "../src/probe/filter.ts";
 import { SilentProbe } from "../src/probe/silent-probe.ts";
 import { ProbeTrigger } from "../src/probe/trigger.ts";
@@ -113,7 +114,7 @@ test("reportUnsupportedPi names the required and the running Pi version", () => 
 	reportUnsupportedPi(context, "0.86.1");
 
 	assert.deepEqual(notified, [{
-		message: "/context requires Pi 1.1.0 or newer; this is Pi 0.86.1. Nothing was captured.",
+		message: `/context requires Pi ${MIN_PI_VERSION} or newer; this is Pi 0.86.1. Nothing was captured.`,
 		type: "error",
 	}]);
 });
@@ -162,7 +163,8 @@ test("resolveRequestSnapshot sends the synthetic prompt inside the probe token s
 	const result = await resolveRequestSnapshot(store, trigger, context);
 
 	assert.equal(sentContent, "", "the probe prompt carries no instructions of its own");
-	assert.equal(probe.isProbeInput("extension", tokenDuringSend), true, "the send must carry this attempt's token");
+	assert.equal(probe.isProbeInput({ source: "extension" }, tokenDuringSend), true,
+		"the send must carry this attempt's token");
 	assert.equal(readProbeToken(), undefined, "the token must not outlive the send");
 	assert.deepEqual(result, {
 		type: "missing",

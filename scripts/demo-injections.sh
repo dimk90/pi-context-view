@@ -16,7 +16,7 @@
 #   --after         load pi-context-view before the selected demo extensions
 #   --local         also load locally installed extensions (omit --no-extensions)
 #
-# Fixtures live in scripts/fixtures/, independently of regular test fixtures.
+# Fixtures live in scripts/demo-injections/, independently of regular test fixtures.
 # See scripts/demo-injections.md for each group's fixtures and behavior.
 #
 # No demo fixtures load by default. Selected groups load in flag order;
@@ -95,7 +95,7 @@ main() {
     local extension_args=()
     local fixture
     for fixture in "${fixtures[@]}"; do
-        extension_args+=(-e "$_DEMO_REPO_ROOT/scripts/fixtures/$fixture.ts")
+        extension_args+=(-e "$_DEMO_REPO_ROOT/scripts/demo-injections/$fixture.ts")
     done
     if [[ "$monitor_first" == true ]]; then
         extension_args=(-e "$_DEMO_MONITOR" "${extension_args[@]}")
@@ -109,7 +109,7 @@ main() {
 
     if [[ "$mock" == true ]]; then
         # The runner owns cleanup; replace the shell so signals reach it directly
-        exec node "$_DEMO_REPO_ROOT/scripts/demo-mock.ts" "$codemode_only" "$local_extensions" \
+        exec node "$_DEMO_REPO_ROOT/scripts/demo-injections/demo-mock.ts" "$codemode_only" "$local_extensions" \
             "${discovery_args[@]}" "${extension_args[@]}" "$@"
     else
         if [[ "$codemode_only" == true ]]; then

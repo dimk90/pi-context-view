@@ -26,10 +26,15 @@ import inputTransform from "./fixtures/input-transform.ts";
 import marker from "./fixtures/marker.ts";
 import { useSettings } from "./harness/settings.ts";
 
+/** The parts of an OpenAI chat-completions request body the tests read. */
+interface RequestBody {
+	messages: Array<{ role: string; content: string | Array<{ text?: string }> }>;
+}
+
 /** Loopback-only provider that records requests and returns a deterministic assistant response. */
 async function startProvider(t: TestContext) {
 	let requests = 0;
-	const bodies: Array<{ messages: Array<{ role: string }> }> = [];
+	const bodies: RequestBody[] = [];
 	const server = createServer((request, response) => {
 		// Count on arrival, so even a request that never completes is seen
 		requests++;
@@ -96,7 +101,7 @@ async function createRuntime(t: TestContext, baseUrl: string, factories: Extensi
 }
 
 for (const position of ["before", "after"] as const) {
-	test(`Pi 1.0 probe aborts, blanks and omits its entries with fixtures ${position}`, async (t) => {
+	test(`the probe aborts, blanks and omits its entries with fixtures ${position}`, async (t) => {
 		const provider = await startProvider(t);
 		const observed = { headers: 0, payloads: 0, responses: 0, contexts: 0, beforeSettle: 0, overlays: 0 };
 		const errors: string[] = [];
@@ -243,6 +248,148 @@ test("filtering unomitted probe entries keeps mid-conversation system messages i
 	assert.deepEqual(provider.bodies[1].messages.map((message) => message.role), seen.afterFilter);
 });
 
+test("a nested custom-message run fails the attempt and the probe still claims its own prompt", { timeout: 30_000 }, async (t) => {
+	const provider = await startProvider(t);
+	const events: string[] = [];
+	const stopReasons: Array<[string, string | undefined]> = [];
+	let settledRuns = 0;
+	let resolveBothSettled: () => void = () => undefined;
+	const bothSettled = new Promise<void>((resolve) => { resolveBothSettled = resolve; });
+	const sentinel: ExtensionFactory = (pi) => {
+		pi.on("before_agent_start", (event) => { events.push(`before_agent_start: ${event.messageType}`); });
+		pi.on("after_provider_response", () => { events.push("after_provider_response"); });
+		pi.on("message_end", (event) => {
+			if (event.message.role === "assistant") {
+				stopReasons.push([event.message.stopReason, event.message.errorMessage]);
+			}
+		});
+		pi.on("agent_settled", () => {
+			events.push("agent_settled");
+			if (++settledRuns === 2) resolveBothSettled();
+		});
+	};
+	// Another extension starts its own run from the probe's input, inheriting the token, and waits for it
+	let nestedSent = false;
+	let resolveNestedSettled: (() => void) | undefined;
+	const nestedSender: ExtensionFactory = (pi) => {
+		pi.on("input", async (event) => {
+			if (nestedSent || event.source !== "extension") return;
+			nestedSent = true;
+			const nestedSettled = new Promise<void>((resolve) => { resolveNestedSettled = resolve; });
+			pi.sendMessage({ customType: "nested-run", content: "nested", display: true }, { triggerTurn: true });
+			await nestedSettled;
+		});
+		pi.on("agent_settled", () => {
+			// Pi is idle only once every agent_settled handler has returned
+			if (resolveNestedSettled !== undefined) setImmediate(resolveNestedSettled);
+			resolveNestedSettled = undefined;
+		});
+	};
+	const session = await createRuntime(t, provider.baseUrl, [sentinel, nestedSender, registerExtension]);
+	const errors: string[] = [];
+	await session.bindExtensions({
+		mode: "tui",
+		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
+		uiContext: {
+			setWorkingVisible: () => undefined,
+			custom: async () => { events.push("view"); },
+		} as unknown as ExtensionUIContext,
+	});
+
+	await session.prompt("/context injections");
+	await bothSettled;
+
+	assert.deepEqual(errors, []);
+	assert.deepEqual(events, [
+		"before_agent_start: custom",
+		// The failed attempt opens the view while the nested run still waits for its response
+		"view",
+		"after_provider_response",
+		"agent_settled",
+		"before_agent_start: user",
+		"agent_settled",
+	]);
+	assert.equal(provider.requests(), 1, "only the nested run reaches the provider");
+	assert.deepEqual(stopReasons, [["stop", undefined], ["error", "This operation was aborted"]]);
+	const branch = session.sessionManager.getBranch();
+	const [reply, ...probeEntries] = branch.flatMap((entry) => entry.type === "message"
+		&& (entry.message.role === "user" || entry.message.role === "assistant")
+		? [{ id: entry.id, message: entry.message }]
+		: []);
+	assert.ok(reply?.message.role === "assistant");
+	assert.equal(reply.message.stopReason, "stop");
+	assert.deepEqual(probeEntries.map(({ message }) => message.content), [[], []],
+		"the probe prompt and its abort are blanked");
+	assert.deepEqual(branch.filter((entry) => entry.type === "context_edit").map((entry) => entry.targetId),
+		probeEntries.map(({ id }) => id), "and omitted");
+	const projected = session.sessionManager.buildSessionProjection().messages;
+	assert.deepEqual(projected.flatMap((message) => message.role === "custom" ? [message.customType] : []),
+		["nested-run"]);
+	assert.deepEqual(conversationRoles(projected), ["assistant"], "the nested run's reply stays visible");
+});
+
+for (const position of ["before", "after"] as const) {
+	test(`messages sent while the probe run starts stay visible with the sender ${position}`, async (t) => {
+		const provider = await startProvider(t);
+		const stopReasons: Array<[string, string | undefined]> = [];
+		let responses = 0;
+		const sentinel: ExtensionFactory = (pi) => {
+			pi.on("after_provider_response", () => { responses++; });
+			pi.on("message_end", (event) => {
+				if (event.message.role === "assistant") {
+					stopReasons.push([event.message.stopReason, event.message.errorMessage]);
+				}
+			});
+		};
+		// Pi counts the session as busy while a run starts, so both sends are queued into the probe run.
+		// The steered message inherits the probe token and usually shares the prompt's millisecond.
+		let sent = false;
+		const sender: ExtensionFactory = (pi) => {
+			pi.on("before_agent_start", () => {
+				if (sent) return;
+				sent = true;
+				pi.sendUserMessage("steered", { deliverAs: "steer" });
+				pi.sendMessage({ customType: "plain", content: "plain", display: true });
+			});
+		};
+		const ordered = position === "before" ? [sender, registerExtension] : [registerExtension, sender];
+		const session = await createRuntime(t, provider.baseUrl, [sentinel, ...ordered]);
+		const errors = await bindTui(session);
+		await session.prompt("/context injections");
+
+		assert.deepEqual(errors, []);
+		assert.equal(provider.requests(), 0, "the probe makes no provider request");
+		assert.equal(responses, 0);
+		// Pi delivers one queued message per turn: the custom one with the prompt, the steered one in an extra turn
+		assert.deepEqual(stopReasons, [["error", "This operation was aborted"], ["error", "This operation was aborted"]]);
+		const branch = session.sessionManager.getBranch();
+		const conversation = branch.flatMap((entry) => entry.type === "message"
+			&& (entry.message.role === "user" || entry.message.role === "assistant")
+			? [{ id: entry.id, message: entry.message }]
+			: []);
+		assert.deepEqual(conversation.map(({ message }) => [message.role, message.content]), [
+			["user", []],
+			["assistant", []],
+			["user", [{ type: "text", text: "steered" }]],
+			["assistant", []],
+		], "the probe prompt and both aborts are blanked, the steered message keeps its text");
+		assert.ok(conversation.every(({ message }) => message.role === "user" || message.stopReason === "stop"));
+		const steered = conversation[2];
+		assert.deepEqual(branch.filter((entry) => entry.type === "context_edit").map((entry) => entry.targetId),
+			conversation.filter((entry) => entry !== steered).map(({ id }) => id), "only probe entries are omitted");
+		const projected = session.sessionManager.buildSessionProjection().messages;
+		assert.deepEqual(projected.flatMap((message) => message.role === "custom" ? [message.customType] : []),
+			["plain"]);
+		assert.deepEqual(conversationRoles(projected), ["user"], "the steered message stays visible");
+
+		await session.prompt("real request");
+		assert.equal(provider.requests(), 1);
+		assert.deepEqual(userTexts(provider.bodies[0]), ["plain", "steered", "real request"],
+			"both messages reach the next real request");
+		assert.deepEqual(errors, []);
+	});
+}
+
 /**
  * Bind a session in TUI mode, where `/context` may probe; the view overlay
  * closes at once. Returns the extension errors reported from then on.
@@ -258,6 +405,16 @@ async function bindTui(session: AgentSession): Promise<string[]> {
 		} as unknown as ExtensionUIContext,
 	});
 	return errors;
+}
+
+/** Text of each user message in a request body; Pi sends custom messages as user messages. */
+function userTexts(body: RequestBody): string[] {
+	return body.messages.flatMap((message) => {
+		if (message.role !== "user") return [];
+		return typeof message.content === "string"
+			? [message.content]
+			: [message.content.map((part) => part.text ?? "").join("")];
+	});
 }
 
 /** Roles of the user and assistant messages, skipping custom and other session messages. */

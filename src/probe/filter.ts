@@ -51,15 +51,20 @@ export class ProbeFilter {
 	}
 
 	/**
-	 * Remove only messages whose exact role+timestamp identity belongs to a probe.
-	 * Returns the same array when no message matches.
+	 * Whether a stored or requested message is a probe message: its exact role
+	 * and timestamp are recorded, and a user message is blank, as every stored
+	 * probe prompt is. A genuine user message sent while the probe run started
+	 * can share the prompt's millisecond, but it keeps its content.
 	 */
+	public matches(message: ContextEvent["messages"][number]): boolean {
+		if (message.role === "assistant") return this.has(message);
+		return message.role === "user" && isBlankContent(message.content) && this.has(message);
+	}
+
+	/** Remove only probe messages, as `matches()` decides. Returns the same array when none matches. */
 	public filterMessages(messages: ContextEvent["messages"]): ContextEvent["messages"] {
 		if (this.identities.size === 0) return messages;
-		const filtered = messages.filter((message) => {
-			if (message.role !== "user" && message.role !== "assistant") return true;
-			return !this.has(message);
-		});
+		const filtered = messages.filter((message) => !this.matches(message));
 		return filtered.length === messages.length ? messages : filtered;
 	}
 }
@@ -104,6 +109,15 @@ export function parsePersistedIdentities(data: unknown): SyntheticMessageIdentit
 		}
 	}
 	return identities;
+}
+
+/**
+ * Whether user content is blank: no parts, as SilentProbe stores its prompt,
+ * or only empty text, as older versions stored the empty prompt Pi created.
+ */
+function isBlankContent(content: Extract<ContextEvent["messages"][number], { role: "user" }>["content"]): boolean {
+	if (typeof content === "string") return content === "";
+	return content.every((part) => part.type === "text" && part.text === "");
 }
 
 /** Map key uniquely identifying one probe message by role and timestamp. */

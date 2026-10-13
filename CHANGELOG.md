@@ -1,6 +1,15 @@
 # Changelog
 
 
+## `[v0.7.1]` - 13.10.2026
+
+Support for Pi 1.2.0, which is now required, with fixes for its breaking changes.
+
+### Fixed
+* `[probe]` Stop blanking messages that extensions send while the probe run starts.
+* `[probe]` Stop aborting custom-message runs that other extensions start during a probe.
+
+
 ## `[v0.7.0]` - 12.10.2026
 
 Injection capture has been redesigned for Pi 1.1. Instead of freezing the first request (Initial),
