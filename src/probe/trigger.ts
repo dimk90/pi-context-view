@@ -18,7 +18,7 @@ import { runWithProbeToken } from "./token.ts";
  * after SilentProbe's, so the snapshot normally arrives at once.
  */
 const DEFAULT_SNAPSHOT_GRACE_MS = 1_000;
-const NO_SNAPSHOT_REASON = "Silent probe settled without a request snapshot.";
+const NO_SNAPSHOT_REASON = "The probe settled without a request snapshot.";
 
 /**
  * Result of asking for a probe: the store received the probe's snapshot with a
@@ -138,19 +138,28 @@ function waitForProbeResult(
 	});
 }
 
+function wouldCreateNewTranscriptFile(context: ExtensionCommandContext): boolean {
+	if (context.sessionManager.getSessionFile() === undefined) return false;
+	return !context.sessionManager
+		.getEntries()
+		.some((entry) => entry.type === "message"
+			&& (entry.message.role === "user" || entry.message.role === "assistant"));
+}
+
 /** Explain why a silent probe cannot run now, or undefined when it can. */
 function getProbeUnavailableReason(
 	pi: ExtensionAPI,
 	context: ExtensionCommandContext,
 	compactionInProgress: boolean,
 ): string | undefined {
-	if (compactionInProgress) return "Silent probe unavailable: context compaction is in progress.";
-	if (context.hasPendingMessages()) return "Silent probe unavailable: messages are waiting to be delivered.";
-	if (context.model === undefined) return "Silent probe unavailable: no model is selected.";
+	if (compactionInProgress) return "Context compaction is in progress.";
+	if (wouldCreateNewTranscriptFile(context)) return "The session has no messages yet.";
+	if (context.hasPendingMessages()) return "Messages are waiting to be delivered.";
+	if (context.model === undefined) return "No model is selected.";
 	// Pi's virtual-model discriminator is not exported from its package root
-	if (context.model.api === "pi-virtual") return "Silent probe unavailable: a virtual model is selected.";
+	if (context.model.api === "pi-virtual") return "A virtual model is selected.";
 	if (!context.modelRegistry.hasConfiguredAuth(context.model)) {
-		return `Silent probe unavailable: ${context.model.provider} has no configured authentication.`;
+		return `${context.model.provider} has no configured authentication.`;
 	}
 	return getProbeSettingsUnavailableReason(pi, context);
 }
@@ -164,15 +173,15 @@ function getProbeSettingsUnavailableReason(
 		const settings = readLiveSettings(pi);
 		// The merged snapshot can mask global idle warming with an ignored project override
 		if (settings.getCacheWarmingMode() === "idle" || readGlobalCacheWarmingMode(context.cwd) === "idle") {
-			return "Silent probe unavailable: idle cache warming is enabled.";
+			return "Idle cache warming is enabled.";
 		}
 		const compaction = settings.getCompactionSettings(context.model);
 		const usage = context.getContextUsage();
 		if (usage?.tokens != null && shouldCompact(usage.tokens, usage.contextWindow, compaction)) {
-			return "Silent probe unavailable: context exceeds the auto-compaction threshold.";
+			return "Context exceeds the auto-compaction threshold.";
 		}
 	} catch {
-		return "Silent probe unavailable: Pi settings could not be checked.";
+		return "Pi settings could not be checked.";
 	}
 	return undefined;
 }

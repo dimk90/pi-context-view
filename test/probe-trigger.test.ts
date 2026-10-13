@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import { CompactionState } from "../src/compaction.ts";
 import { ProbeFilter } from "../src/probe/filter.ts";
@@ -19,11 +19,22 @@ function snapshot(id: number, origin: CaptureOrigin, guard: GuardResult): Reques
 	return { id, origin, leafId: null, changes: { conversation: [], system: [] }, guard };
 }
 
+const CONVERSATION: SessionEntry = {
+	type: "message",
+	id: "1",
+	parentId: null,
+	timestamp: "2026-01-01T00:00:00Z",
+	message: { role: "user", content: "hello", timestamp: 1 },
+};
+
 /**
  * An idle context whose probe send runs `simulateRun` with the claimed probe,
  * the store, and the token, as Pi's lifecycle would after `sendUserMessage("")`.
  */
-function createHarness(simulateRun: (probe: SilentProbe, store: SnapshotStore) => Promise<void>) {
+function createHarness(
+	simulateRun: (probe: SilentProbe, store: SnapshotStore) => Promise<void>,
+	sessionEntries: SessionEntry[] = [CONVERSATION],
+) {
 	const probe = new SilentProbe(new ProbeFilter());
 	const store = new SnapshotStore();
 	const visibility: boolean[] = [];
@@ -45,6 +56,7 @@ function createHarness(simulateRun: (probe: SilentProbe, store: SnapshotStore) =
 		getContextUsage: () => undefined,
 		waitForIdle: async () => undefined,
 		ui: { setWorkingVisible: (visible: boolean) => visibility.push(visible) },
+		sessionManager: { getEntries: () => sessionEntries, getSessionFile: () => "/agent/probe.jsonl" },
 	} as unknown as ExtensionCommandContext;
 	const trigger = new ProbeTrigger({
 		pi, probe, snapshots: store, compaction: new CompactionState(), snapshotGraceMs: 1,
@@ -110,7 +122,7 @@ test("ProbeTrigger fails when the probe settles without a snapshot", async () =>
 
 	const result = await harness.trigger.request(harness.context);
 
-	assert.deepEqual(result, { status: "failed", reason: "Silent probe settled without a request snapshot." });
+	assert.deepEqual(result, { status: "failed", reason: "The probe settled without a request snapshot." });
 	assert.deepEqual(harness.visibility, [false, true]);
 	await harness.run();
 });
