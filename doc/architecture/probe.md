@@ -306,6 +306,8 @@ Before starting or consuming an attempt, use the fallback when:
 - idle cache warming is enabled, since its refresh uses a separate abort signal;
 - known context usage exceeds `contextWindow - reserveTokens` while automatic
   compaction is enabled, using Pi's `shouldCompact()` and per-model settings;
+- the persisted session has no user or assistant message, since a probe there
+  would make Pi write a new transcript file;
 - Pi settings cannot be checked safely.
 
 Compaction settings come from `pi.getSettings()`, so runtime changes apply; the
@@ -329,7 +331,7 @@ passive capture.
 
 Any skipped precondition above, a missing model, missing authentication, a
 startup failure, a timeout, or a probe that settles without a request snapshot
-reports a precise reason that extension additions were not observed.
+reports a precise reason the request was not captured.
 Injections then shows a current prompt/tool snapshot; Usage counts the current
 branch without request changes. Neither fallback enters the store.
 

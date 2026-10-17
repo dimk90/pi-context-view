@@ -86,8 +86,8 @@ export async function resolveRequestSnapshot(
 	const result = await trigger.request(context);
 	const probed = snapshots.latest();
 	if (probed !== undefined) return { type: "snapshot", snapshot: probed };
-	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture a request.";
-	return { type: "missing", degradedReason: `${reason} Extension additions were not observed.` };
+	const reason = result.status === "failed" ? result.reason : "The probe did not capture a request.";
+	return { type: "missing", degradedReason: reason };
 }
 
 /**

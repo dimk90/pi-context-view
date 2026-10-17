@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
-import { type ExtensionAPI, type ExtensionCommandContext, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext, type SessionEntry, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 import { CompactionState } from "../src/compaction.ts";
 import { ProbeFilter } from "../src/probe/filter.ts";
@@ -14,8 +14,16 @@ import { useSettings } from "./harness/settings.ts";
 /** Settings accepted by Pi's in-memory manager. */
 type Settings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
 
+const CONVERSATION: SessionEntry = {
+	type: "message",
+	id: "1",
+	parentId: null,
+	timestamp: "2026-01-01T00:00:00Z",
+	message: { role: "user", content: "hello", timestamp: 1 },
+};
+
 /** A safe idle command context; a send ends immediately instead of running an agent. */
-function createHarness(settings: Settings = {}) {
+function createHarness(settings: Settings = {}, sessionEntries: SessionEntry[] = [CONVERSATION]) {
 	const probe = new SilentProbe(new ProbeFilter());
 	const sent: string[] = [];
 	const visibility: boolean[] = [];
@@ -35,6 +43,10 @@ function createHarness(settings: Settings = {}) {
 		getContextUsage: () => ({ tokens: 0, contextWindow: 100_000, percent: 0 }),
 		waitForIdle: async () => undefined,
 		ui: { setWorkingVisible: (visible: boolean) => visibility.push(visible) },
+		sessionManager: {
+			getEntries: () => sessionEntries,
+			getSessionFile: () => "/agent/probe-guards.jsonl",
+		},
 	} as unknown as ExtensionCommandContext;
 	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction: new CompactionState() });
 	return { context, probe, trigger, sent, visibility };
@@ -48,7 +60,7 @@ async function resolve(harness: ReturnType<typeof createHarness>) {
 /** A skipped probe sends nothing and does not consume the runtime's attempt. */
 async function assertSkipped(harness: ReturnType<typeof createHarness>, reason: string): Promise<void> {
 	const result = await resolve(harness);
-	assert.deepEqual(result, { status: "failed", reason: `Silent probe unavailable: ${reason}` });
+	assert.deepEqual(result, { status: "failed", reason });
 	assert.deepEqual(harness.sent, []);
 	assert.deepEqual(harness.visibility, []);
 	const attempt = harness.probe.start();
@@ -62,7 +74,29 @@ test("probe guards recheck pending messages after waiting for idle", async () =>
 	harness.context.waitForIdle = async () => {
 		harness.context.hasPendingMessages = () => true;
 	};
-	await assertSkipped(harness, "messages are waiting to be delivered.");
+	await assertSkipped(harness, "Messages are waiting to be delivered.");
+});
+
+test("probe guards skip the probe in a persisted session without user or assistant messages", async () => {
+	await assertSkipped(createHarness({}, []), "The session has no messages yet.");
+});
+
+test("probe guards allow the probe in an in-memory session without messages, which never writes a file", async () => {
+	const harness = createHarness({}, []);
+	harness.context.sessionManager.getSessionFile = () => undefined;
+	await resolve(harness);
+	assert.deepEqual(harness.sent, [""]);
+	assert.deepEqual(harness.visibility, [false, true]);
+});
+
+test("a skipped transcript-less session probes once it gains a message", async () => {
+	const harness = createHarness({}, []);
+	const first = await resolve(harness);
+	assert.deepEqual(first, { status: "failed", reason: "The session has no messages yet." });
+	assert.deepEqual(harness.sent, []);
+	harness.context.sessionManager.getEntries = () => [CONVERSATION];
+	const second = await resolve(harness);
+	assert.deepEqual(harness.sent, [""]);
 });
 
 test("probe guards reject a virtual selection before checking its authentication", async () => {
@@ -70,11 +104,11 @@ test("probe guards reject a virtual selection before checking its authentication
 	assert.ok(harness.context.model);
 	harness.context.model.api = "pi-virtual";
 	harness.context.modelRegistry.hasConfiguredAuth = () => { throw new Error("Must not check auth"); };
-	await assertSkipped(harness, "a virtual model is selected.");
+	await assertSkipped(harness, "A virtual model is selected.");
 });
 
 test("probe guards reject idle warming from the live settings snapshot", async () => {
-	await assertSkipped(createHarness({ cacheWarming: "idle" }), "idle cache warming is enabled.");
+	await assertSkipped(createHarness({ cacheWarming: "idle" }), "Idle cache warming is enabled.");
 });
 
 test("a project warming override cannot hide the global idle setting", async (t) => {
@@ -83,13 +117,13 @@ test("a project warming override cannot hide the global idle setting", async (t)
 		assert.equal(options?.projectTrusted, false);
 		return SettingsManager.inMemory({ cacheWarming: "idle" });
 	});
-	await assertSkipped(harness, "idle cache warming is enabled.");
+	await assertSkipped(harness, "Idle cache warming is enabled.");
 });
 
 test("probe guards use Pi's default auto-compaction reserve", async () => {
 	const harness = createHarness();
 	harness.context.getContextUsage = () => ({ tokens: 83_617, contextWindow: 100_000, percent: 83.617 });
-	await assertSkipped(harness, "context exceeds the auto-compaction threshold.");
+	await assertSkipped(harness, "Context exceeds the auto-compaction threshold.");
 });
 
 test("probe guards honor per-model compaction overrides", async () => {
@@ -98,7 +132,7 @@ test("probe guards honor per-model compaction overrides", async () => {
 		modelOverrides: { "test/model": { reserveTokens: 50_000 } },
 	} });
 	harness.context.getContextUsage = () => ({ tokens: 50_001, contextWindow: 100_000, percent: 50.001 });
-	await assertSkipped(harness, "context exceeds the auto-compaction threshold.");
+	await assertSkipped(harness, "Context exceeds the auto-compaction threshold.");
 });
 
 test("probe guards fail closed on invalid compaction settings", async () => {

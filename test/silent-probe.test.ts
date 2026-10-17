@@ -319,7 +319,7 @@ test("SilentProbe keeps a timed-out running probe abortable until settlement", a
 	const attempt = probe.start(1);
 	assert.equal(probe.beginRun("user", attempt.token), true);
 
-	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
+	assert.deepEqual(await attempt.completion, { status: "failed", reason: "The probe timed out." });
 	assert.equal(probe.isCurrentRun, true);
 	assert.equal(probe.settle(), true);
 	assert.equal(probe.isCurrentRun, false);
@@ -329,7 +329,7 @@ test("SilentProbe retains a delayed synthetic turn after a pre-run timeout", asy
 	const { probe } = createProbe();
 	const attempt = probe.start(1);
 
-	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
+	assert.deepEqual(await attempt.completion, { status: "failed", reason: "The probe timed out." });
 	assert.equal(probe.isCurrentRun, false);
 
 	assert.equal(probe.beginRun("user", undefined), false);

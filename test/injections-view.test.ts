@@ -501,7 +501,7 @@ test("InjectionsView adds degraded capture to the dialog description", () => {
 	assert.equal(stripSgr(plainLines[plainHeaderIndex] ?? ""), "Context Injections · [Latest Request]");
 	assert.ok(!plainLines.some((line) => stripSgr(line).includes("Degraded:")));
 
-	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
+	const reason = "No model is selected.";
 	// Tall enough for the wrapped reason, the whole list, and the description block at both widths.
 	const degraded = createView(4, reason, () => 40);
 	const degradedLines = degraded.render(80);
@@ -509,7 +509,7 @@ test("InjectionsView adds degraded capture to the dialog description", () => {
 	assert.ok(degradedHeaderIndex >= 0);
 	assert.equal(stripSgr(degradedLines[degradedHeaderIndex] ?? ""), "Context Injections · [Latest Request]");
 	assert.equal(degradedLines[degradedHeaderIndex + 1], "");
-	assert.match(stripSgr(degradedLines[degradedHeaderIndex + 2] ?? ""), /Silent probe unavailable/);
+	assert.match(stripSgr(degradedLines[degradedHeaderIndex + 2] ?? ""), /No model is selected/);
 
 	const descriptionIndex = degradedLines.findIndex((line) =>
 		stripSgr(line).includes("Injections into the model context"),
@@ -556,7 +556,7 @@ test("InjectionsView keeps title and label on one line down to 37 columns", () =
 
 test("InjectionsView keeps every rendered line within the width", () => {
 	for (const width of [24, 40, 60, 80, 120]) {
-		const view = createView(8, "Silent probe unavailable: no model is selected. Extension additions were not observed.");
+		const view = createView(8, "No model is selected.");
 		const listLines = view.render(width);
 		for (const line of listLines) {
 			assert.ok(visibleWidth(line) <= width, `line exceeds width ${width}: ${JSON.stringify(line)}`);
@@ -579,12 +579,12 @@ test("InjectionsView keeps every rendered line within the width", () => {
 
 test("InjectionsView reflows on height-only resize and bounds very short output", () => {
 	let terminalRows = 30;
-	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
+	const reason = "No model is selected.";
 	const view = createView(30, reason, () => terminalRows);
 
 	const tall = view.render(40);
 	assert.equal(tall.length, 30);
-	assert.ok(tall.some((line) => stripSgr(line).includes("Silent probe unavailable")));
+	assert.ok(tall.some((line) => stripSgr(line).includes("No model is selected")));
 
 	terminalRows = 18;
 	const resized = view.render(40);
@@ -2058,7 +2058,7 @@ test("InjectionsView keeps compact capture status and the selected bar when the 
 
 test("InjectionsView retains the sanitized degraded reason in a compact descriptionless frame", () => {
 	let height = 60;
-	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
+	const reason = "No model is selected.";
 	const view = createView(16, `${reason}\u001b[2J`, () => height);
 	for (const width of [24, 60, 80, 120]) {
 		for (height of [12, 16, 24]) {

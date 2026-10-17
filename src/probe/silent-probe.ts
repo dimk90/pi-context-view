@@ -92,7 +92,7 @@ export class SilentProbe {
 			this.resolveCompletion = resolve;
 		});
 		this.timeout = setTimeout(() => {
-			this.resolve({ status: "failed", reason: "Silent probe timed out." });
+			this.resolve({ status: "failed", reason: "The probe timed out." });
 		}, timeoutMs);
 		this.attempt = { started: true, token: createProbeToken(), completion };
 		return this.attempt;

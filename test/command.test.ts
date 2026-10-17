@@ -156,6 +156,16 @@ test("resolveRequestSnapshot sends the synthetic prompt inside the probe token s
 		modelRegistry: { hasConfiguredAuth: () => true },
 		ui: { setWorkingVisible: () => undefined },
 		waitForIdle: async () => undefined,
+		sessionManager: {
+			getEntries: () => [{
+				type: "message",
+				id: "m1",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:00Z",
+				message: { role: "user", content: "hello", timestamp: 1 },
+			}],
+			getSessionFile: () => "/agent/test.jsonl",
+		},
 	} as unknown as ExtensionCommandContext;
 
 	const store = new SnapshotStore();
@@ -168,7 +178,7 @@ test("resolveRequestSnapshot sends the synthetic prompt inside the probe token s
 	assert.equal(readProbeToken(), undefined, "the token must not outlive the send");
 	assert.deepEqual(result, {
 		type: "missing",
-		degradedReason: "No agent run in this harness. Extension additions were not observed.",
+		degradedReason: "No agent run in this harness.",
 	});
 });
 
@@ -198,8 +208,7 @@ test("resolveRequestSnapshot skips the probe when compaction starts while waitin
 	assert.equal(sentUserMessages, 0);
 	assert.deepEqual(result, {
 		type: "missing",
-		degradedReason:
-			"Silent probe unavailable: context compaction is in progress. Extension additions were not observed.",
+		degradedReason: "Context compaction is in progress.",
 	});
 
 	const unusedAttempt = probe.start(1_000);
@@ -250,7 +259,7 @@ test("resolveRequestSnapshot asks ProbeTrigger once the store is empty and repor
 	const failing = {
 		request: async () => {
 			probed++;
-			return { status: "failed", reason: "Silent probe unavailable: a virtual model is selected." };
+			return { status: "failed", reason: "A virtual model is selected." };
 		},
 	} as unknown as ProbeTrigger;
 	const context = { waitForIdle: async () => undefined } as unknown as ExtensionCommandContext;
@@ -259,7 +268,7 @@ test("resolveRequestSnapshot asks ProbeTrigger once the store is empty and repor
 	assert.equal(probed, 1);
 	assert.deepEqual(missing, {
 		type: "missing",
-		degradedReason: "Silent probe unavailable: a virtual model is selected. Extension additions were not observed.",
+		degradedReason: "A virtual model is selected.",
 	});
 
 	const capturing = {
