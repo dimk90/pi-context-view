@@ -105,6 +105,12 @@ const CONFIG_KEY_MAP_FIELDS: ReadonlyMap<string, MapSizeField> = new Map(
 	Object.entries(MAP_SIZE_SPECS).map(([field, spec]) => [spec.key, field as MapSizeField]),
 );
 
+/** Config key of the switch that lets a view start the silent probe on its own. */
+const AUTO_PROBING_KEY = "autoProbing";
+
+/** Built-in probing switch: enabled, so a view opened before any request can still capture one. */
+const DEFAULT_AUTO_PROBING = true;
+
 /**
  * Renamed keys still honored, mapped to their current name, so a rename never
  * silently drops an override an existing file already carries. The value type
@@ -144,6 +150,8 @@ export interface MapSize {
 export interface ContextViewConfig {
 	readonly categoryColors: CategoryColors;
 	readonly mapSize: MapSize;
+	/** Whether a view opened before any captured request may start the silent probe. */
+	readonly autoProbing: boolean;
 }
 
 /** Configuration for one view open, with the problems that degraded it to defaults. */
@@ -174,6 +182,7 @@ export const DEFAULT_MAP_SIZE: MapSize = {
 export const DEFAULT_CONFIG: ContextViewConfig = {
 	categoryColors: DEFAULT_CATEGORY_COLORS,
 	mapSize: DEFAULT_MAP_SIZE,
+	autoProbing: DEFAULT_AUTO_PROBING,
 };
 
 /** Absolute path of the global override file. */
@@ -269,11 +278,16 @@ export function isHexColor(color: CategoryColor): color is HexColor {
 
 /** Serialize every built-in default as an editable, flat override file. */
 function serializeDefaultConfig(): string {
-	const defaults: Record<string, CategoryColor | number> = {
-		...Object.fromEntries(Object.values(CATEGORY_COLOR_SPECS).map((spec) => [spec.key, spec.color])),
-		...Object.fromEntries(Object.values(MAP_SIZE_SPECS).map((spec) => [spec.key, spec.cells])),
-	};
-	return `${JSON.stringify(defaults, undefined, 2)}\n`;
+	const groups: Array<ReadonlyArray<readonly [string, CategoryColor | number | boolean]>> = [
+		Object.values(CATEGORY_COLOR_SPECS).map((spec) => [spec.key, spec.color]),
+		Object.values(MAP_SIZE_SPECS).map((spec) => [spec.key, spec.cells]),
+		[[AUTO_PROBING_KEY, DEFAULT_AUTO_PROBING]],
+	];
+	// Written by hand: JSON.stringify cannot leave the blank lines that separate the groups
+	const body = groups
+		.map((entries) => entries.map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`).join(",\n"))
+		.join(",\n\n");
+	return `{\n${body}\n}\n`;
 }
 
 /** Merge valid overrides onto the built-in defaults, reporting every ignored entry. */
@@ -281,17 +295,27 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
 		return degraded(`${CONFIG_FILE_NAME} must contain a JSON object.`);
 	}
-	const colors = new Map(DEFAULT_CATEGORY_COLORS);
-	const mapSize: Record<MapSizeField, number> = { ...DEFAULT_MAP_SIZE };
+	const config: ConfigDraft = {
+		categoryColors: new Map(DEFAULT_CATEGORY_COLORS),
+		mapSize: { ...DEFAULT_MAP_SIZE },
+		autoProbing: DEFAULT_AUTO_PROBING,
+	};
 	const warnings: string[] = [];
 	for (const [key, value] of Object.entries(raw)) {
 		const currentKey = RENAMED_CONFIG_KEYS.get(key);
 		// The current name always wins, so a file carrying both names loads order-independently.
 		if (currentKey !== undefined && currentKey in raw) continue;
-		const warning = applyOverride(currentKey ?? key, key, value, colors, mapSize);
+		const warning = applyOverride(currentKey ?? key, key, value, config);
 		if (warning !== undefined) warnings.push(warning);
 	}
-	return { config: { categoryColors: colors, mapSize }, warnings };
+	return { config, warnings };
+}
+
+/** Configuration being assembled from the defaults, before it is returned read-only. */
+interface ConfigDraft {
+	categoryColors: Map<string, CategoryColor>;
+	mapSize: Record<MapSizeField, number>;
+	autoProbing: boolean;
 }
 
 /**
@@ -303,8 +327,7 @@ function applyOverride(
 	resolvedKey: string,
 	configuredKey: string,
 	value: unknown,
-	colors: Map<string, CategoryColor>,
-	mapSize: Record<MapSizeField, number>,
+	config: ConfigDraft,
 ): string | undefined {
 	const categoryId = CONFIG_KEY_CATEGORIES.get(resolvedKey);
 	if (categoryId !== undefined) {
@@ -312,7 +335,7 @@ function applyOverride(
 		if (color === undefined) {
 			return `Ignoring invalid color for "${configuredKey}"; expected a theme color name or a hex value.`;
 		}
-		colors.set(categoryId, color);
+		config.categoryColors.set(categoryId, color);
 		return undefined;
 	}
 	const field = CONFIG_KEY_MAP_FIELDS.get(resolvedKey);
@@ -322,7 +345,12 @@ function applyOverride(
 			return `Ignoring invalid size for "${configuredKey}"; ` +
 				`expected an integer between ${MINIMUM_MAP_CELLS} and ${MAXIMUM_MAP_CELLS}.`;
 		}
-		mapSize[field] = cells;
+		config.mapSize[field] = cells;
+		return undefined;
+	}
+	if (resolvedKey === AUTO_PROBING_KEY) {
+		if (typeof value !== "boolean") return `Ignoring invalid value for "${configuredKey}"; expected true or false.`;
+		config.autoProbing = value;
 		return undefined;
 	}
 	return `Ignoring unknown ${CONFIG_FILE_NAME} key "${configuredKey}".`;

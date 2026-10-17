@@ -1,20 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { type ContextEvent, Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ContextEvent, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { DEFAULT_CATEGORY_COLORS, DEFAULT_MAP_SIZE, THEME_COLOR_NAMES } from "../src/config.ts";
+import { DEFAULT_CATEGORY_COLORS, DEFAULT_MAP_SIZE } from "../src/config.ts";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import { analyzeSystemPrompt } from "../src/measure.ts";
 import { buildSnapshot, type InjectionSnapshot } from "../src/model.ts";
 import { markForcedPrompt } from "../src/replay.ts";
 import type { RequestMessage } from "../src/snapshot.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
-import type { ContextMarker } from "../src/ui/markers.ts";
+import { type ContextMarker, markerLegendLines, markerStatusField, stateMarkers } from "../src/ui/markers.ts";
 import { previewBodyLines, previewLegendLines } from "../src/ui/section-preview.ts";
 import { UsageView } from "../src/ui/usage-view.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
+import { containsBlock, createTheme, frameText, wholeOrAbsent } from "./harness/frame.ts";
 
 const GUIDELINE = "Use search to verify claims";
 const SNIPPET = "Search the web";
@@ -25,56 +26,6 @@ const SOURCE = "npm:web";
 const ARROW = "\u00A0<-\u00A0";
 /** Carved lines name the tool pi reported for them, qualifying their source label. */
 const TOOL = "search";
-/** Keyword, fixed color, and sentence of every legend bullet a preview can show. */
-const LEGEND: Record<ContextMarker, { keyword: string; color: ThemeColor; sentence: string }> = {
-	highlighted: {
-		keyword: "Highlighted",
-		color: "syntaxNumber",
-		sentence: "parts are injected by extensions into pi’s system prompt.",
-	},
-	guess: {
-		keyword: "(guess)",
-		color: "dim",
-		sentence: "sources are inferred from the injected text itself.",
-	},
-	dropped: {
-		keyword: "Dropped",
-		color: "toolDiffRemoved",
-		sentence: "parts were replaced by a custom system prompt and are counted nowhere.",
-	},
-	moved: {
-		keyword: "Moved",
-		color: "warning",
-		sentence: "blocks appear in a different position in the system prompt than usual.",
-	},
-	forced: {
-		keyword: "Forced",
-		color: "warning",
-		sentence: "prompts replace pi’s system prompt for this request.",
-	},
-	// `+N` opens in toolDiffAdded and `-N` in toolDiffRemoved; previews of pi's contributions name their base
-	diff: {
-		keyword: "+N -N",
-		color: "toolDiffAdded",
-		sentence: "Tokens extensions added or removed, compared with pi’s default prompt.",
-	},
-	"request-only": {
-		keyword: "Request-Only",
-		color: "dim",
-		sentence: "Includes changes made only in this request, not saved in the session.",
-	},
-};
-const DESCRIPTION = `- ${LEGEND.highlighted.keyword} ${LEGEND.highlighted.sentence}`;
-
-/** Distinct colors make attribution and theme invalidation observable without a terminal. */
-function createTheme(): Theme {
-	const foreground = Object.fromEntries(THEME_COLOR_NAMES.map((name, index) => [name, index + 16]));
-	return new Theme(foreground as Record<ThemeColor, number>, {
-		selectedBg: "", userMessageBg: "", customMessageBg: "",
-		toolPendingBg: "", toolSuccessBg: "", toolErrorBg: "",
-	}, "256color");
-}
-
 /** Measured prompt with short attributed lines and enough native lines to exercise caps. */
 function createSnapshot(nativeLineCount = 16, withSnippet = false): InjectionSnapshot {
 	const nativeLines = Array.from({ length: nativeLineCount }, (_, index) => `- Native rule ${index}`).join("\n");
@@ -112,25 +63,10 @@ function assertAttribution(lines: readonly string[], theme: Theme, text = GUIDEL
  * one blank row above the hints. Returns where it starts.
  */
 function assertLegendBullets(lines: readonly string[], theme: Theme, markers: readonly ContextMarker[]): number {
-	const rendered = plain(lines).split("\n");
-	const first = LEGEND[markers[0] ?? "highlighted"];
-	const start = rendered.findIndex((line) => line.trim().startsWith(`- ${first.keyword}`));
-	const hints = rendered.findIndex((line) => line.includes("↑↓/jk"));
-	assert.ok(start > 0 && hints > start);
-	assert.equal(rendered[hints - 1], "");
-	const legend = rendered.slice(start, hints - 1);
-	assert.equal(
-		legend.map((line) => line.trim()).join(" "),
-		markers.map((marker) => `- ${LEGEND[marker].keyword} ${LEGEND[marker].sentence}`).join(" "),
-	);
-	assert.ok(legend.every((line) => line.startsWith("  ")));
-	// Every bullet opens with a dim marker and its keyword in the color that marker uses.
-	for (const marker of markers) {
-		const opening = lines.slice(start, hints - 1)
-			.find((line) => plain([line]).trim().startsWith(`- ${LEGEND[marker].keyword}`));
-		assert.ok(opening?.includes(theme.fg("dim", "- ")), `dim bullet marker for ${marker}`);
-		assert.ok(opening?.includes(theme.fg(LEGEND[marker].color, LEGEND[marker].keyword)), `${marker} keyword color`);
-	}
+	const expected = markerLegendLines(theme, markers, visibleWidth(lines[0] ?? ""), "default-prompt");
+	assert.ok(containsBlock(lines, expected), "the selected marker explanations are complete and ordered");
+	const start = lines.findIndex((line) => plain([line]).trim() === plain([expected[0] ?? ""]).trim());
+	assert.ok(start > 0);
 	return start;
 }
 
@@ -146,24 +82,20 @@ function assertLegend(lines: readonly string[], theme: Theme, markers: readonly 
  * The list explains a marker only in the status bar of the selected row: one
  * field opening with the keyword in its fixed color, never a legend bullet.
  */
-function assertStatusMarker(lines: readonly string[], theme: Theme, marker: "dropped" | "moved", text: string): void {
-	const { color, keyword } = LEGEND[marker];
-	const rendered = plain(lines).split("\n");
-	assert.ok(!rendered.some((line) => line.trim().startsWith(`- ${keyword}`)), "the list has no marker legend");
-	const field = rendered.findIndex((line) => line.startsWith(`    ${keyword}: `));
-	assert.ok(field >= 0, `the status bar explains ${marker}`);
-	const wrapped = [rendered[field]];
-	for (const line of rendered.slice(field + 1)) {
-		if (!line.startsWith("      ")) break;
-		wrapped.push(line);
-	}
-	assert.equal(wrapped.map((line) => line?.trim()).join(" "), `${keyword}: ${text}`);
-	assert.ok(lines[field]?.includes(`${theme.fg(color, keyword)}${theme.getFgAnsi("dim")}: `));
+function assertStatusMarker(lines: readonly string[], theme: Theme, marker: "dropped" | "moved"): void {
+	assert.ok(containsBlock(lines, [markerStatusField(theme, marker)]));
+	assert.ok(!containsBlock(lines, markerLegendLines(theme, [marker], 500)), "the list has no marker legend");
+}
+
+/** Whether the extension-text explanation appears, independent of its wording. */
+function hasHighlightLegend(lines: readonly string[]): boolean {
+	return containsBlock(lines, markerLegendLines(createTheme(), ["highlighted"], 1_000));
 }
 
 /** Styled state marker: a dim separator, then the keyword in the one fixed color that marker uses. */
-function styledMarker(theme: Theme, marker: ContextMarker): string {
-	return `${theme.fg("dim", " · ")}${theme.fg(LEGEND[marker].color, LEGEND[marker].keyword)}`;
+function styledMarker(theme: Theme, marker: "dropped" | "moved" | "forced"): string {
+	return stateMarkers(theme, { dropped: marker === "dropped", moved: marker === "moved",
+		change: marker === "forced" ? "forced" : undefined });
 }
 
 /** The hierarchy row naming a label, apart from the legend bullets that explain its marker. */
@@ -239,7 +171,8 @@ test("Injections shows attributed guidelines only after Enter, for parent and ch
 	let height = 40;
 	const theme = createTheme();
 	const view = new InjectionsView(theme, { snapshot: createSnapshot() }, () => {}, () => height);
-	assert.doesNotMatch(plain(view.render(120)), /verify claims|Highlighted parts/);
+	assert.doesNotMatch(plain(view.render(120)), /verify claims/);
+	assert.ok(!hasHighlightLegend(view.render(120)));
 	view.handleInput("j"); // System Prompt
 	const list = view.render(120);
 	view.handleInput("\r");
@@ -273,7 +206,8 @@ test("Injections shows attributed guidelines only after Enter, for parent and ch
 	view.handleInput("\r");
 	// The tool counts only its definition; System Prompt counts and shows its guideline.
 	assert.match(plain(view.render(120)), /Definition · \d+ tokens/);
-	assert.doesNotMatch(plain(view.render(120)), /verify claims|Highlighted parts|<-\u00A0npm:web/);
+	assert.doesNotMatch(plain(view.render(120)), /verify claims|<-\u00A0npm:web/);
+	assert.ok(!hasHighlightLegend(view.render(120)));
 });
 
 test("Injections attributes Available Tools snippets in the parent and standalone child", () => {
@@ -286,7 +220,7 @@ test("Injections attributes Available Tools snippets in the parent and standalon
 	assertAttribution(parent, theme);
 	// Pi's own bullet keeps the plain body treatment in the same part.
 	assert.match(plain(parent), /- read: Read files/);
-	assert.equal(plain(parent).match(/Highlighted parts/g)?.length, 1);
+	assert.equal(frameText(parent).split(frameText(markerLegendLines(theme, ["highlighted"], 1_000))).length, 2);
 	view.handleInput("\u001b");
 	view.handleInput("j"); // Preamble
 	view.handleInput("j"); // Available Tools
@@ -307,7 +241,8 @@ test("Usage opens System Prompt sections directly and retains attribution withou
 		() => height,
 	);
 	const dashboard = view.render(120);
-	assert.doesNotMatch(plain(dashboard), /verify claims|Highlighted parts/);
+	assert.doesNotMatch(plain(dashboard), /verify claims/);
+	assert.ok(!hasHighlightLegend(dashboard));
 	view.handleInput("\r");
 	const content = view.render(120);
 	assertAttribution(content, theme);
@@ -322,7 +257,7 @@ test("Usage opens System Prompt sections directly and retains attribution withou
 	const entry = collectPreviewEntries(category)[0];
 	assert.ok(entry);
 	const body = previewBodyLines(theme, entry, 115, (text) => text.split("\n"), "System Prompt");
-	assert.doesNotMatch(plain(body), /Highlighted parts|Arrow-marked/);
+	assert.ok(!hasHighlightLegend(body));
 	view.handleInput("\r");
 	assert.deepEqual(view.render(120), content, "Enter does not add a redundant full-content level");
 	for (const width of [30, 60, 80, 120]) {
@@ -413,7 +348,7 @@ test("reference text and source are sanitized before coloring and wrapping", () 
 	assert.ok(lines.every((line) => visibleWidth(line) <= 30));
 	const continuation = lines.find((line) => line.includes("continuation"));
 	assert.ok(continuation?.includes(theme.getFgAnsi("syntaxNumber")), "multiline references keep their color");
-	assert.doesNotMatch(plain(lines), /Highlighted parts|Arrow-marked/);
+	assert.ok(!hasHighlightLegend(lines));
 });
 
 test("attribution wraps the preceding word and label together unless wider than the content", () => {
@@ -492,7 +427,7 @@ for (const target of ["injections-parent", "injections-child", "usage-single", "
 		const view = createPreview(target, theme, () => height);
 		const initial = view.render(120);
 		assertAttribution(initial, theme);
-		const legendStart = initial.findIndex((line) => line.includes("Highlighted parts"));
+		const legendStart = assertLegendBullets(initial, theme, ["highlighted"]);
 		for (const key of ["j", "\u001b[6~", "\u001b[F", "\u001b[<65;1;1M", "\u001b[5~", "\u001b[H"]) {
 			view.handleInput(key);
 			assert.deepEqual(view.render(120).slice(legendStart), initial.slice(legendStart));
@@ -503,12 +438,11 @@ for (const target of ["injections-parent", "injections-child", "usage-single", "
 			for (height = 1; height <= 45; height++) {
 				const lines = view.render(width);
 				assertFrame(lines, width, height);
-				if (plain(lines).includes("Highlighted parts")) {
+				if (wholeOrAbsent(lines, markerLegendLines(theme, ["highlighted"], width))) {
 					assertLegend(lines, theme, ["highlighted"]);
 					sawVisible = true;
 				} else {
 					sawCollapsed = true;
-					assert.doesNotMatch(plain(lines), /parts are injected by extensions/);
 					if (height >= 12 && width >= 60) assert.match(plain(lines), /Esc Back/);
 				}
 			}
@@ -527,13 +461,23 @@ test("the marker legend gives short content every row and never truncates on tin
 		text: "Guidelines:\n- Use search",
 		injectedReferences: [{ start: 11, end: 24, source: { id: "web", label: SOURCE, native: false } }],
 	};
-	// At 120 columns the bullet occupies one line and its preceding blank row
-	for (const contentLineCount of [1, 2, 21, 22, 23, 80]) {
-		const required = 2 + Math.min(22, contentLineCount) + (contentLineCount > 22 ? 1 : 0);
-		const layout = { width: 120, contentLineCount, availableRows: required };
-		assert.equal(plain(previewLegendLines(theme, [content], layout)).replace(/\s+/g, " ").trim(), DESCRIPTION);
-		for (let availableRows = -5; availableRows < required; availableRows++) {
-			assert.deepEqual(previewLegendLines(theme, [content], { ...layout, availableRows }), []);
+	for (const width of [24, 60, 120]) {
+		const expected = markerLegendLines(theme, ["highlighted"], width);
+		for (const contentLineCount of [1, 2, 21, 22, 23, 80]) {
+			let visible = false;
+			let absent = false;
+			for (let availableRows = 0; availableRows <= 100; availableRows++) {
+				const lines = previewLegendLines(theme, [content], { width, contentLineCount, availableRows });
+				if (lines.length === 0) {
+					absent = true;
+					assert.equal(visible, false, "more space never hides a visible legend");
+				} else {
+					visible = true;
+					assert.equal(frameText(lines), frameText(expected));
+					assert.ok(lines.length + Math.min(contentLineCount, 1) <= availableRows);
+				}
+			}
+			assert.ok(visible && absent);
 		}
 	}
 });
@@ -563,13 +507,12 @@ test("a replaced prompt marks its dropped blocks in the tree and in previews", (
 	assert.ok(row?.includes(styledMarker(theme, "dropped")), "a dim separator carries the keyword's fixed color");
 	// The status bar explains the marker of the selected row.
 	for (let step = 0; step < 3; step++) view.handleInput("j"); // Available Tools
-	const dropped = "a custom system prompt replaced this part; counted nowhere";
-	assertStatusMarker(view.render(120), theme, "dropped", dropped);
+	assertStatusMarker(view.render(120), theme, "dropped");
 	// A marker that no longer fits is dropped whole rather than truncated, while the bar still explains it.
 	const narrow = view.render(34);
 	assert.match(rowLine(narrow, "Documentation"), /Documentation/);
 	assert.doesNotMatch(rowLine(narrow, "Documentation"), /Dropped/);
-	assertStatusMarker(narrow, theme, "dropped", dropped);
+	assertStatusMarker(narrow, theme, "dropped");
 	view.handleInput("\u001b[H");
 
 	view.handleInput("j"); // System Prompt
@@ -648,13 +591,12 @@ test("a relocated block stays a counted System Prompt part, marked where it now 
 	const row = list.find((line) => plain([line]).includes("Guidelines"));
 	assert.ok(row?.includes(styledMarker(theme, "moved")), "a dim separator carries the keyword's fixed color");
 	for (let step = 0; step < 5; step++) view.handleInput("j"); // Guidelines
-	const moved = "in a different position in the system prompt than usual";
-	assertStatusMarker(view.render(120), theme, "moved", moved);
+	assertStatusMarker(view.render(120), theme, "moved");
 	// A marker that no longer fits is dropped whole rather than truncated, while the bar still explains it.
 	const narrow = view.render(32);
 	assert.match(rowLine(narrow, "Guidelines"), /Guidelines/);
 	assert.doesNotMatch(rowLine(narrow, "Guidelines"), /Moved/);
-	assertStatusMarker(narrow, theme, "moved", moved);
+	assertStatusMarker(narrow, theme, "moved");
 	view.handleInput("\u001b[H");
 
 	view.handleInput("j"); // System Prompt
@@ -710,7 +652,7 @@ test("a tool preview shows its dropped prompt lines without claiming their token
 	assert.match(preview, new RegExp(`Available Tools · 0 tokens · Dropped - search: ${SNIPPET}`));
 	assert.match(preview, new RegExp(`Guidelines · 0 tokens · Dropped - ${GUIDELINE}`));
 	// A tool's own lines are not injections into someone else's text.
-	assert.doesNotMatch(preview, /Highlighted parts/);
+	assert.ok(!hasHighlightLegend([preview]));
 
 	// Usage counts the same tool without its dropped lines.
 	const usage = computeUsage({ snapshot, messages: [] });
@@ -803,12 +745,12 @@ test("native-only System Prompt and sibling previews do not claim extension inje
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
 	view.handleInput("j"); // System Prompt
 	view.handleInput("\r");
-	assert.doesNotMatch(plain(view.render(120)), /Highlighted parts|Arrow-marked/);
+	assert.ok(!hasHighlightLegend(view.render(120)));
 	view.handleInput("\u001b");
 	view.handleInput("j"); // Preamble
 	view.handleInput("j"); // Guidelines
 	view.handleInput("\r");
-	assert.doesNotMatch(plain(view.render(120)), /Highlighted parts|Arrow-marked/);
+	assert.ok(!hasHighlightLegend(view.render(120)));
 
 	const usage = new UsageView(theme, {
 		usage: computeUsage({ snapshot, messages: [] }),
@@ -816,11 +758,11 @@ test("native-only System Prompt and sibling previews do not claim extension inje
 		mapSize: DEFAULT_MAP_SIZE,
 	}, () => {}, () => 40);
 	usage.handleInput("\r");
-	assert.doesNotMatch(plain(usage.render(120)), /Highlighted parts|Arrow-marked/);
+	assert.ok(!hasHighlightLegend(usage.render(120)));
 
 	const injected = new InjectionsView(theme, { snapshot: createSnapshot() }, () => {}, () => 40);
 	injected.handleInput("j"); // System Prompt
 	injected.handleInput("j"); // Preamble sibling of attributed Guidelines
 	injected.handleInput("\r");
-	assert.doesNotMatch(plain(injected.render(120)), /Highlighted parts|Arrow-marked/);
+	assert.ok(!hasHighlightLegend(injected.render(120)));
 });

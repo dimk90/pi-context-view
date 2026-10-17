@@ -19,6 +19,7 @@ import { expandJsonSpan } from "./json-preview.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
+	capNoticeLines,
 	DEFAULT_TERMINAL_ROWS,
 	descriptionBlockRows,
 	fitLine,
@@ -38,9 +39,11 @@ import {
 	diffMarker,
 	formatDiffAdded,
 	formatDiffRemoved,
-	noteBulletLines,
 	stateMarkers,
 } from "./markers.ts";
+import {
+	descriptionNoteLines, findingNotes, injectionsNotes, payloadCheck, payloadCheckLabel, requestOriginLabel,
+} from "./notes.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { statusBarLines } from "./status-bar.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
@@ -51,9 +54,9 @@ import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines }
  * preceding blank row, and the hint row above its own blank row.
  */
 const LIST_FIXED_LINE_COUNT = 10;
+/** Rows configuration notices may occupy before they start crowding out the list. */
+const MAX_NOTICE_LINES = 3;
 const PREVIEW_FIXED_LINE_COUNT = 8;
-const LIST_DESCRIPTION = "Injections into the model context, with token estimates.";
-const PAYLOAD_CHANGES_NOTE = "Payload changes appear only in the provider payload. Their sources are unknown.";
 /** Where a diff-only row's changes count, in place of its preview estimate. */
 const DIFF_ONLY_NOTE = "counted in System Prompt";
 /** List rows that must stay visible for the description to keep its own rows. */
@@ -68,6 +71,10 @@ const DIFF_COLUMN_GAP = 2;
 export interface InjectionsViewInput {
 	readonly snapshot: InjectionSnapshot;
 	readonly degradedReason?: string;
+	/** Non-fatal problems shown under the header, such as ignored configuration entries. */
+	readonly notices?: readonly string[];
+	/** True when no request was captured yet and configuration disables the silent probe. */
+	readonly probingDisabled?: boolean;
 	/** True when a silent probe captured the request, not a real turn. */
 	readonly probe?: boolean;
 	/** Payload comparison of the request; absent for the degraded fallback, which has no request. */
@@ -197,21 +204,23 @@ export class InjectionsView {
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const headerLines = this.headerLines(width);
 		const warningLines = this.degradedWarningLines(width);
+		// A blank row separates warnings from the list; the emergency frame drops it with the other spacing
+		const warningRows = warningLines.length === 0 ? 0 : warningLines.length + 1;
 		// The status bar never collapses: the list and the description give way to it
 		const statusLines = this.statusLines(width);
 		const statusRows = descriptionBlockRows(statusLines);
 		const availableRows = Math.max(
 			1,
-			terminalRows - LIST_FIXED_LINE_COUNT - (headerLines.length - 1) - warningLines.length - statusRows,
+			terminalRows - LIST_FIXED_LINE_COUNT - (headerLines.length - 1) - warningRows - statusRows,
 		);
 		const descriptionLines = this.fittedDescriptionLines(width, availableRows);
-		const extraLineCount = headerLines.length - 1 + warningLines.length + statusRows
+		const extraLineCount = headerLines.length - 1 + warningRows + statusRows
 			+ descriptionBlockRows(descriptionLines);
 		const viewport = calculateViewport(
 			this.navigator.selectableCount, terminalRows, LIST_FIXED_LINE_COUNT, extraLineCount,
 		);
 		this.navigator.setVisibleCount(viewport.visibleCount);
-		const lines: string[] = [border, "", ...headerLines, "", ...warningLines];
+		const lines: string[] = [border, "", ...headerLines, "", ...warningLines, ...(warningRows > 0 ? [""] : [])];
 		const listLines = this.listLines(width);
 		lines.push(...listLines);
 		if (viewport.showScroll) lines.push(this.scrollLine(width));
@@ -300,7 +309,7 @@ export class InjectionsView {
 			width,
 			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
 			contentLineCount: wrapped.length,
-		}, findingNotes([item, ...(item.children ?? [])]), previewDiffBase(item));
+		}, findingNotes([item, ...(item.children ?? [])]).map((note) => note.text), previewDiffBase(item));
 		const viewport = calculateViewport(
 			wrapped.length, terminalRows, PREVIEW_FIXED_LINE_COUNT, descriptionBlockRows(descriptionLines),
 		);
@@ -391,10 +400,10 @@ export class InjectionsView {
 		const theme = this.theme;
 		const separator = theme.fg("dim", " · ");
 		const probe = this.input.probe === true;
-		const label = theme.fg("mdHeading", theme.bold(probe ? "[Request Probe]" : "[Latest Request]"));
-		const payloadState = payloadCheckStatus(this.input.guard);
+		const label = theme.fg("mdHeading", theme.bold(requestOriginLabel(probe)));
+		const payloadState = payloadCheck(this.input.guard);
 		const status = payloadState === undefined ? ""
-			: theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadState}`);
+			: theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadCheckLabel(payloadState)}`);
 		// An emergency frame drops the title, never the origin or payload attention
 		if (compact) return wrapTextWithAnsi(`${label}${status === "" ? "" : separator + status}`, Math.max(1, width));
 		const title = theme.fg("accent", theme.bold("Context Injections"));
@@ -584,11 +593,20 @@ export class InjectionsView {
 		return lines.length > 0 ? lines : [""];
 	}
 
-	/** Wrapped degraded-capture reason placed below the dialog header. */
+	/**
+	 * Wrapped degraded-capture reason, then configuration problems, placed below
+	 * the dialog header. Only the notices are capped: the precise degraded
+	 * reason always stays whole.
+	 */
 	private degradedWarningLines(width: number): string[] {
-		const warnings: string[] = [];
-		if (this.input.degradedReason !== undefined) warnings.push(normalizeInlineText(this.input.degradedReason));
-		return warnings.flatMap((warning) => wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${warning}`), width));
+		const degraded = this.input.degradedReason === undefined ? [] : this.wrapWarning(this.input.degradedReason, width);
+		const notices = (this.input.notices ?? []).map((notice) => this.wrapWarning(notice, width));
+		return [...degraded, ...capNoticeLines(notices, MAX_NOTICE_LINES, (notice) => this.wrapWarning(notice, width))];
+	}
+
+	/** One sanitized warning wrapped to the available width, indented on its first line. */
+	private wrapWarning(warning: string, width: number): string[] {
+		return wrapTextWithAnsi(this.theme.fg("warning", `${BODY_INDENT}${normalizeInlineText(warning)}`), width);
 	}
 
 	/**
@@ -611,29 +629,9 @@ export class InjectionsView {
 	 * further. The status bar, not a legend, explains the selected row's markers.
 	 */
 	private descriptionLines(width: number): string[] {
-		const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, "dim", width);
-		if (this.input.degradedReason !== undefined) {
-			lines.push(...wrapDescriptionLines(
-				this.theme,
-				this.theme.fg("warning", "Degraded") + this.theme.fg("dim", ": pi-native fallback used"),
-				"dim",
-				width,
-			));
-		}
-		if (this.input.probe === true) {
-			const note = `Captured by a ${this.theme.fg("warning", "request probe")}` + this.theme.fg(
-				"dim", " with an empty prompt. Prompt-dependent injections may be missing.",
-			);
-			lines.push(...noteBulletLines(this.theme, note, width));
-		}
-		const guardNote = payloadCheckNote(this.input.guard);
-		if (guardNote !== undefined) lines.push(...noteBulletLines(this.theme, guardNote, width));
-		const hiddenNote = hiddenToolsNote(this.input.snapshot.hiddenTools ?? []);
-		if (hiddenNote !== undefined) lines.push(...noteBulletLines(this.theme, hiddenNote, width));
-		for (const note of findingNotes([...this.itemsById.values()])) {
-			lines.push(...noteBulletLines(this.theme, note, width));
-		}
-		return lines;
+		return injectionsNotes(this.theme, {
+			...this.input, hiddenTools: this.input.snapshot.hiddenTools, items: [...this.itemsById.values()],
+		}).flatMap((note) => descriptionNoteLines(this.theme, note, width));
 	}
 
 	private spread(left: string, right: string, width: number): string {
@@ -723,49 +721,4 @@ function previewDiffBase(item: InjectionItem): DiffBase {
 	if (item.kind === "payload-change") return "captured-request";
 	// A `system prompt` row splits pi's prompt changes by source
 	return item.source.native || item.diffOnly === true ? "default-prompt" : "session";
-}
-
-/** Compact payload attention state; a complete comparison and a fallback without a request need none. */
-function payloadCheckStatus(guard: GuardResult | undefined): string | undefined {
-	switch (guard?.status) {
-		case "pending":
-			return "pending";
-		case "incomplete":
-			return guard.findings === undefined ? "not checked" : "partly checked";
-		default:
-			return undefined;
-	}
-}
-
-/**
- * Description note for a payload comparison that is unavailable or partial, so
- * a missing comparison never reads as "no payload changes". A complete comparison
- * has none: its findings render as rows.
- */
-function payloadCheckNote(guard: GuardResult | undefined): string | undefined {
-	switch (guard?.status) {
-		case "pending":
-			return "Payload changes are not checked yet: the comparison is pending.";
-		case "incomplete": {
-			const reason = normalizeInlineText(guard.reason);
-			// Findings, even none, mean one channel was compared
-			return guard.findings === undefined
-				? `Payload changes were not checked: ${reason}`
-				: `Payload changes were checked only in part: ${reason}`;
-		}
-		default:
-			return undefined;
-	}
-}
-
-/** Count and sanitized names of tools Pi hid, alphabetically, with no note when none are hidden. */
-function hiddenToolsNote(tools: readonly string[]): string | undefined {
-	if (tools.length === 0) return undefined;
-	const names = [...tools].sort().map(normalizeInlineText).join(", ");
-	return `${tools.length} ${tools.length === 1 ? "tool" : "tools"} hidden by pi: ${names}.`;
-}
-
-/** The note that explains payload changes further, after the marker legend, when any of `items` holds them. */
-function findingNotes(items: readonly InjectionItem[]): string[] {
-	return items.some((item) => item.kind === "payload-change") ? [PAYLOAD_CHANGES_NOTE] : [];
 }

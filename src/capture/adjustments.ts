@@ -20,6 +20,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 
+import { isSameModel } from "../model-identity.ts";
 import type { RequestMessage } from "../snapshot.ts";
 import { canonicalJson } from "./diff.ts";
 import type { GuardModel } from "./guard.ts";
@@ -31,6 +32,8 @@ const BLOCKED_IMAGE_TEXT = "Image reading is disabled.";
 /** Texts that replace each run of images for a model without image input. */
 const USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
 const TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
+/** Anthropic moves error-result images after the turn's tool results. */
+const ERROR_TOOL_IMAGE_PLACEHOLDER = "(image attached after the tool results)";
 /** Result Pi adds for a tool call that has none. */
 const MISSING_RESULT_TEXT = "No result provided";
 /** Tool-result texts the serializers send for a result with only images, or with nothing. */
@@ -89,8 +92,9 @@ export function convertCapturedRequest(
  */
 export function renderExpectedUnits(request: ConvertedRequest, model: GuardModel): MessageUnit[] {
 	const keepsSystem = compatFlag(model, "supportsMidConvoSystemMessages");
-	const messages = closeToolCalls(downgradeImages(resolveSystemMessages(request.messages, keepsSystem), model)
-		.map((message) => message.role === "assistant" ? replayAssistant(message, model) : message));
+	const messages = closeToolCalls(replayMessages(
+		downgradeImages(resolveSystemMessages(request.messages, keepsSystem), model), model,
+	));
 	const grammar = compatFlag(model, "supportsOpenAIGrammarTools")
 		? keepsSystem ? request.grammarInputs.declared : request.grammarInputs.current
 		: new Map<string, string>();
@@ -302,20 +306,36 @@ function replaceImages(
 }
 
 /**
- * Replay an assistant message for the dispatched model. Another model's
- * thinking becomes text when it has any, and its redacted thinking is
- * dropped; the same model keeps signed and non-empty thinking.
+ * Replay for the dispatched model: drop foreign thinking, keep same-model
+ * redacted, signed, and non-empty thinking. Anthropic's foreign tool-call IDs
+ * are normalized with their results because error-image captions include them.
  */
-function replayAssistant(message: AssistantMessage, model: GuardModel): AssistantMessage {
-	const sameModel = message.provider === model.provider && message.api === model.api && message.model === model.id;
-	const content = message.content.flatMap((block): AssistantMessage["content"] => {
-		if (block.type !== "thinking") return [block];
-		if (block.redacted) return sameModel ? [block] : [];
-		if (sameModel && block.thinkingSignature) return [block];
-		if (!block.thinking || block.thinking.trim() === "") return [];
-		return sameModel ? [block] : [{ type: "text", text: block.thinking }];
+function replayMessages(messages: readonly Message[], model: GuardModel): Message[] {
+	const toolCallIds = new Map<string, string>();
+	return messages.map((message) => {
+		if (message.role === "toolResult") {
+			const toolCallId = toolCallIds.get(message.toolCallId);
+			return toolCallId === undefined ? message : { ...message, toolCallId };
+		}
+		if (message.role !== "assistant") return message;
+		const sameModel = isSameModel(message, model);
+		const content = message.content.flatMap((block): AssistantMessage["content"] => {
+			if (block.type === "thinking") {
+				if (!sameModel) return [];
+				if (block.redacted || block.thinkingSignature) return [block];
+				return block.thinking?.trim() ? [block] : [];
+			}
+			if (block.type === "toolCall" && !sameModel && model.api === "anthropic-messages") {
+				const id = block.id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+				if (id !== block.id) {
+					toolCallIds.set(block.id, id);
+					return [{ ...block, id }];
+				}
+			}
+			return [block];
+		});
+		return { ...message, content };
 	});
-	return { ...message, content };
 }
 
 /**
@@ -532,12 +552,30 @@ function anthropicUnits(messages: readonly Message[], model: GuardModel): Messag
 				for (const block of message.content) addAnthropicAssistantBlock(units, block, allowEmptySignature);
 				break;
 			case "toolResult":
-				units.toolResult(anthropicResultText(message.content));
+				index = addAnthropicToolResults(units, messages, index) - 1;
 				break;
 		}
 	}
 	flushHeld();
 	return units.result();
+}
+
+/**
+ * Add a consecutive tool-result group, then the captions for its error images
+ * as user text in the same message. Return the next transcript index.
+ */
+function addAnthropicToolResults(units: UnitCollector, messages: readonly Message[], start: number): number {
+	const captions: string[] = [];
+	let index = start;
+	for (; index < messages.length && messages[index].role === "toolResult"; index++) {
+		const result = messages[index] as ToolResultMessage;
+		const split = result.isError && hasImages(result.content);
+		units.toolResult(anthropicResultText(split
+			? replaceImages(result.content, ERROR_TOOL_IMAGE_PLACEHOLDER) : result.content));
+		if (split) captions.push(`Images from the error result of tool call ${result.toolCallId} (${result.toolName}):`);
+	}
+	for (const caption of captions) units.text("user", caption);
+	return index;
 }
 
 /** One assistant block as Anthropic sends it; signed and redacted thinking is opaque. */

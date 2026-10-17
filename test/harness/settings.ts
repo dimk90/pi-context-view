@@ -7,9 +7,13 @@
  * settings.
  */
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { TestContext } from "node:test";
 
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
+
+import { ConfigStore } from "../../src/config.ts";
 
 /** The replaced method's signature, for registered answers. */
 export type CreateSettings = typeof SettingsManager.create;
@@ -27,4 +31,12 @@ export function useSettings(t: TestContext, cwd: string, create: CreateSettings)
 	assert.ok(!registered.has(cwd), `Settings for ${cwd} are already registered by another test`);
 	registered.set(cwd, create);
 	t.after(() => { registered.delete(cwd); });
+}
+
+/**
+ * Config store over a path that never exists, so a test sees built-in
+ * defaults instead of the developer's own `pi-context-view.json`.
+ */
+export function createIsolatedConfigStore(): ConfigStore {
+	return new ConfigStore(join(tmpdir(), `pi-context-view-absent-${process.pid}`, "pi-context-view.json"));
 }

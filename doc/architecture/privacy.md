@@ -86,9 +86,11 @@ Defaults live in code. The global file at
 keys follow later default changes.
 
 Never auto-create the file or write missing defaults into an existing file.
-Load it only when a view needs it, not in the extension factory: the factory
-also runs in commands that never start a session. Cache per runtime and reload
-when the file's modification time changes.
+Load it only when a view opens, before the snapshot is resolved, because
+`autoProbing` decides whether that view may start the silent probe. Never load
+it in the extension factory: the factory also runs in commands that never start
+a session. Cache per runtime and reload when the file's modification time
+changes.
 
 - An absent file or omitted key silently uses the default.
 - An unreadable or unparseable file, unknown key, invalid color, or

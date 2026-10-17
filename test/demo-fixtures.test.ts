@@ -25,6 +25,7 @@ import type { InjectionSnapshot } from "../src/model.ts";
 import { collectPromptSources } from "../src/prompt-additions.ts";
 import { type RequestSnapshot, SnapshotStore } from "../src/snapshot.ts";
 import { type MockApi, startMockProvider } from "./harness/mock-provider.ts";
+import { createIsolatedConfigStore } from "./harness/settings.ts";
 
 const FIXTURES = [
 	"context-modify", "context-delete", "context-add", "review-checklist",
@@ -198,6 +199,9 @@ async function createDemoRuntime(
 	if (provider) t.after(() => provider.close());
 	const baseUrl = overrides.baseUrl ?? provider?.baseUrls[api];
 	assert.ok(baseUrl);
+	// After hooks run in registration order: the session must stop before its directory is removed
+	let stopSession: (() => void) | undefined;
+	t.after(() => stopSession?.());
 	const directory = await mkdtemp(join(tmpdir(), "context-demo-fixtures-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", compaction: { enabled: false } });
@@ -223,7 +227,7 @@ async function createDemoRuntime(
 			}),
 			(pi) => {
 				monitorApi = pi;
-				registerExtension(pi, store);
+				registerExtension(pi, store, createIsolatedConfigStore());
 				pi.on("before_agent_start", (event) => { options = event.systemPromptOptions; });
 			},
 		],
@@ -239,7 +243,7 @@ async function createDemoRuntime(
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, modelRuntime, model,
 		sessionManager: SessionManager.inMemory(directory), thinkingLevel: "off",
 	});
-	t.after(() => session.dispose());
+	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
 	await session.bindExtensions({ mode: "rpc", onError: (error) => { errors.push(`${error.event}: ${error.error}`); } });

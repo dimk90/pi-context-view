@@ -3,7 +3,7 @@
 Part of the [architecture](../ARCHITECTURE.md). This page describes the Pi
 behavior that capture and the probe rely on: the request flow, handler order,
 the supported Pi versions, the Pi APIs this extension reads, and why running
-request preparation has side effects. Checked against Pi `1.2.0`.
+request preparation has side effects. Checked against Pi `1.3.0`.
 
 ## Request Flow
 
@@ -155,10 +155,12 @@ Pi's `hiddenTools` ([hidden tools](capture.md#hidden-tools)).
 
 ## Supported Pi Versions
 
-This extension requires Pi `1.2.0` or newer. It relies on `context_with_system`
+This extension requires Pi `1.3.0` or newer. It relies on `context_with_system`
 filtering, `turn_end` omission edits, `hiddenTools` in Pi's prompt options,
 `before_agent_start.messageType`, and the probe's
 [abort form](probe.md#keeping-probe-messages-out-of-real-context).
+The guard mirrors Pi 1.3's foreign-thinking removal and Anthropic error-image
+relocation ([Pi's own adjustments](payload-guard.md#pis-own-adjustments)).
 The Pi packages stay `"*"` peer dependencies, so an older Pi can still load
 the extension. The factory therefore compares Pi's `VERSION` with
 `MIN_PI_VERSION` and, on an older Pi, registers no lifecycle handlers: nothing

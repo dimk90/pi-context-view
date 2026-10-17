@@ -18,6 +18,7 @@ import {
 	type UsageCategory,
 	type UsagePreviewEntry,
 } from "./model.ts";
+import { isSameModel, type ModelIdentity } from "./model-identity.ts";
 
 /**
  * Everything computeUsage needs; messages must already be synthetic-filtered and
@@ -28,6 +29,11 @@ export interface UsageInputs {
 	messages: ContextEvent["messages"];
 	reported?: ReportedContextUsage;
 	modelLabel?: string;
+	/**
+	 * The next request's model; thinking of other models is left out, as Pi drops it.
+	 * Omit to count all thinking.
+	 */
+	nextRequestModel?: ModelIdentity;
 	computedAt?: Date;
 	/** Auto-compaction reserve (settings `reserveTokens`); omit when auto-compaction is disabled. */
 	autoCompactReserveTokens?: number;
@@ -43,7 +49,7 @@ export interface UsageInputs {
 export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
 	const categories = [
 		...classifyPromptCategories(inputs.snapshot),
-		...classifyMessages(inputs.messages),
+		...classifyMessages(inputs.messages, inputs.nextRequestModel),
 	].filter((category) => category.tokens > 0);
 	return {
 		computedAt: inputs.computedAt ?? new Date(),
@@ -135,16 +141,25 @@ function isMcpTool(item: InjectionItem): boolean {
 	return /(^|[^a-z])mcp([^a-z]|$)/i.test(`${item.source.id} ${item.source.label}`);
 }
 
-/** Classify session and request messages with preview entries. */
-function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
+/** Tool-result shape narrowed out of the context event union. */
+type ToolResultContextMessage = Extract<ContextEvent["messages"][number], { role: "toolResult" }>;
+
+/** Custom-message shape narrowed out of the context event union. */
+type CustomContextMessage = Extract<ContextEvent["messages"][number], { role: "custom" }>;
+
+/** Classify session and request messages with preview entries; `nextRequestModel` keeps only its own thinking. */
+function classifyMessages(
+	messages: ContextEvent["messages"],
+	nextRequestModel: ModelIdentity | undefined,
+): UsageCategory[] {
 	const user: UsagePreviewEntry[] = [];
 	const assistantText: UsagePreviewEntry[] = [];
 	const assistantThinking: UsagePreviewEntry[] = [];
 	const assistantToolCalls: UsagePreviewEntry[] = [];
 	const bashExecutions: UsagePreviewEntry[] = [];
 	const compacted: UsagePreviewEntry[] = [];
-	const toolResults = new Map<string, UsagePreviewEntry[]>();
-	const customMessages = new Map<string, UsagePreviewEntry[]>();
+	const toolResults: ToolResultContextMessage[] = [];
+	const customMessages: CustomContextMessage[] = [];
 
 	for (const message of messages) {
 		switch (message.role) {
@@ -162,7 +177,10 @@ function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
 			case "assistant": {
 				const texts = message.content.flatMap((block) => (block.type === "text" ? [block.text] : []));
 				assistantText.push(...blockEntries(message.timestamp, "text", texts));
-				assistantThinking.push(...thinkingEntries(message));
+				// Pi drops another model's thinking and tool-call signatures; like deleted content, it gets no preview
+				if (nextRequestModel === undefined || isSameModel(message, nextRequestModel)) {
+					assistantThinking.push(...thinkingEntries(message));
+				}
 				for (const block of message.content) {
 					if (block.type !== "toolCall") continue;
 					const args = JSON.stringify(block.arguments);
@@ -178,20 +196,10 @@ function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
 				break;
 			}
 			case "toolResult":
-				appendEntry(toolResults, message.toolName, {
-					timestamp: message.timestamp,
-					breadcrumb: [message.toolName],
-					tokens: estimateTokens(message),
-					text: contentToText(message.content),
-				});
+				toolResults.push(message);
 				break;
 			case "custom":
-				appendEntry(customMessages, message.customType, {
-					timestamp: message.timestamp,
-					breadcrumb: [message.customType],
-					tokens: estimateTokens(message),
-					text: contentToText(message.content),
-				});
+				customMessages.push(message);
 				break;
 			case "bashExecution": {
 				const tokens = transformedTokens(message);
@@ -226,7 +234,7 @@ function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
 	}
 
 	const toolOutput = aggregate("tool-output", "Tool Output", withoutEmpty([
-		...leavesFromMap("tool-result", toolResults),
+		...leavesFromGroups("tool-result", Map.groupBy(toolResults, (message) => message.toolName)),
 		leaf("bash-executions", "Bash Executions", bashExecutions),
 	]));
 	return withoutEmpty([
@@ -236,7 +244,8 @@ function classifyMessages(messages: ContextEvent["messages"]): UsageCategory[] {
 		leaf("tool-calls", "Tool Calls", assistantToolCalls),
 		toolOutput,
 		// One category per injected customType
-		aggregate("extensions", "Extensions", leavesFromMap("custom-message", customMessages)),
+		aggregate("extensions", "Extensions",
+			leavesFromGroups("custom-message", Map.groupBy(customMessages, (message) => message.customType))),
 		leaf("compacted-data", "Compacted Data", compacted),
 	]);
 }
@@ -430,20 +439,20 @@ function withoutEmpty(categories: Array<UsageCategory | undefined>): UsageCatego
 	return categories.filter((category): category is UsageCategory => category !== undefined && category.tokens > 0);
 }
 
-/** Accumulate a preview entry under a map key. */
-function appendEntry(
-	totals: Map<string, UsagePreviewEntry[]>,
-	key: string,
-	entry: UsagePreviewEntry,
-): void {
-	const entries = totals.get(key);
-	if (entries === undefined) totals.set(key, [entry]);
-	else entries.push(entry);
-}
-
-/** Leaves from accumulated per-key preview entries. */
-function leavesFromMap(idPrefix: string, totals: Map<string, UsagePreviewEntry[]>): UsageCategory[] {
-	return [...totals.entries()].map(([label, entries]) => leaf(`${idPrefix}:${label}`, label, entries));
+/** One leaf per group key, with a preview entry for each of its messages. */
+function leavesFromGroups(
+	idPrefix: string,
+	groups: ReadonlyMap<string, ReadonlyArray<ToolResultContextMessage | CustomContextMessage>>,
+): UsageCategory[] {
+	return [...groups].map(([label, messages]) => {
+		const entries = messages.map((message) => ({
+			timestamp: message.timestamp,
+			breadcrumb: [label],
+			tokens: estimateTokens(message),
+			text: contentToText(message.content),
+		}));
+		return leaf(`${idPrefix}:${label}`, label, entries);
+	});
 }
 
 /** Same chars/4 heuristic pi's estimateTokens uses for text content. */

@@ -50,7 +50,8 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 	}
 
 	pi.on("before_agent_start", (event) => {
-		hiddenTools = [...event.systemPromptOptions.hiddenTools];
+		// Pi before 1.0.4 leaves `hiddenTools` out of the options
+		hiddenTools = [...(event.systemPromptOptions.hiddenTools ?? [])];
 	});
 
 	pi.on("context_with_system", (event, ctx) => {

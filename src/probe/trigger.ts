@@ -9,6 +9,7 @@ import { type ExtensionAPI, type ExtensionCommandContext, shouldCompact } from "
 import type { CompactionState } from "../compaction.ts";
 import { readGlobalCacheWarmingMode, readLiveSettings } from "../settings.ts";
 import type { SnapshotReader } from "../snapshot.ts";
+import { probeFailure, type ProbeFailure } from "./failure.ts";
 import type { ProbeOutcome, SilentProbe } from "./silent-probe.ts";
 import { runWithProbeToken } from "./token.ts";
 
@@ -18,7 +19,6 @@ import { runWithProbeToken } from "./token.ts";
  * after SilentProbe's, so the snapshot normally arrives at once.
  */
 const DEFAULT_SNAPSHOT_GRACE_MS = 1_000;
-const NO_SNAPSHOT_REASON = "Silent probe settled without a request snapshot.";
 
 /**
  * Result of asking for a probe: the store received the probe's snapshot with a
@@ -27,7 +27,7 @@ const NO_SNAPSHOT_REASON = "Silent probe settled without a request snapshot.";
  */
 export type ProbeResult =
 	| { readonly status: "captured" }
-	| { readonly status: "failed"; readonly reason: string };
+	| ProbeFailure;
 
 /** Dependencies and timing of a ProbeTrigger. */
 export interface ProbeTriggerOptions {
@@ -66,8 +66,8 @@ export class ProbeTrigger {
 	 */
 	public async request(context: ExtensionCommandContext): Promise<ProbeResult> {
 		await context.waitForIdle();
-		const unavailableReason = getProbeUnavailableReason(this.pi, context, this.compaction.isActive);
-		if (unavailableReason !== undefined) return { status: "failed", reason: unavailableReason };
+		const failure = getProbeUnavailableFailure(this.pi, context, this.compaction.isActive);
+		if (failure !== undefined) return failure;
 		this.attempt ??= this.run(context);
 		return this.attempt;
 	}
@@ -87,7 +87,7 @@ export class ProbeTrigger {
 			// extension's input transform rewrites the prompt text.
 			runWithProbeToken(attempt.token, () => this.pi.sendUserMessage(""));
 		} catch (error) {
-			this.probe.fail(error instanceof Error ? error.message : String(error));
+			this.probe.fail("startup", error instanceof Error ? error.message : String(error));
 		}
 		try {
 			return await result;
@@ -133,46 +133,46 @@ function waitForProbeResult(
 				finish(outcome);
 				return;
 			}
-			graceTimer = setTimeout(() => finish({ status: "failed", reason: NO_SNAPSHOT_REASON }), graceMs);
+			graceTimer = setTimeout(() => finish(probeFailure("missing-snapshot")), graceMs);
 		});
 	});
 }
 
 /** Explain why a silent probe cannot run now, or undefined when it can. */
-function getProbeUnavailableReason(
+function getProbeUnavailableFailure(
 	pi: ExtensionAPI,
 	context: ExtensionCommandContext,
 	compactionInProgress: boolean,
-): string | undefined {
-	if (compactionInProgress) return "Silent probe unavailable: context compaction is in progress.";
-	if (context.hasPendingMessages()) return "Silent probe unavailable: messages are waiting to be delivered.";
-	if (context.model === undefined) return "Silent probe unavailable: no model is selected.";
+): ProbeFailure | undefined {
+	if (compactionInProgress) return probeFailure("compaction");
+	if (context.hasPendingMessages()) return probeFailure("pending-messages");
+	if (context.model === undefined) return probeFailure("missing-model");
 	// Pi's virtual-model discriminator is not exported from its package root
-	if (context.model.api === "pi-virtual") return "Silent probe unavailable: a virtual model is selected.";
+	if (context.model.api === "pi-virtual") return probeFailure("virtual-model");
 	if (!context.modelRegistry.hasConfiguredAuth(context.model)) {
-		return `Silent probe unavailable: ${context.model.provider} has no configured authentication.`;
+		return probeFailure("missing-auth", context.model.provider);
 	}
-	return getProbeSettingsUnavailableReason(pi, context);
+	return getProbeSettingsUnavailableFailure(pi, context);
 }
 
 /** Check live compaction settings and both sources of the global-only warming preference. */
-function getProbeSettingsUnavailableReason(
+function getProbeSettingsUnavailableFailure(
 	pi: ExtensionAPI,
 	context: ExtensionCommandContext,
-): string | undefined {
+): ProbeFailure | undefined {
 	try {
 		const settings = readLiveSettings(pi);
 		// The merged snapshot can mask global idle warming with an ignored project override
 		if (settings.getCacheWarmingMode() === "idle" || readGlobalCacheWarmingMode(context.cwd) === "idle") {
-			return "Silent probe unavailable: idle cache warming is enabled.";
+			return probeFailure("idle-warming");
 		}
 		const compaction = settings.getCompactionSettings(context.model);
 		const usage = context.getContextUsage();
 		if (usage?.tokens != null && shouldCompact(usage.tokens, usage.contextWindow, compaction)) {
-			return "Silent probe unavailable: context exceeds the auto-compaction threshold.";
+			return probeFailure("context-limit");
 		}
 	} catch {
-		return "Silent probe unavailable: Pi settings could not be checked.";
+		return probeFailure("settings");
 	}
 	return undefined;
 }

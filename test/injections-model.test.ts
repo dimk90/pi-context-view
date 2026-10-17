@@ -37,18 +37,18 @@ test("buildInjectionRows flattens groups and separates the snapshot total", () =
 	const rows = buildInjectionRows(snapshot());
 
 	assert.deepEqual(
-		rows.map((row) => [row.kind, row.label, row.depth]),
+		rows.map((row) => [row.kind, row.kind === "item" ? row.itemId : undefined, row.depth]),
 		[
-			["group", "pi", 0],
+			["group", undefined, 0],
 			["item", "base-prompt", 1],
 			["item", "tool:builtin", 1],
 			["item", "tool:builtin:bash", 2],
 			["item", "tool:builtin:read", 2],
 			["item", "skills", 1],
-			["group", "npm:web", 0],
+			["group", undefined, 0],
 			["item", "web_search", 1],
-			["separator", "", 0],
-			["total", "TOTAL (Prompt, Tools, Injections)", 0],
+			["separator", undefined, 0],
+			["total", undefined, 0],
 		],
 	);
 	const basePromptRow = rows[1];
@@ -214,14 +214,15 @@ test("unattributed message and payload rows are leaves with unknown editors, and
 		{ source: builtin.source, items: [builtin], totalTokens: 4 },
 		{ source: unattributed, items: [tool, messages, payload], totalTokens: 17 },
 	], totalTokens: 21 }).filter((row) => row.kind === "item" || row.kind === "group");
-	assert.deepEqual(rows.map((row) => [row.label, row.kind === "item" ? row.labelPrefix : undefined, row.scope]), [
-		["pi", undefined, undefined],
+	assert.deepEqual(rows.map((row) => [row.kind === "item" ? row.itemId : row.kind,
+		row.kind === "item" ? row.labelPrefix : undefined, row.scope]), [
+		["group", undefined, undefined],
 		["tool:builtin", undefined, undefined],
-		["read", undefined, undefined],
-		["unattributed", undefined, "request"],
-		["grep", "tool:", undefined],
-		["messages (2)", undefined, "request"],
-		["payload changes (2)", undefined, "payload"],
+		["tool:builtin:read", undefined, undefined],
+		["group", undefined, "request"],
+		["tool:unattributed:grep", "tool:", undefined],
+		["messages", undefined, "request"],
+		["payload-changes", undefined, "payload"],
 	], "every message change is only in this request; payload changes only in the payload");
 	for (const row of rows.slice(-2)) {
 		assert.deepEqual(row.kind === "item" ? row.editors : undefined, [{ type: "unknown" }]);

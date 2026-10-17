@@ -25,6 +25,38 @@ change the result.
   model retention, and thinking-preview notation. That page is the source of
   truth for the thinking formula and its measurement evidence.
 
+## Token Diffs
+
+Injections measures added and removed tokens with the word-level comparison in
+`src/token-diff.ts`. The [view composition](views.md#injections) defines each
+base: pi's default text for prompt parts, the session for tools and messages,
+and the captured request's removed lines for payload findings. Diff-only
+system prompt rows repeat the prompt diffs split by source, not a new comparison.
+
+- Changed characters round up to tokens. For changed text, reconcile rounding
+  so the base estimate plus additions minus removals equals the request
+  estimate; assign the difference to a side with changed characters.
+- Equal texts have no diff, even when their allocated shares round differently.
+  Never remove more than the base or add more than the request estimate. If
+  uncounted framing would violate those bounds, use a whole replacement.
+- A forced prompt with sections compares part by part. An undivided forced
+  prompt compares with pi's whole default prompt, including instruction files
+  and skills. A deleted custom section compares with the session so its
+  removal remains visible despite having no pi-default base.
+- Parents and groups sum the diffs they count, including removal of session-only
+  children. Diff-only source rows increase neither group diffs nor totals;
+  the overall total has no diff.
+
+The same word alignment supplies preview runs. Whole-line additions and
+removals need no word-level emphasis; an oversized comparison keeps common
+ends and treats the unalignable middle as replaced. Expanding marked JSON for
+display changes neither the counted estimate nor the diff.
+
+Known limits: a request-only edit to saved extension text can fold into its
+existing added-token count, so persistence needs separate metadata. A saved
+edit within pi-authored text is not detectable because the session's text is
+its default base.
+
 ## Prompt Parts and Moved Blocks
 
 Pi wraps independently replaceable sections in XML. Map `tools`, `rules`,

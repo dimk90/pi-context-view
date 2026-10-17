@@ -381,23 +381,8 @@ export interface ContextUsageSnapshot {
  * groups.
  */
 export function groupInjections(items: readonly InjectionItem[]): InjectionGroup[] {
-	const groups = new Map<string, MutableGroup>();
-	for (const input of items) {
-		const item = copyItem(input);
-		let group = groups.get(item.source.id);
-		if (group === undefined) {
-			group = { source: item.source, items: [], totalTokens: 0 };
-			groups.set(item.source.id, group);
-		}
-		group.items.push(item);
-		group.totalTokens += item.diffOnly === true ? 0 : item.tokens;
-	}
-	for (const group of groups.values()) {
-		group.items.sort(compareItems);
-		// A diff-only row repeats changes other rows already count
-		group.diff = sumTokenDiffs(group.items.filter((item) => item.diffOnly !== true).map((item) => item.diff));
-	}
-	return [...groups.values()].sort(compareGroups);
+	const bySource = Map.groupBy(items.map(copyItem), (item) => item.source.id);
+	return [...bySource.values()].map(createGroup).sort(compareGroups);
 }
 
 /** Sum of token diffs, or undefined when none adds or removes a token. */
@@ -420,12 +405,16 @@ export function buildSnapshot(items: readonly InjectionItem[]): InjectionSnapsho
 	};
 }
 
-/** Internal accumulator for groupInjections before freezing into InjectionGroup. */
-interface MutableGroup {
-	source: InjectionSource;
-	items: InjectionItem[];
-	totalTokens: number;
-	diff?: TokenDiff;
+/** The group of one source's owned items, which `Map.groupBy` never leaves empty. */
+function createGroup(items: InjectionItem[]): InjectionGroup {
+	// A diff-only row repeats changes other rows already count
+	const counted = items.filter((item) => item.diffOnly !== true);
+	return {
+		source: items[0].source,
+		items: items.sort(compareItems),
+		totalTokens: counted.reduce((sum, item) => sum + item.tokens, 0),
+		diff: sumTokenDiffs(counted.map((item) => item.diff)),
+	};
 }
 
 /** Owned copy of an item, including its nested source, spans, and children. */

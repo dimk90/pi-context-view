@@ -24,7 +24,7 @@ import payloadChanges, {
 	PAYLOAD_CHANGE_ADDED, PAYLOAD_CHANGE_DELETED, PAYLOAD_CHANGE_MODIFIED, PAYLOAD_CHANGE_ORIGINAL,
 } from "./fixtures/payload-changes.ts";
 import { type MockApi, type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
-import { useSettings } from "./harness/settings.ts";
+import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
 
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
 const MCP_SERVER = fileURLToPath(new URL("./fixtures/mcp-server.ts", import.meta.url));
@@ -47,6 +47,8 @@ interface RuntimeOptions {
 	readonly compat?: Record<string, unknown>;
 	readonly oauth?: boolean;
 	readonly warming?: boolean;
+	/** Reasoning models, with the session starting at thinking level `low`. */
+	readonly thinking?: boolean;
 	/** Selected model; `text` has no image input. */
 	readonly modelId?: "vision" | "text";
 }
@@ -216,6 +218,39 @@ test("Completions system-message tool additions, then removals and redefinitions
 	assert.ok(sent.some((messages) => messages.some((message) => message.role === "system" && message.tools !== undefined)),
 		"a system message declared a later tool inline");
 });
+
+/** A model setup that sends thinking-level messages, and the level each payload message carries. */
+interface EffortCase {
+	readonly api: MockApi;
+	readonly compat: Record<string, unknown>;
+	effortOf(message: Record<string, unknown>): unknown;
+}
+
+const EFFORT_CASES: readonly EffortCase[] = [
+	{
+		api: "openai-responses", compat: { supportsMidConvoEffort: true },
+		effortOf: (item) => item.type === "configuration_update" ? item.reasoning : undefined,
+	},
+	// Anthropic maps a thinking level to an effort only for adaptive thinking
+	{
+		api: "anthropic-messages", compat: { supportsMidConvoEffort: true, forceAdaptiveThinking: true },
+		effortOf: (message) => message.role === "system" ? message.output_config : undefined,
+	},
+];
+
+for (const { api, compat, effortOf } of EFFORT_CASES) {
+	test(`${api}: supportsMidConvoEffort thinking-level messages are not payload changes`, async (t) => {
+		const runtime = await createRuntime(t, { api, thinking: true, compat });
+		await runtime.session.prompt("first");
+		runtime.session.setThinkingLevel("high");
+		await runtime.session.prompt("second");
+		const efforts = payloadMessages(api, runtime.provider.requests.at(-1)?.body).map(effortOf).filter(Boolean);
+		assert.deepEqual(efforts, [{ effort: "low" }, { effort: "high" }], "the first reply's level, then the active one");
+		const snapshots = await runtime.snapshots();
+		assert.equal(snapshots.length, 2);
+		for (const snapshot of snapshots) assert.deepEqual(findings(snapshot), []);
+	});
+}
 
 for (const oauth of [false, true]) {
 	test(`Anthropic native inline additions/removals/redefinitions${oauth ? " with OAuth casing" : ""}`, async (t) => {
@@ -450,6 +485,13 @@ for (const adjustment of ADJUSTMENT_CASES) {
 			assert.ok(sent.includes(text), `the payload carries the seeded ${text}`);
 		}
 		assert.ok(!sent.includes("Failed partial.") && !sent.includes("hidden output"));
+		assert.ok(!sent.includes("Foreign reasoning.") && !sent.includes("Foreign unsigned reasoning."));
+		const relocates = api === "anthropic-messages" && adjustment.modelId !== "text" && !adjustment.blockImages;
+		assert.equal(sent.includes("(image attached after the tool results)"), relocates);
+		for (const caption of [
+			"Images from the error result of tool call call_error_id (read):",
+			"Images from the error result of tool call call_error (read):",
+		]) assert.equal(sent.includes(caption), relocates, caption);
 		if (adjustment.modelId === "text") assert.ok(sent.includes("(image omitted: model does not support images)"));
 		if (adjustment.blockImages) assert.ok(sent.includes("Image reading is disabled."));
 		if (adjustment.codemode) assert.ok(sent.includes("\"input\":\"return 1;\""), "the codemode call is a grammar call");
@@ -459,7 +501,7 @@ for (const adjustment of ADJUSTMENT_CASES) {
 /**
  * Persist history that exercises Pi's adjustments: images, another model's
  * thinking and tool calls, signed and unsigned thinking of the selected model,
- * empty and image-only tool results, an unanswered call, failed and aborted
+ * empty and image-only tool results (successful and failed), an unanswered call, failed and aborted
  * replies, custom, bash, and summary messages, and later system messages,
  * one between a tool call and its result.
  */
@@ -478,25 +520,33 @@ function seedHistory(session: AgentSession, model: Model | undefined): void {
 	append({ role: "user", content: [text("Look at these."), image, image], timestamp: 1 });
 	append(assistant(other, "toolUse", [
 		{ type: "thinking", thinking: "Foreign reasoning.", thinkingSignature: "foreign" },
+		{ type: "thinking", thinking: "Foreign unsigned reasoning." },
 		{ type: "thinking", thinking: "", thinkingSignature: "opaque", redacted: true },
 		text("Foreign answer."),
 		{ type: "toolCall", id: "call|foreign+id", name: "read", arguments: { path: "a.txt" } },
+		{ type: "toolCall", id: "call|error+id", name: "read", arguments: { path: "error.png" } },
 	]));
 	// Pi persists section patches only; it removes these unknown sections again on the next prompt
 	append({ role: "system", content: "", sections: { held: "<held>Held section.</held>" }, timestamp: 2 });
 	append({ role: "toolResult", toolCallId: "call|foreign+id", toolName: "read", content: [image], isError: false, timestamp: 3 });
+	append({
+		role: "toolResult", toolCallId: "call|error+id", toolName: "read", content: [text("Error detail."), image, image],
+		isError: true, timestamp: 3,
+	});
 	append(assistant(same, "toolUse", [
 		{ type: "thinking", thinking: "Signed reasoning.", thinkingSignature: signature },
 		{ type: "thinking", thinking: "Unsigned reasoning." },
 		text("Same-model answer."),
 		{ type: "toolCall", id: "call_read", name: "read", arguments: { path: "b.txt", limit: 2 } },
 		{ type: "toolCall", id: "call_code", name: "codemode", arguments: { code: "return 1;" } },
+		{ type: "toolCall", id: "call_error", name: "read", arguments: { path: "error.png" } },
 		{ type: "toolCall", id: "call_orphan", name: "write", arguments: { path: "c.txt", content: "x" } },
 	]));
 	append({ role: "toolResult", toolCallId: "call_read", toolName: "read", content: [], isError: false, timestamp: 4 });
 	append({
 		role: "toolResult", toolCallId: "call_code", toolName: "codemode", content: [text("1"), image], isError: false, timestamp: 5,
 	});
+	append({ role: "toolResult", toolCallId: "call_error", toolName: "read", content: [image], isError: true, timestamp: 5 });
 	append(assistant(same, "error", [text("Failed partial.")]));
 	append(assistant(same, "aborted", [text("Aborted partial.")]));
 	manager.appendCustomMessageEntry("note", "Custom string note.", true);
@@ -592,7 +642,7 @@ async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Prom
 		authPath: join(directory, "auth.json"), modelsPath: null, refreshOnCreate: false, allowModelNetwork: false,
 	});
 	const models: Model[] = APIS.flatMap((api) => ["vision", "text"].map((id) => ({
-		provider: `mock-${api}`, id, api, name: id, baseUrl: provider.baseUrls[api], reasoning: false,
+		provider: `mock-${api}`, id, api, name: id, baseUrl: provider.baseUrls[api], reasoning: options.thinking ?? false,
 		input: id === "vision" ? ["text", "image"] : ["text"], maxTokens: 128, contextWindow: 100_000,
 		cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
 		compat: options.compat,
@@ -613,7 +663,7 @@ async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Prom
 				pi.registerTool({ name: "write", label: "write", description: "Redefined write.", parameters: Type.Object({}),
 					execute: async () => ({ content: [], details: undefined }) });
 			} }),
-			...(options.before ?? []), (pi) => registerExtension(pi, store), ...(options.after ?? []),
+			...(options.before ?? []), (pi) => registerExtension(pi, store, createIsolatedConfigStore()), ...(options.after ?? []),
 		],
 	});
 	await resourceLoader.reload();
@@ -621,7 +671,7 @@ async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Prom
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, modelRuntime,
 		sessionManager: SessionManager.inMemory(directory),
 		model: models.find((model) => model.api === (options.api ?? "openai-completions") && model.id === (options.modelId ?? "vision")),
-		thinkingLevel: "off",
+		thinkingLevel: options.thinking ? "low" : "off",
 	});
 	stopSession = async () => {
 		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });

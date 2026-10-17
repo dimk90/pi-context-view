@@ -94,7 +94,7 @@ base, from a word-level comparison in `src/token-diff.ts`:
 
 A branch without recorded system state and the degraded fallback compare the
 live prompt with itself, so only extension text shows.
-[ui/injections.md](../ui/injections.md#token-diffs) holds the rules.
+[Measurement](measurement.md#token-diffs) owns diff reconciliation and limits.
 
 Injections also builds diff-only `system prompt` rows per extension and under
 `unattributed`, splitting these prompt diffs by their available ownership
@@ -157,13 +157,13 @@ Top-level sources are `pi`, identified extensions by size, then one
 unknown prompt changes, custom messages, conversation changes, and payload
 changes all share this group. `customType` and cooperative provenance do not
 identify an extension for grouping. Pi's `pi.share` is a session/export entry,
-not a context custom message. Rendering rules, including the dim `tool:` prefix,
-live in [ui/injections.md](../ui/injections.md#contribution-tree).
+not a context custom message. Presentation decisions live in
+[ui/injections.md](../ui/injections.md#contribution-tree).
 
-Probe snapshots carry the warning specified in
-[ui/injections.md](../ui/injections.md#latest-request). Pending and incomplete
-guards appear as an unavailable or partial payload-change comparison in the
-description, never as "no edits". A complete guard adds no note. The view is
+Probe snapshots must remain distinguishable from ordinary requests, with their
+capture limits explained under [the UI rules](../ui/injections.md#latest-request).
+Pending and incomplete guards mean an unavailable or partial payload-change
+comparison, never "no edits". A complete guard adds no warning. The view is
 fixed while open; reopening reads the latest snapshot or a guard update with
 the same snapshot ID. A real request replaces a probe snapshot and removes its
 probe warning.
@@ -295,6 +295,17 @@ branch alone and shows the degraded reason. Session-backed custom messages
 count from the current branch once. `computeUsage()` skips system messages
 because the prompt/tool snapshot already accounts for them.
 
+**Thinking of other models is left out, as Pi drops it.** `src/index.ts`
+passes the next request's model to `computeUsage()`: `ctx.model` for a
+physical selection, or the model of the latest reply that is not an error or
+aborted for a virtual one. Like Pi's routed-model lookup, the reply comes from
+the branch messages without the latest request's changes, which
+`applyRequestSnapshot()` also returns. Assistant Thinking skips messages from another
+provider, API, or model, including their tool calls' signature proxy; like
+deleted messages, that thinking gets no preview and no marker. Without a model,
+all thinking counts. [THINKING.md](../THINKING.md#counting-architecture) holds
+the counting rules.
+
 This is a provider-independent semantic estimate, not a wire-size estimate.
 Some providers keep earlier section versions or tool declarations in the cached
 transcript; others collapse them. Usage deliberately does not count that
@@ -303,6 +314,20 @@ history, patch framing, or provider-specific serialization.
 The UI receives `ctx.getContextUsage()` separately. Its reported total is not
 used to force category estimates to match. Map rendering rules belong to
 [ui/usage.md](../ui/usage.md#context-map).
+
+### Auto-compaction Reserve
+
+Read the reserve from Pi's live merged settings each time Usage opens.
+The current model's `compaction.modelOverrides["<provider>/<id>"].reserveTokens`
+wins over `compaction.reserveTokens`, then Pi's default. The buffer is absent
+when auto-compaction is disabled or settings are invalid; a model switch takes
+effect on the next open.
+
+The reserve occupies the tail of the context window after free space. It shrinks
+when estimated content grows into it, and free space excludes it so capacity is
+not counted twice. Fit scale changes only the map's range: the reserve may lie
+outside it without disappearing from the capacity breakdown. Presentation
+belongs to [the Usage map](../ui/usage.md#context-map).
 
 ## One Snapshot, Two Views
 

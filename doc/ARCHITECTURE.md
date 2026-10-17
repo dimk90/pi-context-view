@@ -11,11 +11,11 @@ layers, the module boundaries, and the required invariants.
 | [architecture/payload-guard.md](architecture/payload-guard.md) | Payload pairing, dispatch confirmation, parsers, tool and message channels, Pi's own adjustments   |
 | [architecture/views.md](architecture/views.md)                 | Injections and Usage on snapshots, the differences between them, the one-request limitation        |
 | [architecture/probe.md](architecture/probe.md)                 | Silent probe: trigger, lifecycle, run identity, probe messages, preconditions, side effects        |
-| [architecture/measurement.md](architecture/measurement.md)     | Token estimates, prompt parts, tool ownership, prompt additions, totals                            |
+| [architecture/measurement.md](architecture/measurement.md)     | Token estimates and diffs, prompt parts, tool ownership, prompt additions, totals                  |
 | [architecture/privacy.md](architecture/privacy.md)             | Raw content, images, signatures, persisted records; configuration loading and writes               |
 | [architecture/validation.md](architecture/validation.md)       | Test harness, fixtures, validation matrix, lifecycle smoke tests, rechecks after a Pi upgrade      |
 
-Rendering rules belong to [UI.md](UI.md); reasoning-token accounting to
+UI design decisions belong to [UI.md](UI.md); reasoning-token accounting to
 [THINKING.md](THINKING.md).
 
 ## Views and Data Sources
@@ -116,6 +116,7 @@ flowchart TD
 | `src/probe/silent-probe.ts`  | SilentProbe: claim, abort, blank, and omit the probe run; persist its identities.                             |
 | `src/probe/view.ts`          | ProbeView: the run origin and probe-message filter that capture reads.                                        |
 | `src/probe/trigger.ts`       | ProbeTrigger: preconditions, one automatic attempt, and its status from store publications.                   |
+| `src/probe/failure.ts`       | Typed probe failure causes and their display reasons.                                                         |
 | `src/probe/token.ts`         | Carry the probe token through the async context of this extension's own send.                                 |
 | `src/pi-version.ts`          | Check the running Pi version against the oldest supported release.                                            |
 | `src/injections.ts`          | Rebuild the latest snapshot's baseline; measure it with marked changes, token diffs, and guard findings.      |
@@ -130,6 +131,7 @@ flowchart TD
 | `src/prompt-additions.ts`    | Collect extension sources; identify prompt additions and make source-attribution guesses.                     |
 | `src/usage.ts`               | Classify messages; build usage totals and previews.                                                           |
 | `src/model.ts`               | Define types, ownership, hierarchy, and grouping.                                                             |
+| `src/model-identity.ts`      | Same-model check of Pi's thinking replay; resolve the next request's model for Usage.                         |
 | `src/text.ts`                | Sanitize dynamic text before terminal display.                                                                |
 | `src/ui/`                    | Handle navigation, layout, previews, and fullscreen rendering.                                                |
 | `test/harness/`              | Mock provider, settings stub, and command runner for tests; see [validation.md](architecture/validation.md).  |

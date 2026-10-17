@@ -45,8 +45,8 @@ test("SilentProbe sanitizes and filters only exact probe identities", async () =
 	assert.equal(concurrentAttempt.started, false);
 	assert.strictEqual(concurrentAttempt.completion, attempt.completion);
 	assert.strictEqual(concurrentAttempt.token, attempt.token);
-	assert.equal(probe.isProbeInput({ source: "extension" }, attempt.token), true);
-	assert.equal(probe.beginRun("user", attempt.token), true);
+	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
 
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	const realUser = { role: "user", content: [], timestamp: 11 } satisfies ContextEvent["messages"][number];
@@ -133,8 +133,8 @@ test("SilentProbe claims its run by token when an input transform rewrites the p
 
 	// Another extension prepends instructions to the synthetic empty prompt.
 	const transformed = "Additional instructions\n";
-	assert.equal(probe.isProbeInput({ source: "extension" }, attempt.token), true);
-	assert.equal(probe.beginRun("user", attempt.token), true, "rewritten text must not hide the probe run");
+	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed", "rewritten text must not hide the probe run");
 
 	const probePrompt = { role: "user", content: transformed, timestamp: 30 } satisfies ContextEvent["messages"][number];
 	probe.recordMessage(probePrompt);
@@ -151,15 +151,13 @@ test("SilentProbe leaves an unattributed run untouched and fails the attempt", a
 	const attempt = probe.start(1_000);
 
 	// A run without the token may belong to the user or to another extension.
-	assert.equal(probe.beginRun("user", undefined), false);
+	assert.equal(probe.beginRun("user", undefined), "foreign");
 	assert.equal(probe.isCurrentRun, false, "an unattributed run must not arm the abort guard");
-	assert.deepEqual(await attempt.completion, {
-		status: "failed",
-		reason: "Another agent run started before the silent probe was recognized.",
-	});
+	const result = await attempt.completion;
+	assert.equal(result.status === "failed" ? result.cause : undefined, "foreign-run");
 
 	// A delayed probe run is still claimed, so it is aborted and sanitized.
-	assert.equal(probe.beginRun("user", attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
 	assert.equal(probe.isCurrentRun, true);
 	assert.equal(probe.settle(), true);
 });
@@ -169,23 +167,59 @@ test("SilentProbe leaves a custom-message run with its token untouched and fails
 	const attempt = probe.start(1_000);
 
 	// Another extension's nested sendMessage() from an input handler inherits the token
-	assert.equal(probe.beginRun("custom", attempt.token), false);
+	assert.equal(probe.beginRun("custom", attempt.token), "foreign");
 	assert.equal(probe.isCurrentRun, false, "a custom-message run must not arm the abort guard");
-	assert.deepEqual(await attempt.completion, {
-		status: "failed",
-		reason: "Another agent run started before the silent probe was recognized.",
-	});
+	const result = await attempt.completion;
+	assert.equal(result.status === "failed" ? result.cause : undefined, "foreign-run");
 
 	// The probe's own user-message run that follows is still claimed
-	assert.equal(probe.beginRun("user", attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
 	assert.equal(probe.isCurrentRun, true);
 	assert.equal(probe.settle(), true);
+});
+
+test("SilentProbe claims no later input and no run after a second idle input with its token", async () => {
+	const { filter, probe } = createProbe();
+	const attempt = probe.start(1_000);
+
+	// Another extension's input handler sends a user message that inherits the token; either input may be ours
+	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), true);
+	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), false, "the second input is not reset");
+	const result = await attempt.completion;
+	assert.equal(result.status === "failed" ? result.cause : undefined, "nested-send");
+
+	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), false);
+	assert.equal(probe.beginRun("user", attempt.token), "foreign", "the nested run is not claimed");
+	assert.equal(probe.beginRun("user", attempt.token), "foreign", "nor the probe's own run");
+	assert.equal(probe.isCurrentRun, false);
+	const nested = { role: "user", content: "nested", timestamp: 50 } satisfies ContextEvent["messages"][number];
+	probe.recordMessage(nested);
+	assert.equal(probe.sanitizeMessage(nested), undefined);
+	assert.deepEqual(filter.syntheticMessages, []);
+});
+
+test("SilentProbe reports the first user-message run with its token after the claim as a wrong claim", () => {
+	const { probe } = createProbe();
+	const attempt = probe.start(1_000);
+
+	// Another extension's input handler ran first, so its nested user message took the probe's identity
+	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
+	assert.equal(probe.settle(), true);
+
+	// The probe's own input and run follow once the nested run settled
+	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), false, "its input is not reset");
+	assert.equal(probe.beginRun("custom", attempt.token), "foreign", "a custom-message run is no evidence");
+	assert.equal(probe.beginRun("user", undefined), "foreign");
+	assert.equal(probe.beginRun("user", attempt.token), "wrong-claim");
+	assert.equal(probe.isCurrentRun, false, "the run is not aborted");
+	assert.equal(probe.beginRun("user", attempt.token), "foreign", "a wrong claim is reported once");
 });
 
 test("SilentProbe records only the first user message of its run and every abort", () => {
 	const { filter, probe } = createProbe();
 	const attempt = probe.start(1_000);
-	assert.equal(probe.beginRun("user", attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
 
 	// Pi emits the run's starting messages first. A message queued while the run started gets an extra
 	// turn and usually shares the prompt's millisecond.
@@ -220,21 +254,21 @@ test("SilentProbe records only the first user message of its run and every abort
 	probe.settle();
 });
 
-test("SilentProbe recognizes probe input only for its own token and source", () => {
+test("SilentProbe claims probe input only for its own token and source", () => {
 	const { probe } = createProbe();
-	assert.equal(probe.isProbeInput({ source: "extension" }, "any-token"), false, "no attempt is pending");
+	assert.equal(probe.claimInput({ source: "extension" }, "any-token"), false, "no attempt is pending");
 
 	const attempt = probe.start(1_000);
-	assert.equal(probe.isProbeInput({ source: "extension" }, undefined), false);
-	assert.equal(probe.isProbeInput({ source: "extension" }, `${attempt.token}-other`), false);
-	assert.equal(probe.isProbeInput({ source: "interactive" }, attempt.token), false);
-	assert.equal(probe.isProbeInput({ source: "rpc" }, attempt.token), false);
+	assert.equal(probe.claimInput({ source: "extension" }, undefined), false);
+	assert.equal(probe.claimInput({ source: "extension" }, `${attempt.token}-other`), false);
+	assert.equal(probe.claimInput({ source: "interactive" }, attempt.token), false);
+	assert.equal(probe.claimInput({ source: "rpc" }, attempt.token), false);
 	// Another extension's send from before_agent_start inherits the token but is queued into the starting run
-	assert.equal(probe.isProbeInput({ source: "extension", streamingBehavior: "steer" }, attempt.token), false);
-	assert.equal(probe.isProbeInput({ source: "extension", streamingBehavior: "followUp" }, attempt.token), false);
+	assert.equal(probe.claimInput({ source: "extension", streamingBehavior: "steer" }, attempt.token), false);
+	assert.equal(probe.claimInput({ source: "extension", streamingBehavior: "followUp" }, attempt.token), false);
 
-	assert.equal(probe.beginRun("user", attempt.token), true);
-	assert.equal(probe.isProbeInput({ source: "extension" }, attempt.token), false, "the token is single-use");
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
+	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), false, "the token is single-use");
 	probe.settle();
 });
 
@@ -242,7 +276,7 @@ for (const errorMessage of ["This operation was aborted", "The operation was abo
 	test(`SilentProbe sanitizes ${JSON.stringify(errorMessage)} only for a recorded probe assistant`, () => {
 		const { probe } = createProbe();
 		const attempt = probe.start(1_000);
-		assert.equal(probe.beginRun("user", attempt.token), true);
+		assert.equal(probe.beginRun("user", attempt.token), "claimed");
 
 		const setupAbort = assistantMessage("error", 20, errorMessage);
 		const providerError = assistantMessage("error", 21, "Authentication failed");
@@ -270,7 +304,7 @@ for (const errorMessage of ["This operation was aborted", "The operation was abo
 test("SilentProbe filters restored identities without consuming the probe attempt", () => {
 	const previousRuntime = createProbe();
 	const previousAttempt = previousRuntime.probe.start(1_000);
-	assert.equal(previousRuntime.probe.beginRun("user", previousAttempt.token), true);
+	assert.equal(previousRuntime.probe.beginRun("user", previousAttempt.token), "claimed");
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	previousRuntime.probe.recordMessage(probeUser);
 	previousRuntime.probe.settle();
@@ -286,7 +320,7 @@ test("SilentProbe filters restored identities without consuming the probe attemp
 	assert.equal(probe.isCurrentRun, false);
 	const attempt = probe.start(1_000);
 	assert.equal(attempt.started, true);
-	probe.fail("cleanup");
+	probe.fail("shutdown");
 });
 
 test("SilentProbe persists every known identity only after recording new ones", () => {
@@ -298,7 +332,7 @@ test("SilentProbe persists every known identity only after recording new ones", 
 	assert.equal(written.length, 0, "restored identities are already persisted");
 
 	const attempt = probe.start(1_000);
-	assert.equal(probe.beginRun("user", attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	probe.recordMessage(probeUser);
 	probe.recordMessage(probeUser);
@@ -317,9 +351,10 @@ test("SilentProbe persists every known identity only after recording new ones", 
 test("SilentProbe keeps a timed-out running probe abortable until settlement", async () => {
 	const { probe } = createProbe();
 	const attempt = probe.start(1);
-	assert.equal(probe.beginRun("user", attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
 
-	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
+	const result = await attempt.completion;
+	assert.equal(result.status === "failed" ? result.cause : undefined, "timeout");
 	assert.equal(probe.isCurrentRun, true);
 	assert.equal(probe.settle(), true);
 	assert.equal(probe.isCurrentRun, false);
@@ -329,12 +364,13 @@ test("SilentProbe retains a delayed synthetic turn after a pre-run timeout", asy
 	const { probe } = createProbe();
 	const attempt = probe.start(1);
 
-	assert.deepEqual(await attempt.completion, { status: "failed", reason: "Silent probe timed out." });
+	const result = await attempt.completion;
+	assert.equal(result.status === "failed" ? result.cause : undefined, "timeout");
 	assert.equal(probe.isCurrentRun, false);
 
-	assert.equal(probe.beginRun("user", undefined), false);
+	assert.equal(probe.beginRun("user", undefined), "foreign");
 	assert.equal(probe.isCurrentRun, false);
-	assert.equal(probe.beginRun("user", attempt.token), true);
+	assert.equal(probe.beginRun("user", attempt.token), "claimed");
 	assert.equal(probe.isCurrentRun, true);
 	assert.equal(probe.settle(), true);
 });

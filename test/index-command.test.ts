@@ -5,6 +5,8 @@ import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from "@
 
 import type { ContextView } from "../src/command.ts";
 import registerExtension from "../src/index.ts";
+import { SnapshotStore } from "../src/snapshot.ts";
+import { createIsolatedConfigStore } from "./harness/settings.ts";
 
 type CommandHandler = RegisteredCommand["handler"];
 
@@ -35,7 +37,7 @@ function registerWithFakePi(): RegisteredExtension {
 		getCommands: () => [],
 	} as unknown as ExtensionAPI;
 
-	registerExtension(pi);
+	registerExtension(pi, new SnapshotStore(), createIsolatedConfigStore());
 	assert.ok(commandHandler, "the extension registers /context");
 	return {
 		runCommand: commandHandler,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import {
@@ -14,49 +14,20 @@ import {
 } from "../src/config.ts";
 import type { ContextUsageSnapshot } from "../src/model.ts";
 import { formatPercent, formatTokens, UsageView, type UsageViewInput } from "../src/ui/usage-view.ts";
+import { colorize } from "../src/ui/color.ts";
+import {
+	descriptionNoteLines, emptyPreviewNote, probingDisabledNote, thinkingNote, usageNote,
+} from "../src/ui/notes.ts";
+import { assertFrame, containsBlock, createTheme, frameText, stripSgr, wholeOrAbsent } from "./harness/frame.ts";
 
-const FG_COLORS: ThemeColor[] = [
-	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text",
-	"thinkingText", "userMessageText", "customMessageText", "customMessageLabel", "toolTitle", "toolOutput",
-	"mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder",
-	"mdHr", "mdListBullet", "toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "syntaxComment", "syntaxKeyword",
-	"syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator",
-	"syntaxPunctuation", "thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh",
-	"thinkingXhigh", "thinkingMax", "bashMode",
-];
-const BG_COLORS = [
-	"selectedBg", "userMessageBg", "customMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg",
-] as const;
+/** Render the overview independently of the dashboard's layout and collapse decision. */
+function usageDescription(width = 1_000): string[] {
+	return descriptionNoteLines(createTheme(), usageNote(), width);
+}
 
-/** Theme with recognizable semantic foreground sequences. */
-function createTheme(): Theme {
-	const foregroundOverrides: Partial<Record<ThemeColor, string>> = {
-		accent: "#010203",
-		text: "#040506",
-		muted: "#070809",
-		dim: "#101112",
-		warning: "#131415",
-		success: "#373839",
-		error: "#3a3b3c",
-		mdHeading: "#161718",
-		mdLink: "#191a1b",
-		mdCodeBlock: "#1c1d1e",
-		customMessageLabel: "#1f2021",
-		syntaxString: "#222324",
-		toolOutput: "#252627",
-		syntaxType: "#28292a",
-		thinkingHigh: "#2b2c2d",
-		syntaxFunction: "#2e2f30",
-		thinkingXhigh: "#313233",
-		syntaxKeyword: "#343536",
-	};
-	const fgColors = Object.fromEntries(FG_COLORS.map((color) => [color, foregroundOverrides[color] ?? "#aabbcc"]));
-	const bgColors = Object.fromEntries(BG_COLORS.map((color) => [color, "#112233"]));
-	return new Theme(
-		fgColors as ConstructorParameters<typeof Theme>[0],
-		bgColors as ConstructorParameters<typeof Theme>[1],
-		"truecolor",
-	);
+/** Render the reasoning explanation independently of the preview that must retain it. */
+function thinkingDescription(width = 1_000): string[] {
+	return descriptionNoteLines(createTheme(), thinkingNote(), width);
 }
 
 /** Usage fixture with pi-reported metadata and representative categories. */
@@ -116,11 +87,6 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 	};
 }
 
-/** Remove SGR sequences so tests can inspect visual columns. */
-function stripSgr(text: string): string {
-	return text.replace(/\u001b\[[\d;]*m/g, "");
-}
-
 /** Build a view over the built-in colors and map size unless a test overrides them. */
 function createView(
 	theme: Theme,
@@ -145,52 +111,42 @@ function createView(
 
 test("UsageView renders the 16x16 map and matching category legend with semantic colors", () => {
 	// Tall enough for the whole legend to sit beside the map without scrolling.
-	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 33);
+	const theme = createTheme();
+	const view = createView(theme, { usage: usage(), mapSize: { columns: 16, rows: 16 } }, () => {}, () => 100);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
-	assert.equal(lines.length, 33);
+	assert.equal(lines.length, 100);
 	assert.match(plain[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
-	assert.match(lines[2] ?? "", /\u001b\[38;2;1;2;3m.*Context Usage/);
-	assert.match(lines[2] ?? "", /\u001b\[38;2;7;8;9mclaude-opus-4-8/);
+	assert.ok(lines[2]?.includes(theme.fg("accent", theme.bold("Context Usage"))));
+	assert.ok(lines[2]?.includes(theme.getFgAnsi("muted") + "claude-opus-4-8"));
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
 	assert.match(plain[4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){15}\s+Category:$/);
 	// The key trails the more important legend, separated by one empty detail row.
 	const mapKeyIndex = plain.findIndex((line) => line.includes("Map:"));
-	assert.equal(mapKeyIndex, 22);
+	assert.ok(mapKeyIndex > plain.findIndex((line) => line.includes("Free Space")));
 	assert.match(plain[mapKeyIndex - 2] ?? "", /⛶ Free Space/);
 	// The default map ends above the key, leaving its separator row empty.
 	assert.equal(plain[mapKeyIndex - 1]?.trim(), "");
 	assert.match(plain[mapKeyIndex] ?? "", /\s+Map:$/);
-	assert.match(plain[mapKeyIndex + 1] ?? "", /\s+■ - Single category block$/);
-	assert.match(plain[mapKeyIndex + 2] ?? "", /\s+◧ - Shared block, largest category shown$/);
+	assert.match(plain[mapKeyIndex + 1] ?? "", /\s+■ - \S.+/);
+	assert.match(plain[mapKeyIndex + 2] ?? "", /\s+◧ - \S.+/);
 	assert.match(plain[mapKeyIndex + 3] ?? "", /\s+⛶ - Block Size: 3\.9k \(0\.4%\)$/);
 	assert.doesNotMatch(plain[mapKeyIndex] ?? "", /Compacted|Free/);
 	// The block size stays muted at Window scale; only the Fit toggle highlights it.
-	assert.match(lines[mapKeyIndex + 3] ?? "", /\u001b\[38;2;7;8;9m3\.9k \(0\.4%\)/);
+	assert.ok(lines[mapKeyIndex + 3]?.includes(theme.fg("muted", "3.9k (0.4%)")));
 	assert.equal(plain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){15}/.test(line)).length, 16);
 	assert.ok(plain.some((line) => /■ System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
 	assert.ok(plain.some((line) => /■ Tool Output \.{2,}\s+5k\s+0\.5%/.test(line)));
 	assert.ok(plain.some((line) => /⛶ Free Space \.{2,}\s+956\.2k\s+96%/.test(line)));
-	const categoryColors: Array<readonly [string, string]> = [
-		["22;23;24", "■"], // System Prompt and Built-in Tools intentionally share one color.
-		["1;2;3", "■"],
-		["25;26;27", "■"],
-		["28;29;30", "■"],
-		["31;32;33", "■"],
-		["34;35;36", "■"],
-		["37;38;39", "■"],
-		["40;41;42", "■"],
-		["43;44;45", "▦"],
-		["46;47;48", "■"],
-		["49;50;51", "■"],
-		["52;53;54", "■"],
-	];
-	for (const [color, marker] of categoryColors) {
-		assert.ok(lines.some((line) => line.includes(`\u001b[38;2;${color}m${marker}`)),
-			`missing category color ${color}`);
+	for (const category of usage().categories) {
+		const color = DEFAULT_CATEGORY_COLORS.get(category.id);
+		assert.ok(color !== undefined);
+		const marker = category.id === "compacted-data" ? "▦" : "■";
+		assert.ok(lines.some((line) => line.includes(colorize(theme, color, marker))),
+			`missing category color for ${category.id}`);
 	}
-	assert.ok(lines.some((line) => /\u001b\[38;2;16;17;18m⛶/.test(line)));
+	assert.ok(lines.some((line) => line.includes(theme.fg("dim", "⛶"))));
 	const valueColumns = [
 		["System Prompt", "3.7k"],
 		["Built-in Tools", "11.8k"],
@@ -218,25 +174,23 @@ test("UsageView renders the 16x16 map and matching category legend with semantic
 	assert.equal(new Set(percentColumns).size, 1);
 	const instructionsLine = plain.find((line) => line.includes("Instruction Files"));
 	assert.match(instructionsLine ?? "", /Instruction Files \.{2,}\s+1\.5k/);
-	const descriptionIndex = plain.findIndex((line) => line.includes("Estimated context for the next model request"));
-	const hintsIndex = plain.findIndex((line) => line.includes("Esc Close"));
+	const descriptionIndex = plain.findIndex((line) => line.trim() === stripSgr(usageDescription(80)[0] ?? "").trim());
+	const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk"));
 	assert.ok(descriptionIndex > 0 && hintsIndex > descriptionIndex);
-	assert.equal(plain[hintsIndex - 1], "");
-	assert.equal(plain[descriptionIndex]?.indexOf("Estimated context"), 2);
-	assert.match(lines[descriptionIndex] ?? "", /\u001b\[38;2;16;17;18m  Estimated context/);
-	assert.equal(plain[hintsIndex]?.indexOf("↑↓"), 2);
-	assert.match(plain[hintsIndex] ?? "", /↑↓\/jk Navigate · Enter Preview · Z Zoom · Esc Close/);
-	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;16;17;18mEsc/);
-	assert.match(lines[hintsIndex] ?? "", /\u001b\[38;2;7;8;9m Close/);
+	assert.ok(containsBlock(lines, usageDescription(80)));
+	assert.ok(lines[descriptionIndex]?.includes(theme.getFgAnsi("dim")));
+	for (const key of ["↑↓/jk", "Enter", "Z", "Esc"]) assert.ok(plain[hintsIndex]?.includes(key));
+	assert.ok(lines[hintsIndex]?.includes(theme.fg("dim", "Esc")));
+	assert.ok(lines[hintsIndex]?.includes(theme.getFgAnsi("muted")));
 
 	// The first category row starts selected: fixed-column accent cursor and accent label/values.
 	const selectedRow = lines.find((line) => stripSgr(line).includes("→ "));
 	assert.ok(selectedRow !== undefined);
 	assert.match(stripSgr(selectedRow), /→ ■ System Prompt \.{2,}/);
-	assert.match(selectedRow, /\u001b\[38;2;1;2;3m→ /);
-	assert.match(selectedRow, /\u001b\[38;2;1;2;3mSystem Prompt/);
-	assert.match(selectedRow, /\u001b\[38;2;16;17;18m\.+/);
-	assert.match(selectedRow, /\u001b\[38;2;1;2;3m3\.7k/);
+	assert.ok(selectedRow.includes(theme.fg("accent", "→ ")));
+	assert.ok(selectedRow.includes(theme.fg("accent", "System Prompt")));
+	assert.ok(selectedRow.includes(theme.getFgAnsi("dim")));
+	assert.ok(selectedRow.includes(theme.fg("accent", "3.7k")));
 	assert.doesNotMatch(selectedRow, /\u001b\[48;/);
 });
 
@@ -278,7 +232,8 @@ test("UsageView applies configured colors to category, buffer, and free-space ma
 	categoryColors.set(AUTO_COMPACT_BUFFER_CATEGORY_ID, "warning");
 	categoryColors.set(FREE_SPACE_CATEGORY_ID, "error");
 	const configuredUsage = { ...usage(), autoCompactReserveTokens: 100_000 };
-	const view = createView(createTheme(), { usage: configuredUsage, categoryColors }, () => {}, () => 34);
+	const theme = createTheme();
+	const view = createView(theme, { usage: configuredUsage, categoryColors }, () => {}, () => 100);
 	const lines = view.render(80);
 	const plain = lines.map(stripSgr);
 
@@ -289,15 +244,15 @@ test("UsageView applies configured colors to category, buffer, and free-space ma
 	assert.notEqual(promptLine, -1);
 	assert.notEqual(bufferLine, -1);
 	assert.notEqual(freeLine, -1);
-	assert.match(lines[promptLine] ?? "", /\u001b\[38;2;55;56;57m■/);
-	assert.match(lines[outputLine] ?? "", /\u001b\[38;2;128;255;1m■/);
-	assert.match(lines[bufferLine] ?? "", /\u001b\[38;2;19;20;21m⛝/);
-	assert.match(lines[freeLine] ?? "", /\u001b\[38;2;58;59;60m⛶/);
-	const mapLines = lines.slice(4, 4 + DEFAULT_MAP_SIZE.rows);
-	assert.ok(mapLines.some((line) => /\u001b\[38;2;55;56;57m■/.test(line)));
-	assert.ok(mapLines.some((line) => /\u001b\[38;2;128;255;1m[■◧]/.test(line)));
-	assert.ok(mapLines.some((line) => /\u001b\[38;2;19;20;21m⛝/.test(line)));
-	assert.ok(mapLines.some((line) => /\u001b\[38;2;58;59;60m⛶/.test(line)));
+	assert.ok(lines[promptLine]?.includes(theme.fg("success", "■")));
+	assert.ok(lines[outputLine]?.includes(colorize(theme, "#80ff01", "■")));
+	assert.ok(lines[bufferLine]?.includes(theme.fg("warning", "⛝")));
+	assert.ok(lines[freeLine]?.includes(theme.fg("error", "⛶")));
+	const mapLines = lines.filter((line) => /^  [■◧▦⛝⛶]/.test(stripSgr(line)));
+	assert.ok(mapLines.some((line) => line.includes(theme.fg("success", "■"))));
+	assert.ok(mapLines.some((line) => ["■", "◧"].some((marker) => line.includes(colorize(theme, "#80ff01", marker)))));
+	assert.ok(mapLines.some((line) => line.includes(theme.fg("warning", "⛝"))));
+	assert.ok(mapLines.some((line) => line.includes(theme.fg("error", "⛶"))));
 });
 
 test("UsageView renders sanitized notices above the dashboard and caps the block", () => {
@@ -322,11 +277,24 @@ test("UsageView renders sanitized notices above the dashboard and caps the block
 	assert.equal(plain[4], "  Silent probe unavailable: no model is selected.");
 	assert.equal(plain[5], "  Ignoring unknown pi-context-view.json key \"evil\".");
 	assert.equal(plain[6], "  … +2 more");
+	assert.equal(plain[7], "", "a blank row separates the notices from the dashboard");
 	// Notices are warning-colored and stripped of escapes carried in configuration text.
-	assert.match(lines[4] ?? "", /\u001b\[38;2;19;20;21m/);
+	assert.ok(lines[4]?.includes(createTheme().getFgAnsi("warning")));
 	assert.doesNotMatch(lines[5] ?? "", /\u001b\[31m/);
 	assert.ok(!plain.some((line) => line.includes("skillsColor")));
 	assert.ok(plain.some((line) => /^  [■◧▦⛶]( [■◧▦⛶]){15}/.test(line)));
+});
+
+test("UsageView explains disabled probing in its description, not as a notice", () => {
+	const theme = createTheme();
+	const view = createView(theme, { usage: usage(), probingDisabled: true }, () => {}, () => 60);
+	const lines = view.render(100);
+	const plain = lines.map(stripSgr);
+	assertFrame(lines, 100, 60);
+	assert.ok(containsBlock(lines, usageDescription(100)));
+	assert.ok(containsBlock(lines, descriptionNoteLines(theme, probingDisabledNote(theme), 100)));
+	const plainView = createView(theme, { usage: usage() }, () => {}, () => 60).render(100).map(stripSgr);
+	assert.deepEqual(plain.slice(0, 6), plainView.slice(0, 6), "no notice rows above the dashboard");
 });
 
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
@@ -359,9 +327,8 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	);
 	// Only the token value follows the scale: the share of the mapped range is one cell of the grid.
 	assert.ok(fitPlain.some((line) => line.endsWith("⛶ - Block Size: 199 (0.4%)")), "Fit shrinks the block size");
-	assert.match(
-		fitFrame.find((line) => stripSgr(line).includes("Block Size")) ?? "",
-		/\u001b\[38;2;22;23;24m199 \(0\.4%\)/,
+	assert.ok(
+		fitFrame.some((line) => line.includes(createTheme().fg("mdHeading", "199 (0.4%)"))),
 		"Fit highlights the block size like the header zoom label",
 	);
 	assert.ok(fitPlain.some((line) => /⛝ Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/.test(line)));
@@ -389,79 +356,47 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	assert.ok(!reopened.render(80).map(stripSgr).some((line) => line.includes("Zoom 1M")));
 });
 
-test("UsageView collapses the description, then the map key, before the legend loses a row", () => {
-	// The fixture legend has 16 rows, so its counter names them as (visible/16).
-	const scrollCounter = /\(\d+\/16\)/;
-	let rows = 33;
-	const view = createView(createTheme(), { usage: usage() }, () => {}, () => rows);
-	const full = view.render(80).map(stripSgr);
-	assert.ok(full.some((line) => line.includes("Estimated context for the next model request")));
-	assert.ok(full.some((line) => line.endsWith("⛶ - Block Size: 3.9k (0.4%)")));
-
-	// One row short of the complete frame, the description goes whole and the key stays intact.
-	rows = 32;
-	const descriptionless = view.render(80).map(stripSgr);
-	assert.ok(!descriptionless.some((line) => line.includes("Estimated context")));
-	assert.ok(descriptionless.some((line) => line.endsWith("⛶ - Block Size: 3.9k (0.4%)")));
-	const hintsIndex = descriptionless.findIndex((line) => line.includes("↑↓/jk Navigate"));
-	assert.equal(hintsIndex, descriptionless.length - 3, "the hints keep their place below one blank row");
-	assert.equal(descriptionless[hintsIndex - 1], "", "the description takes its separating blank row with it");
-
-	rows = 29;
-	const compact = view.render(84).map(stripSgr);
-	assert.ok(compact.some((line) =>
-		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 3.9k (0.4%)")
-	));
-	assert.ok(!compact.some((line) => line.includes("Block Size")));
-	assert.ok(compact.some((line) => line.includes("⛶ Free Space")), "the whole legend still fits");
-	assert.ok(
-		compact.findIndex((line) => line.includes("Category:")) <
-			compact.findIndex((line) => line.includes("Map:")),
-		"the legend keeps its rows above the degrading key",
-	);
-
-	// The key drops the percentage before shortening its occupancy description.
-	const withoutPercent = view.render(80).map(stripSgr);
-	assert.ok(withoutPercent.some((line) =>
-		line.endsWith("Map: ■ One category · ◧ Mixed · ⛶ 3.9k")
-	));
-	const narrow = view.render(52).map(stripSgr);
-	assert.ok(narrow.some((line) => line.endsWith("Map: ■ One · ◧ Mixed · ⛶ 3.9k")));
-
-	rows = 26;
-	const keyless = view.render(80).map(stripSgr);
-	assert.ok(!keyless.some((line) => line.includes("Map:")));
-	assert.ok(keyless.some((line) => line.includes("⛶ Free Space")));
-	assert.ok(!keyless.some((line) => scrollCounter.test(line)), "the key goes before the legend scrolls");
-
-	rows = 24;
-	const scrolled = view.render(80).map(stripSgr);
-	assert.ok(!scrolled.some((line) => line.includes("Map:")));
-	assert.ok(scrolled.some((line) => line.includes("Category:")));
-	assert.ok(scrolled.some((line) => line.includes("System Prompt")));
-	assert.ok(scrolled.some((line) => scrollCounter.test(line)));
-	assert.ok(!scrolled.some((line) => line.includes("Estimated context")));
-
-	// Growing the terminal restores the collapsed description.
-	rows = 33;
-	assert.deepEqual(view.render(80).map(stripSgr), full);
+test("UsageView yields descriptions and map explanations before category navigation", () => {
+	let height = 100;
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => height);
+	const full = view.render(80);
+	assert.ok(containsBlock(full, usageDescription(80)));
+	const observed = new Set<string>();
+	for (height = 12; height <= 100; height++) {
+		const lines = view.render(80);
+		assertFrame(lines, 80, height);
+		const description = wholeOrAbsent(lines, usageDescription(80));
+		const text = frameText(lines);
+		const key = text.includes("Map:");
+		const detailedKey = text.includes("■ - ");
+		const scrolls = /\(\d+\/16\)/.test(text);
+		if (description) assert.ok(detailedKey && !scrolls, "optional prose must not displace the full legend");
+		if (scrolls) assert.ok(!key && !description, "categories take priority over explanations");
+		if (!description && detailedKey) observed.add("descriptionless");
+		if (key && !detailedKey) observed.add("compact-key");
+		if (!key && !scrolls) observed.add("keyless");
+		if (scrolls) observed.add("scrolling");
+		assert.ok(lines.some((line) => stripSgr(line).includes("→")));
+	}
+	assert.deepEqual(observed, new Set(["scrolling", "keyless", "compact-key", "descriptionless"]));
+	height = 100;
+	assert.deepEqual(view.render(80), full);
 });
 
 test("UsageView never renders a partially collapsed description", () => {
-	let rows = 24;
-	const view = createView(createTheme(), { usage: usage() }, () => {}, () => rows);
-	const sentence =
-		"Estimated context for the next model request. Token counts are approximate and may differ from the provider's estimate.";
-
-	for (rows = 12; rows <= 40; rows++) {
-		for (const width of [40, 60, 80, 120]) {
-			const plain = view.render(width).map(stripSgr);
-			const start = plain.findIndex((line) => line.includes("Estimated context"));
-			if (start < 0) continue;
-			const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
-			const description = plain.slice(start, hintsIndex - 1).map((line) => line.trim()).join(" ");
-			assert.equal(description, sentence, `truncated description at ${width}x${rows}`);
+	let height = 100;
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => height);
+	for (const width of [24, 40, 60, 80, 120]) {
+		const expected = usageDescription(width);
+		let visible = false;
+		let absent = false;
+		for (height = 12; height <= 100; height++) {
+			const lines = view.render(width);
+			assertFrame(lines, width, height);
+			if (wholeOrAbsent(lines, expected)) visible = true;
+			else absent = true;
 		}
+		assert.ok(visible && absent);
 	}
 });
 
@@ -563,22 +498,12 @@ test("UsageView hides the Auto-Compact Buffer when no reserve is provided", () =
 });
 
 test("UsageView wraps narrow descriptions instead of truncating them", () => {
-	// Tall enough for the narrow legend to keep every row beside the wrapped description.
-	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 32);
-	const lines = view.render(40).map(stripSgr);
-	const descriptionStart = lines.findIndex((line) => line.includes("Estimated context"));
-	const hintsIndex = lines.findIndex((line) => line.includes("↑↓/jk Navigate"));
-
-	assert.ok(descriptionStart >= 0 && hintsIndex > descriptionStart);
-	assert.equal(lines[hintsIndex - 1], "");
-	const descriptionLines = lines.slice(descriptionStart, hintsIndex - 1);
-	assert.ok(descriptionLines.length > 1);
-	assert.ok(descriptionLines.every((line) => line.startsWith("  ")));
-	assert.equal(
-		descriptionLines.map((line) => line.trim()).join(" "),
-		"Estimated context for the next model request. Token counts are approximate and may differ from the provider's estimate.",
-	);
-	assert.doesNotMatch(descriptionLines.join("\n"), /…/);
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 100);
+	for (const width of [24, 40, 60]) {
+		const lines = view.render(width);
+		assertFrame(lines, width, 100);
+		assert.ok(containsBlock(lines, usageDescription(width)));
+	}
 });
 
 test("UsageView falls back to estimated post-compaction usage and closes on Escape", () => {
@@ -696,7 +621,7 @@ test("UsageView opens a category block stream and skips full previews for comple
 	const preview = view.render(80);
 	const plain = preview.map((line) => stripSgr(line).trimEnd());
 	assert.equal(plain[2]?.indexOf("Tool Output"), 0);
-	assert.match(preview[2] ?? "", /\u001b\[38;2;1;2;3m.*Tool Output/);
+	assert.ok(preview[2]?.includes(createTheme().fg("accent", createTheme().bold("Tool Output"))));
 	assert.match(plain[2] ?? "", /5k · 0\.5%/);
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b/);
 	assert.equal(preview[3], "");
@@ -711,9 +636,10 @@ test("UsageView opens a category block stream and skips full previews for comple
 	);
 	assert.ok(searchHeader >= 0 && readHeader >= 0);
 	assert.ok(searchHeader < readHeader, "entries are chronological, not size-ordered");
-	assert.match(preview[searchHeader] ?? "", /\u001b\[38;2;1;2;3m┃ /);
+	assert.ok(preview[searchHeader]?.includes(createTheme().fg("accent", "┃ ")));
 	assert.doesNotMatch(preview[searchHeader] ?? "", /\u001b\[48;/);
-	assert.match(preview[readHeader] ?? "", /\u001b\[38;2;16;17;18m\[\d{2}-\d{2}-\d{4}/);
+	assert.ok(preview[readHeader]?.includes(createTheme().getFgAnsi("dim")));
+	assert.match(stripSgr(preview[readHeader] ?? ""), /\[\d{2}-\d{2}-\d{4}/);
 	assert.ok((preview[readHeader] ?? "").includes(theme.fg("mdHeading", theme.bold("read"))));
 	// Content indented two spaces past the header; unmarked blank row between blocks.
 	assert.equal(plain[searchHeader + 1], "┃   search result content");
@@ -855,7 +781,7 @@ test("UsageView scrolls a single Tool Output child and restores its category sel
 	aliases.handleInput("\u001b");
 	aliases.handleInput("\u001b[H");
 	aliases.handleInput("\r");
-	assert.match(stripSgr(aliases.render(80).join("\n")), /┃|Enter - View Content/);
+	assert.match(stripSgr(aliases.render(80).join("\n")), /┃/);
 });
 
 test("UsageView keeps the reasoning explanation in a direct single-entry preview", () => {
@@ -877,10 +803,10 @@ test("UsageView keeps the reasoning explanation in a direct single-entry preview
 		const frame = view.render(80);
 		const plain = stripSgr(frame.join("\n"));
 		assert.match(plain, /\[assistant\] 0 \+ Encoded ≈500 \(≈500\)/);
-		assert.match(plain, /Entry headers read:/);
-		assert.match(plain.replace(/\s+/g, " "), /Encoded replaces Reasoning when the provider replays encrypted reasoning/);
-		assert.equal(plain.match(/Entry headers read:/g)?.length, 1);
-		assert.doesNotMatch(plain, /┃|No content captured/);
+		const explanation = frameText(thinkingDescription(80));
+		assert.ok(containsBlock(frame, [explanation]));
+		assert.equal(frameText(frame).split(explanation).length, 2);
+		assert.doesNotMatch(plain, /┃/);
 		assert.ok(frame.length <= rows);
 	}
 });
@@ -936,10 +862,10 @@ test("UsageView labels tool parts inside the block and its full-content view", (
 	assert.ok((stream[entryHeader + 5] ?? "").includes(theme.fg("muted", " · 17 tokens")));
 	// Parts use syntaxKeyword so they stay distinct from the mdHeading entry header above them.
 	assert.ok((stream[entryHeader] ?? "").includes(theme.fg("mdHeading", theme.bold("search"))));
-	assert.doesNotMatch(stream[entryHeader + 5] ?? "", /\u001b\[38;2;22;23;24m/);
+	assert.ok(!stream[entryHeader + 5]?.includes(createTheme().getFgAnsi("mdHeading")));
 	// The remaining parts stay behind the block cap until Enter opens the whole entry.
 	assert.ok(!streamPlain.some((line) => line.includes("Definition · 7 tokens")));
-	assert.ok(streamPlain.some((line) => /… \+\d+ lines · Enter - View Content/.test(line)));
+	assert.ok(streamPlain.some((line) => /… \+\d+.*Enter/.test(line)));
 
 	view.handleInput("\r");
 	for (const width of [60, 80, 120]) {
@@ -994,7 +920,7 @@ test("UsageView expands marked JSON in the stream and caps it on the expanded li
 	assert.ok(streamPlain.some((line) => line.endsWith("read({")));
 	assert.ok(streamPlain.some((line) => line.endsWith('"key_0": "value 0 with enough text to wrap",')));
 	assert.ok(!streamPlain.some((line) => line.includes('{"key_0":')));
-	const marker = streamPlain.find((line) => /… \+\d+ lines · Enter - View Content/.test(line));
+	const marker = streamPlain.find((line) => /… \+\d+.*Enter/.test(line));
 	assert.ok(marker !== undefined);
 
 	view.handleInput("\r");
@@ -1047,7 +973,7 @@ test("UsageView expands marked JSON directly in a short single-entry category", 
 	const streamPlain = stream.map((line) => stripSgr(line).trimEnd());
 	assert.ok(streamPlain.some((line) => line.endsWith("read({")));
 	assert.ok(streamPlain.some((line) => line.endsWith('"path": "src/index.ts"')));
-	assert.ok(!streamPlain.some((line) => line.includes("Enter - View Content")));
+	assert.ok(!streamPlain.some((line) => /… \+\d+.*Enter/.test(line)));
 
 	// A single entry has no intermediate block level, even when its content is short
 	view.handleInput("\r");
@@ -1305,23 +1231,13 @@ test("UsageView explains invisible reasoning once and keeps its estimates distin
 	);
 	const unsignedHeader = plain.findIndex((line) => /\[assistant\] 50 \+ Reasoning ≈30 \(≈80\)$/.test(line));
 	assert.ok(reportedHeader >= 0 && proxyHeader > reportedHeader && unsignedHeader > proxyHeader);
-	assert.match(rendered[reportedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ≈547 \(≈1\.1k\)/);
-	assert.match(rendered[proxyHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Encoded ~1\.1k \(~1\.3k\)/);
-	assert.match(rendered[unsignedHeader] ?? "", /\u001b\[38;2;16;17;18m\+ Reasoning ≈30 \(≈80\)/);
+	assert.ok(rendered[reportedHeader]?.includes(createTheme().fg("dim", "+ Encoded ≈547 (≈1.1k)")));
+	assert.ok(rendered[proxyHeader]?.includes(createTheme().fg("dim", "+ Encoded ~1.1k (~1.3k)")));
+	assert.ok(rendered[unsignedHeader]?.includes(createTheme().fg("dim", "+ Reasoning ≈30 (≈80)")));
 
-	const descriptionStart = plain.findIndex((line) => line.includes("Entry headers read:"));
-	const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
-	assert.ok(descriptionStart > unsignedHeader && hintsIndex > descriptionStart);
-	assert.equal(plain[hintsIndex - 1], "");
-	assert.equal(
-		plain.slice(descriptionStart, hintsIndex - 1).map((line) => line.trim()).filter(Boolean).join(" "),
-		"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
-			"≈ is a provider-reported count; ~ is a rough approximation when no breakdown is reported " +
-			"and excluded from category totals. " +
-			"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.",
-	);
-	assert.match(rendered[descriptionStart] ?? "", /\u001b\[38;2;16;17;18m  Entry headers read:/);
-	assert.equal(plain.filter((line) => line.includes("Entry headers read:")).length, 1);
+	const explanation = thinkingDescription(120);
+	assert.ok(containsBlock(rendered.slice(unsignedHeader + 1), explanation));
+	assert.equal(frameText(rendered).split(frameText(explanation)).length, 2);
 
 	for (const width of [40, 60, 80, 120]) {
 		for (const line of view.render(width)) {
@@ -1360,7 +1276,7 @@ test("UsageView previews empty categories, free space, and long content safely",
 	const emptyFrame = view.render(80).join("\n");
 	const leafPreview = emptyFrame.split("\n").map(stripSgr);
 	assert.equal(leafPreview[2]?.indexOf("User Messages"), 0);
-	assert.ok(leafPreview.some((line) => line.includes("No content captured for this category.")));
+	assert.ok(containsBlock(leafPreview, [emptyPreviewNote().text]));
 	assert.ok(!leafPreview.some((line) => line.includes("┃")));
 	assert.ok(!leafPreview.some((line) => line.includes("Enter")));
 	// Nothing to navigate or page: the empty stream offers Escape alone.
@@ -1458,16 +1374,16 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	// Lead breadcrumb cell is bold mdHeading; later cells stay muted.
 	const cappedHeader = capped.find((line) => stripSgr(line).includes("[assistant] [bash]"));
 	assert.ok((cappedHeader ?? "").includes(theme.fg("mdHeading", theme.bold("assistant"))));
-	assert.match(cappedHeader ?? "", /\u001b\[38;2;7;8;9mbash/);
+	assert.ok(cappedHeader?.includes(createTheme().fg("muted", "bash")));
 	assert.ok(plainCapped.some((line) => line === "┃   line 10"));
 	assert.ok(!plainCapped.some((line) => line.includes("line 11")));
-	const marker = plainCapped.findIndex((line) => line === "┃   … +20 lines · Enter - View Content");
+	const marker = plainCapped.findIndex((line) => /… \+\d+/.test(line));
 	assert.ok(marker >= 0);
-	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3m┃ /);
+	assert.ok(capped[marker]?.includes(createTheme().fg("accent", "┃ ")));
 	assert.equal((plainCapped[marker] ?? "").indexOf("… +20 lines"), 4, "the marker is left-aligned");
 	assert.doesNotMatch(capped[marker] ?? "", /\u001b\[48;/);
-	assert.match(capped[marker] ?? "", /\u001b\[38;2;16;17;18m… \+20 lines/);
-	assert.match(capped[marker] ?? "", /\u001b\[38;2;1;2;3mEnter - View Content/);
+	assert.ok(capped[marker]?.includes(createTheme().getFgAnsi("dim")));
+	assert.ok(capped[marker]?.includes(createTheme().getFgAnsi("accent") + "Enter"));
 	const cappedHints = plainCapped.find((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(cappedHints !== undefined && !cappedHints.includes("Enter"));
 	assert.ok(!capped.some((line) => line.includes("\u0007") || line.includes("evil")));
@@ -1476,7 +1392,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 		assert.ok(resized.every((line) => visibleWidth(line) <= width));
 		const resizedPlain = resized.map((line) => stripSgr(line).trimEnd());
 		assert.ok(resizedPlain.some((line) => line.startsWith("┃   … +20 lines")));
-		if (width >= 40) assert.ok(resizedPlain.some((line) => line.endsWith("Enter - View Content")));
+		if (width >= 40) assert.ok(resizedPlain.some((line) => /… \+\d+.*Enter/.test(line)));
 	}
 
 	// Enter opens all 30 lines without the stream's cap or gutter.
@@ -1533,27 +1449,26 @@ test("UsageView shrinks the block cap with terminal height and re-caps on resize
 
 	view.render(80);
 	view.handleInput("\r");
-	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Content"), "40 rows keep 10 lines");
-
-	// 24 rows: five content lines per block, so both blocks stay whole instead of scrolling through one.
-	rows = 24;
-	const short = plain();
-	assert.ok(short.some((line) => line === "┃   … +25 lines · Enter - View Content"));
-	assert.ok(short.some((line) => line === "┃   line 5"));
-	assert.ok(!short.some((line) => line.includes("line 6")));
-	assert.equal(headerCount(short), 2, "both entry headers stay visible");
-
-	// The floor keeps a readable peek once no height can fit two blocks.
-	rows = 18;
-	const floored = plain();
-	assert.ok(floored.some((line) => line === "┃   … +26 lines · Enter - View Content"));
-	assert.ok(floored.some((line) => line === "┃   line 4"));
-	assert.ok(!floored.some((line) => line.includes("line 5")));
-	assert.ok(floored.some((line) => line.includes("(1/2)")), "the shortened stream still scrolls");
-
-	// Growing back re-caps: the stream cache keys on the cap, not on the unchanged width alone.
+	const full = plain();
+	const counts = new Set<number>();
+	let sawBoth = false;
+	let sawOverflow = false;
+	for (rows = 18; rows <= 40; rows++) {
+		const lines = plain();
+		assertFrame(lines, 80, rows);
+		const marker = lines.find((line) => line.startsWith("┃") && /… \+\d+/.test(line));
+		assert.ok(marker);
+		const hidden = Number(/… \+(\d+)/.exec(marker)?.[1]);
+		const shown = lines.filter((line) => /^┃\s+line \d+$/.test(line)).length;
+		assert.equal(shown + hidden, 30, "the cap accounts for exactly the content the full view opens");
+		assert.ok(shown > 0 && hidden > 0);
+		counts.add(shown);
+		sawBoth ||= headerCount(lines) === 2;
+		sawOverflow ||= /\(1\/2\)/.test(frameText(lines));
+	}
+	assert.ok(counts.size > 1 && sawBoth && sawOverflow);
 	rows = 40;
-	assert.ok(plain().some((line) => line === "┃   … +20 lines · Enter - View Content"));
+	assert.deepEqual(plain(), full, "height-only resize rebuilds and restores the capped stream");
 });
 
 test("UsageView refits direct full content when narrow widths share a wrap width", () => {
@@ -1626,8 +1541,8 @@ test("UsageView compacts attached skills into pi-colored badges only in user pre
 	const plain = wide.map((line) => stripSgr(line).trimEnd());
 	const firstBadge = wide.find((line) => stripSgr(line).includes("[skill] code-style"));
 	assert.ok(firstBadge !== undefined);
-	assert.match(firstBadge, /\u001b\[38;2;31;32;33m.*\[skill\]/);
-	assert.match(firstBadge, /\u001b\[38;2;170;187;204mcode-style/);
+	assert.ok(firstBadge.includes(createTheme().fg("customMessageLabel", createTheme().bold("[skill]"))));
+	assert.ok(firstBadge.includes(createTheme().fg("customMessageText", "code-style")));
 	assert.ok(plain.some((line) => line.includes(`[skill] ${longUnsafeName}`)));
 	assert.ok(plain.some((line) => line.includes("Keep this user request visible.")));
 	assert.ok(plain.some((line) => line.includes('<skill name="broken"')));

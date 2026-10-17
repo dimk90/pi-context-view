@@ -1,8 +1,8 @@
 # Validation
 
-Part of the [architecture](../ARCHITECTURE.md). How lifecycle, capture, and
-payload behavior is verified, and what to recheck after a Pi upgrade.
-Rendering checks belong to [UI.md](../UI.md#responsive-rendering).
+Part of the [architecture](../ARCHITECTURE.md). How lifecycle, capture, payload,
+and UI behavior is verified, and what to recheck after a Pi upgrade.
+UI design decisions belong to [UI.md](../UI.md).
 
 ## Harness
 
@@ -29,6 +29,12 @@ register top-level hooks, which would apply to every file. Mock
 shared static methods through a registry such as `test/harness/settings.ts`,
 keyed by a per-test temporary directory. Use asynchronous child processes, and
 never probe a closed loopback port: another test may already have reused it.
+Loopback provider servers, including the demo endpoint, answer with
+`Connection: close`: a long synchronous test can block the event loop past the
+server's keep-alive timeout, and the server then closes an idle connection just
+as the client reuses it.
+After hooks run in registration order, so register a hook that stops a session
+or awaits a child's exit before the hook that removes the directory it uses.
 
 `demo-injections.test.ts` checks launcher
 selection, order, and demo fixture paths without starting a provider.
@@ -36,7 +42,16 @@ selection, order, and demo fixture paths without starting a provider.
 Completions-only loopback endpoint that discards bodies, appearance-only
 configuration, in-memory sessions, conflicting-argument rejection, signal and
 failure cleanup, and ordinary prompts through the pinned CLI with and without
-codemode. Theme cases cover selected installed-package assets, automatic
+codemode. Config and argument cases call
+`scripts/demo-injections/demo-mock-config.ts` directly,
+so Pi's resource APIs are imported once in the shared test process. These cases
+use separate scratch directories without changing the process environment.
+Subprocess tests cover launcher wiring, argument rejection, signals, startup and
+child failures, and the real CLI; detailed config cases do not relaunch Pi.
+Missing npm packages have one focused launcher case with a child-only npm stub
+that permits only `npm root -g`. Shared config fixtures avoid missing npm
+packages so Pi's synchronous global-package lookup cannot block other tests.
+Theme cases cover selected installed-package assets, automatic
 light/dark pairs, manifest paths and exclusions, configured paths, and local
 packages, without executing package extensions during discovery or installing
 missing packages. `--mock --local` cases cover global configured, auto-discovered,
@@ -79,7 +94,7 @@ mode: run them in a real PTY as the `pi-extension` skill describes.
 | Inline tool changes       | Anthropic with `supportsMidConvoToolChanges`, with API-key and OAuth casing; OpenAI Responses with `supportsAdditionalTools` or `supportsToolSearch`; Completions system-message additions. Activate, remove, and redefine tools after the first request: both diffs stay empty.                                                                                         | `payload-runtime`, `dispatch-runtime`                              |
 | Silent probe              | Probe before the first request with the lifecycle fixtures in both orders; the `after_provider_response` sentinel stays silent. On a model with `supportsMidConvoSystemMessages`, system messages keep their positions after probes.                                                                                                                                     | `probe-runtime`, `payload-runtime`                                 |
 | Probe payload             | A standard probe produces a structured capture but no payload; its guard settles incomplete at settlement. Virtual selections fall back without probing.                                                                                                                                                                                                                 | `probe-runtime`, `probe-guards`                                    |
-| Probe ownership           | An earlier extension's async `input` handler starts an idle custom-message run during the probe and waits until it settles: that run gets its provider response and fails the attempt, and the probe prompt is still claimed, aborted, and never sent. A custom-message run with the token is never claimed.                                                             | `probe-runtime`, `silent-probe`                                    |
+| Probe ownership           | An earlier extension's async `input` handler starts an idle custom-message run during the probe and waits until it settles: that run gets its provider response and fails the attempt, and the probe prompt is still claimed, aborted, and never sent. A custom-message run with the token is never claimed. Nested user sends: see below the table.                     | `probe-runtime`, `silent-probe`                                    |
 | Messages during probe     | An extension in either order steers a user message and sends a custom message from `before_agent_start` during the probe. Both stay visible in the session and in the next real request, the probe makes no provider request, and the extra turn's abort is blanked. A user message with the prompt's timestamp is not recorded, blanked, omitted, or filtered.          | `probe-runtime`, `silent-probe`, `probe-filter`                    |
 | Custom-message runs       | After an active-tool change, an idle `pi.sendMessage(..., { triggerTurn: true })` run's `real-turn` snapshot has the new hidden set and, with `forced-prompt.ts` in either order, the forced prompt.                                                                                                                                                                     | `hidden-tools-runtime`                                             |
 | Probe trigger             | One automatic attempt per runtime; concurrent callers share it; every precondition falls back without consuming the attempt.                                                                                                                                                                                                                                             | `probe-trigger`, `probe-guards`                                    |
@@ -87,6 +102,26 @@ mode: run them in a real PTY as the `pi-extension` skill describes.
 | Cleanup and privacy       | Pending data is released on settlement and shutdown; raw content stays out of logs, session entries, and notifications. Persisted probe records contain only role and timestamp.                                                                                                                                                                                         | `capture-builder`, `payload-guard`, `silent-probe`, `probe-filter` |
 
 Test names refer to `test/<name>.test.ts`. `pnpm check` runs all of them.
+
+`probe-runtime` and `silent-probe` cover nested user sends: an async `input`
+handler sends an idle user message during the probe and waits until its run
+settles. With the sender after this extension, the second idle input with the
+token fails the attempt: no input is reset, no run is claimed, and both runs
+reach the provider. With the sender before it, the nested run is claimed in the
+probe's place, and the probe prompt's later run is left untouched and raises
+one warning without message content.
+
+`message-channel` and `payload-runtime` cover Pi 1.3's foreign-thinking removal
+and Anthropic error-image relocation: signed and unsigned thinking, unchanged
+same-model replay, successful and failed image results, grouped captions after
+all tool results, foreign ID normalization, text-only models, and blocked images.
+Caption edits remain payload findings.
+
+`payload` and `payload-runtime` cover the thinking-level messages of
+`supportsMidConvoEffort`: OpenAI Responses `configuration_update` items and
+Anthropic empty system messages with `output_config`, the latter with
+`forceAdaptiveThinking`. A thinking-level change between prompts keeps the
+guard complete and both diffs empty.
 
 ### Prompt source rows
 
@@ -136,6 +171,51 @@ height-only resize, narrow wrapping, empty reserved lines, theme invalidation,
 and the compact frame that keeps the selected row and bar on short terminals.
 `model` checks that editor metadata owns its sources and arrays.
 
+## UI Checks
+
+`pnpm check` includes pure rendering and interaction tests. Cover the design
+rules in [UI.md](../UI.md) without freezing incidental copy or layout values:
+
+- Width and height bounds at 60, 80, and 120 columns, narrower fallbacks, very
+  short terminals, and height-only resizing; include Unicode and styled text.
+- Navigation through overflow, previews, and tall blocks; selection and viewport
+  restoration on return; keyboard aliases and fullscreen wheel behavior.
+- Whole-block description collapse and restoration, with essential capture
+  status, degraded reasons, totals, and selected-row details still available.
+- Both map scales, unavailable denominators, oversized configured geometry,
+  legend accessibility, and controls that disappear with their unavailable action.
+- Theme and view-state invalidation, safe text rendering, and no raw content
+  before explicit preview.
+
+`usage-view`, `usage-map`, `injections-view`, `usage-preview`, `injected-preview`,
+`diff-preview`, `json-preview`, `skill-preview`, `status-bar`, `notes`, `color`, and
+`wheel` cover these areas; the focused cases above cover accounting and attribution.
+
+Keep these tests independent of display wording:
+
+- **Typed decisions.** Test decisions such as change scope, payload check, note
+  kind, marker, and probe failure cause as typed values in the module that makes them.
+- **Copy checks.** For each set of messages, check that every case has text, the
+  texts are distinct, dynamic values appear, and unsafe text is sanitized.
+- **Component output as the expected block.** View tests render the expected block
+  with its owning function, such as `statusBarLines()`, `markerLegendLines()`, or
+  `descriptionNoteLines()`, then check it with `test/harness/frame.ts`: whole,
+  absent, or contained after wrapping.
+- **Layout rules.** Sweep widths and heights and check bounds, priorities,
+  whole-or-absent blocks, and restoration, not exact thresholds or line indexes.
+  Check colors with `theme.fg()` instead of raw escape codes.
+
+Keep exact text only where it is a contract: command grammar and usage, config
+file output, captured content shown in previews, and notation such as `≈`, `~`,
+`+N -N`, and formatted token values. When changing these tests, reword the
+relevant copy temporarily: the tests should pass. Then break the behavior
+temporarily: they should fail.
+
+Run real-PTY checks and provider smoke tests only when explicitly requested.
+When requested, follow the `pi-extension` skill and exercise both views and
+preview levels at the widths above, narrow and short fallbacks, resize recovery,
+overflow navigation, preview return, and theme changes.
+
 ## Lifecycle Smoke Tests
 
 For lifecycle changes, load `test/fixtures/marker.ts`,
@@ -143,8 +223,8 @@ For lifecycle changes, load `test/fixtures/marker.ts`,
 and after this extension. Use an `after_provider_response` sentinel to prove
 that a probe makes no provider request, and load
 `test/fixtures/payload-logger.ts` last to compare the views with the payload
-that reached the provider. For TUI changes, also run the real-PTY and
-rendering checks of the `pi-extension` skill and [UI.md](../UI.md).
+that reached the provider. For TUI changes, use the automated [UI checks](#ui-checks);
+real-PTY and provider smoke tests remain explicit opt-in.
 
 ## After a Pi Upgrade
 

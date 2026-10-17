@@ -34,6 +34,8 @@ export interface SnapshotApplicationInput {
 export interface AppliedRequest {
 	/** Current branch messages, system messages included, with the request's conversation changes. */
 	readonly messages: RequestMessage[];
+	/** Current branch messages without the request's changes, as Pi's session holds them. */
+	readonly branchMessages: RequestMessage[];
 	/** Request-only system changes; empty unless the recorded system state is unchanged since capture. */
 	readonly systemChanges: readonly SystemChange[];
 	/** The request's forced prompt, under the same freshness rule as `systemChanges`. */
@@ -60,9 +62,10 @@ export function readProjection(
  */
 export function applyRequestSnapshot(input: SnapshotApplicationInput): AppliedRequest {
 	const current = readProjection(input.entries, input.leafId, input.filterMessages);
-	if (input.snapshot === undefined) return { messages: current.map(({ message }) => message), systemChanges: [] };
+	const branchMessages = current.map(({ message }) => message);
+	if (input.snapshot === undefined) return { messages: branchMessages, branchMessages, systemChanges: [] };
 	const messages = applyConversationChanges(current, input.snapshot.changes.conversation);
-	return { messages, ...freshSystemState(input.snapshot, input.entries, messages) };
+	return { messages, branchMessages, ...freshSystemState(input.snapshot, input.entries, messages) };
 }
 
 /** Current messages with modifications and deletions applied in place, then additions appended. */
@@ -98,7 +101,7 @@ function freshSystemState(
 	snapshot: RequestSnapshot,
 	entries: SessionEntry[],
 	messages: readonly RequestMessage[],
-): Omit<AppliedRequest, "messages"> {
+): Omit<AppliedRequest, "messages" | "branchMessages"> {
 	const { changes: { system }, forcedPrompt } = snapshot;
 	if (system.length === 0 && forcedPrompt === undefined) return { systemChanges: [] };
 	const baseline = getCurrentSystemMessage(buildSessionProjection(entries, snapshot.leafId).messages);

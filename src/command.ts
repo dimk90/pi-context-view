@@ -36,10 +36,15 @@ export type ContextCommand =
 	| { readonly type: "config" }
 	| { readonly type: "invalid"; readonly message: string };
 
-/** The latest request snapshot, or why the view must degrade without one. */
+/**
+ * The latest request snapshot, or why the view opens without one:
+ *   missing    a probe was skipped or failed; the view must explain why it degraded
+ *   unprobed   none was captured yet and `autoProbing` is off, an expected state
+ */
 export type RequestSnapshotResult =
 	| { readonly type: "snapshot"; readonly snapshot: RequestSnapshot }
-	| { readonly type: "missing"; readonly degradedReason: string };
+	| { readonly type: "missing"; readonly degradedReason: string }
+	| { readonly type: "unprobed" };
 
 /** Parse the complete, intentionally small `/context` argument grammar. */
 export function parseContextCommand(argumentsText: string): ContextCommand {
@@ -70,18 +75,22 @@ export function getContextArgumentCompletions(argumentPrefix: string): Autocompl
  * Obtain the latest request snapshot of this runtime, asking ProbeTrigger
  * only when the store has none after the agent is idle: a real turn that was
  * running publishes one without a probe. A probe's snapshot is read from the
- * store, not from the probe result.
+ * store, not from the probe result. With `autoProbing` off, an empty store
+ * resolves to `unprobed` without asking ProbeTrigger.
  */
 export async function resolveRequestSnapshot(
 	snapshots: SnapshotReader,
 	trigger: ProbeTrigger,
 	context: ExtensionCommandContext,
+	autoProbing: boolean,
 ): Promise<RequestSnapshotResult> {
 	const existing = snapshots.latest();
 	if (existing !== undefined) return { type: "snapshot", snapshot: existing };
 	await context.waitForIdle();
 	const afterIdle = snapshots.latest();
 	if (afterIdle !== undefined) return { type: "snapshot", snapshot: afterIdle };
+
+	if (!autoProbing) return { type: "unprobed" };
 
 	const result = await trigger.request(context);
 	const probed = snapshots.latest();

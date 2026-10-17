@@ -3,7 +3,7 @@
 Implementation and measurement notes behind the **Assistant Thinking**
 estimate and preview. Measurements were taken on 26.07.2026 against pi 0.82.1,
 `claude-opus-5` and `claude-fable-5`, using OAuth transport.
-[UI.md](UI.md) remains the canonical UI specification.
+[UI.md](UI.md) owns the shared UI design rules.
 
 ## Summary
 
@@ -57,6 +57,17 @@ visible thinking block.
 
 For messages with multiple visible thinking blocks, chars/4 rounding is pooled
 across the message and then allocated back to the individual preview entries.
+
+Since Pi 1.3.0, a request drops the thinking blocks of assistant messages from
+another provider, API, or model, and their tool calls' `thoughtSignature`.
+The estimator skips such messages entirely: no counted tokens, no signature
+proxy, no preview, and no marker. The next request's model is `ctx.model` for
+a physical selection; for a virtual one, it is the model of the latest reply
+that is not an error or aborted on the branch, without the latest request's
+changes, as Pi's routed-model lookup does. Without a
+selection, or for a virtual one without such a reply, all thinking counts.
+`src/model-identity.ts` holds the same-model check that the payload guard also
+uses.
 
 ## Retention is model-dependent
 
@@ -127,34 +138,19 @@ absent, and present the fallback as approximate.
 
 ## Preview presentation
 
-[ui/usage.md](ui/usage.md#thinking-notation) owns the preview notation. The estimate surfaces like this:
+[ui/usage.md](ui/usage.md#thinking-notation) owns the presentation decisions.
+Notation communicates the accounting basis, not a fixed header layout:
 
-```text
-Assistant Thinking                                           1.4k
+- `≈` identifies a provider-reported invisible share already included in the
+  category total.
+- `~` identifies the rough signature-size proxy, excluded from category totals
+  and never an upper bound.
+- `Encoded` means a captured signature is present; `Reasoning` describes an
+  invisible share without one. Neither label exposes signature bytes.
 
-  [24-07-2026 17:15:02] [assistant] 594 + Encoded ≈547 (≈1.1k)
-    I need to check how the session context is built
-    before deciding where the filter belongs…
-    … +3 lines
-
-  [24-07-2026 17:16:48] [assistant] 131 + Encoded ~1.1k (~1.3k)
-    Now wire the estimate into the category totals.
-
-  [24-07-2026 17:18:03] [assistant] 56 + Reasoning ≈32 (≈88)
-    Done; totals already reconcile.
-
-  Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning
-  ≈invisible (≈total). ≈ is a provider-reported count; ~ is a rough
-  signature-size proxy shown when no breakdown is reported and excluded
-  from category totals. Encoded replaces Reasoning when the provider
-  replays encrypted reasoning with its message.
-
-  ↑↓ Scroll · PgUp/PgDn Page · Esc Back
-```
-
-The three header cells stay visually distinct because they mean different
-things: `≈ Encoded` and `≈ Reasoning` report a share already inside the
-category total, while `~ Encoded` is the chars/4 proxy excluded from it.
+Keep the visible estimate, invisible share, and combined message estimate
+distinguishable. Omit zero-size shares and explain which basis an annotation
+uses while the user inspects thinking.
 
 ## Reading provider counters
 

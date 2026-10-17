@@ -35,6 +35,9 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(createDefaultConfigFile(filePath), { type: "created", filePath });
 	const text = readFileSync(filePath, "utf8");
 	assert.ok(text.endsWith("\n"));
+	// The documented example is the exact file, blank lines between key groups included
+	const documented = /```json\n([\s\S]*?\n)```/.exec(readFileSync(new URL("../doc/CONFIG.md", import.meta.url), "utf8"));
+	assert.equal(text, documented?.[1]);
 	// Entries, not the parsed object: the file must also list keys in legend order.
 	assert.deepEqual(Object.entries(JSON.parse(text)), [
 		["systemPromptColor", "mdHeading"],
@@ -54,6 +57,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 		["freeSpaceColor", "dim"],
 		["mapCols", 16],
 		["mapRows", 16],
+		["autoProbing", true],
 	]);
 	assert.deepEqual(readdirSync(dirname(filePath)), ["pi-context-view.json"]);
 
@@ -61,6 +65,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(loaded.warnings, []);
 	assert.deepEqual(loaded.config.categoryColors, DEFAULT_CONFIG.categoryColors);
 	assert.deepEqual(loaded.config.mapSize, DEFAULT_CONFIG.mapSize);
+	assert.equal(loaded.config.autoProbing, true);
 
 	// Repeating the command hits the write's EEXIST, the only branch that may report "exists".
 	assert.deepEqual(createDefaultConfigFile(filePath), { type: "exists", filePath });
@@ -235,6 +240,20 @@ test("loadConfigFile keeps the default for an unusable map size and warns once",
 			'Ignoring invalid size for "mapCols"; expected an integer between 4 and 64.',
 		], reason);
 	}
+});
+
+test("loadConfigFile applies autoProbing and keeps the default for a non-boolean value", (context) => {
+	const filePath = createConfigPath(context);
+	writeFileSync(filePath, JSON.stringify({ autoProbing: false }));
+	const disabled = loadConfigFile(filePath);
+	assert.deepEqual(disabled.warnings, []);
+	assert.equal(disabled.config.autoProbing, false);
+
+	writeFileSync(filePath, JSON.stringify({ autoProbing: "false" }));
+	const invalid = loadConfigFile(filePath);
+	assert.equal(invalid.config.autoProbing, true);
+	assert.equal(invalid.warnings.length, 1);
+	assert.ok(invalid.warnings[0]?.includes('"autoProbing"'), "the warning names the ignored key");
 });
 
 /** Every renamed config key with the current name and the category both color. */

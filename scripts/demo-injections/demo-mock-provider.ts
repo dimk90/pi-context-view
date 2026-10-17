@@ -35,6 +35,9 @@ export async function startDemoMockProvider(): Promise<DemoMockProvider> {
 
 /** Consume and discard the payload, then answer with a text-only OpenAI Completions stream. */
 async function serveRequest(request: IncomingMessage, response: ServerResponse, sequence: number): Promise<void> {
+	// The endpoint test can share the event loop with a long synchronous test that blocks it past the 5 s keep-alive
+	// timeout; the server then closes an idle connection just as the client reuses it, so open a new one per request
+	response.setHeader("Connection", "close");
 	if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
 		request.resume();
 		response.writeHead(404).end();

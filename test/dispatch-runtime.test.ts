@@ -260,6 +260,9 @@ suite("payload representation per API", { concurrency: true }, () => {
 async function createRuntime(t: TestContext, options: RuntimeOptions): Promise<Runtime> {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
+	// After hooks run in registration order: the session must stop before its directory is removed
+	let stopSession: (() => void) | undefined;
+	t.after(() => stopSession?.());
 	const directory = await mkdtemp(join(tmpdir(), "context-dispatch-test-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const settingsManager = SettingsManager.inMemory({
@@ -290,7 +293,7 @@ async function createRuntime(t: TestContext, options: RuntimeOptions): Promise<R
 		model: models.find((model) => model.api === api && model.id === modelId),
 		sessionManager: SessionManager.inMemory(directory), tools: [...(options.tools ?? ["read"])], thinkingLevel: "off",
 	});
-	t.after(() => session.dispose());
+	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
 	await session.bindExtensions({ mode: "rpc", onError: (error) => { errors.push(`${error.event}: ${error.error}`); } });

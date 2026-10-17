@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 import { normalizeInlineText, normalizePreviewText } from "../src/text.ts";
+import { runCommand } from "./harness/run-command.ts";
 
 test("normalizePreviewText normalizes whitespace and removes terminal controls", () => {
 	assert.equal(normalizePreviewText("a\r\nb\rc\td"), "a\nb\nc    d");
@@ -24,17 +24,16 @@ test("normalizePreviewText strips every terminal string form and preserves incom
 	assert.equal(normalizePreviewText("\u001b]unfinished\r\ntext\t\u001b[31mred\u001b[0m"), "unfinished\ntext    red");
 });
 
-test("normalizePreviewText handles long unterminated terminal strings without quadratic rescanning", () => {
-	// Bound a regression in a child process: a synchronous regex cannot be interrupted by node:test.
+test("normalizePreviewText handles long unterminated terminal strings without quadratic rescanning", async () => {
+	// Bound a regression in a child process: a synchronous regex cannot be interrupted by node:test
 	const moduleUrl = new URL("../src/text.ts", import.meta.url).href;
-	const result = spawnSync(process.execPath, ["--input-type=module", "-e", `
+	const result = await runCommand(process.execPath, ["--input-type=module", "-e", `
 		import assert from "node:assert/strict";
 		import { normalizePreviewText } from ${JSON.stringify(moduleUrl)};
 		for (const start of ["\\u001b]", "\\u001bP", "\\u009d", "\\u0090"]) {
 			assert.equal(normalizePreviewText(start.repeat(128_000) + "visible"), "visible");
 		}
-	`], { timeout: 10_000, encoding: "utf8" });
-	assert.ifError(result.error);
+	`], { timeout: 10_000 });
 	assert.equal(result.status, 0, result.stderr);
 });
 

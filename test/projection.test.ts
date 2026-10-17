@@ -55,7 +55,12 @@ function apply(session: SessionManager, snapshot: RequestSnapshot | undefined): 
 
 /** Contents of the non-system messages, in order. */
 function contents(applied: AppliedRequest): unknown[] {
-	return applied.messages.filter((message) => message.role !== "system")
+	return contentsOf(applied.messages);
+}
+
+/** Contents of the non-system messages of a message list, in order. */
+function contentsOf(messages: readonly RequestMessage[]): unknown[] {
+	return messages.filter((message) => message.role !== "system")
 		.map((message) => "content" in message ? message.content : message.role);
 }
 
@@ -75,6 +80,8 @@ test("conversation changes apply by entry: replace, remove, and append", () => {
 		{ type: "added", message: user("added", 5), attribution: {} },
 	]));
 	assert.deepEqual(contents(applied), ["bbbb", "third", "added"]);
+	// The branch as Pi's session holds it, for Pi's routed-model lookup
+	assert.deepEqual(contentsOf(applied.branchMessages), ["first", "second", "third"]);
 });
 
 test("a reorder, captured as a deletion plus an addition, counts the message once", () => {
@@ -114,6 +121,7 @@ test("probe messages are filtered before the changes apply", () => {
 			messages.filter((message) => !("content" in message) || message.content !== "second"),
 	});
 	assert.deepEqual(contents(applied), ["first", "third"]);
+	assert.deepEqual(contentsOf(applied.branchMessages), ["first", "third"]);
 });
 
 test("system changes apply only while the replayed system state is unchanged since capture", () => {

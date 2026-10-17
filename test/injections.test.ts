@@ -112,11 +112,12 @@ test("the composition replays the recorded prompt and tools and lists session cu
 	const items = itemsById(snapshot);
 
 	assert.ok(filtered.length > 0, "baseline messages pass through the probe filter");
-	assert.deepEqual(items.get("base-prompt")?.children?.map((child) => child.label),
-		["Preamble", "Available Tools", "Documentation", "Current Dir"]);
-	assert.equal(items.get("tool:builtin")?.label, "Built-in Tools (2)");
+	assert.deepEqual(items.get("base-prompt")?.children?.map((child) => child.id),
+		["preamble", "available-tools", "documentation", "current-dir"].map((id) => `base-prompt:${id}`));
+	assert.equal(items.get("tool:builtin")?.children?.length, 2);
 	assert.deepEqual(describeMessages(snapshot), ["unattributed / fixture-notes · 3"], "user prompts are not injections");
-	assert.deepEqual([messagesRow(snapshot)?.label, messagesRow(snapshot)?.tokens], ["messages (1)", 3]);
+	assert.deepEqual([messagesRow(snapshot)?.id, messagesRow(snapshot)?.tokens], ["messages", 3]);
+	assert.equal(messagesRow(snapshot)?.sections?.length, 1);
 	assert.deepEqual(snapshot.groups.map((group) => group.source.label), ["pi", "unattributed"],
 		"a customType forms no group of its own");
 	assert.ok([...items.values()].every((item) => item.change === undefined));
@@ -150,8 +151,9 @@ test("conversation changes form one unattributed messages row, in session order,
 	], "a modified or deleted message takes its session original's place; additions follow");
 
 	const row = messagesRow(snapshot);
-	assert.deepEqual([row?.label, row?.tokens, row?.requestOnly], ["messages (4)", 18, true],
-		"N counts the sent messages, leaving the deletion out");
+	assert.deepEqual([row?.id, row?.tokens, row?.requestOnly], ["messages", 18, true]);
+	assert.equal(row?.sections?.filter((part) => part.change !== "deleted").length, 4,
+		"the sent messages leave the deletion out");
 	assert.equal(row?.text, ["rewritten stored note", "edited second prompt", "added note", "added user text"]
 		.join("\n\n"));
 	const parts = row?.sections ?? [];
@@ -194,12 +196,12 @@ test("deletion-only messages and payload findings retain their rows and parts at
 	}])));
 	const messages = messagesRow(snapshot);
 	const payload = payloadRow(snapshot);
-	assert.deepEqual([messages?.label, messages?.tokens, messages?.text, messages?.diff],
-		["messages (0)", 0, "", { added: 0, removed: 3 }], "a deletion is not a sent message");
+	assert.deepEqual([messages?.id, messages?.tokens, messages?.text, messages?.diff],
+		["messages", 0, "", { added: 0, removed: 3 }], "a deletion is not a sent message");
 	assert.deepEqual(messages?.sections?.map((part) => [part.label, part.text, part.tokens]),
 		[["fixture-notes", "stored note", 0]], "the original stays available after Enter");
-	assert.deepEqual([payload?.label, payload?.tokens, payload?.text, payload?.diff],
-		["payload changes (1)", 0, "", { added: 0, removed: 3 }], "a deletion is still a finding");
+	assert.deepEqual([payload?.id, payload?.tokens, payload?.text, payload?.diff],
+		["payload-changes", 0, "", { added: 0, removed: 3 }], "a deletion is still a finding");
 	assert.deepEqual(payload?.sections?.[0]?.changedLines, [{ type: "removed", text: "Write files" }]);
 	assert.deepEqual(snapshot.groups.at(-1)?.diff, { added: 0, removed: 6 });
 	assert.equal(snapshot.groups.at(-1)?.totalTokens, 0);
@@ -225,12 +227,12 @@ test("system changes apply to the measured prompt and tools and mark what they t
 	const items = itemsById(snapshot);
 	const prompt = items.get("base-prompt");
 
-	assert.deepEqual(prompt?.children?.map((child) => [child.label, child.change, child.tokens > 0]), [
-		["Preamble", "modified", true],
-		["Available Tools", undefined, true],
-		["Current Dir", "modified", true],
-		["fixture_notes", "added", true],
-		["Documentation", "deleted", false],
+	assert.deepEqual(prompt?.children?.map((child) => [child.id, child.change, child.tokens > 0]), [
+		["base-prompt:preamble", "modified", true],
+		["base-prompt:available-tools", undefined, true],
+		["base-prompt:current-dir", "modified", true],
+		["base-prompt:section:fixture_notes", "added", true],
+		["base-prompt:documentation", "deleted", false],
 	], "the deleted section follows the sent parts");
 	assert.equal(items.get("base-prompt:documentation")?.text, "Pi documentation lives here.");
 	assert.deepEqual(prompt?.sections?.map((part) => part.change), ["modified", undefined, "modified", "added", "deleted"]);
@@ -242,7 +244,8 @@ test("system changes apply to the measured prompt and tools and mark what they t
 	assert.ok(items.get("base-prompt:preamble")?.text.startsWith("Appended instructions."));
 	assert.equal(prompt?.tokens, prompt?.children?.reduce((sum, child) => sum + child.tokens, 0));
 
-	assert.equal(items.get("tool:builtin")?.label, "Built-in Tools (1)", "the count names declared tools only");
+	assert.equal(items.get("tool:builtin")?.children?.filter((child) => child.change !== "deleted").length, 1,
+		"only one built-in declaration remains");
 	assert.equal(items.get("tool:builtin:read")?.change, "modified");
 	const bash = items.get("tool:builtin:bash");
 	assert.deepEqual([bash?.change, bash?.tokens], ["deleted", 0]);
@@ -276,12 +279,12 @@ test("forced prompt parts that differ from the session are request-only", () => 
 
 	assert.equal(prompt?.change, "forced");
 	assert.equal(prompt?.requestOnly, undefined);
-	assert.deepEqual(prompt?.children?.map((child) => [child.label, child.change, child.requestOnly === true]), [
-		["Preamble", undefined, false],
-		["Available Tools", undefined, false],
-		["Documentation", undefined, false],
-		["Current Dir", undefined, true],
-		["Extension Additions", undefined, true],
+	assert.deepEqual(prompt?.children?.map((child) => [child.id, child.change, child.requestOnly === true]), [
+		["base-prompt:preamble", undefined, false],
+		["base-prompt:available-tools", undefined, false],
+		["base-prompt:documentation", undefined, false],
+		["base-prompt:current-dir", undefined, true],
+		["base-prompt:additions", undefined, true],
 	], "only the parts whose forced text differs from the session are marked; none carries a change");
 	assert.deepEqual(prompt?.sections?.map((part) => part.requestOnly === true), [false, false, false, true, true]);
 	assert.equal(itemsById(snapshot).get("tool:builtin:read")?.requestOnly, undefined, "unchanged tools are not");
@@ -293,7 +296,7 @@ test("a branch with no recorded system state uses the live prompt", () => {
 	const snapshot = buildInjectionsSnapshot(input(session));
 
 	assert.equal(itemsById(snapshot).get("base-prompt")?.text, "live prompt");
-	assert.equal(itemsById(snapshot).get("tool:builtin")?.label, "Built-in Tools (1)");
+	assert.equal(itemsById(snapshot).get("tool:builtin")?.children?.length, 1);
 
 	const live = input(session, {}, { hiddenTools: ["read"] });
 	const hidden = buildInjectionsSnapshot({ ...live, options: { ...live.options, hiddenTools: ["bash"] } });
@@ -313,7 +316,7 @@ test("Injections uses the snapshot's leaf after later edits, branching, and tool
 	const items = itemsById(snapshot);
 	assert.equal(messagesRow(snapshot)?.sections?.[0]?.text, "stored note");
 	assert.equal(items.get("base-prompt:current-dir")?.text, "/tmp/project");
-	assert.equal(items.get("tool:builtin")?.label, "Built-in Tools (2)");
+	assert.equal(items.get("tool:builtin")?.children?.length, 2);
 });
 
 test("changed section layout comes from replay even with duplicate text, inline tags, or no XML", () => {
@@ -398,8 +401,8 @@ test("payload changes form the last unattributed row and count only the lines th
 	])));
 
 	assert.deepEqual(snapshot.groups.map((group) => group.source.label), ["pi", "unattributed"]);
-	assert.deepEqual(snapshot.groups.at(-1)?.items.map((item) => item.label), ["messages (2)", "payload changes (5)"],
-		"N counts every finding, deletions included");
+	assert.deepEqual(snapshot.groups.at(-1)?.items.map((item) => item.id), ["messages", "payload-changes"]);
+	assert.equal(payloadRow(snapshot)?.sections?.length, 5, "every finding counts, deletions included");
 	assert.equal(itemsById(snapshot).get("tool:builtin:bash")?.change, undefined, "a payload removal does not stay in place");
 	const changes = payloadRow(snapshot);
 	assert.deepEqual(changes?.sections?.map((part) => [part.label, part.tokens, part.toolDeclaration === true]), [
@@ -431,7 +434,8 @@ test("tools Pi hid are left out and their names are retained for the description
 	}, { ...complete([]), hiddenTools: ["bash", "grep", "unknown"] }));
 	const items = itemsById(snapshot);
 
-	assert.equal(items.get("tool:builtin")?.label, "Built-in Tools (0)", "the count names declared tools only");
+	assert.equal(items.get("tool:builtin")?.children?.filter((child) => child.change !== "deleted").length, 0,
+		"no built-in declaration remains");
 	assert.deepEqual(items.get("tool:builtin")?.sections?.map((part) => [part.label, part.change, part.tokens]), [
 		["read", "deleted", 0],
 	], "a deleted tool keeps its row");
@@ -450,7 +454,8 @@ test("only compared channels contribute findings; a pending guard has none", () 
 	const partial = buildInjectionsSnapshot(input(session, {}, {
 		guard: { status: "incomplete", reason: "Message channel failed.", findings: [finding] },
 	}));
-	assert.equal(partial.groups.at(-1)?.items.at(-1)?.label, "payload changes (1)");
+	assert.equal(partial.groups.at(-1)?.items.at(-1)?.id, "payload-changes");
+	assert.equal(payloadRow(partial)?.sections?.length, 1);
 	const pending = buildInjectionsSnapshot(input(session, {}, { guard: { status: "pending" } }));
 	assert.equal(payloadRow(pending), undefined);
 });
@@ -484,10 +489,10 @@ function createExtensionSession(): SessionManager {
 	return session;
 }
 
-/** `[label, value, +N, -N]` of an item and each of its children. */
+/** `[id, value, +N, -N]` of an item and each of its children, independent of presentation labels. */
 function diffRows(item: InjectionItem | undefined): Array<[string, number, number, number]> {
 	return [item, ...(item?.children ?? [])].filter((entry) => entry !== undefined)
-		.map((entry) => [entry.label, entry.tokens, entry.diff?.added ?? 0, entry.diff?.removed ?? 0]);
+		.map((entry) => [entry.id, entry.tokens, entry.diff?.added ?? 0, entry.diff?.removed ?? 0]);
 }
 
 test("pi's rows compare with pi's default prompt, so saved and request-only extension text both count", () => {
@@ -507,26 +512,26 @@ test("pi's rows compare with pi's default prompt, so saved and request-only exte
 
 	// Shares round cumulatively, so the search line's 25 characters add 6 tokens to a 10-token default
 	assert.deepEqual(diffRows(items.get("base-prompt")), [
-		["System Prompt", 48, 28, 11],
-		["Preamble", 7, 0, 0],
-		["Available Tools", 16, 6, 0],
-		["Current Dir", 6, 3, 0],
-		["Guidelines", 7, 7, 0],
-		["fixture-review", 7, 7, 0],
-		["fixture-added", 5, 5, 0],
-		["Documentation", 0, 0, 7],
-		["fixture-obsolete", 0, 0, 4],
+		["base-prompt", 48, 28, 11],
+		["base-prompt:preamble", 7, 0, 0],
+		["base-prompt:available-tools", 16, 6, 0],
+		["base-prompt:current-dir", 6, 3, 0],
+		["base-prompt:guidelines", 7, 7, 0],
+		["base-prompt:section:fixture-review", 7, 7, 0],
+		["base-prompt:section:fixture-added", 5, 5, 0],
+		["base-prompt:documentation", 0, 0, 7],
+		["base-prompt:section:fixture-obsolete", 0, 0, 4],
 	], "saved extension text counts as added: the tool's lines and its own section");
 	assert.equal(items.get("base-prompt:section:fixture-obsolete")?.change, "deleted",
 		"a deleted extension section compares with the session, so its deletion stays visible");
 	const prompt = items.get("base-prompt");
 	assert.deepEqual(prompt?.sections?.map((section) => section.diff), prompt?.children?.map((child) => child.diff),
 		"preview subheaders show the rows' diffs");
-	assert.deepEqual(prompt?.children?.filter((child) => child.requestOnly === true).map((child) => child.label),
-		["Current Dir", "fixture-added", "Documentation", "fixture-obsolete"],
+	assert.deepEqual(prompt?.children?.filter((child) => child.requestOnly === true).map((child) => child.id),
+		["current-dir", "section:fixture-added", "documentation", "section:fixture-obsolete"].map((id) => `base-prompt:${id}`),
 		"saved extension text has a diff but is not request-only");
-	assert.deepEqual(prompt?.children?.filter((child) => child.savedChange === true).map((child) => child.label),
-		["Available Tools", "Guidelines", "fixture-review"], "only diffs the session keeps are saved");
+	assert.deepEqual(prompt?.children?.filter((child) => child.savedChange === true).map((child) => child.id),
+		["available-tools", "guidelines", "section:fixture-review"].map((id) => `base-prompt:${id}`), "only diffs the session keeps are saved");
 	assert.deepEqual(items.get("base-prompt:available-tools")?.editors, [
 		{ type: "extension", source: { id: "tool-source:npm:web", label: "npm:web", native: false } },
 	]);
@@ -534,15 +539,15 @@ test("pi's rows compare with pi's default prompt, so saved and request-only exte
 	assert.equal(items.get("base-prompt:section:fixture-added")?.sessionOriginal, false);
 	assert.equal(items.get("base-prompt:current-dir")?.sessionOriginal, true);
 
-	assert.deepEqual(diffRows(items.get("tool:builtin")).map(([label, , added, removed]) => [label, added > 0, removed]),
-		[["Built-in Tools (2)", true, 0], ["read", true, 0], ["bash", false, 0]]);
+	assert.deepEqual(diffRows(items.get("tool:builtin")).map(([id, , added, removed]) => [id, added > 0, removed]),
+		[["tool:builtin", true, 0], ["tool:builtin:read", true, 0], ["tool:builtin:bash", false, 0]]);
 	assert.equal(items.get("tool:npm:web:search")?.diff, undefined, "a saved extension tool matches the session");
-	const pi = snapshot.groups.find((group) => group.source.label === "pi");
+	const pi = snapshot.groups.find((group) => group.source.id === "pi");
 	assert.deepEqual(pi?.diff, {
 		added: (prompt?.diff?.added ?? 0) + (items.get("tool:builtin")?.diff?.added ?? 0),
 		removed: prompt?.diff?.removed,
 	}, "a group sums its items");
-	assert.equal(snapshot.groups.find((group) => group.source.label === "npm:web")?.diff, undefined,
+	assert.equal(snapshot.groups.find((group) => group.source.id === "tool-source:npm:web")?.diff, undefined,
 		"the system prompt row repeats System Prompt changes, so the group leaves its diff out");
 });
 
@@ -558,13 +563,13 @@ test("system prompt rows split pi's prompt changes by source and count toward no
 		allTools: [...BUILTIN_TOOLS, SEARCH_INFO],
 	});
 	const items = itemsById(snapshot);
-	const web = snapshot.groups.find((group) => group.source.label === "npm:web");
+	const web = snapshot.groups.find((group) => group.source.id === "tool-source:npm:web");
 	const unattributed = snapshot.groups.find((group) => group.source.id === AGGREGATE_SOURCE_ID);
-	const webRow = web?.items.find((item) => item.label === "system prompt");
-	const unattributedRow = unattributed?.items.find((item) => item.label === "system prompt");
+	const webRow = web?.items.find((item) => item.diffOnly === true);
+	const unattributedRow = unattributed?.items.find((item) => item.diffOnly === true);
 
 	// Available Tools +6 and Guidelines +7 are the search tool's lines; the rest has no known source
-	assert.deepEqual(web?.items.map((item) => item.label), ["search", "system prompt"]);
+	assert.deepEqual(web?.items.map((item) => item.id), ["tool:npm:web:search", "system-prompt:tool-source:npm:web"]);
 	assert.deepEqual([webRow?.tokens, webRow?.diffOnly, webRow?.diff, webRow?.requestOnly], [0, true, { added: 13,
 		removed: 0 }, undefined], "the extension's lines are saved");
 	assert.deepEqual(webRow?.sections?.map((section) => [section.label, section.text, section.diff, section.diffOnly]), [
@@ -603,8 +608,8 @@ test("an extension's system prompt row is request-only when its lines differ fro
 		] }),
 		allTools: [...BUILTIN_TOOLS, SEARCH_INFO],
 	});
-	const web = snapshot.groups.find((group) => group.source.label === "npm:web");
-	const row = web?.items.find((item) => item.label === "system prompt");
+	const web = snapshot.groups.find((group) => group.source.id === "tool-source:npm:web");
+	const row = web?.items.find((item) => item.diffOnly === true);
 
 	assert.deepEqual([row?.diff, row?.requestOnly], [{ added: 7, removed: 0 }, true],
 		"the request dropped the snippet line the session keeps");
@@ -765,7 +770,7 @@ test("tool and message rows compare with the session; deletions remove the sessi
 	assert.deepEqual(items.get("tool:unattributed:grep")?.diff, { added: grepTokens, removed: 0 });
 	assert.deepEqual(items.get("tool:builtin:bash")?.diff, { added: 0, removed: 13 });
 	const unattributed = snapshot.groups.find((group) => group.source.id === AGGREGATE_SOURCE_ID);
-	assert.deepEqual(unattributed?.items.map((item) => item.label), ["grep", "messages (3)"],
+	assert.deepEqual(unattributed?.items.map((item) => item.id), ["tool:unattributed:grep", "messages"],
 		"an unregistered tool joins unattributed");
 	assert.deepEqual(unattributed?.diff, { added: grepTokens + 4, removed: 3 });
 });

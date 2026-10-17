@@ -9,6 +9,7 @@ import {
 	FREE_SPACE_CATEGORY_ID,
 } from "../src/config.ts";
 import type { InjectionSnapshot, InjectionItem, UsageCategory } from "../src/model.ts";
+import { type ModelIdentity, resolveNextRequestModel } from "../src/model-identity.ts";
 import { collectPreviewEntries, computeUsage, toReportedUsage } from "../src/usage.ts";
 
 /** Minimal measured item fixture. */
@@ -555,6 +556,55 @@ test("computeUsage represents encoded-only reasoning without retaining its signa
 		invisibleReasoning: { tokens: 7, basis: "provider-reported", encoded: true },
 		text: "",
 	}]);
+});
+
+test("computeUsage counts only the next request model's thinking", () => {
+	const base = assistantMessage();
+	assert.equal(base.role, "assistant");
+	const messages: ContextEvent["messages"] = [{
+		...base,
+		content: [
+			{ type: "thinking", thinking: "abcdefgh", thinkingSignature: "signature" },
+			{ type: "toolCall", id: "call", name: "read", arguments: { path: "x" }, thoughtSignature: "tool-signature" },
+		],
+		usage: { ...base.usage, reasoning: 7 },
+	}];
+	const same: ModelIdentity = { provider: "anthropic", api: "anthropic-messages", id: "test" };
+	const usageFor = (nextRequestModel?: ModelIdentity) =>
+		computeUsage({ snapshot: snapshot(), messages, nextRequestModel }).categories;
+
+	assert.deepEqual(category(usageFor(same), "assistant-thinking"), category(usageFor(), "assistant-thinking"));
+	for (const other of [
+		{ ...same, provider: "anthropic-proxy" },
+		{ ...same, api: "openai-completions" },
+		{ ...same, id: "other" },
+	]) {
+		const categories = usageFor(other);
+		assert.equal(categories.find((candidate) => candidate.id === "assistant-thinking"), undefined);
+		// Pi keeps the tool call itself; only its signature leaves the request
+		assert.deepEqual(category(categories, "tool-calls"), category(usageFor(), "tool-calls"));
+	}
+});
+
+test("resolveNextRequestModel uses a physical selection or a virtual one's latest successful reply", () => {
+	const base = assistantMessage();
+	assert.equal(base.role, "assistant");
+	const physical: ModelIdentity = { provider: "openai", api: "openai-responses", id: "gpt" };
+	const virtual: ModelIdentity = { provider: "router", api: "pi-virtual", id: "auto" };
+	const replies: ContextEvent["messages"] = [
+		{ role: "user", content: "question", timestamp: 1 },
+		{ ...base, provider: "anthropic", api: "anthropic-messages", model: "routed" },
+		{ role: "user", content: "follow-up", timestamp: 3 },
+		{ ...base, provider: "openai", api: "openai-responses", model: "failed", stopReason: "error" },
+		{ ...base, provider: "openai", api: "openai-responses", model: "stopped", stopReason: "aborted" },
+	];
+
+	assert.deepEqual(resolveNextRequestModel(physical, replies), physical);
+	assert.deepEqual(resolveNextRequestModel(virtual, replies),
+		{ provider: "anthropic", api: "anthropic-messages", id: "routed" });
+	assert.equal(resolveNextRequestModel(virtual, replies.filter((message) => message.role !== "assistant"
+		|| message.stopReason !== "stop")), undefined);
+	assert.equal(resolveNextRequestModel(undefined, replies), undefined);
 });
 
 test("collectPreviewEntries flattens aggregates chronologically", () => {

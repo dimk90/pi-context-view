@@ -1,4 +1,4 @@
-/** Mock launcher checks use scratch config and local HTTP only; no real provider or PTY is involved. */
+/** Config checks share Pi in process; launcher checks use scratch config and local HTTP, never a real provider or PTY. */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { validateArgs, writeMockConfig } from "../scripts/demo-injections/demo-mock-config.ts";
 import { MOCK_REPLY, startDemoMockProvider } from "../scripts/demo-injections/demo-mock-provider.ts";
 import { copySelectedThemes } from "../scripts/demo-injections/demo-mock-themes.ts";
 import { runCommand } from "./harness/run-command.ts";
@@ -21,12 +22,12 @@ const SETTINGS = {
 	theme: "dark", tuiMode: "regular", outputPad: 0, terminal: { showImages: false }, markdown: { mermaid: "off" },
 	defaultProvider: "real-provider", defaultModel: "real-model", enabledModels: ["real-provider/*"],
 	defaultTools: ["read"], sessionDir: "/must-not-use", cacheWarming: "idle", httpProxy: "http://must-not-use",
-	extensions: ["/must-not-load"], skills: ["/must-not-load"], packages: ["npm:must-not-install"],
+	extensions: ["/must-not-load"], skills: ["/must-not-load"], packages: ["./must-not-install"],
 };
 const KEYBINDINGS = '{"app.interrupt":["ctrl+c"]}\n';
 const THEME = '{"name":"demo-test-theme"}\n';
-// The launcher builds load order the same way with and without --mock; demo-injections covers both orders
-const LAUNCH_CASES = [{ after: false, codemode: false }, { after: true, codemode: true }];
+// Config tests only serialize this address; no server needs to listen on it
+const MOCK_BASE_URL = "http://127.0.0.1:1234/v1";
 const THEME_TEMPLATE = JSON.parse(await readFile(join(
 	dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
 	"modes/interactive/theme/dark.json",
@@ -59,44 +60,45 @@ if (process.env.DEMO_MOCK_WAIT === "1") setInterval(() => {}, 1000);
 else process.exitCode = Number(process.env.DEMO_MOCK_EXIT ?? 0);
 `;
 
-/** Coarse recorder output contains config metadata and the canned response, never prompt bodies. */
-interface MockRunRecord {
-	readonly args: string[];
-	readonly agentDir: string;
+/** Generated configuration inspected directly or recorded by fake Pi. */
+interface MockConfigFiles {
 	readonly settings: Record<string, unknown>;
 	readonly models: { providers: Record<string, { api: string; baseUrl: string; apiKey: string }> };
 	readonly auth: Record<string, unknown>;
 	readonly keybindings: string;
 	readonly themes: Record<string, string>;
+}
+
+/** Coarse recorder output contains config metadata and the canned response, never prompt bodies. */
+interface MockRunRecord extends MockConfigFiles {
+	readonly args: string[];
+	readonly agentDir: string;
 	readonly reply: string;
 	readonly offline: string;
 	readonly proxies: (string | null)[];
 }
 
-/** Scratch directories and child environment for one launcher run. */
-interface LauncherSetup {
+/** Scratch source files and a separate destination, shared by config and launcher checks. */
+interface ConfigSetup {
 	readonly directory: string;
 	readonly agentDir: string;
 	readonly temporaryDir: string;
+}
+
+/** Child environment and recorder path for one launcher run. */
+interface LauncherSetup extends ConfigSetup {
 	readonly recordPath: string;
 	readonly env: NodeJS.ProcessEnv;
 }
 
-for (const { after, codemode } of LAUNCH_CASES) {
-	test(`--mock selects a local model with appearance-only config, after=${after}, codemode=${codemode}`, async (t) => {
-		const setup = await prepareLauncher(t);
-		const flags = ["--mock", "--payload", ...(after ? ["--after"] : []), ...(codemode ? ["--codemode-only"] : [])];
-		const result = await runCommand("bash", [SCRIPT, ...flags, "a prompt with spaces"], {
-			cwd: setup.directory, env: setup.env,
+for (const codemode of [false, true]) {
+	test(`mock config selects a local model with appearance-only settings, codemode=${codemode}`, async (t) => {
+		const setup = await prepareConfig(t);
+		await writeMockConfig({
+			sourceDir: setup.agentDir, agentDir: setup.temporaryDir, baseUrl: MOCK_BASE_URL,
+			codemodeOnly: codemode, localExtensions: false,
 		});
-		assert.equal(result.status, 0, result.stderr);
-		assert.equal(result.stdout, "");
-		const record = await readRecord(setup);
-		const fixtures = ["payload-changes", "payload-remove-tool"].map((fixture) =>
-			fileURLToPath(new URL(`../scripts/demo-injections/${fixture}.ts`, import.meta.url)));
-		const paths = after ? [MONITOR, ...fixtures] : [...fixtures, MONITOR];
-		assert.deepEqual(record.args, [...MODEL_ARGS, "--no-extensions", ...paths.flatMap((path) => ["-e", path]),
-			...(codemode ? ["-e", "builtin:codemode"] : []), "a prompt with spaces"]);
+		const record = await readConfig(setup.temporaryDir);
 		assert.equal(record.settings.theme, "dark");
 		assert.equal(record.settings.tuiMode, "regular");
 		assert.equal(record.settings.outputPad, 0);
@@ -116,123 +118,156 @@ for (const { after, codemode } of LAUNCH_CASES) {
 		assert.deepEqual(record.auth, {});
 		assert.deepEqual(Object.keys(record.models.providers), ["demo-mock"]);
 		assert.equal(record.models.providers["demo-mock"].api, "openai-completions");
-		assert.match(record.models.providers["demo-mock"].baseUrl, /^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+		assert.equal(record.models.providers["demo-mock"].baseUrl, MOCK_BASE_URL);
 		assert.equal(record.models.providers["demo-mock"].apiKey, "mock-key");
 		assert.equal(record.keybindings, KEYBINDINGS);
 		assert.deepEqual(record.themes, {}, "the built-in dark theme needs no copied assets");
-		assert.match(record.reply, /"content":"ok"/);
-		assert.equal(record.offline, "1");
-		assert.deepEqual(record.proxies, [null, null, null]);
-		await assertCleanedUp(setup, record);
+		await writeFile(join(setup.temporaryDir, "keybindings.json"), "changed in the demo");
+		await assertOriginalsUnchanged(setup);
 	});
 }
 
-for (const { after, codemode } of LAUNCH_CASES) {
-	test(`--mock --local discovers global extensions only, after=${after}, codemode=${codemode}`, async (t) => {
-		const setup = await prepareLauncher(t);
-		const inherited = await prepareLocalExtensions(setup);
-		const flags = after ? ["--local", "--mock", "--after"] : ["--mock", "--local"];
-		const result = await runCommand("bash", [SCRIPT, ...flags, "--payload", ...(codemode ? ["--codemode-only"] : []),
-			"a prompt with spaces"], { cwd: setup.directory, env: setup.env });
-		assert.equal(result.status, 0, result.stderr);
-		const record = await readRecord(setup);
-		const fixtures = ["payload-changes", "payload-remove-tool"].map((fixture) =>
-			fileURLToPath(new URL(`../scripts/demo-injections/${fixture}.ts`, import.meta.url)));
-		const paths = after ? [MONITOR, ...fixtures] : [...fixtures, MONITOR];
-		assert.deepEqual(record.args, [...MODEL_ARGS, ...paths.flatMap((path) => ["-e", path]),
-			...(codemode ? ["-e", "builtin:codemode"] : []), "a prompt with spaces"]);
-		assert.deepEqual(record.settings.extensions, [
-			join(setup.agentDir, "configured/index.ts"), join(setup.agentDir, "extensions/auto.ts"),
-			join(setup.agentDir, "npm/node_modules/@demo/extensions/global.ts"),
-			"-builtin:mcp", "-builtin:llama.cpp", "builtin:codemode", "builtin:tool-search",
-		]);
-		assert.equal(record.settings.theme, "one-dark");
-		assert.deepEqual(record.themes, { "one-dark.json": themeJson("one-dark") });
-		assert.equal(await readFile(join(setup.agentDir, "npm/node_modules/@demo/extensions/palette.json"), "utf8"),
-			themeJson("one-dark"));
-		for (const key of ["skills", "packages", "sessionDir", "httpProxy"]) {
-			assert.equal(record.settings[key], undefined, key);
-		}
-		assert.equal(record.settings.defaultProjectTrust, "never");
-		assert.deepEqual(record.settings.enabledModels, ["demo-mock/demo"]);
-		assert.deepEqual(record.auth, {});
-		assert.deepEqual(Object.keys(record.models.providers), ["demo-mock"]);
-		await assert.rejects(readFile(join(setup.directory, "local-events.jsonl")),
-			"discovery must not run extension lifecycle hooks before Pi starts");
-		await assertCleanedUp(setup, record, inherited);
+test("mock config discovers global extensions only when local extensions are enabled", async (t) => {
+	const setup = await prepareConfig(t);
+	const inherited = await prepareLocalExtensions(setup);
+	await writeMockConfig({
+		sourceDir: setup.agentDir, agentDir: setup.temporaryDir, baseUrl: MOCK_BASE_URL,
+		codemodeOnly: false, localExtensions: true,
 	});
-}
+	const record = await readConfig(setup.temporaryDir);
+	assert.deepEqual(record.settings.extensions, [
+		join(setup.agentDir, "configured/index.ts"), join(setup.agentDir, "extensions/auto.ts"),
+		join(setup.agentDir, "npm/node_modules/@demo/extensions/global.ts"),
+		"-builtin:mcp", "-builtin:llama.cpp", "builtin:codemode", "builtin:tool-search",
+	]);
+	assert.equal(record.settings.theme, "one-dark");
+	assert.deepEqual(record.themes, { "one-dark.json": themeJson("one-dark") });
+	await writeFile(join(setup.temporaryDir, "themes/one-dark.json"), "changed in the demo");
+	assert.equal(await readFile(join(setup.agentDir, "npm/node_modules/@demo/extensions/palette.json"), "utf8"),
+		themeJson("one-dark"));
+	for (const key of ["skills", "packages", "sessionDir", "httpProxy"]) {
+		assert.equal(record.settings[key], undefined, key);
+	}
+	assert.equal(record.settings.defaultProjectTrust, "never");
+	assert.deepEqual(record.settings.enabledModels, ["demo-mock/demo"]);
+	assert.deepEqual(record.auth, {});
+	assert.deepEqual(Object.keys(record.models.providers), ["demo-mock"]);
+	await assert.rejects(readFile(join(setup.directory, "local-events.jsonl")),
+		"discovery must not run extension lifecycle hooks before Pi starts");
+	await assertOriginalsUnchanged(setup, inherited);
+});
 
-test("--mock preserves a selected installed package theme without loading package code", async (t) => {
-	const setup = await prepareLauncher(t);
+test("mock config preserves a selected installed package theme without loading package code", async (t) => {
+	const setup = await prepareConfig(t);
 	const packageRoot = join(setup.agentDir, "npm/node_modules/@demo/themes");
 	await writeThemePackage(packageRoot);
 	const settings = {
 		...SETTINGS, theme: "one-dark", packages: [{ source: "npm:@demo/themes", themes: ["-palettes/unused.json"] }],
 	};
 	await writeFile(join(setup.agentDir, "settings.json"), JSON.stringify(settings));
-	const result = await runCommand("bash", [SCRIPT, "--mock"], { cwd: setup.directory, env: setup.env });
-	assert.equal(result.status, 0, result.stderr);
-	const record = await readRecord(setup);
+	await writeMockConfig({
+		sourceDir: setup.agentDir, agentDir: setup.temporaryDir, baseUrl: MOCK_BASE_URL,
+		codemodeOnly: false, localExtensions: false,
+	});
+	const record = await readConfig(setup.temporaryDir);
 	assert.equal(record.settings.theme, "one-dark");
 	assert.deepEqual(record.themes, { "one-dark.json": themeJson("one-dark") });
 	assert.equal(record.settings.packages, undefined);
 	assert.equal(record.settings.extensions, undefined);
+	await writeFile(join(setup.temporaryDir, "themes/one-dark.json"), "changed in the demo");
 	assert.equal(await readFile(join(packageRoot, "palettes/dark-palette.json"), "utf8"), themeJson("one-dark"));
 	await assert.rejects(readFile(join(packageRoot, "extension-loaded")), "package code must not execute");
-	assert.equal(await readFile(join(setup.agentDir, "settings.json"), "utf8"), JSON.stringify(settings));
-	assert.deepEqual(await readdir(setup.temporaryDir), []);
+	await assertOriginalsUnchanged(setup, settings);
 });
 
-test("--mock works without inherited settings", async (t) => {
-	const setup = await prepareLauncher(t);
-	await rm(join(setup.agentDir, "settings.json"));
-	const result = await runCommand("bash", [SCRIPT, "--mock"], { env: setup.env });
-	assert.equal(result.status, 0, result.stderr);
-	const record = await readRecord(setup);
-	assert.equal(record.settings.theme, undefined);
-	assert.deepEqual(await readdir(setup.temporaryDir), []);
-});
-
-test("--mock --local discovers global extensions without inherited settings", async (t) => {
-	const setup = await prepareLauncher(t);
-	await rm(join(setup.agentDir, "settings.json"));
-	await writeLocalExtension(join(setup.agentDir, "extensions/auto.ts"), "auto");
-	const result = await runCommand("bash", [SCRIPT, "--mock", "--local"], { cwd: setup.directory, env: setup.env });
-	assert.equal(result.status, 0, result.stderr);
-	const record = await readRecord(setup);
-	assert.deepEqual(record.settings.extensions, [join(setup.agentDir, "extensions/auto.ts"),
-		"builtin:mcp", "builtin:llama.cpp", "builtin:codemode", "builtin:tool-search"]);
-	assert.equal(record.settings.theme, undefined);
-	assert.equal(record.args.includes("--no-extensions"), false);
-	assert.deepEqual(await readdir(setup.temporaryDir), []);
-	await assert.rejects(readFile(join(setup.agentDir, "settings.json")));
-});
-
-// One long flag in `=` form and one short alias; the rest share the same set lookup
-for (const conflict of ["--model=real/model", "-c"]) {
-	test(`--mock rejects ${conflict} rather than overriding isolation`, async (t) => {
-		const setup = await prepareLauncher(t);
-		const result = await runCommand("bash", [SCRIPT, "--mock", conflict, "unused"], { env: setup.env });
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /--mock cannot be combined/);
-		assert.deepEqual(await readdir(setup.temporaryDir), []);
-		await assert.rejects(readRecord(setup));
+for (const localExtensions of [false, true]) {
+	test(`mock config works without inherited settings, local=${localExtensions}`, async (t) => {
+		const setup = await prepareConfig(t);
+		await rm(join(setup.agentDir, "settings.json"));
+		await writeLocalExtension(join(setup.agentDir, "extensions/auto.ts"), "auto");
+		await writeMockConfig({
+			sourceDir: setup.agentDir, agentDir: setup.temporaryDir, baseUrl: MOCK_BASE_URL,
+			codemodeOnly: false, localExtensions,
+		});
+		const record = await readConfig(setup.temporaryDir);
+		assert.equal(record.settings.theme, undefined);
+		assert.deepEqual(record.settings.extensions, localExtensions ? [join(setup.agentDir, "extensions/auto.ts"),
+			"builtin:mcp", "builtin:llama.cpp", "builtin:codemode", "builtin:tool-search"] : undefined);
+		await assert.rejects(readFile(join(setup.agentDir, "settings.json")));
 	});
 }
 
-test("--mock respects -- before literal prompt text", async (t) => {
-	const setup = await prepareLauncher(t);
-	const result = await runCommand("bash", [SCRIPT, "--mock", "--", "--model"], { env: setup.env });
-	assert.equal(result.status, 0, result.stderr);
-	assert.deepEqual((await readRecord(setup)).args.slice(-2), ["--", "--model"]);
+test("mock argument validation rejects overrides but accepts literal prompt text after --", () => {
+	// One long flag in `=` form and one short alias; the rest share the same set lookup
+	for (const conflict of ["--model=real/model", "-c"]) {
+		assert.throws(() => validateArgs([conflict, "unused"]), /--mock cannot be combined/);
+	}
+	assert.doesNotThrow(() => validateArgs(["--print", "--", "--model"]));
 });
 
-test("--mock cleans up when Pi fails and preserves its exit code", async (t) => {
+test("--mock rejects conflicting arguments before starting Pi", async (t) => {
 	const setup = await prepareLauncher(t);
-	const result = await runCommand("bash", [SCRIPT, "--mock"], { env: { ...setup.env, DEMO_MOCK_EXIT: "42" } });
+	const result = await runCommand("bash", [SCRIPT, "--mock", "-c", "unused"], { env: setup.env });
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /--mock cannot be combined/);
+	assert.deepEqual(await readdir(setup.temporaryDir), []);
+	await assert.rejects(readRecord(setup));
+});
+
+test("--mock passes isolated config and arguments to Pi and cleans up after failure", async (t) => {
+	const setup = await prepareLauncher(t);
+	const result = await runCommand("bash", [SCRIPT, "--mock", "--payload", "--after", "--codemode-only",
+		"--", "--model", "a prompt with spaces"], { env: { ...setup.env, DEMO_MOCK_EXIT: "42" } });
 	assert.equal(result.status, 42, result.stderr);
-	await assertCleanedUp(setup, await readRecord(setup));
+	assert.equal(result.stdout, "");
+	const record = await readRecord(setup);
+	const fixtures = ["payload-changes", "payload-remove-tool"].map((fixture) =>
+		fileURLToPath(new URL(`../scripts/demo-injections/${fixture}.ts`, import.meta.url)));
+	assert.deepEqual(record.args, [...MODEL_ARGS, "--no-extensions",
+		...[MONITOR, ...fixtures].flatMap((path) => ["-e", path]), "-e", "builtin:codemode",
+		"--", "--model", "a prompt with spaces"]);
+	assert.equal(record.settings.defaultModel, "demo");
+	assert.deepEqual(record.settings.codemode, { mode: "only" });
+	assert.deepEqual(record.settings.defaultTools, ["+codemode"]);
+	assert.match(record.models.providers["demo-mock"].baseUrl, /^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+	assert.match(record.reply, /"content":"ok"/);
+	assert.equal(record.offline, "1");
+	assert.deepEqual(record.proxies, [null, null, null]);
+	await assertCleanedUp(setup, record);
+});
+
+test("--mock --local skips missing npm packages without installing them", async (t) => {
+	const setup = await prepareLauncher(t);
+	const settings = { ...SETTINGS, packages: ["npm:must-not-install"] };
+	await writeFile(join(setup.agentDir, "settings.json"), JSON.stringify(settings));
+	const globalRoot = join(setup.directory, "global-node-modules");
+	await mkdir(globalRoot);
+	const npmLog = join(setup.directory, "npm-calls.jsonl");
+	const npm = join(setup.directory, "npm");
+	// Keep npm calls inside this child environment; reject installation or network commands
+	await writeFile(npm, `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(npmLog)}, JSON.stringify(args) + "\\n");
+if (args.length === 2 && args[0] === "root" && args[1] === "-g") {
+	console.log(${JSON.stringify(globalRoot)});
+} else {
+	process.exitCode = 1;
+}
+`);
+	await chmod(npm, 0o755);
+	const result = await runCommand("bash", [SCRIPT, "--mock", "--local"], { env: setup.env });
+	assert.equal(result.status, 0, result.stderr);
+	const record = await readRecord(setup);
+	assert.deepEqual(record.settings.extensions,
+		["builtin:mcp", "builtin:llama.cpp", "builtin:codemode", "builtin:tool-search"]);
+	assert.equal(record.settings.packages, undefined);
+	assert.equal(await readFile(npmLog, "utf8"), '["root","-g"]\n');
+	assert.deepEqual(await readdir(globalRoot), []);
+	await assert.rejects(readFile(join(setup.agentDir, "npm/node_modules/must-not-install/package.json")),
+		{ code: "ENOENT" });
+	assert.deepEqual(await readdir(setup.temporaryDir), []);
+	await assertOriginalsUnchanged(setup, settings);
 });
 
 test("--mock cleans up on invalid inherited settings", async (t) => {
@@ -246,12 +281,19 @@ test("--mock cleans up on invalid inherited settings", async (t) => {
 
 for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
 	test(`--mock forwards ${signal} and cleans up the server and config`, { timeout: 30_000 }, async (t) => {
+		// After hooks run in registration order: the launcher must exit before its directory is removed.
+		// The hook timeout fails a launcher that ignores SIGTERM instead of hanging the whole run.
+		let stopLauncher: (() => Promise<unknown>) | undefined;
+		t.after(() => stopLauncher?.(), { timeout: 10_000 });
 		const setup = await prepareLauncher(t);
 		const child = spawn("bash", [SCRIPT, "--mock"], {
 			env: { ...setup.env, DEMO_MOCK_WAIT: "1" }, stdio: "ignore",
 		});
-		t.after(() => { child.kill("SIGTERM"); });
 		const closed = once(child, "close");
+		stopLauncher = () => {
+			child.kill("SIGTERM");
+			return closed;
+		};
 		const record = await waitForRecord(setup);
 		child.kill(signal);
 		const [code] = await closed;
@@ -328,18 +370,17 @@ test("demo endpoint returns only a canned text stream and closes idempotently", 
 	assert.equal((await fetch(`${provider.baseUrl}/responses`, { method: "POST" })).status, 404);
 	await provider.close();
 	await provider.close();
-	await assert.rejects(fetch(`${provider.baseUrl}/chat/completions`, { signal: AbortSignal.timeout(1_000) }));
 });
 
 test("mock theme copying keeps only the selected light/dark pair from an installed package", async (t) => {
-	const setup = await prepareLauncher(t);
+	const setup = await prepareConfig(t);
 	const destination = join(setup.temporaryDir, "themes-copy");
 	await mkdir(destination);
 	const packageRoot = join(setup.agentDir, "npm/node_modules/@demo/themes");
 	await writeThemePackage(packageRoot);
 	await copySelectedThemes({
 		sourceDir: setup.agentDir, agentDir: destination,
-		settings: { theme: "day / one-dark", packages: ["npm:@demo/themes", "npm:must-not-install"] },
+		settings: { theme: "day / one-dark", packages: ["npm:@demo/themes"] },
 	});
 	assert.deepEqual((await readdir(join(destination, "themes"))).sort(), ["day.json", "one-dark.json"]);
 	assert.equal(await readFile(join(destination, "themes/day.json"), "utf8"), themeJson("day"));
@@ -348,7 +389,7 @@ test("mock theme copying keeps only the selected light/dark pair from an install
 });
 
 test("mock theme copying respects package exclusions", async (t) => {
-	const setup = await prepareLauncher(t);
+	const setup = await prepareConfig(t);
 	const destination = join(setup.temporaryDir, "themes-copy");
 	await mkdir(destination);
 	await writeThemePackage(join(setup.agentDir, "npm/node_modules/@demo/themes"));
@@ -360,7 +401,7 @@ test("mock theme copying respects package exclusions", async (t) => {
 });
 
 test("mock theme copying supports local packages and configured theme paths", async (t) => {
-	const setup = await prepareLauncher(t);
+	const setup = await prepareConfig(t);
 	const destination = join(setup.temporaryDir, "themes-copy");
 	await mkdir(destination);
 	const localPackage = join(setup.agentDir, "local-package");
@@ -375,7 +416,7 @@ test("mock theme copying supports local packages and configured theme paths", as
 });
 
 test("mock theme copying finds a selected agent-directory theme by its declared name", async (t) => {
-	const setup = await prepareLauncher(t);
+	const setup = await prepareConfig(t);
 	const destination = join(setup.temporaryDir, "themes-copy");
 	await mkdir(destination);
 	await writeFile(join(setup.agentDir, "themes/custom.json"), themeJson("custom"));
@@ -386,7 +427,7 @@ test("mock theme copying finds a selected agent-directory theme by its declared 
 });
 
 /** Global discovery includes configured paths, package entries, and auto-discovery; project and excluded code stay out. */
-async function prepareLocalExtensions(setup: LauncherSetup): Promise<Record<string, unknown>> {
+async function prepareLocalExtensions(setup: ConfigSetup): Promise<Record<string, unknown>> {
 	const packageRoot = join(setup.agentDir, "npm/node_modules/@demo/extensions");
 	await mkdir(packageRoot, { recursive: true });
 	await writeFile(join(packageRoot, "package.json"), JSON.stringify({
@@ -403,7 +444,7 @@ async function prepareLocalExtensions(setup: LauncherSetup): Promise<Record<stri
 	await writeFile(join(setup.directory, ".pi/settings.json"), JSON.stringify({ defaultModel: "project-must-not-use" }));
 	const settings = {
 		...SETTINGS, theme: "one-dark", extensions: ["./configured", "-extensions/skip.ts", "-builtin:mcp", "!builtin:llama.*"],
-		packages: [{ source: "npm:@demo/extensions", extensions: ["-skip.ts"] }, "npm:must-not-install"],
+		packages: [{ source: "npm:@demo/extensions", extensions: ["-skip.ts"] }],
 	};
 	await writeFile(join(setup.agentDir, "settings.json"), JSON.stringify(settings));
 	return settings;
@@ -452,13 +493,12 @@ async function writeThemePackage(root: string): Promise<void> {
 	await writeFile(join(root, "palettes/unused.json"), themeJson("unused"));
 }
 
-/** Prepare a fake home and Pi executable; none of these tests reads the real agent directory. */
-async function prepareLauncher(t: TestContext): Promise<LauncherSetup> {
+/** Prepare a fake home and output directory without changing process-wide settings or starting Pi. */
+async function prepareConfig(t: TestContext): Promise<ConfigSetup> {
 	const directory = await mkdtemp(join(tmpdir(), "context-demo-mock-test-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const agentDir = join(directory, "agent");
 	const temporaryDir = join(directory, "temporary");
-	const recordPath = join(directory, "record.json");
 	await mkdir(join(agentDir, "themes"), { recursive: true });
 	await mkdir(temporaryDir);
 	await writeFile(join(agentDir, "settings.json"), JSON.stringify(SETTINGS));
@@ -466,6 +506,13 @@ async function prepareLauncher(t: TestContext): Promise<LauncherSetup> {
 	await writeFile(join(agentDir, "models.json"), '{"providers":{"must-not-inherit":{}}}');
 	await writeFile(join(agentDir, "keybindings.json"), KEYBINDINGS);
 	await writeFile(join(agentDir, "themes/custom.json"), THEME);
+	return { directory, agentDir, temporaryDir };
+}
+
+/** Add a fake Pi executable only for tests that need a launcher process. */
+async function prepareLauncher(t: TestContext): Promise<LauncherSetup> {
+	const { directory, agentDir, temporaryDir } = await prepareConfig(t);
+	const recordPath = join(directory, "record.json");
 	const recorder = join(directory, "recorder.mjs");
 	await writeFile(recorder, RECORDER);
 	const pi = join(directory, "pi");
@@ -477,6 +524,19 @@ async function prepareLauncher(t: TestContext): Promise<LauncherSetup> {
 		HTTP_PROXY: "http://127.0.0.1:1", HTTPS_PROXY: "http://127.0.0.1:1", ALL_PROXY: "http://127.0.0.1:1",
 	};
 	return { directory, agentDir, temporaryDir, recordPath, env };
+}
+
+/** Read generated files directly so config cases do not need a launcher or a recorder process. */
+async function readConfig(agentDir: string): Promise<MockConfigFiles> {
+	const themeFiles = await readdir(join(agentDir, "themes")).catch(() => []);
+	return {
+		settings: JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")),
+		models: JSON.parse(await readFile(join(agentDir, "models.json"), "utf8")),
+		auth: JSON.parse(await readFile(join(agentDir, "auth.json"), "utf8")),
+		keybindings: await readFile(join(agentDir, "keybindings.json"), "utf8"),
+		themes: Object.fromEntries(await Promise.all(themeFiles.map(async (name) =>
+			[name, await readFile(join(agentDir, "themes", name), "utf8")]))),
+	};
 }
 
 /** Read config metadata recorded while fake Pi was running. */
@@ -502,11 +562,16 @@ async function waitForRecord(setup: LauncherSetup): Promise<MockRunRecord> {
  * unchanged. The mock server lives in the exited launcher process, so it is
  * gone too; probing its port could reach another concurrent test's server.
  */
-async function assertCleanedUp(
-	setup: LauncherSetup, record: MockRunRecord, settings: Record<string, unknown> = SETTINGS,
-): Promise<void> {
+async function assertCleanedUp(setup: LauncherSetup, record: MockRunRecord): Promise<void> {
 	assert.notEqual(record.agentDir, setup.agentDir);
 	assert.deepEqual(await readdir(setup.temporaryDir), []);
+	await assertOriginalsUnchanged(setup);
+}
+
+/** Changes to generated configuration must not reach the original appearance files or credentials. */
+async function assertOriginalsUnchanged(
+	setup: ConfigSetup, settings: Record<string, unknown> = SETTINGS,
+): Promise<void> {
 	assert.equal(await readFile(join(setup.agentDir, "settings.json"), "utf8"), JSON.stringify(settings));
 	assert.equal(await readFile(join(setup.agentDir, "keybindings.json"), "utf8"), KEYBINDINGS);
 	assert.equal(await readFile(join(setup.agentDir, "themes/custom.json"), "utf8"), THEME);

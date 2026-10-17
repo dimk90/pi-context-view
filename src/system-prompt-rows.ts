@@ -240,28 +240,21 @@ interface OwnerShare {
  * so together they never exceed `added`; unattributed lines take no share.
  */
 function ownerShares(part: InjectionItem, added: number): OwnerShare[] {
-	const owners = new Map<string, { source: InjectionSource; chars: number; text: string; guess: boolean }>();
-	const references = [...(part.injectedReferences ?? [])].sort((a, b) => a.start - b.start);
-	for (const reference of references) {
-		if (isUnattributedSource(reference.source)) continue;
-		const text = part.text.slice(reference.start, reference.end);
-		let owner = owners.get(reference.source.id);
-		if (owner === undefined) {
-			owner = { source: reference.source, chars: 0, text: "", guess: false };
-			owners.set(reference.source.id, owner);
-		}
-		owner.chars += text.length;
-		owner.text += text;
-		owner.guess ||= reference.attribution === "guess";
-	}
+	const references = (part.injectedReferences ?? [])
+		.filter((reference) => !isUnattributedSource(reference.source))
+		.sort((a, b) => a.start - b.start);
 	let chars = 0;
 	let allocated = 0;
 	const shares: OwnerShare[] = [];
-	for (const owner of owners.values()) {
-		chars += owner.chars;
+	for (const owned of Map.groupBy(references, (reference) => reference.source.id).values()) {
+		const text = owned.map((reference) => part.text.slice(reference.start, reference.end)).join("");
+		chars += text.length;
 		const tokens = Math.min(added, charTokens(chars)) - allocated;
 		allocated += tokens;
-		if (tokens > 0) shares.push({ source: owner.source, added: tokens, text: owner.text, guess: owner.guess });
+		if (tokens > 0) {
+			const guess = owned.some((reference) => reference.attribution === "guess");
+			shares.push({ source: owned[0].source, added: tokens, text, guess });
+		}
 	}
 	return shares;
 }

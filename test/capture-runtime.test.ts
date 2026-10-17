@@ -27,7 +27,9 @@ import { applyRequestSnapshot } from "../src/projection.ts";
 import { buildUsageSnapshot } from "../src/replay.ts";
 import type { ConversationChange, RequestSnapshot, SystemChange } from "../src/snapshot.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
+import { injectionsNotes, payloadCheckLabel, requestOriginLabel, type DescriptionNote } from "../src/ui/notes.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
+import { containsBlock, createTheme, frameText, stripSgr } from "./harness/frame.ts";
 import agentStartMessage, {
 	AGENT_START_MESSAGE_TEXT, AGENT_START_MESSAGE_TYPE,
 } from "./fixtures/agent-start-message.ts";
@@ -54,7 +56,7 @@ import sectionPatch, { SECTION_PATCH_SECTIONS } from "./fixtures/section-patch.t
 import systemAddMessage, { SYSTEM_ADD_MESSAGE_TEXT, SYSTEM_ADD_MESSAGE_TYPE } from "./fixtures/system-add-message.ts";
 import systemAppend, { SYSTEM_APPEND_TEXT } from "./fixtures/system-append.ts";
 import { type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
-import { useSettings } from "./harness/settings.ts";
+import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
 
 const PROVIDER = "capture-test";
 const NO_PAYLOAD = { status: "incomplete", reason: "No provider payload was observed for this request." };
@@ -116,9 +118,13 @@ suite("structured capture calibration", { concurrency: true }, () => {
 
 	test("a resumed session on another model has an empty diff", async (t) => {
 		const provider = await startProvider(t);
+		// After hooks run in registration order: both sessions must stop before their session file is removed
+		const sessions: AgentSession[] = [];
+		t.after(() => { for (const session of sessions) session.dispose(); });
 		const directory = await temporaryDirectory(t);
 		const first = SessionManager.create(directory, directory);
 		const before = await createRuntime(t, provider, { factories: [], sessionManager: first });
+		sessions.push(before.session);
 		await before.session.prompt("first prompt");
 		const file = first.getSessionFile();
 		assert.ok(file);
@@ -127,6 +133,7 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		const after = await createRuntime(t, provider, {
 			factories: [], sessionManager: SessionManager.open(file, directory), modelId: "text",
 		});
+		sessions.push(after.session);
 		await after.session.prompt("after resume");
 		const [snapshot] = await after.settled();
 		assert.equal(provider.requests.at(-1)?.body.model, "text");
@@ -482,10 +489,10 @@ suite("Injections composition", { concurrency: true }, () => {
 			assert.equal(responses, 0, "after_provider_response sentinel stays silent for the probe");
 			assert.equal(provider.requests.length, 0);
 			const probe = await runtime.renderView();
-			assert.ok(probe.some((line) => line.startsWith("Context Injections · [Request Probe]")));
-			assert.ok(probe.some((line) => line.endsWith("Payload: not checked")));
-			assert.ok(probe.some((line) => line.includes("Captured by a request probe")));
-			assert.ok(probe.some((line) => line.includes("Payload changes were not checked")));
+			const probeNotes = noteKindsShown(probe, true, true);
+			assert.ok(containsBlock(probe, [requestOriginLabel(true)]));
+			assert.ok(containsBlock(probe, [`Payload: ${payloadCheckLabel("unchecked")}`]));
+			assert.ok(probeNotes.has("probe") && probeNotes.has("payload-check"));
 
 			await runtime.session.prompt("real prompt");
 			// Settled real turns have a complete guard without payload changes
@@ -493,15 +500,30 @@ suite("Injections composition", { concurrency: true }, () => {
 			assert.equal(real?.origin, "real-turn");
 			await runtime.session.prompt("/context injections");
 			const latest = await runtime.renderView();
-			assert.ok(latest.includes("Context Injections · [Latest Request]"));
-			assert.ok(!latest.some((line) => line.includes("request probe")), "the probe snapshot was released");
-			assert.ok(!latest.some((line) => line.includes("Payload changes")), "a complete guard adds no note");
+			const latestNotes = noteKindsShown(latest, true, true);
+			assert.ok(containsBlock(latest, [requestOriginLabel()]));
+			assert.ok(!containsBlock(latest, [requestOriginLabel(true)]));
+			assert.ok(!latestNotes.has("probe"), "the probe snapshot was released");
+			assert.ok(!latestNotes.has("payload-check"), "a complete guard adds no note");
 			assert.equal(provider.requests.length, 1, "opening the views makes no provider request");
 			assert.equal(responses, 1);
 			assert.deepEqual(runtime.errors, []);
 		});
 	}
 });
+
+/** Note kinds visible in a frame, matching only the static text before a guard's runtime-specific reason. */
+function noteKindsShown(lines: readonly string[], probe: boolean, incomplete: boolean): Set<DescriptionNote["kind"]> {
+	const reason = "\u0000";
+	const notes = injectionsNotes(createTheme(), {
+		probe, guard: incomplete ? { status: "incomplete", reason } : undefined, items: [],
+	});
+	const text = frameText(lines);
+	return new Set(notes.filter((note) => {
+		const fixed = stripSgr(note.text).split(reason)[0]?.replace(/\s+/g, " ").trim() ?? "";
+		return fixed !== "" && text.includes(fixed);
+	}).map((note) => note.kind));
+}
 
 /** Placeholder replaced by the monitor in `createRuntime`, so fixtures can be ordered around it. */
 const monitorSlot: ExtensionFactory = () => undefined;
@@ -530,6 +552,9 @@ async function temporaryDirectory(t: TestContext): Promise<string> {
  * the factories have no slot. No real credentials, resources, or endpoints.
  */
 async function createRuntime(t: TestContext, provider: MockProvider, options: RuntimeOptions): Promise<Runtime> {
+	// After hooks run in registration order: the session must stop before its directory is removed
+	let stopSession: (() => void) | undefined;
+	t.after(() => stopSession?.());
 	const directory = await temporaryDirectory(t);
 	// Keep almost nothing on manual compaction, so a short session can compact
 	const settingsManager = SettingsManager.inMemory({
@@ -547,7 +572,7 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 	const store = new SnapshotStore();
 	const published: RequestSnapshot[] = [];
 	store.subscribe((snapshot) => published.push(snapshot));
-	const monitor: ExtensionFactory = (pi) => registerExtension(pi, store);
+	const monitor: ExtensionFactory = (pi) => registerExtension(pi, store, createIsolatedConfigStore());
 	const ordered = options.factories.includes(monitorSlot)
 		? options.factories.map((factory) => factory === monitorSlot ? monitor : factory)
 		: [...options.factories, monitor];
@@ -567,7 +592,7 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 		model: models.find((model) => model.id === (options.modelId ?? "vision")),
 		sessionManager: options.sessionManager ?? SessionManager.inMemory(directory), tools: ["read"], thinkingLevel: "off",
 	});
-	t.after(() => session.dispose());
+	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
 	let viewFactory: ViewFactory | undefined;

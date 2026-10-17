@@ -16,6 +16,7 @@ import {
 import registerExtension from "../src/index.ts";
 import { PROBE_IDENTITIES_CUSTOM_TYPE } from "../src/probe/filter.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
+import { createIsolatedConfigStore } from "./harness/settings.ts";
 
 /** Events these tests deliver to the extension's handlers. */
 type TestEvent = SessionStartEvent | BeforeAgentStartEvent | ContextWithSystemEvent | BeforeProviderRequestEvent;
@@ -44,7 +45,7 @@ function registerOnFakePi(ctx: ExtensionContext, snapshots?: SnapshotStore) {
 		getCommands: () => [],
 		getSettings: () => ({}),
 	} as unknown as ExtensionAPI;
-	registerExtension(pi, snapshots);
+	registerExtension(pi, snapshots, createIsolatedConfigStore());
 	return {
 		emit: (event: TestEvent): unknown[] => (handlers.get(event.type) ?? []).map((handler) => handler(event, ctx)),
 		handles: (eventType: string): boolean => handlers.has(eventType),

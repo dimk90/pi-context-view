@@ -301,12 +301,17 @@ function responsesDeclarations(payload: Item & { readonly input: readonly Item[]
 	return [...declared.values()];
 }
 
-/** Items with no message text: reasoning replay and the inline tool changes of the tool channel. */
-const RESPONSES_SKIPPED_ITEMS = new Set(["reasoning", "additional_tools", "tool_search_call", "tool_search_output"]);
+/**
+ * Items with no message text: reasoning replay, thinking-level updates of
+ * `supportsMidConvoEffort`, and the inline tool changes of the tool channel.
+ */
+const RESPONSES_SKIPPED_ITEMS = new Set([
+	"reasoning", "configuration_update", "additional_tools", "tool_search_call", "tool_search_output",
+]);
 
 /**
  * Units of each input item: role messages, function and grammar tool calls,
- * and their outputs. Reasoning items and inline tool changes are skipped.
+ * and their outputs. Reasoning, thinking-level, and inline tool items are skipped.
  */
 function responsesUnits(payload: Item & { readonly input: readonly Item[] }): MessageUnit[] | undefined {
 	const units = new UnitCollector();

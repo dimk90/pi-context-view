@@ -50,6 +50,9 @@ export async function startMockProvider(): Promise<MockProvider> {
 
 	/** Record the request, take the next reply and answer in the request's API format. */
 	async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+		// A long synchronous test can block the shared event loop past the 5 s keep-alive timeout; the server
+		// then closes an idle connection just as the client reuses it, so open a new one for every request
+		response.setHeader("Connection", "close");
 		const api = apiForPath(request.url ?? "");
 		if (!api) {
 			response.writeHead(404).end();

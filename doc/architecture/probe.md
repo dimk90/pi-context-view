@@ -23,7 +23,11 @@ real turn, so it does not widen capture coverage. An empty-input probe also
 cannot reveal contributions that run only for a particular real prompt.
 
 If the store holds a snapshot, neither view needs a probe. Either view can
-request the shared one automatic attempt when the store is empty. Never probe
+request the shared one automatic attempt when the store is empty, unless the
+`autoProbing` setting is `false`: then the command resolves to `unprobed`
+without asking ProbeTrigger. Both views open the fallback with a description
+note instead of a degraded reason, because nothing failed; a captured real
+request still replaces it. Never probe
 in the background or repeat it on every view open: a probe runs other
 extensions' handlers ([side effects](#side-effects)).
 
@@ -58,7 +62,8 @@ flowchart TD
     SAFE{"Safe to probe?"}
     SKIP["Report reason<br/>Attempt not consumed"]
     SEND["ProbeTrigger<br/>Start attempt, subscribe, hide working row<br/>Send empty prompt in token scope"]
-    INPUT["input · SilentProbe<br/>Undo earlier transforms of idle probe input"]
+    INPUT["input · SilentProbe<br/>Claim the first idle input with the token<br/>Undo earlier transforms of it"]
+    NESTED["Second idle input with the token<br/>Fail attempt, claim no run"]
     OWN{"before_agent_start · SilentProbe<br/>User-message run carrying the probe token?"}
     FOREIGN["Fail attempt<br/>Leave foreign run untouched"]
     ABORT["SilentProbe<br/>turn_start: abort before provider<br/>message_end (user): blank prompt"]
@@ -71,6 +76,7 @@ flowchart TD
     COMMAND --> CHECK --> SAFE
     SAFE -->|"No"| SKIP --> FINISH
     SAFE -->|"Yes"| SEND --> INPUT --> OWN
+    INPUT -->|"Nested send"| NESTED --> FINISH
     OWN -->|"No"| FOREIGN --> FINISH
     OWN -->|"Yes"| ABORT --> CONTEXT --> CLEANUP --> SETTLE --> SNAPSHOT --> FINISH
 ```
@@ -157,7 +163,9 @@ per-prompt identity.
 
 The `input` handler resets only idle input. The probe sends while idle, so
 queued input is never its own, even when it inherits the token, for example
-from another extension's send in `before_agent_start`.
+from another extension's send in `before_agent_start`. It claims the first
+idle input with the token, even an empty one, so that a second one shows a
+[nested send](#known-limitation-nested-sends).
 
 Treat every other run as someone else's: a run without the token, and a
 custom-message run even with the token, which another extension's nested
@@ -179,29 +187,48 @@ scope, including another extension's nested send. It does not identify only
 the original synthetic prompt, and descendant work can keep the token after
 the outer `sendUserMessage()` call returns. A nested custom-message run is
 never claimed ([run identity](#identifying-the-probe-run)); a nested
-`pi.sendUserMessage()` remains a problem.
+`pi.sendUserMessage()` is detected only in part.
 
 For example, another extension's async `input` handler can send a separate
-user message and wait until its run settles before returning:
+user message and wait until its run settles before returning. The nested send
+inherits the probe token, and its `input` event runs inside the probe's own.
+Pi starts the probe's run only after the nested run settled. What SilentProbe
+can do depends on which `input` handler runs first:
 
-1. The nested send inherits the probe token. While the probe is waiting, its
-   input handler erases the nested message's text.
-2. The nested run claims the token. It is aborted, and its messages are
-   blanked and recorded as probe identities.
-3. Pi rejects the original send while the nested run is active, so the
-   original synthetic prompt reaches `before_agent_start` only after that run
-   settled. It cannot claim the already-used token. Its abort guard stays
-   inactive, so it can make a provider request and remain in later context as
-   an ordinary message.
+- **This extension's handler runs first.** It claims the probe's input and
+  then sees the nested input as a second idle input with the token. Either may
+  be the probe's, so ownership is ambiguous: SilentProbe resets no later input,
+  claims no run, and fails the attempt with a `nested-send` reason. Both runs
+  proceed untouched. The empty probe prompt makes a provider request, and the
+  prompt and its reply stay in the session as ordinary messages.
+- **The sender's handler runs first.** The nested input reaches SilentProbe
+  first, and nothing tells it apart from the probe's:
+  1. The probe's input handler erases the nested message's text.
+  2. The nested run claims the token. It is aborted, and its messages are
+     blanked, omitted, and recorded as probe identities.
+  3. The original synthetic prompt reaches `before_agent_start` after that run
+     settled and cannot claim the already-used token. Its abort guard stays
+     inactive, so it makes a provider request and remains in later context as
+     an ordinary message.
+  4. A user-message run with the token that starts after the claim signals
+     the wrong claim. SilentProbe warns once, without message content, that
+     the probe prompt may reach the model, and never aborts or rewrites that
+     run. Another extension's later send that inherits the token, for example
+     from the probe run's `agent_settled`, gives the same signal, so this
+     warning can also follow a correct claim.
+
+A per-send identity from Pi, such as a run handle from `sendUserMessage()` or
+a correlation value passed to `input` and `before_agent_start`, would let the
+probe claim its run without `AsyncLocalStorage` and remove this limitation.
 
 The token approach is more robust against text transforms than the previous
 empty-input checks, which lost recognition when another extension added text
 ([issue #5](https://github.com/dimk90/pi-context-view/issues/5)). It also avoids
 claiming unrelated empty inputs outside the token scope. It is **not
-fail-safe**, however: nested user-message sends can be mistaken for the
-probe, including non-empty sends that the old checks would have left alone. A
-timeout or fallback does not fix that ownership mistake or guarantee that the
-original probe is aborted.
+fail-safe**, however: nested user-message sends can still be mistaken for the
+probe when the sender's `input` handler runs first, including non-empty sends
+that the old checks would have left alone. A timeout or fallback does not fix
+that ownership mistake or guarantee that the original probe is aborted.
 
 ## Keeping Probe Messages Out of Real Context
 
@@ -328,8 +355,10 @@ limitation also remains. Strict zero-provider-request guarantees require
 passive capture.
 
 Any skipped precondition above, a missing model, missing authentication, a
-startup failure, a timeout, or a probe that settles without a request snapshot
-reports a precise reason that extension additions were not observed.
+startup failure, a timeout, a nested send, or a probe that settles without a
+request snapshot reports a precise reason that extension additions were not
+observed. Each failure also carries a typed cause from `src/probe/failure.ts`;
+callers and tests branch on the cause, while the reason is display text.
 Injections then shows a current prompt/tool snapshot; Usage counts the current
 branch without request changes. Neither fallback enters the store.
 

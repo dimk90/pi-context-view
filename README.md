@@ -102,6 +102,7 @@ You can configure the number of rows and columns in the `Context Usage` map:
 `pi-context-view` adds nothing to the model context. Opening a view before the
 first turn may run one [silent probe](doc/architecture/probe.md)
 that sends no request and leaves only blank entries, omitted from future context.
+Set `"autoProbing": false` in the [config](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md#silent-probe) to disable it.
 
 ## My Other Stuff
 

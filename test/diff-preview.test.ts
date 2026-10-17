@@ -2,28 +2,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { THEME_COLOR_NAMES } from "../src/config.ts";
 import type { InjectionSection } from "../src/model.ts";
 import { messageDiffLines, payloadDiffLines } from "../src/ui/diff-preview.ts";
-
-/** Distinct colors make each diff side observable without a terminal. */
-function createTheme(): Theme {
-	const foreground = Object.fromEntries(THEME_COLOR_NAMES.map((name, index) => [name, index + 16]));
-	const theme = new Theme(foreground as Record<ThemeColor, number>, {
-		selectedBg: "", userMessageBg: "", customMessageBg: "",
-		toolPendingBg: "", toolSuccessBg: "", toolErrorBg: "",
-	}, "256color");
-	// Chalk disables inverse without a TTY, so mark it visibly instead
-	theme.inverse = (text) => `\u001b[7m${text}\u001b[27m`;
-	return theme;
-}
+import { createTheme, stripSgr } from "./harness/frame.ts";
 
 /** Remove renderer-owned styling for exact body assertions. */
 function plain(lines: readonly string[]): string[] {
-	return lines.map((line) => line.replace(/\u001b\[[\d;]*m/g, ""));
+	return lines.map(stripSgr);
 }
 
 /** One modified string message, with both versions kept in the same part. */

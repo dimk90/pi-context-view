@@ -384,7 +384,7 @@ test("Available Tools annotates extension snippets inside the text it counts", (
 	assert.ok(base !== undefined && availableTools !== undefined);
 	assert.deepEqual(annotatedLines(availableTools), [["\n- search: Search the web", "npm:web", "search"]]);
 	assert.deepEqual(
-		base.sections?.find((section) => section.label === "Available Tools")?.injectedReferences,
+		base.sections?.find((section) => section.text === findItem(items, "base-prompt:available-tools")?.text)?.injectedReferences,
 		availableTools.injectedReferences,
 	);
 	// The part counts its whole body: pi's own bullets and the extension snippet alike.
@@ -424,7 +424,7 @@ test("Guidelines annotates extension bullets in prompt order and counts them in 
 		[`\n- ${other}`, "npm:fetch", "fetch"],
 	]);
 	assert.deepEqual(
-		base.sections?.find((section) => section.label === "Guidelines")?.injectedReferences,
+		base.sections?.find((section) => section.text === findItem(items, "base-prompt:guidelines")?.text)?.injectedReferences,
 		guidelines.injectedReferences,
 	);
 	const start = prompt.indexOf("<rules>\n") + "<rules>".length;
@@ -604,8 +604,8 @@ test("analyzeSystemPrompt measures a replaced prompt as the content pi actually 
 	assert.equal(findItem(items, "base-prompt:appended")?.text, "APPENDED RULE");
 	// The blocks the replacement gave up stay visible, at no cost, instead of vanishing.
 	assert.deepEqual(
-		findItem(items, "base-prompt")?.children?.map((child) => child.label),
-		["Preamble", "Available Tools", "Guidelines", "Documentation", "Appended Prompt", "Current Dir"],
+		findItem(items, "base-prompt")?.children?.map((child) => child.id),
+		["preamble", "available-tools", "guidelines", "documentation", "appended", "current-dir"].map((id) => `base-prompt:${id}`),
 	);
 	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
 	assert.equal(findItem(items, "skills")?.children?.length, 1);
@@ -647,7 +647,8 @@ test("analyzeSystemPrompt marks the parts a replaced prompt drops without counti
 	const droppedChildren = (basePrompt?.children ?? []).filter((child) => child.dropped === true);
 
 	// Every dropped block is present, empty of pi's own text, and free.
-	assert.deepEqual(droppedChildren.map((child) => child.label), ["Available Tools", "Guidelines", "Documentation"]);
+	assert.deepEqual(droppedChildren.map((child) => child.id),
+		["available-tools", "guidelines", "documentation"].map((id) => `base-prompt:${id}`));
 	assert.ok(droppedChildren.every((child) => child.chars === 0 && child.tokens === 0));
 	assert.equal(findItem(items, "base-prompt:documentation")?.text, "");
 	assert.equal(findItem(items, "base-prompt:documentation")?.injectedReferences, undefined);
@@ -729,16 +730,16 @@ test("analyzeSystemPrompt marks the tool sections an extension relocated past cw
 
 	// The moved sections stay pi's parts, following the cwd section they now sit behind.
 	assert.deepEqual(
-		basePrompt?.children?.map((child) => child.label),
-		["Preamble", "Documentation", "Current Dir", "Available Tools", "Guidelines", "Extension Additions"],
+		basePrompt?.children?.map((child) => child.id),
+		["preamble", "documentation", "current-dir", "available-tools", "guidelines", "additions"].map((id) => `base-prompt:${id}`),
 	);
 	assert.deepEqual(
-		basePrompt?.children?.filter((child) => child.moved === true).map((child) => child.label),
-		["Available Tools", "Guidelines"],
+		basePrompt?.children?.filter((child) => child.moved === true).map((child) => child.id),
+		["base-prompt:available-tools", "base-prompt:guidelines"],
 	);
 	assert.deepEqual(
-		basePrompt?.sections?.filter((section) => section.moved === true).map((section) => section.label),
-		["Available Tools", "Guidelines"],
+		basePrompt?.sections?.filter((section) => section.moved === true).map((section) => section.text),
+		basePrompt?.children?.filter((child) => child.moved === true).map((child) => child.text),
 	);
 
 	// A moved block counts exactly like an unmoved one: shares still reconcile.
@@ -787,9 +788,8 @@ test("rearranged sections and appended instructions retain their real order", ()
 		`\n\n<cwd>\n${CWD}\n</cwd>`;
 	const items = analyzeSystemPrompt(prompt, {}, RELOCATION_TOOLS);
 	const base = findItem(items, "base-prompt");
-	assert.deepEqual(base?.children?.map((child) => child.label), [
-		"Preamble", "Documentation", "Appended Prompt", "Available Tools", "Guidelines", "Current Dir",
-	]);
+	assert.deepEqual(base?.children?.map((child) => child.id),
+		["preamble", "documentation", "appended", "available-tools", "guidelines", "current-dir"].map((id) => `base-prompt:${id}`));
 	assert.equal(findItem(items, "base-prompt:available-tools")?.moved, true);
 	assert.equal(findItem(items, "base-prompt:guidelines")?.moved, true);
 	assert.equal(base?.text, base?.sections?.map((section) => section.text).join(""));

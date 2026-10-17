@@ -110,18 +110,18 @@ test("ProbeTrigger fails when the probe settles without a snapshot", async () =>
 
 	const result = await harness.trigger.request(harness.context);
 
-	assert.deepEqual(result, { status: "failed", reason: "Silent probe settled without a request snapshot." });
+	assert.equal(result.status === "failed" ? result.cause : undefined, "missing-snapshot");
 	assert.deepEqual(harness.visibility, [false, true]);
 	await harness.run();
 });
 
 test("ProbeTrigger reports the probe's own failure", async () => {
 	const harness = createHarness(async (probe) => {
-		probe.fail("Session ended before the silent probe completed.");
+		probe.fail("shutdown");
 	});
 
 	const result = await harness.trigger.request(harness.context);
 
-	assert.deepEqual(result, { status: "failed", reason: "Session ended before the silent probe completed." });
+	assert.equal(result.status === "failed" ? result.cause : undefined, "shutdown");
 	assert.deepEqual(harness.visibility, [false, true]);
 });

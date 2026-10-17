@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { SystemMessage, Tool } from "@earendil-works/pi-ai";
+import type { AssistantMessage, SystemMessage, Tool } from "@earendil-works/pi-ai";
 
 import { type ConvertibleCapture, convertCapturedRequest, renderExpectedUnits } from "../src/capture/adjustments.ts";
 import type { GuardModel } from "../src/capture/guard.ts";
@@ -42,6 +42,16 @@ function user(...content: Array<string | typeof IMAGE>): RequestMessage {
 	return {
 		role: "user", timestamp: 1,
 		content: content.map((block) => typeof block === "string" ? { type: "text" as const, text: block } : block),
+	};
+}
+
+/** A completed assistant reply from `model`, including tool calls when supplied. */
+function assistant(model: GuardModel, content: AssistantMessage["content"]): AssistantMessage {
+	return {
+		role: "assistant", provider: model.provider, api: model.api, model: model.id, stopReason: "stop", timestamp: 3,
+		content,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
 	};
 }
 
@@ -143,18 +153,96 @@ test("system messages render at their positions, collapse without support, and y
 	assert.deepEqual(forced, [unit("system", "Forced."), unit("user", "one"), unit("user", "two")]);
 });
 
-test("another model's thinking becomes text; the same model's thinking stays out of the message channel", () => {
-	const reply = (model: string): RequestMessage => ({
-		role: "assistant", provider: "mock", api: "openai-completions", model, stopReason: "stop", timestamp: 3,
-		content: [
-			{ type: "thinking", thinking: "Reasoning.", thinkingSignature: "reasoning_content" },
+for (const { model, sameText } of [
+	{ model: VISION, sameText: "Answer." },
+	{ model: { ...VISION, compat: { requiresThinkingAsText: true } },
+		sameText: "Signed reasoning.\n\nUnsigned reasoning.\nAnswer." },
+	{ model: { ...VISION, api: "openai-responses" }, sameText: "Answer." },
+	{ model: { ...VISION, api: "anthropic-messages" }, sameText: "Unsigned reasoning.\nAnswer." },
+	{ model: { ...VISION, api: "anthropic-messages", compat: { allowEmptySignature: true } }, sameText: "Answer." },
+] satisfies { model: GuardModel; sameText: string }[]) {
+	test(`${model.api}: drop foreign thinking and keep same-model replay rules ${JSON.stringify(model.compat)}`, () => {
+		const content: AssistantMessage["content"] = [
+			{ type: "thinking", thinking: "Signed reasoning.", thinkingSignature: "signature" },
+			{ type: "thinking", thinking: "Unsigned reasoning." },
+			{ type: "thinking", thinking: "", thinkingSignature: "opaque", redacted: true },
+			{ type: "thinking", thinking: "", thinkingSignature: "opaque" },
+			{ type: "thinking", thinking: "   " },
 			{ type: "text", text: "Answer." },
-		],
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		];
+		for (const foreign of [
+			{ ...model, provider: "elsewhere" },
+			{ ...model, api: "other-api" },
+			{ ...model, id: "other-model" },
+		]) {
+			assert.deepEqual(expected([user("q"), assistant(foreign, content)], model), [
+				unit("user", "q"), unit("assistant", "Answer."),
+			]);
+		}
+		const same = expected([user("q"), assistant(model, content)], model).filter((item) => item.part === "assistant");
+		assert.deepEqual(same, [unit("assistant", sameText)]);
 	});
-	assert.deepEqual(expected([user("q"), reply("vision")], VISION).at(-1), unit("assistant", "Answer."));
-	assert.deepEqual(expected([user("q"), reply("other")], VISION).at(-1), unit("assistant", "Reasoning.Answer."));
+}
+
+for (const foreign of [false, true]) {
+	test(`Anthropic error images follow all tool results with ${foreign ? "foreign" : "same-model"} IDs`, () => {
+		const model: GuardModel = { ...VISION, api: "anthropic-messages" };
+		const identity = foreign ? { ...model, provider: "elsewhere" } : model;
+		const id = `call|error+${"x".repeat(70)}`;
+		const captionId = foreign ? `call_error_${"x".repeat(53)}` : id;
+		const messages: RequestMessage[] = [
+			assistant(identity, [id, "success", "second", "text-only"].map((id) => ({
+				type: "toolCall", id, name: "read", arguments: {},
+			}))),
+			{ role: "toolResult", toolCallId: id, toolName: "read", isError: true, timestamp: 4,
+				content: [{ type: "text", text: "Error." }, IMAGE, IMAGE] },
+			{ role: "toolResult", toolCallId: "success", toolName: "read", isError: false, timestamp: 5, content: [IMAGE] },
+			{ role: "toolResult", toolCallId: "second", toolName: "read", isError: true, timestamp: 6,
+				content: [{ type: "text", text: "(image attached after the tool results)" }, IMAGE,
+					{ type: "text", text: "More." }, IMAGE] },
+			{ role: "toolResult", toolCallId: "text-only", toolName: "read", isError: true, timestamp: 7,
+				content: [{ type: "text", text: "No image." }] },
+			user("Next."),
+		];
+		const original = JSON.stringify(messages);
+		const rendered = expected(messages, model);
+		assert.deepEqual(rendered, [
+			...[id, "success", "second", "text-only"].map(() => unit("tool-call", "{}", "read")),
+			unit("tool-result", "Error.\n(image attached after the tool results)"),
+			unit("tool-result", "(see attached image)"),
+			unit("tool-result", "(image attached after the tool results)\nMore.\n(image attached after the tool results)"),
+			unit("tool-result", "No image."),
+			unit("user", `Images from the error result of tool call ${captionId} (read):\n`
+				+ "Images from the error result of tool call second (read):"),
+			unit("user", "Next."),
+		]);
+		assert.equal(JSON.stringify(messages), original, "rendering never changes the transcript");
+		const edited = rendered.map((item) => item.part === "user" && item.text.startsWith("Images from")
+			? { ...item, text: "Edited caption." } : item);
+		assert.equal(compareMessageUnits(rendered, edited, EXACT).length, 1, "caption edits remain payload findings");
+	});
+}
+
+test("Anthropic error-image relocation requires an error and images still enabled", () => {
+	const vision: GuardModel = { ...VISION, api: "anthropic-messages" };
+	const text: GuardModel = { ...TEXT, api: "anthropic-messages" };
+	for (const isError of [false, true]) {
+		for (const [model, blockImages, result] of [
+			[vision, false, isError ? "(image attached after the tool results)" : "(see attached image)"],
+			[text, false, "(tool image omitted: model does not support images)"],
+			[vision, true, "Image reading is disabled."],
+		] as const) {
+			const messages: RequestMessage[] = [
+				assistant(model, [{ type: "toolCall", id: "call", name: "read", arguments: {} }]),
+				{ role: "toolResult", toolCallId: "call", toolName: "read", isError, timestamp: 4, content: [IMAGE, IMAGE] },
+			];
+			assert.deepEqual(expected(messages, model, blockImages), [
+				unit("tool-call", "{}", "read"), unit("tool-result", result),
+				...(isError && model === vision && !blockImages
+					? [unit("user", "Images from the error result of tool call call (read):")] : []),
+			]);
+		}
+	}
 });
 
 test("Pi's own conversion runs on the rebuilt request: custom, bash, and summary messages become user text", () => {

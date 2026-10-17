@@ -27,7 +27,9 @@ The config file created with `/context config` will contain:
   "freeSpaceColor": "dim",
 
   "mapCols": 16,
-  "mapRows": 16
+  "mapRows": 16,
+
+  "autoProbing": true
 }
 ```
 
@@ -78,3 +80,13 @@ configured size that still fits, dropping columns before the legend becomes
 narrower than 32 columns and rows before the map outgrows the terminal height.
 A clamped map is rebuilt at the smaller size, so it still maps the whole context
 window.
+
+
+## Silent Probe
+
+`autoProbing` controls the [silent probe](architecture/probe.md): when a view
+opens before any request was captured, it runs one empty prompt to observe
+what Pi and other extensions add to a request. The run is aborted before it
+reaches the model, but other extensions' handlers still run.
+
+Set `autoProbing` to `false` to never start the probe.

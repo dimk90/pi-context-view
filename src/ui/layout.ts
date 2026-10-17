@@ -97,6 +97,36 @@ export function wrapDescriptionLines(
 	);
 }
 
+/**
+ * Keep wrapped notice blocks within `maxLines` rows, so a broken configuration
+ * file cannot push a view's content off the frame. On overflow, the last kept
+ * row becomes a `… +N more` notice, wrapped by `wrapNotice`, counting every
+ * block not shown whole.
+ */
+export function capNoticeLines(
+	blocks: readonly (readonly string[])[],
+	maxLines: number,
+	wrapNotice: (notice: string) => string[],
+): string[] {
+	const lines = blocks.flat();
+	if (lines.length <= maxLines) return lines;
+	const kept = lines.slice(0, maxLines - 1);
+	const hidden = blocks.length - countWholeBlocks(blocks, kept.length);
+	return [...kept, ...wrapNotice(`… +${hidden} more`)];
+}
+
+/** Notices whose wrapped lines fit entirely into the first `keptLines` rows. */
+function countWholeBlocks(blocks: readonly (readonly string[])[], keptLines: number): number {
+	let used = 0;
+	let whole = 0;
+	for (const block of blocks) {
+		if (used + block.length > keptLines) break;
+		used += block.length;
+		whole += 1;
+	}
+	return whole;
+}
+
 /** Spread left and right content across the width, truncating the left side on overlap. */
 export function spreadLine(left: string, right: string, width: number): string {
 	const gap = width - visibleWidth(left) - visibleWidth(right);

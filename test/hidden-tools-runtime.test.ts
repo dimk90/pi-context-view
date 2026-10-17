@@ -20,7 +20,7 @@ import { SnapshotStore } from "../src/snapshot.ts";
 import { computeUsage } from "../src/usage.ts";
 import forcedPrompt, { FORCED_SYSTEM_PROMPT } from "./fixtures/forced-prompt.ts";
 import { type MockApi, startMockProvider } from "./harness/mock-provider.ts";
-import { useSettings } from "./harness/settings.ts";
+import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
 
 const ACTIVE = ["read", "bash", "edit", "write", "codemode"];
 const HIDDEN = ["read", "bash", "edit", "write"];
@@ -157,6 +157,9 @@ interface ExtraExtensions {
 async function createRuntime(t: TestContext, api: MockApi, extra: ExtraExtensions = {}) {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
+	// After hooks run in registration order: the session must stop before its directory is removed
+	let stopSession: (() => Promise<void>) | undefined;
+	t.after(() => stopSession?.());
 	const directory = await mkdtemp(join(tmpdir(), "context-hidden-tools-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const settingsManager = SettingsManager.inMemory({
@@ -187,7 +190,7 @@ async function createRuntime(t: TestContext, api: MockApi, extra: ExtraExtension
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 		extensionFactories: [
 			(pi) => pi.registerProvider("mock", { api, baseUrl: model.baseUrl, apiKey: "mock-key", models: [model] }),
-			createCodemodeExtension(), ...extra.before ?? [], (pi) => registerExtension(pi, store), ...extra.after ?? [],
+			createCodemodeExtension(), ...extra.before ?? [], (pi) => registerExtension(pi, store, createIsolatedConfigStore()), ...extra.after ?? [],
 			logger,
 		],
 	});
@@ -196,7 +199,10 @@ async function createRuntime(t: TestContext, api: MockApi, extra: ExtraExtension
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, modelRuntime, model,
 		sessionManager: SessionManager.inMemory(directory), thinkingLevel: "off",
 	});
-	t.after(async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); });
+	stopSession = async () => {
+		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+		session.dispose();
+	};
 	assert.deepEqual(extensionsResult.errors, []);
 	assert.deepEqual(session.getActiveToolNames(), ACTIVE);
 	const errors: string[] = [];

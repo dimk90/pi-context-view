@@ -4,6 +4,7 @@
  * immediately after the payload copy; virtual selections keep the copy until
  * dispatch supplies the model.
  */
+import type { ModelIdentity } from "../model-identity.ts";
 import type { Dispatch, GuardFinding, GuardResult } from "../snapshot.ts";
 import {
 	type ConvertedRequest, type ConvertibleCapture, convertCapturedRequest, renderExpectedUnits,
@@ -15,10 +16,7 @@ import {
 import { compareToolDeclarations } from "./tools.ts";
 
 /** Model identity and the capabilities message normalization reads. */
-export interface GuardModel {
-	readonly provider: string;
-	readonly api: string;
-	readonly id: string;
+export interface GuardModel extends ModelIdentity {
 	/** Input modalities; without `image`, Pi replaces images with placeholders. */
 	readonly input: readonly string[];
 	/** API-specific compatibility settings; only top-level boolean flags are read. */

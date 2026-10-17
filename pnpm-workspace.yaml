@@ -1,7 +1,7 @@
 allowBuilds:
-  '@google/genai': true
-  esbuild: true
-  protobufjs: true
+  '@google/genai': false
+  protobufjs: false
 minimumReleaseAgeExclude:
   - "@earendil-works/pi-*"
-  - "@earendil-works/chord"
+overrides:
+  protobufjs: 7.6.6
