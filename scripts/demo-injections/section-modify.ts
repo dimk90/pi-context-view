@@ -17,8 +17,8 @@ export const SECTION_MODIFY_TEXT = "Review the changed files for correctness, er
 /** Seed one baseline section, then replace its body only in outgoing requests. */
 export default function (pi: ExtensionAPI): void {
 	pi.on("before_agent_start", (event) => {
-		event.systemPromptOptions.sections[SECTION_MODIFY_NAME] = `<${SECTION_MODIFY_NAME}>\n`
-			+ `${SECTION_MODIFY_ORIGINAL}\n</${SECTION_MODIFY_NAME}>`;
+		// Pi wraps prompt option sections in their XML tags itself
+		event.systemPromptOptions.sections[SECTION_MODIFY_NAME] = SECTION_MODIFY_ORIGINAL;
 	});
 	pi.on("context_with_system", (event) => {
 		const original = getCurrentSystemMessage(event.messages)?.sections?.[SECTION_MODIFY_NAME];

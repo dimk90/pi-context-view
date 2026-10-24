@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import type { InjectionSection } from "../src/model.ts";
-import { messageDiffLines, payloadDiffLines } from "../src/ui/diff-preview.ts";
+import { forcedEditDiffLines, messageDiffLines, payloadDiffLines } from "../src/ui/diff-preview.ts";
 import { createTheme, stripSgr } from "./harness/frame.ts";
 
 /** Remove renderer-owned styling for exact body assertions. */
@@ -99,7 +99,23 @@ test("added, deleted, unchanged, and empty message sections all keep the diff bo
 	const theme = createTheme();
 	const base = { label: "note", text: "body", tokens: 1, message: {} };
 	assert.deepEqual(plain(messageDiffLines(theme, base, 100)), ["    body"]);
-	assert.deepEqual(plain(messageDiffLines(theme, { ...base, change: "added" }, 100)), ["  + body"]);
+	assert.deepEqual(plain(messageDiffLines(theme, { ...base, change: "added" }, 100)), ["    body"],
+		"an addition has nothing to compare with, so it reads like plain content");
+	assert.deepEqual(plain(messageDiffLines(theme, {
+		...base, change: "added", message: { original: { text: "ignored" } },
+	}, 100)), ["    body"]);
 	assert.deepEqual(plain(messageDiffLines(theme, { ...base, change: "deleted", tokens: 0 }, 100)), ["  - body"]);
 	assert.deepEqual(messageDiffLines(theme, { ...base, text: "", tokens: 0 }, 100), []);
+});
+
+test("a replaced edit diffs from the edit to what Pi sent, or to nothing when unsent", () => {
+	const theme = createTheme();
+	const edit = { text: "Review the change and its tests.", sent: true };
+	assert.deepEqual(plain(forcedEditDiffLines(theme, "Review the change.", edit, 100)),
+		["  - Review the change and its tests.", "  + Review the change."]);
+	assert.deepEqual(plain(forcedEditDiffLines(theme, "", { ...edit, sent: false }, 100)),
+		["  - Review the change and its tests."]);
+	// A replaced deletion: Pi still sent the part, so its text reads as added, like the row's +N
+	assert.deepEqual(plain(forcedEditDiffLines(theme, "Legacy note.", { text: "", sent: true }, 100)),
+		["  + Legacy note."]);
 });

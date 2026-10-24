@@ -53,6 +53,9 @@ function statusFields(theme: Theme, row: InjectionRow): string[] {
 	if (row.dropped === true) fields.push(markerStatusField(theme, "dropped"));
 	else if (row.moved === true) fields.push(markerStatusField(theme, "moved"));
 	if (row.change === "forced") fields.push(markerStatusField(theme, "forced"));
+	if (row.forcedEdit !== undefined) {
+		fields.push(markerStatusField(theme, row.forcedEdit.sent ? "forced-edit-sent" : "forced-edit-unsent"));
+	}
 	return fields;
 }
 

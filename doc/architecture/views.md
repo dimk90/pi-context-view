@@ -37,7 +37,11 @@ The command also keeps the TUI-only guard. `openInjections()` and
    `src/replay.ts`.
 3. A forced prompt replaces the replayed prompt, so captured content and
    section patches do not apply to it; tool changes still apply. The System
-   Prompt item carries the `forced` request-only change. Current
+   Prompt item carries the `forced` request-only change. Content and section
+   edits the forced text replaced stay visible as `forcedEdit` on their parts,
+   never counted: a part the forced text still sent keeps its estimate, and an
+   added or modified part it lacks is appended at zero tokens. An undivided
+   forced prompt has no parts to mark. Current
    `getSystemPromptOptions().customPrompt` preserves Dropped markers for
    `--system-prompt`. Other live prompt options do not replace recorded
    sections.

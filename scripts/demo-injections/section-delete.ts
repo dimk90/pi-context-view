@@ -10,9 +10,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export const SECTION_DELETE_NAME = "demo_legacy_migration";
-export const SECTION_DELETE_TEXT = `<${SECTION_DELETE_NAME}>\n`
-	+ "Use the legacy configuration format for migration.\n"
-	+ `</${SECTION_DELETE_NAME}>`;
+/** Section body only: pi wraps prompt option sections in their XML tags itself. */
+export const SECTION_DELETE_TEXT = "Use the legacy configuration format for migration.";
 
 /** Keep the obsolete section in the session, but remove it from every request. */
 export default function (pi: ExtensionAPI): void {

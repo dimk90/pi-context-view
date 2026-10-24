@@ -100,8 +100,21 @@ export function messageKey(message: RequestMessage): string {
  */
 export function sameMessage(a: RequestMessage, b: RequestMessage): boolean {
 	if (a.role !== b.role || customTypeKey(a) !== customTypeKey(b)) return false;
-	const result = compareJson(modelFacingPart(a), modelFacingPart(b), 0);
+	const result = compareJson(modelFacingPart(a), modelFacingPart(b), 0, "any");
 	return result === "unknown" ? messageKey(a) === messageKey(b) : result === "equal";
+}
+
+/**
+ * Whether two tools declare the same interface, as Pi's `declarationsEqual()`
+ * decides, without serializing plain JSON declarations. Only the fields Pi
+ * keeps in a declaration are compared; anything outside plain JSON data falls
+ * back to `declarationsEqual()`.
+ */
+export function sameDeclaration(a: Tool, b: Tool): boolean {
+	if (a === b) return true;
+	// Pi compares declarations as plain JSON, so schema key order matters
+	const result = compareJson(declarationPart(a), declarationPart(b), 0, "same");
+	return result === "unknown" ? declarationsEqual(a, b) : result === "equal";
 }
 
 /**
@@ -158,7 +171,7 @@ function diffTools(before: readonly Tool[], after: readonly Tool[]): SystemChang
 	const changes: SystemChange[] = [];
 	for (const tool of after) {
 		const previous = beforeByName.get(tool.name);
-		if (previous === undefined || !declarationsEqual(previous, tool)) {
+		if (previous === undefined || !sameDeclaration(previous, tool)) {
 			changes.push({ type: "tool", name: tool.name, declaration: tool });
 		}
 	}
@@ -166,6 +179,16 @@ function diffTools(before: readonly Tool[], after: readonly Tool[]): SystemChang
 		if (!afterNames.has(tool.name)) changes.push({ type: "tool", name: tool.name, declaration: null });
 	}
 	return changes;
+}
+
+/** The fields of a tool that Pi's `toToolDeclaration()` keeps; executable and display fields are left out. */
+function declarationPart(tool: Tool): Tool {
+	return {
+		name: tool.name,
+		description: tool.description,
+		parameters: tool.parameters,
+		constrainedSampling: tool.constrainedSampling,
+	};
 }
 
 /** Plain text of system content; text blocks join with a newline, as Pi renders them. */
@@ -302,18 +325,25 @@ export function canonicalJson(value: unknown): string {
 
 /**
  * Result of comparing two values as JSON:
- *   equal       both encode to the same canonical JSON
- *   different   their canonical JSON differs
- *   unknown     a value is outside plain JSON data; compare the encoded keys
+ *   equal       both encode to the same JSON
+ *   different   their JSON differs
+ *   unknown     a value is outside plain JSON data; compare the encoded values
  */
 type JsonComparison = "equal" | "different" | "unknown";
 
 /**
- * Compare plain JSON data (strings, booleans, null, finite numbers, arrays,
- * and plain objects) as `canonicalJson()` would, without encoding it. Object
- * key order and `undefined` properties do not matter, as in the keys.
+ * Which JSON encoding a comparison agrees with:
+ *   any    `canonicalJson()`: object key order does not matter
+ *   same   `JSON.stringify()`: object keys must come in the same order
  */
-function compareJson(a: unknown, b: unknown, depth: number): JsonComparison {
+type KeyOrder = "any" | "same";
+
+/**
+ * Compare plain JSON data (strings, booleans, null, finite numbers, arrays,
+ * and plain objects) as its JSON encoding would, without encoding it.
+ * `undefined` properties do not matter, as in JSON.
+ */
+function compareJson(a: unknown, b: unknown, depth: number, keyOrder: KeyOrder): JsonComparison {
 	if (typeof a === "string" || typeof a === "boolean") {
 		if (typeof b !== typeof a) return "unknown";
 		return a === b ? "equal" : "different";
@@ -325,17 +355,23 @@ function compareJson(a: unknown, b: unknown, depth: number): JsonComparison {
 	if (a === null) return b === null ? "equal" : "unknown";
 	if (typeof a !== "object" || typeof b !== "object" || b === null || depth >= MAX_COMPARE_DEPTH) return "unknown";
 	if (Array.isArray(a) || Array.isArray(b)) {
-		return Array.isArray(a) && Array.isArray(b) ? compareJsonArrays(a, b, depth) : "unknown";
+		return Array.isArray(a) && Array.isArray(b) ? compareJsonArrays(a, b, depth, keyOrder) : "unknown";
 	}
 	if (!isPlainObject(a) || !isPlainObject(b)) return "unknown";
-	return compareJsonObjects(a as Record<string, unknown>, b as Record<string, unknown>, depth);
+	const compareObjects = keyOrder === "any" ? compareJsonObjects : compareOrderedJsonObjects;
+	return compareObjects(a as Record<string, unknown>, b as Record<string, unknown>, depth);
 }
 
 /** Compare two arrays element by element; JSON keeps their order. */
-function compareJsonArrays(a: readonly unknown[], b: readonly unknown[], depth: number): JsonComparison {
+function compareJsonArrays(
+	a: readonly unknown[],
+	b: readonly unknown[],
+	depth: number,
+	keyOrder: KeyOrder,
+): JsonComparison {
 	if (a.length !== b.length) return "different";
 	for (let index = 0; index < a.length; index++) {
-		const result = compareJson(a[index], b[index], depth + 1);
+		const result = compareJson(a[index], b[index], depth + 1, keyOrder);
 		if (result !== "equal") return result;
 	}
 	return "equal";
@@ -351,7 +387,7 @@ function compareJsonObjects(
 	for (const key in a) {
 		if (a[key] === undefined) continue;
 		unpaired++;
-		const result = compareJson(a[key], b[key], depth + 1);
+		const result = compareJson(a[key], b[key], depth + 1, "any");
 		if (result !== "equal") return result;
 	}
 	for (const key in b) {
@@ -362,6 +398,29 @@ function compareJsonObjects(
 		unpaired--;
 	}
 	return unpaired === 0 ? "equal" : "different";
+}
+
+/** Compare two plain objects by their defined properties, which must come in the same order. */
+function compareOrderedJsonObjects(
+	a: Readonly<Record<string, unknown>>,
+	b: Readonly<Record<string, unknown>>,
+	depth: number,
+): JsonComparison {
+	const aKeys = Object.keys(a).filter((key) => a[key] !== undefined);
+	const bKeys = Object.keys(b).filter((key) => b[key] !== undefined);
+	// JSON omits these, so the key lists alone cannot decide
+	if (aKeys.some((key) => isOmittedByJson(a[key])) || bKeys.some((key) => isOmittedByJson(b[key]))) return "unknown";
+	if (aKeys.length !== bKeys.length || aKeys.some((key, index) => key !== bKeys[index])) return "different";
+	for (const key of aKeys) {
+		const result = compareJson(a[key], b[key], depth + 1, "same");
+		if (result !== "equal") return result;
+	}
+	return "equal";
+}
+
+/** Whether JSON leaves out an object property with this value. */
+function isOmittedByJson(value: unknown): boolean {
+	return typeof value === "function" || typeof value === "symbol";
 }
 
 /** Whether a value is an object literal, not a class instance whose JSON may differ. */

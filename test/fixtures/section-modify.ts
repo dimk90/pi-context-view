@@ -30,7 +30,8 @@ export const SECTION_MODIFY_SECTIONS = [
 export default function (pi: ExtensionAPI): void {
 	pi.on("before_agent_start", (event) => {
 		for (const { name, original } of SECTION_MODIFY_SECTIONS) {
-			event.systemPromptOptions.sections[name] = `<${name}>\n${original}\n</${name}>`;
+			// Pi wraps prompt option sections in their XML tags itself
+			event.systemPromptOptions.sections[name] = original;
 		}
 	});
 	pi.on("context_with_system", (event) => {

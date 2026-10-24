@@ -24,6 +24,11 @@ Follow pi's diff style: distinguish added, removed, and unchanged lines with
 both signs and semantic colors; emphasize changed words within replacements.
 Keep wrapped text aligned and the signs distinct from captured content.
 
+Show a diff body only when there is something to compare with. A wholly added
+message or part reads as plain content: its `+N` already says it is new, and
+all-added lines only make it harder to read. Payload findings and Forced parts
+keep their signs, because their lines are the change itself.
+
 A message comparison may include unchanged context. A payload finding contains
 only retained changed lines and must not suggest it shows the entire payload.
 Display transformations must not alter estimates or imply a different
@@ -59,7 +64,7 @@ as the marks themselves. Keep these meanings distinct:
 | (guess) | Attribution inferred rather than reported |
 | Dropped | Replaced content that counts nowhere |
 | Moved | A different prompt position, not a different owner |
-| Forced | An extension's prompt replaced pi's for this request |
+| Forced | An extension's prompt replaced pi's for this request, or replaced a part's request edit |
 | +N / -N | Added and removed tokens against the stated base |
 | Request-Only | Changes the session does not keep |
 

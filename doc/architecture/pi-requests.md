@@ -45,7 +45,7 @@ flowchart TD
     FINISH -.->|"tool follow-up"| TURN
 
     classDef used stroke-width:3px
-    class BEFORE,TURN,BASE,MODEL,TRANSCRIPT,CONVERT,SETTINGS,SERIALIZE,PAYLOAD,STREAM,ASSISTANT,WARM used
+    class BEFORE,TURN,BASE,MODEL,TRANSCRIPT,CONVERT,SETTINGS,SERIALIZE,PAYLOAD,ASSISTANT,WARM used
 ```
 
 | Step | pi-context-view |
@@ -56,13 +56,13 @@ flowchart TD
 | Session projection | Capture reads the branch baseline inside `context_with_system`, including compaction, context edits, and custom messages ([baseline](capture.md#baseline)). |
 | Request model | Capture records `ctx.model` inside `context_with_system`. A virtual selection stays selected while `route()` chooses the physical model ([request model and dispatch](payload-guard.md#request-model-and-dispatch)). |
 | `context` | Not observed directly. Pi passes each handler's conversation changes onward and restores system state afterward. |
-| `context_with_system` | ProbeFilter removes known probe identities, preserving system positions; capture then copies the structured request and records any forced prompt ([request copy](capture.md#request-copy)). |
+| `context_with_system` | ProbeFilter removes known probe identities, preserving system positions; capture then copies the structured request and the effective prompt for forced-prompt detection ([request copy](capture.md#request-copy)). |
 | Hidden declarations and forced prompt | Pi applies the hidden set and forced text after capture; the guard reproduces these projections ([Pi's own adjustments](payload-guard.md#pis-own-adjustments)). |
 | `convertToLlm()` | Used for estimates, previews, and the guard. Pi converts custom, bash, and summary messages and drops bash executions excluded from context. |
 | Settings conversion | Guard reads `images.blockImages` at the payload hook and accounts for Pi's image placeholders. |
 | Provider serialization | Guard accounts for Pi's provider-specific text adjustments before comparison ([Pi's own adjustments](payload-guard.md#pis-own-adjustments)). |
 | `before_provider_request` | Guard pairs and copies the payload, then compares tools and messages. Other handlers may replace the outgoing payload ([pairing](payload-guard.md#pairing)). |
-| `provider_stream_event`, assistant messages | Guard confirms the dispatch identity from the first stream event or assistant `message_start`; assistant `message_end` is the fallback. |
+| Assistant messages | Guard confirms the dispatch identity from assistant `message_start`; assistant `message_end` is the fallback. Capture registers no `provider_stream_event` handler, so Pi does not emit that event per chunk. |
 | Cache-warm refresh | Marked and skipped: no new capture or published snapshot ([warm refreshes](payload-guard.md#warm-refreshes)). |
 
 A standard [silent probe](probe.md#what-a-probe-run-reaches) reaches capture
@@ -104,7 +104,9 @@ On the response side, `after_provider_response` reports the HTTP status; the
 OpenAI and Anthropic adapters skip it for error statuses their SDK rejects.
 Both `provider_stream_event` and assistant `message_start` identify the
 dispatched provider, API, and model, in no fixed order. Assistant `message_end`
-carries that identity too, including for failures.
+carries that identity too, including for failures. Pi emits
+`provider_stream_event`, with an awaited emit per streamed chunk, only when an
+extension handles it.
 
 A cache-warm refresh resends the latest request after a
 `cache_warming_decision`. It fires `before_provider_request` and provider

@@ -27,8 +27,10 @@ import {
 	capNoticeLines,
 	DEFAULT_TERMINAL_ROWS,
 	descriptionBlockRows,
+	fitHintRow,
 	fitLine,
 	fitToTerminalHeight,
+	type Hint,
 	hintRow,
 	isPageBackKey,
 	isPageForwardKey,
@@ -41,6 +43,7 @@ import {
 } from "./layout.ts";
 import { forcedMarker } from "./markers.ts";
 import { descriptionNoteLines, emptyPreviewNote, probingDisabledNote, thinkingNote, usageNote } from "./notes.ts";
+import { MATCH_STEP_KEY_HINT, PreviewSearch, SEARCH_KEY } from "./search.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, calculateFitMapScale, type UsageMap, type UsageMapCell } from "./usage-map.ts";
@@ -87,6 +90,8 @@ const MAP_KEY_SIZE_LABEL = "Block Size";
 const MAP_KEY_DETAILED_SPARE_ROWS = 5;
 /** Rows the single-line key costs beside the complete legend: one separator plus one key row. */
 const MAP_KEY_COMPACT_SPARE_ROWS = 2;
+/** Lines kept above a match scrolled into view, so it is read in context. */
+const SEARCH_CONTEXT_LINES = 2;
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -161,6 +166,29 @@ interface BlockBody {
 	readonly lines: readonly string[];
 }
 
+/**
+ * Every block of a stream flattened for search: each entry header and its
+ * uncapped content, blocks separated by a blank line. Capped stream lines are
+ * a prefix of each block here, so a stream line maps to its search row.
+ */
+interface StreamSearchLines {
+	/** The wrapped entries these lines flatten; a rewrap invalidates them. */
+	readonly entries: readonly EntryLines[];
+	readonly lines: readonly string[];
+	/** First search row of each block. */
+	readonly starts: readonly number[];
+}
+
+/**
+ * Full-content search lines: the entry header when it renders, then the body.
+ * Including the header keeps a stream match on it alive once its block opens.
+ */
+interface ContentSearchLines {
+	readonly body: readonly string[];
+	readonly header: string | undefined;
+	readonly lines: readonly string[];
+}
+
 /** Open the Usage view as a fullscreen overlay. */
 export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<void> {
 	await context.ui.custom<void>(
@@ -193,6 +221,10 @@ export class UsageView {
 	private readonly categoryColors: CategoryColors;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
+	/** Search of the open category, shared by its block stream and the block it opens. */
+	private readonly search = new PreviewSearch();
+	private cachedStreamSearch: StreamSearchLines | undefined;
+	private cachedContentSearch: ContentSearchLines | undefined;
 	private readonly previewScroller = new PreviewScroller();
 	private readonly blockNavigator = new BlockNavigator();
 	private readonly fitMapScale: number | undefined;
@@ -234,7 +266,9 @@ export class UsageView {
 	public handleInput(data: string): void {
 		if (this.previewRow !== undefined) {
 			// Route on the same predicate the renderer uses, so keys always target the visible level.
-			if (this.getFullContentEntry(this.previewRow) === undefined) this.handlePreviewInput(data);
+			const blockStream = this.getFullContentEntry(this.previewRow) === undefined;
+			if (this.search.prompt.editing) this.handleSearchInput(data, blockStream);
+			else if (blockStream) this.handlePreviewInput(data);
 			else this.handleContentInput(data);
 			return;
 		}
@@ -735,11 +769,58 @@ export class UsageView {
 
 	// === Preview mode ===
 
+	/**
+	 * Keys while the search prompt is open at either preview level: printable
+	 * keys edit the query, the arrow and page keys still navigate, Enter keeps
+	 * the query, and Escape drops it.
+	 */
+	private handleSearchInput(data: string, blockStream: boolean): void {
+		const search = this.search;
+		if (matchesKey(data, Key.escape)) {
+			search.clear();
+		} else if (matchesKey(data, Key.enter)) {
+			if (search.prompt.active) search.prompt.submit();
+			else search.clear();
+		} else if (
+			parseWheelDirection(data) !== undefined ||
+			matchesKey(data, Key.up) ||
+			matchesKey(data, Key.down) ||
+			matchesKey(data, Key.pageUp) ||
+			matchesKey(data, Key.pageDown)
+		) {
+			// Plain navigation keys never type into the prompt, so the level handles them as usual.
+			if (blockStream) this.handlePreviewInput(data);
+			else this.handleContentInput(data);
+		} else {
+			search.type(data);
+		}
+		this.clearCache();
+	}
+
+	/** `/` opens the search prompt and `n`/`N` step through matches; false for any other key. */
+	private handleSearchKey(data: string, anchorRow: number): boolean {
+		if (data === SEARCH_KEY) {
+			this.search.edit(anchorRow);
+		} else if (data === "n" || data === "N") {
+			this.search.step(data === "n" ? 1 : -1);
+		} else {
+			return false;
+		}
+		this.clearCache();
+		return true;
+	}
+
 	/** Block navigation, block opening, and return-to-list keys. */
 	private handlePreviewInput(data: string): void {
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.closePreview();
 			return;
+		}
+		// Decide from the entries, not render caches: keys can arrive before the stream first renders.
+		const row = this.previewRow;
+		if (row !== undefined && this.previewEntries(row).length > 0) {
+			const anchor = this.cachedStreamSearch?.starts[this.blockNavigator.selected] ?? 0;
+			if (this.handleSearchKey(data, anchor)) return;
 		}
 		// Blocks are selected rather than scrolled, so one notch steps one block.
 		const wheel = parseWheelDirection(data);
@@ -772,6 +853,7 @@ export class UsageView {
 			else this.closeBlock();
 			return;
 		}
+		if (this.handleSearchKey(data, this.previewScroller.offset)) return;
 		const wheel = parseWheelDirection(data);
 		if (wheel !== undefined) {
 			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
@@ -801,6 +883,7 @@ export class UsageView {
 		this.clearPreviewContent();
 		this.blockNavigator.reset();
 		this.previewScroller.reset();
+		this.search.clear();
 		this.clearCache();
 	}
 
@@ -809,27 +892,46 @@ export class UsageView {
 		this.previewRow = undefined;
 		this.openBlockIndex = undefined;
 		this.cachedPreviewEntries = undefined;
+		this.search.clear();
 		this.clearPreviewContent();
 		this.clearCache();
 	}
 
-	/** Open hidden content from the selected capped block; complete and empty blocks have nothing to open. */
+	/**
+	 * Open hidden content from the selected capped block; complete and empty
+	 * blocks have nothing to open. A search continues at the current match when
+	 * it lies in this block, so a match hidden by the cap is one Enter away.
+	 */
 	private openBlock(): void {
 		// The rendered stream carries the height-dependent cap the user sees, so it decides what Enter opens.
 		const index = this.blockNavigator.selected;
 		const block = this.cachedStream?.blocks[index];
 		if (block === undefined || block.hiddenLineCount === 0) return;
+		// The opened level searches the same header and content rows, so offsets carry over unchanged.
+		const start = this.cachedStreamSearch?.starts[index] ?? 0;
+		const blockLineCount = block.lines.length + block.hiddenLineCount;
+		const currentRow = this.currentMatchRow();
+		const blockRow = currentRow === undefined ? -1 : currentRow - start;
 		this.openBlockIndex = index;
 		this.cachedBlockBody = undefined;
 		this.previewScroller.reset();
+		this.search.restart(blockRow >= 0 && blockRow < blockLineCount ? blockRow : 0);
 		this.clearCache();
 	}
 
-	/** Return to the block stream with the same selected block. */
+	/** Return to the block stream with the same selected block, keeping the search on it. */
 	private closeBlock(): void {
+		const index = this.openBlockIndex ?? 0;
 		this.openBlockIndex = undefined;
 		this.cachedBlockBody = undefined;
+		this.search.restart(this.cachedStreamSearch?.starts[index] ?? 0);
 		this.clearCache();
+	}
+
+	/** First row of the current match in the lines the search last saw. */
+	private currentMatchRow(): number | undefined {
+		const current = this.search.current;
+		return current === undefined ? undefined : this.search.matches[current]?.segments[0]?.row;
 	}
 
 	/** Drop width- and theme-dependent preview rendering. */
@@ -837,24 +939,30 @@ export class UsageView {
 		this.cachedContent = undefined;
 		this.cachedStream = undefined;
 		this.cachedBlockBody = undefined;
+		this.cachedStreamSearch = undefined;
+		this.cachedContentSearch = undefined;
 	}
 
 	/** Scrollable chronological block stream for one category. */
 	private renderPreview(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const descriptionLines = this.previewDescriptionLines(width, terminalRows, row);
-		const descriptionLineCount = descriptionBlockRows(descriptionLines);
-		const stream = this.previewStream(width, previewBlockMaxLines(terminalRows, descriptionLineCount), row);
+		const searchRowCount = this.searchRowCount();
+		const descriptionLines = this.previewDescriptionLines(width, terminalRows - searchRowCount, row);
+		const reservedLineCount = descriptionBlockRows(descriptionLines) + searchRowCount;
+		const stream = this.previewStream(width, previewBlockMaxLines(terminalRows, reservedLineCount), row);
 		const viewport = calculateViewport(
 			Math.max(1, stream.layout.lines.length),
 			terminalRows,
 			PREVIEW_FIXED_LINE_COUNT,
-			descriptionLineCount,
+			reservedLineCount,
 		);
 		this.blockNavigator.setExtent(stream.layout, viewport.visibleCount);
+		const searchLines = this.streamSearch(width, row);
+		const revealRow = this.search.sync(searchLines.lines);
+		if (revealRow !== undefined) this.blockNavigator.select(blockAtRow(searchLines.starts, revealRow));
 
-		const lines: string[] = [border, "", this.categoryHeaderLine(row, width), ""];
+		const lines: string[] = [border, "", this.categoryHeaderLine(row, width), "", ...this.searchPromptLines(width)];
 		lines.push(...this.previewStreamLines(stream, viewport.visibleCount, width));
 		if (viewport.showScroll) {
 			lines.push(
@@ -866,9 +974,65 @@ export class UsageView {
 		}
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
-		lines.push(this.fit(hintRow(theme, previewHints(stream.blocks.length)), width));
+		lines.push(fitHintRow(theme, this.streamHints(stream.blocks.length), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
+	}
+
+	/** Rows the search prompt and its trailing blank row take while a query is typed or kept. */
+	private searchRowCount(): number {
+		return this.search.prompt.editing || this.search.prompt.active ? 2 : 0;
+	}
+
+	/** Search prompt row and its trailing blank row, rendered after the frame's matches are known. */
+	private searchPromptLines(width: number): string[] {
+		if (this.searchRowCount() === 0) return [];
+		return [this.search.prompt.render(this.theme, width, "Search", this.search.status), ""];
+	}
+
+	/** Cached search lines of the open stream; rebuilt with the content they flatten. */
+	private streamSearch(width: number, row: CategoryLegendRow): StreamSearchLines {
+		const entries = this.previewContent(width, row);
+		if (this.cachedStreamSearch?.entries === entries) return this.cachedStreamSearch;
+		const lines: string[] = [];
+		const starts: number[] = [];
+		this.previewEntries(row).forEach((entry, index) => {
+			if (index > 0) lines.push("");
+			starts.push(lines.length);
+			lines.push(this.entryHeader(entry), ...entries[index] ?? []);
+		});
+		this.cachedStreamSearch = { entries, lines, starts };
+		return this.cachedStreamSearch;
+	}
+
+	/** Cached full-content search lines, rebuilt with the body they cover. */
+	private contentSearch(body: readonly string[], header: string | undefined): ContentSearchLines {
+		const cached = this.cachedContentSearch;
+		if (cached?.body === body && cached.header === header) return cached;
+		const lines = header === undefined ? body : [header, ...body];
+		this.cachedContentSearch = { body, header, lines };
+		return this.cachedContentSearch;
+	}
+
+	/** Block stream hints; an empty stream moves nowhere and has nothing to search. */
+	private streamHints(blockCount: number): Hint[] {
+		if (blockCount === 0) return [["Esc", "Back"]];
+		return this.searchHints("Navigate");
+	}
+
+	/** Hints for plain navigation, an open search prompt, or a kept search. */
+	private searchHints(stepLabel: string): Hint[] {
+		const prompt = this.search.prompt;
+		if (prompt.editing) return [["↑↓", stepLabel], ["Enter", "Done"], ["Esc", "Clear"]];
+		if (prompt.active) {
+			return [
+				[STEP_KEY_HINT, stepLabel],
+				[MATCH_STEP_KEY_HINT, "Next/Prev"],
+				[SEARCH_KEY, "Search", true],
+				["Esc", "Back"],
+			];
+		}
+		return [[STEP_KEY_HINT, stepLabel], ["PgUp/PgDn", "Page"], [SEARCH_KEY, "Search", true], ["Esc", "Back"]];
 	}
 
 	/** Full content with an identity header unless the System Prompt category already identifies it. */
@@ -882,7 +1046,8 @@ export class UsageView {
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const body = this.blockBodyLines(width, row, entry);
 		const showEntryHeader = row.rootId !== "system-prompt" || this.openBlockIndex !== undefined;
-		const fixedLineCount = showEntryHeader ? BLOCK_FIXED_LINE_COUNT : PREVIEW_FIXED_LINE_COUNT;
+		const fixedLineCount = (showEntryHeader ? BLOCK_FIXED_LINE_COUNT : PREVIEW_FIXED_LINE_COUNT) +
+			this.searchRowCount();
 		const descriptionLines = row.rootId === "assistant-thinking" && this.openBlockIndex === undefined
 			? this.thinkingDescriptionLines(width, row)
 			: previewLegendLines(theme, [entry], {
@@ -894,17 +1059,27 @@ export class UsageView {
 			body.length, terminalRows, fixedLineCount, descriptionBlockRows(descriptionLines),
 		);
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
+		const searchLines = this.contentSearch(body, showEntryHeader ? this.entryHeader(entry) : undefined);
+		// Body rows follow the header row when it is searched.
+		const bodyRow = searchLines.header === undefined ? 0 : 1;
+		const revealLine = this.search.sync(searchLines.lines);
+		if (revealLine !== undefined) {
+			this.previewScroller.reveal(Math.max(0, revealLine - bodyRow), SEARCH_CONTEXT_LINES);
+		}
 
 		const lines: string[] = [
 			border,
 			"",
 			this.categoryHeaderLine(row, width),
 			"",
-			...(showEntryHeader ? [this.fit(`${BODY_INDENT}${this.entryHeader(entry)}`, width), ""] : []),
+			...this.searchPromptLines(width),
+			...(searchLines.header === undefined
+				? []
+				: [this.fit(`${BODY_INDENT}${this.search.highlight(theme, searchLines.header, 0)}`, width), ""]),
 		];
 		const start = this.previewScroller.offset;
 		for (let index = start; index < start + viewport.visibleCount; index++) {
-			lines.push(body[index] ?? "");
+			lines.push(this.search.highlight(theme, body[index] ?? "", index + bodyRow));
 		}
 		if (viewport.showScroll) {
 			lines.push(
@@ -913,16 +1088,7 @@ export class UsageView {
 		}
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
-		lines.push(
-			this.fit(
-				hintRow(theme, [
-					[STEP_KEY_HINT, "Scroll"],
-					["PgUp/PgDn", "Page"],
-					["Esc", "Back"],
-				]),
-				width,
-			),
-		);
+		lines.push(fitHintRow(theme, this.searchHints("Scroll"), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
@@ -963,11 +1129,17 @@ export class UsageView {
 		const block = stream.blocks[ref.blockIndex];
 		if (block === undefined) return "";
 		const selected = ref.blockIndex === this.blockNavigator.selected;
+		const start = this.cachedStreamSearch?.starts[ref.blockIndex];
 		const line = ref.lineIndex < block.lines.length
-			? block.lines[ref.lineIndex] ?? ""
+			? this.highlightStreamLine(block.lines[ref.lineIndex] ?? "", start, ref.lineIndex)
 			: this.truncationMarker(block.hiddenLineCount, selected);
 		const gutter = this.blockGutter(selected, line === "");
 		return this.fit(`${gutter}${line}`, width);
+	}
+
+	/** Highlight one visible stream line through its row in the flattened search lines. */
+	private highlightStreamLine(line: string, blockStart: number | undefined, lineIndex: number): string {
+		return blockStart === undefined ? line : this.search.highlight(this.theme, line, blockStart + lineIndex);
 	}
 
 	/** Accent bar marking the selected block, or the plain two-column indent. */
@@ -1205,10 +1377,11 @@ function previewBlockMaxLines(terminalRows: number, descriptionLineCount: number
 	return Math.max(PREVIEW_BLOCK_MIN_LINES, Math.min(PREVIEW_BLOCK_MAX_LINES, fitted));
 }
 
-/** Block stream hints; the selected block carries the open affordance, and an empty stream moves nowhere. */
-function previewHints(blockCount: number): Array<readonly [string, string]> {
-	if (blockCount === 0) return [["Esc", "Back"]];
-	return [[STEP_KEY_HINT, "Navigate"], ["PgUp/PgDn", "Page"], ["Esc", "Back"]];
+/** Block holding one row of the flattened stream search lines. */
+function blockAtRow(starts: readonly number[], row: number): number {
+	let index = 0;
+	while (index + 1 < starts.length && (starts[index + 1] ?? Infinity) <= row) index++;
+	return index;
 }
 
 /** Stream lines one block occupies, including its truncation marker row. */

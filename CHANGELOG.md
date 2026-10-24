@@ -1,5 +1,28 @@
 # Changelog
 
+## `[v0.8.0]` - 24.10.2026
+
+Adds filtering and search feature (thanks to @ohlulu), plus a few optimizations
+that reduce capture overhead.
+
+### New
+* `[ui]` Add `/` filtering & search to Injections and previews ([#13](https://github.com/dimk90/pi-context-view/pull/13) by @ohlulu).
+
+### Changed
+* `[injections]` Preview changed System Prompt parts as diffs, matching their `+N`/`-N`.
+* `[injections]` Mark section edits that a forced system prompt replaced as `Forced`.
+* `[views]` Match Pi's (v0.86+) section names: Tools, Rules, Docs, and Addendum.
+* `[capture]` Drop the `provider_stream_event` handler, which cost an emit per streamed chunk.
+* `[capture]` Detect a forced system prompt off the request's critical path.
+* `[capture]` Skip equal conversation ends before normalizing message units for the guard.
+* `[capture]` Copy provider payloads 3–6 times faster with plain loops.
+* `[capture]` Copy only tool declarations that differ from the session, not every one.
+
+---
+
+<img alt="v0.8.0 filtering demo" width="800" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/8bab7e944082d6aa4ab039c3b934a6855921590f/doc/images/filtering.gif" />
+
+
 ## `[v0.7.2]` - 17.10.2026
 
 Maintenance release for Pi 1.3.0, which is now required, with fixes for its removal of thinking from other models.
@@ -53,10 +76,10 @@ forced prompts, and tools Pi hides.
 * `[injections]` Keep TOTAL visible below the scrollable contribution tree.
 
 ### Fixed
-* `[injections]` Fixed the issue reported in PR [#9](https://github.com/dimk90/pi-context-view/pull/9) by [@Drakejiejie](https://github.com/Drakejiejie) and adopted the PR’s tests.
+* `[injections]` Fixed the issue reported in PR [#9](https://github.com/dimk90/pi-context-view/pull/9) by @Drakejiejie and adopted the PR’s tests.
 * `[usage]` Leave out tools hidden from the model, such as by codemode `only` ([#11](https://github.com/dimk90/pi-context-view/issues/11)).
 * `[usage]` Count request replacements once and exclude removals ([#6](https://github.com/dimk90/pi-context-view/issues/6)).
-* `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by [@VinhLe1410](https://github.com/VinhLe1410)).
+* `[capture]` Hide silent-probe setup aborts on Bun ([#10](https://github.com/dimk90/pi-context-view/pull/10) by @VinhLe1410).
 * `[probe]` Preserve system-message positions when filtering and persist probe context omissions.
 * `[views]` Group and label path-loaded extensions by file, not as one `cli` or `local` source.
 
@@ -75,9 +98,9 @@ forced prompts, and tools Pi hides.
 * `[capture]` Show summary and bash content in previews instead of whole-message metadata.
 
 ### Fixed
-* `[text]` Avoid quadratic scanning of unterminated terminal strings while sanitizing previews ([#8](https://github.com/dimk90/pi-context-view/pull/8) by [@MDGChamomile](https://github.com/MDGChamomile)).
-* `[capture]` Strip opaque thinking and tool-call signatures from captured assistant previews ([#7](https://github.com/dimk90/pi-context-view/pull/7) by [@MDGChamomile](https://github.com/MDGChamomile)).
-* `[capture]` Identify the silent probe by token so an input transform cannot trigger a real turn ([#5](https://github.com/dimk90/pi-context-view/issues/5) by [@MDGChamomile](https://github.com/MDGChamomile)).
+* `[text]` Avoid quadratic scanning of unterminated terminal strings while sanitizing previews ([#8](https://github.com/dimk90/pi-context-view/pull/8) by @MDGChamomile).
+* `[capture]` Strip opaque thinking and tool-call signatures from captured assistant previews ([#7](https://github.com/dimk90/pi-context-view/pull/7) by @MDGChamomile).
+* `[capture]` Identify the silent probe by token so an input transform cannot trigger a real turn ([#5](https://github.com/dimk90/pi-context-view/issues/5) by @MDGChamomile).
 * `[capture]` Omit text-block signatures, including Gemini reasoning envelopes, from previews.
 
 
@@ -115,7 +138,7 @@ forced prompts, and tools Pi hides.
 * `[ui]` Drop a preview line that only repeats the heading above it.
 
 ### Fixed
-* `[context]` Rebuild the session baseline once, not on every LLM request ([#1](https://github.com/dimk90/pi-context-view/pull/1) by [@kaushikvira](https://github.com/kaushikvira)).
+* `[context]` Rebuild the session baseline once, not on every LLM request ([#1](https://github.com/dimk90/pi-context-view/pull/1) by @kaushikvira).
 * `[injections]` Count a guideline bullet shared by several tools once, like Pi renders it.
 * `[probe]` Unblock the silent probe after a failed compaction (Pi `0.84.3` `session_compact_failed`).
 * `[ui]` Collapse view descriptions on short terminals before map, legend, or list rows.

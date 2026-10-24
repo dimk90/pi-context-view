@@ -84,8 +84,9 @@ export function compareMessageUnits(
 	sent: readonly MessageUnit[],
 	options: MessageComparisonOptions,
 ): GuardFinding[] {
-	const gaps = findGaps(expected.filter(isSent), sent.filter(isSent), (unit) => unitKey(unit, options.ignoreNameCase));
-	return gaps.flatMap(classifyGap);
+	const key = (unit: MessageUnit) => unitKey(unit, options.ignoreNameCase);
+	const [before, after] = trimMatchedEnds(expected, sent, key);
+	return findGaps(before.filter(isSent), after.filter(isSent), key).flatMap(classifyGap);
 }
 
 /**
@@ -102,6 +103,41 @@ export function diffLines(before: string, after: string): PayloadChangeLine[] {
 /** Text without whitespace and unpaired surrogates: what a unit key compares. */
 export function normalizeText(text: string): string {
 	return text.replace(LONE_SURROGATE, "").replace(WHITESPACE, "");
+}
+
+/**
+ * Drop the ends that the alignment would match anyway, so that only the middle
+ * builds keys: exactly equal units at the start, units with equal keys right
+ * after them, then exactly equal units at the end. The alignment extends the
+ * start by key before it trims the end, so the end stops where the start
+ * stopped; otherwise a key-equal unit could match on the other side.
+ */
+function trimMatchedEnds(
+	expected: readonly MessageUnit[],
+	sent: readonly MessageUnit[],
+	key: (unit: MessageUnit) => string,
+): [readonly MessageUnit[], readonly MessageUnit[]] {
+	let start = 0;
+	while (start < expected.length && start < sent.length && unitsEqual(expected[start], sent[start])) start++;
+	let expectedStart = start;
+	let sentStart = start;
+	for (;;) {
+		while (expectedStart < expected.length && !isSent(expected[expectedStart])) expectedStart++;
+		while (sentStart < sent.length && !isSent(sent[sentStart])) sentStart++;
+		if (expectedStart === expected.length || sentStart === sent.length) break;
+		if (key(expected[expectedStart]) !== key(sent[sentStart])) break;
+		expectedStart++;
+		sentStart++;
+	}
+	let end = 0;
+	while (end < expected.length - expectedStart && end < sent.length - sentStart
+		&& unitsEqual(expected[expected.length - 1 - end], sent[sent.length - 1 - end])) end++;
+	return [expected.slice(expectedStart, expected.length - end), sent.slice(sentStart, sent.length - end)];
+}
+
+/** Whether two units are exactly equal, which implies equal keys without building them. */
+function unitsEqual(a: MessageUnit, b: MessageUnit): boolean {
+	return a.part === b.part && a.name === b.name && a.text === b.text;
 }
 
 /** Items between two consecutive aligned matches. */

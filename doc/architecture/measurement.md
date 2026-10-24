@@ -47,7 +47,9 @@ system prompt rows repeat the prompt diffs split by source, not a new comparison
   children. Diff-only source rows increase neither group diffs nor totals;
   the overall total has no diff.
 
-The same word alignment supplies preview runs. Whole-line additions and
+The same word alignment supplies preview runs. A changed System Prompt part
+without extension lines keeps both compared texts (`InjectionItem.textDiff`),
+including in the unattributed `system prompt` row. Whole-line additions and
 removals need no word-level emphasis; an oversized comparison keeps common
 ends and treats the unalignable middle as replaced. Expanding marked JSON for
 display changes neither the counted estimate nor the diff.
@@ -60,8 +62,8 @@ its default base.
 ## Prompt Parts and Moved Blocks
 
 Pi wraps independently replaceable sections in XML. Map `tools`, `rules`,
-`docs`, `addendum`, and `cwd` to Available Tools, Guidelines, Documentation,
-Appended Prompt, and Current Dir. Keep the unwrapped preamble separately.
+`docs`, `addendum`, and `cwd` to Tools, Rules, Docs, Addendum, and Current Dir.
+Keep the unwrapped preamble separately.
 Read `project_context` instruction records and `skills` records as their existing
 aggregates. Overridden content that is not those generated records stays visible
 as a System Prompt part; never substitute stale loader content.
@@ -116,7 +118,7 @@ bullets and built-in tool bullets get no reference.
 For each matched extension line, retain its range in the part's text, source,
 and owning tool as a typed preview reference. Keep that reference on the System
 Prompt section and standalone child that hold the line. This applies to both
-Available Tools snippets and Guidelines bullets.
+Tools snippets and Rules bullets.
 
 References name the source of counted text for inspection. They add no text,
 characters, or tokens. Only exactly matched, rendered lines receive
@@ -124,7 +126,7 @@ references, except for the explicit dropped-block case below.
 
 ## Blocks Dropped by a Custom System Prompt
 
-When `--system-prompt` drops Available Tools, Guidelines, or Documentation,
+When `--system-prompt` drops Tools, Rules, or Docs,
 keep those parts in the model and mark them as dropped. They must contain no
 pi-authored text. Their text holds only the extension lines that pi would
 otherwise have rendered, with references like rendered lines.

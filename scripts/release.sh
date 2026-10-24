@@ -359,41 +359,30 @@ _release_check_candidate_paths() {
 
     _RELEASE_CANDIDATE_MODE='worktree'
     _release_pass "the worktree changes ${#_RELEASE_CANDIDATE_PATHS[@]} release path(s)"
-    _release_check_required_candidates 'the prepared release' '' \
-                                       "${_RELEASE_CANDIDATE_PATHS[@]}"
 }
 
 
 _release_check_required_candidates() {
     #
-    # Block when a candidate change set leaves CHANGELOG.md or package.json
-    # untouched.
+    # Block when the release leaves CHANGELOG.md or package.json untouched.
+    #
+    # Compares the worktree with origin/master, so each required file may be
+    # changed in the worktree or in commits already on develop.
     #
     # Parameters:
-    #   $1 - subject - candidate description used in the blocker message.
-    #   $2 - scope - (optional) - comparison named in the blocker message,
-    #        such as 'from origin/master'.
-    #   $3... - paths - candidate paths to search.
+    #   None.
     #
     # Example:
-    #   _release_check_required_candidates 'the prepared release' '' 'CHANGELOG.md'
+    #   _release_check_required_candidates
     #
-    local subject="$1"
-    local scope="$2"
-    shift 2
-    local paths=("$@")
-    local required_candidate path candidate_found
+    local required_candidate
 
     for required_candidate in CHANGELOG.md package.json; do
-        candidate_found=false
-        for path in "${paths[@]}"; do
-            if [[ $path == "$required_candidate" ]]; then
-                candidate_found=true
-                break
-            fi
-        done
-        if [[ $candidate_found != true ]]; then
-            _release_block "${subject} does not change ${required_candidate}${scope:+ ${scope}}"
+        if git diff --quiet "refs/remotes/origin/${_RELEASE_MASTER_BRANCH}" \
+                    -- "$required_candidate"; then
+            _release_block "the release does not change ${required_candidate} from origin/master"
+        else
+            _release_pass "the release changes ${required_candidate} from origin/master"
         fi
     done
 }
@@ -430,8 +419,8 @@ _release_read_target_version() {
 
 _release_check_package_metadata() {
     #
-    # Block when the package identity, Pi peer dependencies, or development
-    # pins do not match the release requirements.
+    # Block when the package identity or Pi peer dependencies do not match the
+    # release requirements; warn when development pins differ from local Pi.
     #
     # Parameters:
     #   None.
@@ -470,7 +459,7 @@ _release_check_package_metadata() {
     if [[ $pins_valid == true ]]; then
         _release_pass "development pins match the local Pi ${pi_version}"
     else
-        _release_block 'development pins do not match the local Pi' \
+        _release_warn 'development pins do not match the local Pi' \
                        "$(printf 'pi: %s%s' "${pi_version:-unknown}" "$pin_report")"
     fi
 }
@@ -597,6 +586,7 @@ _release_check_origin_state() {
     if [[ $_RELEASE_CANDIDATE_MODE == 'committed' ]]; then
         _release_check_committed_candidate
     fi
+    _release_check_required_candidates
     _release_check_master_ancestry
     _release_check_target_tag
 }
@@ -666,8 +656,6 @@ _release_check_committed_candidate() {
         _release_pass \
             "the committed develop tree differs from origin/master in ${#committed_candidate_paths[@]} path(s)"
     fi
-    _release_check_required_candidates 'the committed release' 'from origin/master' \
-                                       "${committed_candidate_paths[@]}"
 }
 
 

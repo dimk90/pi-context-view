@@ -58,8 +58,8 @@ interface ObservedRequest {
 	payload?: Item;
 	/**
 	 * Events in arrival order. Identity-bearing events carry their identity:
-	 * `message_start <identity>`, the first `provider_stream_event <identity>`,
-	 * and `message_end <identity>`, all from the assistant message.
+	 * `message_start <identity>` and `message_end <identity>`, both from the
+	 * assistant message.
 	 */
 	readonly events: string[];
 	/** `ctx.modelRegistry.find()` for the identity at assistant `message_end`. */
@@ -117,7 +117,7 @@ suite("request model on a physical selection", { concurrency: true }, () => {
 			}
 		});
 
-		test(`${api}: assistant and provider stream events carry the dispatch identity`, async (t) => {
+		test(`${api}: assistant events carry the dispatch identity, also for a failure`, async (t) => {
 			const runtime = await createRuntime(t, { model: [api, "vision"] });
 			runtime.provider.enqueue({ type: "text", text: "late", delayMs: 50 });
 			await runtime.session.prompt("delayed stream");
@@ -127,13 +127,8 @@ suite("request model on a physical selection", { concurrency: true }, () => {
 			assert.deepEqual(runtime.errors, []);
 			const [delayed, failed] = runtime.requests;
 			const dispatched = identity(api, "vision");
-			assert.equal(delayed.events[0], "after_provider_response");
-			assert.equal(delayed.events.at(-1), `message_end ${dispatched}`);
-			// The adapter pushes its start before reading the stream, but the agent loop delivers it in more
-			// async steps. Data buffered by the time the response resolves, even 50 ms late under load, often
-			// reaches provider_stream_event handlers first, so the guard accepts either
-			assert.deepEqual(delayed.events.slice(1, -1).sort(),
-				[`message_start ${dispatched}`, `provider_stream_event ${dispatched}`]);
+			assert.deepEqual(delayed.events,
+				["after_provider_response", `message_start ${dispatched}`, `message_end ${dispatched}`]);
 			assert.deepEqual(failed.events, [`message_start ${dispatched}`, `message_end ${dispatched}`],
 				"a failure before streaming has only the assistant events, and no after_provider_response");
 		});
@@ -322,7 +317,6 @@ function createObserver(requests: ObservedRequest[]): ExtensionFactory {
 	return (pi) => {
 		let turnStartModel = "none";
 		let current: ObservedRequest | undefined;
-		let streamed = false;
 		pi.on("turn_start", (_event, ctx) => { turnStartModel = describeModel(ctx.model); });
 		pi.on("context_with_system", (_event, ctx) => {
 			current = {
@@ -331,7 +325,6 @@ function createObserver(requests: ObservedRequest[]): ExtensionFactory {
 				requestCapabilities: capabilities(ctx.model),
 				events: [],
 			};
-			streamed = false;
 			requests.push(current);
 		});
 		pi.on("before_provider_request", (event, ctx) => {
@@ -340,11 +333,6 @@ function createObserver(requests: ObservedRequest[]): ExtensionFactory {
 			current.payload = structuredClone(event.payload) as Item;
 		});
 		pi.on("after_provider_response", () => { current?.events.push("after_provider_response"); });
-		pi.on("provider_stream_event", (event) => {
-			if (!current || streamed) return;
-			streamed = true;
-			current.events.push(`provider_stream_event ${event.provider}/${event.api}/${event.model}`);
-		});
 		pi.on("message_start", (event) => {
 			const message = event.message;
 			if (message.role === "assistant") current?.events.push(`message_start ${message.provider}/${message.api}/${message.model}`);
@@ -361,7 +349,7 @@ function createObserver(requests: ObservedRequest[]): ExtensionFactory {
 /** Assert every identity-bearing event names `dispatched`, with one assistant start and end. */
 function assertDispatched(request: ObservedRequest, dispatched: string): void {
 	const identities = request.events.filter((event) => event !== "after_provider_response");
-	assert.ok(identities.length >= 2, `assistant events were observed: ${request.events}`);
+	assert.equal(identities.length, 2, `assistant events were observed: ${request.events}`);
 	assert.deepEqual(identities.map((event) => event.split(" ")[1]), identities.map(() => dispatched));
 }
 

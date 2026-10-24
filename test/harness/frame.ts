@@ -30,6 +30,11 @@ export function stripSgr(text: string): string {
 	return text.replace(/\u001b\[[\d;]*m/g, "");
 }
 
+/** Remove SGR and pi's fake-cursor markers, which the TUI resolves into reverse video before output. */
+export function stripStyle(text: string): string {
+	return stripSgr(text).replace(/\u001b_pi:\/?fc\u0007/g, "");
+}
+
 /** Compare prose across wrapping without discarding non-whitespace content or controls. */
 export function frameText(lines: readonly string[]): string {
 	return stripSgr(lines.join("\n")).replace(/\s+/g, " ").trim();

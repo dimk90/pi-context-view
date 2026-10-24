@@ -23,7 +23,7 @@ import marker from "./fixtures/marker.ts";
 import payloadChanges, {
 	PAYLOAD_CHANGE_ADDED, PAYLOAD_CHANGE_DELETED, PAYLOAD_CHANGE_MODIFIED, PAYLOAD_CHANGE_ORIGINAL,
 } from "./fixtures/payload-changes.ts";
-import { type MockApi, type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
+import { type MockApi, type MockProvider, type MockReply, startMockProvider } from "./harness/mock-provider.ts";
 import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
 
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
@@ -341,19 +341,12 @@ for (const api of ["openai-completions", "openai-responses"] as const) {
 	test(`${api}: successful and failed idle warm refreshes publish nothing`, { timeout: 30_000 }, async (t) => {
 		const runtime = await createRuntime(t, { api, warming: true, before: [cacheWarm], settings: { cacheWarming: "idle" } });
 		await runtime.session.prompt("warm this request");
-		await runtime.snapshots();
-		const count = runtime.published.length;
-		runtime.provider.enqueue({ type: "text", text: "warm" }, { type: "error", status: 500, message: "warm failure" });
-		await runtime.provider.waitForRequests(3, 20_000);
-		for (const request of runtime.provider.requests.slice(1)) {
-			assert.equal(api === "openai-responses" ? request.body.max_output_tokens : request.body.max_completion_tokens,
-				api === "openai-responses" ? 16 : 1);
+		let prompts = 1;
+		for (const reply of [{ type: "text", text: "warm" }, { type: "error", status: 500, message: "warm failure" }] as const) {
+			prompts += await warmOnce(runtime, api, reply);
 		}
-		await flush();
-		assert.equal(runtime.published.length, count);
-		assert.deepEqual(findings(runtime.store.latest()), []);
 		await runtime.session.prompt("real request after warming");
-		assert.equal((await runtime.snapshots()).length, 2);
+		assert.equal((await runtime.snapshots()).length, prompts + 1);
 	});
 }
 
@@ -699,6 +692,47 @@ async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Prom
 function findings(snapshot: RequestSnapshot | undefined): readonly GuardFinding[] {
 	assert.ok(snapshot?.guard.status === "complete", JSON.stringify(snapshot?.guard));
 	return snapshot.guard.findings;
+}
+
+/**
+ * Answer the next idle warm refresh with `reply` and check it publishes nothing. Pi stops warming for good
+ * when a timer fires more than 5 s late, which a busy shared test process can cause; a real prompt then
+ * restarts warming. Returns how many real prompts that took.
+ */
+async function warmOnce(runtime: Runtime, api: MockApi, reply: MockReply): Promise<number> {
+	const deadline = Date.now() + 20_000;
+	for (let restarts = 0; ; restarts++) {
+		await runtime.snapshots();
+		const count = runtime.published.length;
+		const sent = runtime.provider.requests.length;
+		runtime.provider.enqueue(reply);
+		while (runtime.provider.requests.length === sent && !warmingStopped(runtime)) {
+			assert.ok(Date.now() < deadline, `No warm refresh; warming status: ${JSON.stringify(runtime.session.cacheWarmingStatus)}`);
+			await sleep(50);
+		}
+		if (runtime.provider.requests.length > sent) {
+			const { body } = runtime.provider.requests[sent];
+			assert.equal(api === "openai-responses" ? body.max_output_tokens : body.max_completion_tokens,
+				api === "openai-responses" ? 16 : 1);
+			await flush();
+			assert.equal(runtime.published.length, count);
+			assert.deepEqual(findings(runtime.store.latest()), []);
+			return restarts;
+		}
+		runtime.provider.clearReplies();
+		await runtime.session.prompt("restart warming after a missed refresh deadline");
+	}
+}
+
+/** Whether Pi stopped idle warming because a refresh timer fired too late. */
+function warmingStopped(runtime: Runtime): boolean {
+	const status = runtime.session.cacheWarmingStatus;
+	return status?.state === "inactive" && status.reason === "cache refresh deadline missed";
+}
+
+/** Resolve after `milliseconds`. */
+function sleep(milliseconds: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 /** Deferred work queued before this call. */

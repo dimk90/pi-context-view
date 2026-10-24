@@ -18,7 +18,7 @@ import { colorize } from "../src/ui/color.ts";
 import {
 	descriptionNoteLines, emptyPreviewNote, probingDisabledNote, thinkingNote, usageNote,
 } from "../src/ui/notes.ts";
-import { assertFrame, containsBlock, createTheme, frameText, stripSgr, wholeOrAbsent } from "./harness/frame.ts";
+import { assertFrame, containsBlock, createTheme, frameText, stripSgr, stripStyle, wholeOrAbsent } from "./harness/frame.ts";
 
 /** Render the overview independently of the dashboard's layout and collapse decision. */
 function usageDescription(width = 1_000): string[] {
@@ -649,7 +649,7 @@ test("UsageView opens a category block stream and skips full previews for comple
 	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){15}/.test(line)));
 	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(hintIndex > 0);
-	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Navigate · PgUp\/PgDn Page · Esc Back/);
+	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · Esc Back/);
 	assert.ok(!plain[hintIndex]?.includes("Enter"));
 
 	// Down moves the gutter to the next block without touching the entry order.
@@ -704,7 +704,7 @@ test("UsageView opens every single-entry category directly without a block cap o
 				assert.match(plain, /\[Only entry\] 42/);
 			}
 			assert.match(plain, /    line 1\b/);
-			assert.match(plain, /↑↓\/jk Scroll · PgUp\/PgDn Page · Esc Back/);
+			assert.match(plain, /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · Esc Back/);
 			assert.doesNotMatch(plain, /┃|… \+|Enter|unsafe|\u0007/);
 			view.handleInput("\r");
 			assert.deepEqual(view.render(80), content, `${id}: Enter never adds another level`);
@@ -1704,4 +1704,154 @@ test("formatTokens and formatPercent keep compact readable precision", () => {
 	assert.equal(formatPercent(0.004), "0.4%");
 	assert.equal(formatPercent(0.042), "4.2%");
 	assert.equal(formatPercent(0.956), "96%");
+});
+
+/** Background escape the test theme's `searchMatchBg` falls back to (`selectedBg`). */
+const SEARCH_MATCH_BG = "\u001b[48;2;17;34;51m";
+
+function typeKeys(view: UsageView, text: string): void {
+	for (const key of text) view.handleInput(key);
+}
+
+function plainFrame(view: UsageView, width = 80): string[] {
+	return view.render(width).map((line) => stripStyle(line).trimEnd());
+}
+
+/** Move the legend selection down to the category labelled `label` and open it. */
+function openCategory(view: UsageView, label: string): void {
+	const selected = new RegExp(`→ +(?:\\S+ +)?${label} \\.`);
+	for (let step = 0; step < 50; step++) {
+		if (plainFrame(view).some((line) => selected.test(line))) {
+			view.handleInput("\r");
+			return;
+		}
+		view.handleInput("j");
+	}
+	assert.fail(`no legend row ${label}`);
+}
+
+/** Usage whose Tool Output holds three bash results; the first match hides below the block cap. */
+function searchUsage(): ContextUsageSnapshot {
+	const base = usage();
+	const longText = [
+		...Array.from({ length: 30 }, (_, line) => `output line ${line}`),
+		"the needle is here",
+		...Array.from({ length: 10 }, (_, line) => `tail line ${line}`),
+	].join("\n");
+	const entry = (minute: number, text: string) => ({
+		timestamp: Date.UTC(2026, 6, 11, 14, minute, 0),
+		breadcrumb: ["bash"],
+		tokens: 100,
+		text,
+	});
+	return {
+		...base,
+		categories: base.categories.map((category) => category.id !== "tool-output" ? category : {
+			...category,
+			children: [{
+				id: "tool-result:bash",
+				label: "bash",
+				tokens: 300,
+				entries: [entry(1, "first result"), entry(2, longText), entry(3, "another needle up top")],
+			}],
+		}),
+	};
+}
+
+test("UsageView dashboard has no category filter: / neither opens a prompt nor is advertised", () => {
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	const before = view.render(80);
+	const hints = plainFrame(view).find((line) => line.includes("↑↓/jk")) ?? "";
+	assert.doesNotMatch(hints, /(^| )\/ /, "no / hint on the dashboard");
+	view.handleInput("/");
+	assert.deepEqual(view.render(80), before);
+	view.handleInput("j");
+	assert.notDeepEqual(view.render(80), before, "list keys still navigate");
+});
+
+test("UsageView block stream search selects the matching block and opens a capped one at its match", () => {
+	const view = createView(createTheme(), { usage: searchUsage() }, () => {}, () => 30);
+	openCategory(view, "Tool Output");
+	let plain = plainFrame(view);
+	assert.match(plain[2] ?? "", /^Tool Output/);
+	assert.match(plain.join("\n"), /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · Esc Back/);
+
+	view.handleInput("/");
+	typeKeys(view, "needle");
+	view.handleInput("\r");
+	plain = plainFrame(view);
+	assert.match(plain[4] ?? "", /^ {2}Search: needle +1\/2$/);
+	// The first match is in the second block's hidden lines: that block is selected, its match one Enter away.
+	const selectedHeader = plain.find((line) => line.startsWith("┃ ["));
+	assert.match(selectedHeader ?? "", /:02:00\]/);
+	assert.ok(!plain.some((line) => line.includes("the needle is here")));
+	assert.match(plain.join("\n"), /↑↓\/jk Navigate · n\/N Next\/Prev · \/ Search · Esc Back/);
+
+	view.handleInput("\r");
+	const lines = view.render(80);
+	plain = lines.map((line) => stripStyle(line).trimEnd());
+	const matchRow = plain.findIndex((line) => line.includes("the needle is here"));
+	assert.ok(matchRow > 0, "the opened block scrolls to the hidden match");
+	assert.ok((lines[matchRow] ?? "").includes(SEARCH_MATCH_BG));
+	assert.match(plain[4] ?? "", /^ {2}Search: needle +1\/1$/);
+
+	// Escape returns to the stream with the search kept; n moves on to the next block's visible match.
+	view.handleInput("\u001b");
+	assert.match(plainFrame(view)[4] ?? "", /1\/2$/);
+	view.handleInput("n");
+	const streamLines = view.render(80);
+	plain = streamLines.map((line) => stripStyle(line).trimEnd());
+	assert.match(plain[4] ?? "", /2\/2$/);
+	const visibleMatch = plain.findIndex((line) => line.includes("another needle up top"));
+	assert.ok(plain[visibleMatch]?.startsWith("┃"), "the block holding the match is selected");
+	assert.ok((streamLines[visibleMatch] ?? "").includes(SEARCH_MATCH_BG));
+
+	// Escape drops the search with the category preview.
+	view.handleInput("\u001b");
+	view.handleInput("\r");
+	assert.ok(!plainFrame(view).some((line) => line.includes("Search:")));
+});
+
+test("UsageView searches single-entry content and keeps every line within the width", () => {
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	openCategory(view, "read");
+	let plain = plainFrame(view);
+	assert.match(plain[2] ?? "", /^read/);
+	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · Esc Back/);
+
+	view.handleInput("/");
+	typeKeys(view, "SECOND");
+	const lines = view.render(80);
+	plain = lines.map((line) => stripStyle(line).trimEnd());
+	assert.match(plain[4] ?? "", /^ {2}Search: SECOND +1\/1$/, "matching ignores case");
+	const matchRow = plain.findIndex((line) => line.includes("second line"));
+	assert.ok((lines[matchRow] ?? "").includes(SEARCH_MATCH_BG));
+	assert.match(plain.join("\n"), /↑↓ Scroll · Enter Done · Esc Clear/);
+	for (const width of [20, 51, 80, 120]) {
+		for (const line of view.render(width)) assert.ok(visibleWidth(line) <= width, `width ${width}`);
+	}
+
+	// Escape clears an open prompt first, then returns to the legend.
+	view.handleInput("\u001b");
+	assert.ok(!plainFrame(view).some((line) => line.includes("Search:")));
+	view.handleInput("\u001b");
+	assert.match(plainFrame(view)[2] ?? "", /^Context Usage/);
+});
+
+test("UsageView keeps an entry-header match when its capped block opens", () => {
+	const view = createView(createTheme(), { usage: searchUsage() }, () => {}, () => 30);
+	openCategory(view, "Tool Output");
+	// Seconds and minutes of the second entry's header; only that header contains them.
+	view.handleInput("/");
+	typeKeys(view, ":02:00]");
+	view.handleInput("\r");
+	assert.match(plainFrame(view)[4] ?? "", /1\/1$/);
+
+	view.handleInput("\r");
+	const lines = view.render(80);
+	const plain = lines.map((line) => stripStyle(line).trimEnd());
+	assert.match(plain[4] ?? "", /^ {2}Search: :02:00\] +1\/1$/, "the opened block still counts the header match");
+	const header = plain.findIndex((line) => /^ {2}\[.*:02:00\] \[bash\]/.test(line));
+	assert.ok(header > 0);
+	assert.ok((lines[header] ?? "").includes(SEARCH_MATCH_BG));
 });

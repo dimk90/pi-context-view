@@ -76,7 +76,10 @@ not in notifications it would hide.
 - Enter opens the selected content. Do not add an extra preview level when it
   would reveal nothing new.
 - Escape returns one level with selection and viewport preserved, then closes
-  the overlay. Reopening content starts at the top.
+  the overlay. Reopening content starts at the top. A kept list filter counts
+  as a level.
+- `/` filters the Injections tree or searches a preview, per
+  [Search and filter](#search-and-filter).
 - Skip non-selectable rows and keep selection and scrolling bounded after
   resize. View-specific actions must be available and advertised together.
 
@@ -87,6 +90,34 @@ without mouse support.
 Raw content appears only after explicit Enter selection, never in overview
 rows, descriptions, or status bars. Sanitize dynamic text before styling and
 rendering; [privacy.md](architecture/privacy.md#privacy) owns the full contract.
+
+### Search and filter
+
+Search follows pi's own fullscreen transcript search, so it needs no new
+habits. The prompt sits below the header and edits through pi's `Input`, so
+word deletion, kill/yank, and undo behave as in pi's editor. While it is open,
+printable keys type into it, `j`, `k`, `n`, and `q` included; only the arrow and
+page keys and the wheel keep navigating. Its right edge reports the match state.
+
+Matching is case-insensitive and treats every whitespace run, line breaks
+included, as one space, so a phrase wrapped across preview lines is still found.
+Matches use pi's transcript-search theme styles, with the current match set
+apart.
+
+- **Lists** long enough to need a filter, such as the Injections tree, filter
+  live and select the first row that matched itself. A
+  match's ancestors stay as unmatched context and do not count as matches.
+  Value columns stay where the unfiltered list puts them, so filtering never
+  shifts them. Enter keeps the filter and opens the selected row; Escape while
+  typing drops it, and Escape on a kept filter clears it, keeping the selected
+  row, before it closes the view. Erasing the query or Escape while typing
+  returns the selection and scroll to where they were before filtering.
+- **Previews** highlight live and move to the first match at or below the top
+  visible line. `n`/`N` step through matches, wrapping around, and scroll a
+  hidden one into view with context above it. A search ends with its preview.
+
+Hints follow the prompt state. `/` is an optional hint: on a narrow row it drops
+out whole before any other hint is truncated.
 
 ## Responsive rendering
 

@@ -179,7 +179,10 @@ function collectResidual(
 	const reference = missing.length === 1 ? missing[0] : {
 		...parent, text: missing.map((child) => child.text).join("\n"), injectedReferences: undefined,
 	};
-	if (reference !== undefined) addUnattributed(row, reference, residual, true);
+	// The request lacks these children, so their whole text is removed
+	if (reference !== undefined) {
+		addUnattributed(row, { ...reference, textDiff: { base: reference.text, request: "" } }, residual, true);
+	}
 }
 
 /**
@@ -210,6 +213,7 @@ function addUnattributed(
 /**
  * One changed part as an unattributed preview part: its whole text, with the
  * extension lines in it still annotated, or the session text of a deleted part.
+ * It keeps the part's text diff, so both previews show the same diff body.
  */
 function diffSection(part: InjectionItem, diff: TokenDiff, requestOnly: boolean): InjectionSection {
 	return {
@@ -221,6 +225,7 @@ function diffSection(part: InjectionItem, diff: TokenDiff, requestOnly: boolean)
 		...(part.requestOnly === true || requestOnly ? { requestOnly: true } : {}),
 		jsonSpan: part.jsonSpan,
 		injectedReferences: part.injectedReferences,
+		...(part.textDiff === undefined ? {} : { textDiff: part.textDiff }),
 	};
 }
 

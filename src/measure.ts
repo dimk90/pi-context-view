@@ -55,12 +55,12 @@ export const SYSTEM_PROMPT_ITEM_ID = "base-prompt";
 /** `ToolSlice.source` of a recorded tool no extension registers now: its owner is unknown. */
 export const UNREGISTERED_TOOL_SOURCE = "unattributed";
 
-/** Known XML section names retain the existing semantic ids and labels. */
+/** Known XML section names use Pi terminology while retaining existing semantic ids. */
 const SECTION_PARTS: Readonly<Record<string, { id: string; label: string }>> = {
 	tools: AVAILABLE_TOOLS_BLOCK,
 	rules: GUIDELINES_BLOCK,
 	docs: DOCUMENTATION_BLOCK,
-	addendum: { id: "base-prompt:appended", label: "Appended Prompt" },
+	addendum: { id: "base-prompt:appended", label: "Addendum" },
 	cwd: { id: "base-prompt:current-dir", label: "Current Dir" },
 	project_context: { id: "base-prompt:context-files", label: INSTRUCTION_FILES_LABEL },
 	skills: { id: "base-prompt:skills", label: SKILLS_LABEL },

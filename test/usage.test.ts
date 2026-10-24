@@ -216,7 +216,7 @@ test("computeUsage carries measured tool parts into tool preview entries", () =>
 		...item("web_search", "tool", 12, false),
 		text: `${snippet}${definition}`,
 		sections: [
-			{ label: "Available Tools", text: snippet, tokens: 7 },
+			{ label: "Tools", text: snippet, tokens: 7 },
 			{ label: "Definition", text: definition, tokens: 5 },
 		],
 	};
@@ -242,7 +242,7 @@ test("computeUsage carries measured tool parts into tool preview entries", () =>
 	});
 
 	const customEntry = collectPreviewEntries(category(usage.categories, "custom-tools"))[0];
-	assert.deepEqual(customEntry?.sections?.map((section) => section.label), ["Available Tools", "Definition"]);
+	assert.deepEqual(customEntry?.sections?.map((section) => section.label), ["Tools", "Definition"]);
 	// Parts break the entry down; they never add tokens to it.
 	assert.equal(customEntry?.sections?.reduce((sum, section) => sum + section.tokens, 0), customEntry?.tokens);
 	assert.equal(customEntry?.sections?.map((section) => section.text).join(""), customEntry?.text);

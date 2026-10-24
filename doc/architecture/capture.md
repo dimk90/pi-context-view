@@ -43,7 +43,7 @@ scope too: Pi applies these request-only changes on an extension's behalf.
 | ----------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | RequestTracker    | `src/capture/tracker.ts`     | `context_with_system`, `cache_warming_decision`, `before_provider_request`, `agent_settled`, `session_shutdown` | Number captures, set the origin, pair payloads, mark warm refreshes, settle unpaired captures     |
 | ProjectionReader  | `src/capture/request.ts`     | Inside `context_with_system`                                                                                    | Read filtered baseline messages, their source entries, and the leaf ID                            |
-| TranscriptCapture | `src/capture/request.ts`     | `context_with_system`                                                                                           | Trim equal ends against the baseline; copy the rest; record a forced prompt and the request model |
+| TranscriptCapture | `src/capture/request.ts`     | `context_with_system`                                                                                           | Trim equal ends against the baseline; copy the rest; keep the effective prompt and request model  |
 | Hidden tools      | `src/capture/register.ts`    | `before_agent_start`, copied into each capture                                                                  | Record Pi's hidden set, including for probes with no payload                                      |
 | Differ            | `src/capture/diff.ts`        | Deferred                                                                                                        | Compare system state and align conversation messages                                              |
 | Attributor        | `src/capture/attribution.ts` | Deferred                                                                                                        | Label changes from `customType` and cooperative provenance                                        |
@@ -63,11 +63,11 @@ flowchart TD
     subgraph H["context_with_system, after ProbeFilter"]
         T["RequestTracker<br/>capture ID, origin from ProbeView"]
         R["ProjectionReader<br/>filtered baseline, source entry IDs, leaf ID"]
-        C["TranscriptCapture<br/>trim equal ends, copy the rest,<br/>system state, forced prompt, request model"]
+        C["TranscriptCapture<br/>trim equal ends, copy the rest,<br/>system state, effective prompt, request model"]
         T --> R --> C
     end
     A["before_agent_start"] -->|"hidden tools"| C
-    C -->|"setImmediate"| D["Differ, Attributor<br/>align, diff, attribute"]
+    C -->|"setImmediate"| D["Differ, Attributor<br/>align, diff, forced prompt, attribute"]
     C --> P["RequestTracker<br/>wait for the matching payload"]
     P -->|"before_provider_request"| G["PayloadGuard<br/>copy payload, defer comparison"]
     P -->|"next capture or agent_settled<br/>no payload: incomplete"| B["SnapshotBuilder<br/>redact, assemble, publish"]
@@ -115,8 +115,15 @@ cannot keep references and defer all work.
   copied, so an unchanged request copies no conversation message. The handler
   uses a direct comparison that agrees with the diff keys below; anything
   outside plain JSON data falls back to comparing the keys. `structuredClone`
-  copies the rest, the request's replayed system state, and each historically
-  declared tool's latest definition.
+  copies the rest.
+- **System state.** The copy keeps the request's replayed system state and
+  each historically declared tool's latest definition. Replay builds new
+  containers and strings are immutable, so content and sections are kept by
+  reference. Each tool is compared in place with the baseline's latest
+  declaration of the same name, as Pi's `declarationsEqual()` decides, schema
+  key order included; anything outside plain JSON data falls back to it. An
+  equal tool is the baseline's own object, which is only read; a differing one
+  is copied. The deferred diff then finds equal tools by identity.
 - **Positions for the guard.** The copy keeps the matched prefix length and
   each system message's text, sections, and position among non-system
   messages. The payload guard rebuilds the compared request from those
@@ -126,21 +133,27 @@ cannot keep references and defer all work.
   replaced.
 - **Request model.** The capture copies `ctx.model`'s provider, API, and model
   ID, its `input`, and its top-level `compat` flags for the guard.
-- **Failure.** A request whose differing messages cannot be cloned, for example
-  because a handler added a function value, is not captured; the request itself
-  proceeds unchanged.
+- **Failure.** A request whose differing messages or tools cannot be cloned,
+  for example because a handler added a function value, is not captured; the
+  request itself proceeds unchanged.
 - **Deferred work.** Alignment, attribution, redaction, and publication run in
   `setImmediate`. `session_shutdown` cancels scheduled work.
 
 ## Forced Prompt
 
-A forced prompt is not in the captured transcript. Detect it by comparing
-`ctx.getSystemPrompt()` with `getCurrentSystemPrompt(baseline)` and record the
-differing effective text as a structured request-only change. Pi projects that
+A forced prompt is not in the captured transcript. The handler keeps only the
+`ctx.getSystemPrompt()` string. The deferred diff and the payload guard's first
+deferred job both need the result, in either order: whichever runs first
+compares that string with `getCurrentSystemPrompt(baseline)`, and the other reuses
+the result, which is cached by capture with weak keys. The differing effective
+text is recorded as a structured request-only change. The
+baseline holds append-only session objects, so the deferred replay matches the
+one at capture, as the deferred system diff already relies on. Pi projects that
 text after the final `context_with_system` handler, replacing all system
 messages with one leading message that holds the forced text and the current
 tools. Section patches in the captured transcript therefore do not reach that
-request; the payload guard applies the same projection. Pi keeps the run's
+request; the payload guard applies the same projection, and Injections marks
+the replaced edits ([views](views.md#injections)). Pi keeps the run's
 prompt options until the run settles, so detection also works in probe runs.
 
 Pi turns every `systemPrompt` returned from `before_agent_start` into a forced

@@ -6,7 +6,7 @@ import type { ConversationChange, GuardResult, RequestSnapshot, StructuredChange
 import { attributeMessage } from "./attribution.ts";
 import { type ConversationEdit, diffConversation, diffSystemState } from "./diff.ts";
 import { redactMessage } from "./redact.ts";
-import type { CapturedRequest } from "./request.ts";
+import { type CapturedRequest, resolveForcedPrompt } from "./request.ts";
 
 /** Where built snapshots go; SnapshotStore in production. */
 export interface SnapshotPublisher {
@@ -98,12 +98,13 @@ export function buildRequestSnapshot(request: CapturedRequest, guard: GuardResul
 		// Replaying an already replayed system state returns it unchanged
 		system: diffSystemState(baseline, request.system === undefined ? [] : [request.system]),
 	};
+	const forcedPrompt = resolveForcedPrompt(request);
 	return {
 		id: request.id,
 		origin: request.origin,
 		leafId: request.baseline.leafId,
 		changes,
-		...(request.forcedPrompt === undefined ? {} : { forcedPrompt: request.forcedPrompt }),
+		...(forcedPrompt === undefined ? {} : { forcedPrompt }),
 		guard,
 		...(request.hiddenTools === undefined ? {} : { hiddenTools: request.hiddenTools }),
 	};

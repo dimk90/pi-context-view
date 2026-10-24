@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import { declarationsEqual, getCurrentSystemMessage, type Tool } from "@earendil-works/pi-ai";
 
-import { diffConversation, diffSystemState, messageKey, sameMessage, trimMatchedEnds } from "../src/capture/diff.ts";
+import {
+	diffConversation, diffSystemState, messageKey, sameDeclaration, sameMessage, trimMatchedEnds,
+} from "../src/capture/diff.ts";
 import type { BaselineMessage } from "../src/capture/request.ts";
 import type { RequestMessage } from "../src/snapshot.ts";
 import type { SystemMessage } from "../src/transcript.ts";
@@ -150,6 +152,36 @@ test("comparing in place agrees with message keys", () => {
 		const expected = messageKey(a) === messageKey(b);
 		assert.equal(sameMessage(a, b), expected, name);
 		assert.equal(sameMessage(b, a), expected, `${name}, reversed`);
+	}
+});
+
+test("comparing declarations in place agrees with Pi's declarationsEqual", () => {
+	const tool = (parameters: unknown, extra: object = {}): Tool => ({
+		name: "read", description: "Read a file", parameters: parameters as Tool["parameters"], ...extra,
+	});
+	const schema = { type: "object", properties: { path: { type: "string" } } };
+	const grammar = { type: "grammar" as const, variants: { openai_lark: "start: /x/" } };
+	const pairs: Array<[string, Tool, Tool]> = [
+		["equal copies", tool(schema), tool(structuredClone(schema))],
+		["schema key order", tool(schema), tool({ properties: schema.properties, type: "object" })],
+		["nested key order", tool({ a: { x: 1, y: 2 } }), tool({ a: { y: 2, x: 1 } })],
+		["undefined property", tool({ ...schema, title: undefined }), tool(schema)],
+		["symbol key", tool({ ...schema, [Symbol("kind")]: "Object" }), tool(schema)],
+		["function in schema", tool({ ...schema, check: () => true }), tool(schema)],
+		["function only on the right", tool(schema), tool({ ...schema, check: () => true })],
+		["non-declaration field", tool(schema, { label: "Read", execute: () => undefined }), tool(schema)],
+		["description", tool(schema), tool(schema, { description: "Read any file" })],
+		["name", tool(schema), tool(schema, { name: "write" })],
+		["constrained sampling", tool(schema, { constrainedSampling: grammar }), tool(schema)],
+		["disabled sampling", tool(schema, { constrainedSampling: false }), tool(schema)],
+		["extra property", tool(schema), tool({ ...schema, required: ["path"] })],
+		["non-finite number", tool({ maximum: Number.NaN }), tool({ maximum: null })],
+		["class instance", tool({ default: new Date(0) }), tool({ default: new Date(0).toJSON() })],
+	];
+	for (const [name, a, b] of pairs) {
+		const expected = declarationsEqual(a, b);
+		assert.equal(sameDeclaration(a, b), expected, name);
+		assert.equal(sameDeclaration(b, a), expected, `${name}, reversed`);
 	}
 });
 

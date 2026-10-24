@@ -95,6 +95,29 @@ export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
 export type RequestChange = "added" | "modified" | "deleted" | "forced";
 
 /**
+ * A request-only edit of one System Prompt part that a forced prompt replaced,
+ * so Pi never sent it. Pi projects the forced text after every
+ * `context_with_system` handler, so captured section and content edits are lost.
+ */
+export interface ForcedEdit {
+	/** The part as the edit left it, never counted; empty for a deletion. */
+	readonly text: string;
+	/** Whether the forced prompt still sent the part, in its own version; otherwise the part reads 0 tokens. */
+	readonly sent: boolean;
+}
+
+/**
+ * The two texts a changed System Prompt part's token diff compares, so its
+ * preview shows the same change as a diff body. Process-local, like `text`.
+ */
+export interface TextDiff {
+	/** The part's diff base: pi's default text, the session's version, or empty when the part has none. */
+	readonly base: string;
+	/** What the request sent; empty for a deletion. */
+	readonly request: string;
+}
+
+/**
  * Tokens a contribution gained and lost against its base: pi's default prompt
  * for rows under pi, the session for extension tools and messages, and the
  * captured request for payload changes. Rounded so that the base estimate plus
@@ -196,6 +219,10 @@ export interface InjectionSection {
 	readonly moved?: boolean;
 	/** Request-only change of this part; a deleted part carries no counted characters. */
 	readonly change?: RequestChange;
+	/** Edit of this part that a forced prompt replaced; see `InjectionItem.forcedEdit`. */
+	readonly forcedEdit?: ForcedEdit;
+	/** Texts behind this part's diff, rendered as its diff body; see `InjectionItem.textDiff`. */
+	readonly textDiff?: TextDiff;
 	/** Tokens this part gained and lost against its base; absent when unchanged. */
 	readonly diff?: TokenDiff;
 	/** True when the message or child row this part stands for is request-only; see `InjectionItem.requestOnly`. */
@@ -250,6 +277,18 @@ export interface InjectionItem {
 	readonly moved?: boolean;
 	/** Request-only change of this contribution; a deleted one reads 0 tokens. */
 	readonly change?: RequestChange;
+	/**
+	 * Request-only edit of a System Prompt part that a forced prompt replaced.
+	 * The part counts only what the forced prompt sent; the edit is never counted.
+	 * Only Injections measures it.
+	 */
+	readonly forcedEdit?: ForcedEdit;
+	/**
+	 * Texts behind a changed System Prompt part's diff, for a diff body in its
+	 * previews. Absent when its extension lines alone explain the diff: their
+	 * highlighted, annotated lines already show it. Only Injections measures it.
+	 */
+	readonly textDiff?: TextDiff;
 	/** Tokens this contribution gained and lost against its base; a parent sums its children. */
 	readonly diff?: TokenDiff;
 	/**

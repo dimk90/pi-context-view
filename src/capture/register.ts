@@ -2,16 +2,16 @@
  * Capture layer wiring: reads Pi's hidden tools in `before_agent_start`,
  * observes every agent request in `context_with_system`, pairs it with its
  * provider payload in `before_provider_request`, and confirms
- * the dispatch from assistant and provider stream events. Observe only:
+ * the dispatch from assistant message events. Observe only:
  * handlers return nothing and never change provider-bound data. Runs in every
  * run mode, without any consumer, and imports no trigger or consumer code.
  */
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { ProbeView } from "../probe/view.ts";
-import type { Dispatch } from "../snapshot.ts";
 import type { SnapshotBuilder } from "./builder.ts";
-import { DispatchConfirmer, type IdentitySource } from "./dispatch.ts";
+import { DispatchConfirmer } from "./dispatch.ts";
 import { PayloadGuard } from "./guard.ts";
 import { type CapturedRequest, captureRequest } from "./request.ts";
 import { NO_PAYLOAD_REASON, RequestTracker } from "./tracker.ts";
@@ -43,10 +43,13 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 		builder.release(capture.id);
 	}
 
-	/** Hand the first dispatch identity of the waiting request to the guard. */
-	function confirmDispatch(source: IdentitySource, dispatch: Dispatch, ctx: ExtensionContext): void {
-		const request = confirmer.confirm(source);
-		if (request !== undefined) guard.confirm(request, dispatch, (provider, modelId) => ctx.modelRegistry.find(provider, modelId));
+	/** Hand the first assistant dispatch identity of the waiting request to the guard. */
+	function confirmDispatch(message: AgentMessage, ctx: ExtensionContext): void {
+		if (message.role !== "assistant") return;
+		const request = confirmer.take();
+		if (request === undefined) return;
+		const dispatch = { provider: message.provider, api: message.api, model: message.model };
+		guard.confirm(request, dispatch, (provider, modelId) => ctx.modelRegistry.find(provider, modelId));
 	}
 
 	pi.on("before_agent_start", (event) => {
@@ -82,7 +85,6 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 
 	pi.on("before_provider_request", (event) => {
 		const pairing = tracker.pair(event.payload);
-		if (pairing.type === "warm-refresh") confirmer.noteWarmRefresh();
 		if (pairing.type !== "paired") return;
 		// Later handlers can edit the payload in place, so copy it now
 		guard.accept(pairing.capture, event.payload);
@@ -90,28 +92,18 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 		if (previous !== undefined) guard.finishUnconfirmed(previous);
 	});
 
+	// No provider_stream_event handler: Pi emits that event, with an awaited emit per chunk, only when one exists
 	pi.on("message_start", (event, ctx) => {
-		const message = event.message;
-		if (message.role === "assistant") {
-			confirmDispatch("assistant", { provider: message.provider, api: message.api, model: message.model }, ctx);
-		}
-	});
-
-	pi.on("provider_stream_event", (event, ctx) => {
-		// Only the identity is read; event.data belongs to Pi's stream
-		confirmDispatch("stream", { provider: event.provider, api: event.api, model: event.model }, ctx);
+		confirmDispatch(event.message, ctx);
 	});
 
 	pi.on("message_end", (event, ctx) => {
-		const message = event.message;
-		if (message.role === "assistant") {
-			confirmDispatch("assistant", { provider: message.provider, api: message.api, model: message.model }, ctx);
-		}
+		confirmDispatch(event.message, ctx);
 	});
 
 	pi.on("agent_settled", () => {
 		settleUnpaired();
-		const unconfirmed = confirmer.takeUnconfirmed();
+		const unconfirmed = confirmer.take();
 		if (unconfirmed !== undefined) guard.finishUnconfirmed(unconfirmed);
 	});
 

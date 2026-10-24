@@ -36,6 +36,8 @@ function harness(probe = false) {
 	registerCapture(pi, { isCurrentRun: probe, filterMessages: (messages) => messages }, new SnapshotBuilder(snapshots));
 	return {
 		snapshots, published, context,
+		/** Event types with a registered handler. */
+		handled: () => [...handlers.keys()],
 		emit(event: ExtensionEvent) {
 			for (const handler of handlers.get(event.type) ?? []) {
 				assert.equal(handler(event, context), undefined, "capture handlers observe only");
@@ -59,8 +61,12 @@ function flush(): Promise<void> {
 	return new Promise((resolve) => setImmediate(resolve));
 }
 
-for (const first of ["message_start", "provider_stream_event", "message_end"] as const) {
-	test(`${first} can supply the first identity, without reading stream data or changing requests`, async () => {
+test("capture registers no provider_stream_event handler, which Pi then never emits", () => {
+	assert.ok(!harness().handled().includes("provider_stream_event"));
+});
+
+for (const first of ["message_start", "message_end"] as const) {
+	test(`${first} can supply the first identity, without changing requests`, async () => {
 		const h = harness(true);
 		const messages = [{ ...SYSTEM, toolsAdded: [structuredClone(TOOL)] }];
 		const payload = { messages: [{ role: "system", content: "prompt" }], tools: [] };
@@ -75,11 +81,7 @@ for (const first of ["message_start", "provider_stream_event", "message_end"] as
 		h.emit({ type: "before_provider_request", payload });
 		assert.deepEqual(messages, beforeMessages);
 		assert.deepEqual(payload, beforePayload);
-		const identity = { provider: MODEL.provider, api: MODEL.api, model: MODEL.id };
-		if (first === "provider_stream_event") h.emit({
-			type: first, ...identity, get data() { throw new Error("stream data must not be read"); },
-		});
-		else h.emit({ type: first, message: assistant() });
+		h.emit({ type: first, message: assistant() });
 		await flush();
 		const snapshot = h.snapshots.latest();
 		assert.equal(snapshot?.origin, "synthetic-probe");

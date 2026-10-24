@@ -30,7 +30,7 @@ invisible.
 | RequestTracker    | `src/capture/tracker.ts`  | `context_with_system`, `cache_warming_decision`, `before_provider_request`  | Pair payloads with captures; mark warm refreshes                                               |
 | PayloadParser     | `src/capture/payload.ts`  | `before_provider_request` copy, then deferred                               | Copy payloads; select the parser by API; extract the message and tool-declaration channels     |
 | PayloadGuard      | `src/capture/guard.ts`    | Deferred                                                                    | Normalize Pi's adjustments; report unexplained differences or an incomplete comparison         |
-| DispatchConfirmer | `src/capture/dispatch.ts` | Assistant `message_start`, `provider_stream_event`, assistant `message_end` | Record identity once per paired request; confirm the request model or supply the virtual route |
+| DispatchConfirmer | `src/capture/dispatch.ts` | Assistant `message_start` and `message_end`                                 | Record identity once per paired request; confirm the request model or supply the virtual route |
 
 `src/capture/adjustments.ts`, `src/capture/messages.ts`, and
 `src/capture/tools.ts` hold PayloadGuard's normalization and channel
@@ -59,8 +59,8 @@ A cache-warm refresh fires `before_provider_request` without a new capture. A
 `cache_warming_decision` after the latest capture plus a one-token output limit
 marks it; OpenAI Responses raises that limit to 16, which also marks a refresh.
 No payload copy, comparison, or findings are produced, and nothing is
-published. Its stream events cannot confirm the waiting agent request;
-assistant events can.
+published. It has no assistant events, so it cannot confirm the waiting agent
+request.
 
 The decision alone is not enough: handler results do not update
 `event.action`, so a later handler's choice is invisible, and a decision alone
@@ -107,13 +107,12 @@ request model, and the guard chooses its path from it:
 
 Rules for both paths:
 
-- **Dispatch identity.** Assistant `message_start` or `provider_stream_event`,
-  whichever arrives first, supplies it; assistant `message_end` is the
-  fallback. Do not require either to come first: the order varies even on one
-  adapter. Accept one identity per paired request, return at once from stream
-  handlers, and read only identity fields, never `event.data`. A request that
-  fails before streaming has only the assistant events, and both carry the
-  identity.
+- **Dispatch identity.** Assistant `message_start` supplies it; assistant
+  `message_end` is the fallback. Accept one identity per paired request. A
+  request that fails before streaming also has both assistant events, and both
+  carry the identity. Do not handle `provider_stream_event`: it carries the
+  same identity, but Pi emits it only when a handler exists, with an awaited
+  emit and a new `ctx` per streamed chunk.
 - **Dispatch confirmation.** On the physical path, the identity confirms the
   request model. A different provider, API, or model replaces the guard with an
   incomplete result and drops its provisional findings, without parsing again.
@@ -245,8 +244,11 @@ exported, so uncertain differences are never treated as proven Pi adjustments.
 
 `src/capture/messages.ts` aligns whitespace-insensitive unit keys with the same
 LCS helper as structured capture. Keys also remove unpaired UTF-16 surrogates,
-as Pi does. Empty system, user, and assistant text does not count; empty tool
-results do. In each unmatched gap, units of the same part pair in order as
+as Pi does. Before building keys, it drops exactly equal units (part, name,
+and text) at both ends, so only the middle is normalized; the start first
+extends by key, as the alignment would, and the end stops there, so findings
+match a whole alignment. Empty system, user, and assistant text does not
+count; empty tool results do. In each unmatched gap, units of the same part pair in order as
 modifications; unpaired units are additions or deletions. Findings keep the
 message part, the change kind, and the added and removed lines, without
 attribution or baseline entry IDs. Blank lines and whitespace-only differences
@@ -302,7 +304,8 @@ adapters. Other adapters were checked in the source only.
   `provider_stream_event`. When stream data is already buffered as the response
   resolves, the first `provider_stream_event` often reaches handlers first.
   `after_provider_response` came before both, and assistant `message_end` after
-  both. A failure before streaming (HTTP 500) had only assistant
+  both. Without a `provider_stream_event` handler, the order was
+  `after_provider_response`, assistant `message_start`, assistant `message_end`. A failure before streaming (HTTP 500) had only assistant
   `message_start` and `message_end`, both with the identity, and no
   `after_provider_response`. In the source, Bedrock and Pi Messages emit
   `provider_stream_event` before they push the start.
@@ -316,8 +319,11 @@ adapters. Other adapters were checked in the source only.
 - **Payload copy.** A payload's JSON is about as large as its context: about
   0.8 MB at 200k tokens and 4 MB at 1M tokens, plus base64 images. On an
   i7-8650U with Node.js 26, `structuredClone` took 1–13 ms and kept a full
-  copy. A copy of only arrays and objects that shares strings took 0.2–3 ms and
-  kept 2–5% of the JSON size.
+  copy. A copy of only arrays and objects that shares strings took 0.2–1.5 ms
+  with plain loops, 3–6 times less than with `Object.entries()` and
+  `Object.fromEntries()`, and kept 2–5% of the JSON size. Copying only the
+  fields the parsers read saved at most 0.5 ms more, and parsing both channels
+  in the handler took 1–8 ms.
 - **Payload shapes.** Payloads with tools, a tool call and result, and a
   mid-conversation system message each passed only their own API's structural
   check. OpenAI Responses sends `input` items instead of `messages`. OpenAI

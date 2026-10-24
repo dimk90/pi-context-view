@@ -15,7 +15,7 @@ import {
 	descriptionNoteLines, injectionsNotes, payloadCheckLabel, requestOriginLabel,
 	type DescriptionNote, type InjectionsNotesInput, type PayloadCheck,
 } from "../src/ui/notes.ts";
-import { assertFrame, containsBlock, createTheme, frameText, stripSgr, wholeOrAbsent } from "./harness/frame.ts";
+import { assertFrame, containsBlock, createTheme, frameText, stripSgr, stripStyle, wholeOrAbsent } from "./harness/frame.ts";
 
 /** Expected note selected by semantic kind, never by an English sentence. */
 function noteLines(kind: DescriptionNote["kind"], width = 1_000, input: Partial<InjectionsNotesInput> = {}): string[] {
@@ -100,7 +100,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 		totalTokens: piGroup.totalTokens,
 	};
 	const theme = createTheme();
-	const view = new InjectionsView(theme, { snapshot: styledSnapshot }, () => {});
+	const view = new InjectionsView(theme, { snapshot: styledSnapshot }, () => {}, () => 24);
 
 	let lines = view.render(80);
 	assert.equal(lines[1], "");
@@ -570,7 +570,7 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	let closed = false;
 	const view = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => {
 		closed = true;
-	});
+	}, () => 24);
 
 	// Enter on a group row does nothing.
 	view.handleInput("\r");
@@ -695,7 +695,7 @@ test("InjectionsView preview labels every known section", () => {
 			groups: [toolGroup],
 			totalTokens: toolGroup.totalTokens,
 		},
-	}, () => {});
+	}, () => {}, () => 24);
 
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
@@ -763,7 +763,7 @@ test("InjectionsView preview expands the JSON runs the model marks", () => {
 			groups: [toolGroup],
 			totalTokens: toolGroup.totalTokens,
 		},
-	}, () => {});
+	}, () => {}, () => 24);
 
 	// The item preview is full content, so a labeled part expands its marked schema.
 	view.handleInput("\u001b[B");
@@ -916,7 +916,7 @@ test("InjectionsView invalidation rebuilds theme-colored section subheaders", ()
 			groups: [toolGroup],
 			totalTokens: toolGroup.totalTokens,
 		},
-	}, () => {});
+	}, () => {}, () => 24);
 
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
@@ -1048,7 +1048,7 @@ test("InjectionsView navigation skips the fixed total and Escape closes", () => 
 	let closed = false;
 	const view = new InjectionsView(createTheme(), { snapshot: snapshot(30) }, () => {
 		closed = true;
-	});
+	}, () => 24);
 
 	const initialLines = view.render(80);
 	const scrollIndicator = initialLines.find((line) => /\(1\/\d+\)/.test(stripSgr(line)));
@@ -1277,7 +1277,7 @@ test("InjectionsView shows a system prompt row's diff without a value and previe
 	const plain = view.render(100).map(stripSgr);
 	const line = (label: string) => plain.find((candidate) => candidate.includes(label)) ?? "";
 
-	assert.match(line("system prompt"), /└─ system prompt \.+ {3}\+27$/, "dots run through the empty value column");
+	assert.match(line("system prompt"), /└─ system prompt \.+ {2}\+27$/, "dots run through the empty value column");
 	assert.equal(line("system prompt").length, line("search").length + "  +27".length,
 		"the diff column follows the shared value column");
 	assert.match(line("TOTAL"), / 1,000$/);
@@ -1329,7 +1329,7 @@ test("InjectionsView previews an unattributed system prompt deletion without a t
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
 	const list = view.render(100).map(stripSgr);
 	assert.match(list.find((candidate) => candidate.includes("system prompt")) ?? "",
-		/system prompt \.+ {3}-7 · Request-Only$/);
+		/system prompt \.+ {2}-7 · Request-Only$/);
 	assert.doesNotMatch(list.join("\n"), /Deleted|documentation/);
 	view.handleInput("j");
 	view.handleInput("\r");
@@ -1822,7 +1822,7 @@ test("InjectionsView lists messages in one unattributed row and previews one par
 	assert.ok(preview.includes("  - original prompt"));
 	assert.ok(preview.includes("  + edited prompt"));
 	assert.ok(preview.includes("  - deleted prompt"));
-	assert.ok(preview.includes("  + added note"));
+	assert.ok(preview.includes("    added note"), "an addition reads like plain content, its +4 already says it is new");
 	const styled = view.render(100);
 	assert.ok(styled.some((line) => line.includes(theme.fg("muted", " · user prompt #1"))));
 	assert.ok(styled.some((line) => line.includes(theme.inverse("original"))));
@@ -2002,4 +2002,245 @@ test("InjectionsView rebuilds persistent capture colors after theme invalidation
 	assert.ok(header.includes(theme.fg("mdHeading", theme.bold(requestOriginLabel(true)))));
 	assert.ok(header.endsWith(theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadCheckLabel("pending")}`)));
 	assert.notEqual(header, before[2]);
+});
+
+/** Background escape the test theme's `searchMatchBg` falls back to (`selectedBg`). */
+const SEARCH_MATCH_BG = "\u001b[48;2;17;34;51m";
+
+/** Skills and an extension tool, where only some text mentions tree-sitter. */
+function searchSnapshot(): InjectionSnapshot {
+	const skill = (name: string, text: string): InjectionItem => ({ ...item(`skill:${name}`, "pi", true, 50), label: name, text });
+	const filler = Array.from({ length: 40 }, (_, line) => `filler line ${line}`).join("\n");
+	const skills: InjectionItem = {
+		...item("skills", "pi", true, 150),
+		label: "Skills (3)",
+		children: [
+			skill("agent-browser", `Drive a browser.\n${filler}`),
+			skill("cymbal", `Navigate code.\n${filler}\nBuilt on tree-sitter.\n${filler}\ntree-sitter again`),
+			skill("sdd", `Plan features.\n${filler}`),
+		],
+	};
+	const system: InjectionItem = { ...item("system", "pi", true, 20), label: "System Prompt", text: "You are pi." };
+	const webSearch: InjectionItem = {
+		...item("tool:web_search", "npm:pi-web-access", false, 10),
+		label: "web_search",
+		text: "Search the web, not tree-sitter grammars.",
+	};
+	const groups = [group("pi", true, [system, skills]), group("npm:pi-web-access", false, [webSearch])];
+	return { groups, totalTokens: 180 };
+}
+
+/** Test theme whose bold stays observable when Chalk detects no terminal. */
+function styledTheme(): Theme {
+	const theme = createTheme();
+	theme.bold = (text) => `\u001b[1m${text}\u001b[22m`;
+	return theme;
+}
+
+function typeKeys(view: InjectionsView, text: string): void {
+	for (const key of text) view.handleInput(key);
+}
+
+/** Plain list rows between the header block and the hint row. */
+function plainFrame(view: InjectionsView, width = 80): string[] {
+	return view.render(width).map((line) => stripStyle(line).trimEnd());
+}
+
+/** A plain list row with its dot leaders and value padding collapsed to one space. */
+function withoutLeaders(line: string): string {
+	return line.replace(/ \.+ +/, " ");
+}
+
+test("InjectionsView filters rows by name, keeps ancestors, and Escape steps back out", () => {
+	let closed = false;
+	const theme = styledTheme();
+	const view = new InjectionsView(theme, { snapshot: searchSnapshot() }, () => {
+		closed = true;
+	}, () => 30);
+	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · Esc Close/);
+
+	view.handleInput("/");
+	let plain = plainFrame(view);
+	const promptIndex = plain.findIndex((line) => line.startsWith("  ◉ Name | ○ Content >"));
+	assert.equal(promptIndex, 4, "the prompt sits below the header and its blank row");
+	assert.equal(plain[promptIndex + 1], "");
+	assert.match(plain.join("\n"), /↑↓ Navigate · Tab Mode · Enter Preview · Esc Clear/);
+
+	typeKeys(view, "cym");
+	const lines = view.render(80);
+	plain = lines.map((line) => stripStyle(line).trimEnd());
+	assert.match(plain[promptIndex] ?? "", /^ {2}◉ Name \| ○ Content > cym +1 match$/);
+	assert.ok((lines[promptIndex] ?? "").includes(theme.bold(theme.fg("accent", "◉ Name"))), "the active mode is bold accent");
+	assert.ok((lines[promptIndex] ?? "").includes(theme.fg("dim", "○ Content")), "the other mode is dim");
+	const rows = plain.slice(promptIndex + 2, plain.indexOf("", promptIndex + 2));
+	assert.deepEqual(rows.map(withoutLeaders), ["  pi 170", "  └─ Skills (3) 150", "→    └─ cymbal 50"]);
+	assert.ok((lines[promptIndex + 4] ?? "").includes(SEARCH_MATCH_BG), "the matched label text is highlighted");
+	assert.match(plain.join("\n"), /TOTAL \(Prompt, Tools, Injections\) \.+ 180/, "the snapshot total is unchanged");
+
+	// Enter keeps the filter and opens the selected match; Escape returns to the filtered list.
+	view.handleInput("\r");
+	assert.match(plainFrame(view)[2] ?? "", /^cymbal/);
+	view.handleInput("\u001b");
+	plain = plainFrame(view);
+	assert.match(plain[promptIndex] ?? "", /^ {2}◉ Name \| ○ Content > cym +1 match$/);
+	assert.match(plain.join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · Esc Clear/);
+
+	// Escape drops the filter but keeps the selected row, then closes the view.
+	view.handleInput("\u001b");
+	plain = plainFrame(view);
+	assert.ok(!plain.some((line) => line.includes("Content >")));
+	assert.ok(plain.map(withoutLeaders).includes("→    ├─ cymbal 50"));
+	assert.equal(closed, false);
+	view.handleInput("\u001b");
+	assert.equal(closed, true);
+});
+
+test("InjectionsView shows an empty filter result and Escape while typing drops the query", () => {
+	const view = new InjectionsView(createTheme(), { snapshot: searchSnapshot() }, () => {}, () => 30);
+	view.handleInput("/");
+	typeKeys(view, "zzz");
+	let plain = plainFrame(view);
+	assert.match(plain.join("\n"), /◉ Name \| ○ Content > zzz +No matches/);
+	assert.ok(plain.includes("  No injections match the filter."));
+	view.handleInput("\r");
+	assert.match(plainFrame(view)[2] ?? "", /^Context Injections/, "Enter has no row to open");
+
+	view.handleInput("/");
+	view.handleInput("\u001b");
+	plain = plainFrame(view);
+	assert.ok(!plain.some((line) => line.includes("Content >")));
+	assert.ok(plain.some((line) => line.includes("agent-browser")));
+});
+
+test("InjectionsView erasing or canceling a typed filter restores the selection from before it", () => {
+	const view = new InjectionsView(createTheme(), { snapshot: snapshot(16) }, () => {}, () => 16);
+	for (let step = 0; step < 10; step++) view.handleInput("j");
+	const before = plainFrame(view);
+
+	// Erasing the query restores the list exactly, selection and scroll included.
+	view.handleInput("/");
+	const prompt = plainFrame(view);
+	typeKeys(view, "pi");
+	view.handleInput("\u007f");
+	view.handleInput("\u007f");
+	assert.deepEqual(plainFrame(view), prompt, "erasing the query returns to the pre-filter row");
+
+	// Escape while typing, after moving through the matches, also restores it.
+	typeKeys(view, "pi");
+	view.handleInput("\u001b[B");
+	view.handleInput("\u001b");
+	assert.deepEqual(plainFrame(view), before, "Escape returns to the pre-filter row");
+});
+
+test("InjectionsView content filter carries its query into the preview search", () => {
+	const theme = styledTheme();
+	const view = new InjectionsView(theme, { snapshot: searchSnapshot() }, () => {}, () => 30);
+	view.handleInput("/");
+	view.handleInput("\t");
+	typeKeys(view, "tree-sitter");
+	const prompt = view.render(80).find((line) => stripStyle(line).startsWith("  ○ Name | ◉ Content >")) ?? "";
+	assert.ok(prompt.includes(theme.bold(theme.fg("accent", "◉ Content"))), "Tab makes Content the active mode");
+	assert.ok(prompt.includes(theme.fg("dim", "○ Name")));
+	let plain = plainFrame(view);
+	assert.match(plain.join("\n"), /○ Name \| ◉ Content > tree-sitter +2 matches/);
+	assert.match(plain.join("\n"), /↑↓ Navigate · Tab Mode · Enter Preview · Esc Clear/);
+	assert.ok(plain.some((line) => line.startsWith("→    └─ cymbal")));
+	assert.ok(plain.some((line) => line.includes("└─ web_search")));
+	assert.ok(!plain.some((line) => line.includes("agent-browser")));
+
+	// The preview opens on the first match, far below the first page, with its query kept.
+	view.handleInput("\r");
+	const lines = view.render(80);
+	plain = lines.map((line) => stripStyle(line).trimEnd());
+	assert.match(plain[4] ?? "", /^ {2}Search: tree-sitter +1\/2$/);
+	const matchRow = plain.findIndex((line) => line.includes("Built on tree-sitter."));
+	assert.ok(matchRow > 0);
+	assert.ok((lines[matchRow] ?? "").includes(SEARCH_MATCH_BG));
+	assert.ok(!plain.some((line) => line.includes("Navigate code.")), "scrolled to the match");
+	assert.match(plain.join("\n"), /↑↓\/jk Scroll · n\/N Next\/Prev · \/ Search · Esc Back/);
+
+	view.handleInput("n");
+	plain = plainFrame(view);
+	assert.match(plain[4] ?? "", /2\/2$/);
+	assert.ok(plain.some((line) => line.includes("tree-sitter again")));
+	view.handleInput("n");
+	assert.match(plainFrame(view)[4] ?? "", /1\/2$/, "n wraps to the first match");
+	view.handleInput("N");
+	assert.match(plainFrame(view)[4] ?? "", /2\/2$/, "N wraps back to the last match");
+
+	// Escape leaves the preview, keeping the content filter on the list.
+	view.handleInput("\u001b");
+	assert.match(plainFrame(view).join("\n"), /○ Name \| ◉ Content > tree-sitter +2 matches/);
+});
+
+test("InjectionsView preview search types live, keeps the query on Enter, and drops it on Escape", () => {
+	const view = new InjectionsView(createTheme(), { snapshot: searchSnapshot() }, () => {}, () => 30);
+	view.handleInput("/");
+	typeKeys(view, "cymbal");
+	view.handleInput("\r");
+	assert.ok(!plainFrame(view).some((line) => line.includes("Search:")), "a name filter starts the preview unsearched");
+
+	view.handleInput("/");
+	assert.match(plainFrame(view).join("\n"), /↑↓ Scroll · Enter Done · Esc Clear/);
+	typeKeys(view, "again");
+	let plain = plainFrame(view);
+	assert.match(plain[4] ?? "", /^ {2}Search: again +1\/1$/);
+	assert.ok(plain.some((line) => line.includes("tree-sitter again")));
+	// j and k type into the open prompt instead of scrolling.
+	typeKeys(view, "jk");
+	assert.match(plainFrame(view)[4] ?? "", /Search: againjk +No matches$/);
+	view.handleInput("\u007f");
+	view.handleInput("\u007f");
+	view.handleInput("\r");
+	plain = plainFrame(view);
+	assert.match(plain[4] ?? "", /^ {2}Search: again +1\/1$/);
+
+	view.handleInput("/");
+	view.handleInput("\u001b");
+	plain = plainFrame(view);
+	assert.ok(!plain.some((line) => line.includes("Search:")));
+	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · Esc Back/);
+});
+
+test("InjectionsView search stays within the width and drops the filter hint before others", () => {
+	const view = new InjectionsView(createTheme(), { snapshot: searchSnapshot() }, () => {}, () => 30);
+	const narrow = plainFrame(view, 50);
+	const hints = narrow.find((line) => line.includes("Navigate"));
+	assert.equal(hints, "  ↑↓/jk Navigate · Enter Preview · Esc Close");
+
+	view.handleInput("/");
+	view.handleInput("\t");
+	typeKeys(view, "a very long query that cannot fit the prompt row at all");
+	for (const width of [20, 50, 80, 120]) {
+		for (const line of view.render(width)) assert.ok(visibleWidth(line) <= width, `width ${width}`);
+	}
+	view.handleInput("\u001b");
+	view.handleInput("\u001b[B");
+	view.handleInput("\u001b[B");
+	view.handleInput("\u001b[B");
+	view.handleInput("\u001b[B");
+	view.handleInput("\r");
+	view.handleInput("/");
+	typeKeys(view, "filler");
+	for (const width of [20, 50, 80, 120]) {
+		for (const line of view.render(width)) assert.ok(visibleWidth(line) <= width, `preview width ${width}`);
+	}
+});
+
+test("InjectionsView content filter matches JSON as its preview expands it", () => {
+	const json = JSON.stringify({ type: "object", properties: { query: { type: "string" } } });
+	const tool: InjectionItem = {
+		...item("tool:web_search", "npm:web", false, 10),
+		label: "web_search",
+		text: `Definition\n${json}`,
+		jsonSpan: { start: 11, end: 11 + json.length },
+	};
+	const groups = [group("npm:web", false, [tool])];
+	const view = new InjectionsView(createTheme(), { snapshot: { groups, totalTokens: 10 } }, () => {}, () => 30);
+	view.handleInput("/");
+	view.handleInput("\t");
+	typeKeys(view, '"type": "object"');
+	assert.match(plainFrame(view).join("\n"), /○ Name \| ◉ Content > "type": "object" +1 match/);
+	view.handleInput("\r");
+	assert.match(plainFrame(view)[4] ?? "", /^ {2}Search: "type": "object" +1\/1$/);
 });

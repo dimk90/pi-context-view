@@ -83,6 +83,17 @@ test("marker explanations follow change details with consistent semantic colors"
 	assert.ok(dropped[0]?.includes(theme.getFgAnsi("toolDiffRemoved")));
 });
 
+test("a replaced edit explains whether the forced prompt still sent its part", () => {
+	const theme = createTheme();
+	const sent = statusBarLines(theme, { ...row(), forcedEdit: { sent: true } }, 200);
+	const unsent = statusBarLines(theme, { ...row(), tokens: 0, forcedEdit: { sent: false } }, 200);
+	assert.ok(containsBlock(sent, [markerStatusField(theme, "forced-edit-sent")]));
+	assert.ok(containsBlock(unsent, [markerStatusField(theme, "forced-edit-unsent")]));
+	assert.equal(sent.length, 1);
+	assert.notEqual(frameText(sent), frameText(unsent));
+	assert.ok(sent[0]?.includes(theme.fg("warning", "Forced")));
+});
+
 test("status wrapping preserves the entire explanation, including Unicode metadata", () => {
 	const theme = createTheme();
 	const entry: InjectionRow = {

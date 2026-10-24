@@ -7,23 +7,29 @@
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { RequestChange, TokenDiff } from "../model.ts";
+import type { ForcedEdit, RequestChange, TokenDiff } from "../model.ts";
 import { BODY_INDENT, fitLine } from "./layout.ts";
 
 /** Dim separator introducing a state marker after the estimate it explains. */
 const MARKER_SEPARATOR = " · ";
 
 /** Markers a frame can show, in the fixed order their legend bullets render. */
-const MARKER_ORDER = ["highlighted", "guess", "dropped", "moved", "forced", "diff", "request-only"] as const;
+const MARKER_ORDER = [
+	"highlighted", "guess", "dropped", "moved", "forced", "forced-edit", "diff", "request-only",
+] as const;
 
 /** One marked state a description bullet explains; `diff` stands for `+N`/`-N` token diffs. */
 export type ContextMarker = (typeof MARKER_ORDER)[number];
 
-/** The state of one part or row that markers show; only a `forced` change has a marker of its own. */
+/**
+ * The state of one part or row that markers show; only a `forced` change has a
+ * marker of its own. A replaced edit shows the same `Forced` keyword.
+ */
 export interface MarkedState {
 	readonly dropped?: boolean;
 	readonly moved?: boolean;
 	readonly change?: RequestChange;
+	readonly forcedEdit?: Pick<ForcedEdit, "sent">;
 	readonly requestOnly?: boolean;
 }
 
@@ -47,11 +53,14 @@ const DIFF_EXPLANATIONS: Record<DiffBase | "list", string> = {
 const BULLET_MARKER = "- ";
 const BULLET_INDENT = `${BODY_INDENT}  `;
 
+/** A legend sentence: dim text, with runs that name a colored mark shown in that mark's color. */
+type LegendText = string | ReadonlyArray<string | { readonly text: string; readonly color: ThemeColor }>;
+
 /** Keyword opening a legend bullet, its fixed color, and the sentence it heads. */
 interface MarkerLegend {
 	readonly keyword: string;
 	readonly color: ThemeColor;
-	readonly explanation: string;
+	readonly explanation: LegendText;
 }
 
 /** One fixed sentence per marker, independent of the others. */
@@ -82,6 +91,18 @@ const MARKER_LEGENDS: Record<Exclude<ContextMarker, "diff">, MarkerLegend> = {
 		color: "warning",
 		explanation: " prompts replace pi’s system prompt for this request.",
 	},
+	"forced-edit": {
+		keyword: "Forced",
+		color: "warning",
+		// The signs open diff lines in these colors, so the sentence names them in the same colors
+		explanation: [
+			" parts were edited for this request, but the forced prompt discarded the edit. Lines marked ",
+			{ text: "+", color: "toolDiffAdded" },
+			" were sent to the model; lines marked ",
+			{ text: "-", color: "toolDiffRemoved" },
+			" were never sent.",
+		],
+	},
 	"request-only": {
 		keyword: "Request-Only",
 		color: "dim",
@@ -89,14 +110,26 @@ const MARKER_LEGENDS: Record<Exclude<ContextMarker, "diff">, MarkerLegend> = {
 	},
 };
 
-/** Markers the Injections status bar explains on the selected row; its Change field covers diffs and Request-Only. */
-export type StatusMarker = "dropped" | "moved" | "forced";
+/**
+ * Markers the Injections status bar explains on the selected row; its Change
+ * field covers diffs and Request-Only. A replaced edit is explained by whether
+ * the forced prompt still sent its part.
+ */
+export type StatusMarker = "dropped" | "moved" | "forced" | "forced-edit-sent" | "forced-edit-unsent";
 
-/** Status-bar explanation of each marker, about the one selected row. */
-const MARKER_STATUS: Record<StatusMarker, string> = {
-	dropped: "a custom system prompt replaced this part; counted nowhere",
-	moved: "in a different position in the system prompt than usual",
-	forced: "an extension’s prompt replaced pi’s system prompt for this request",
+/** Status-bar explanation of each marker, about the one selected row, and the legend naming its keyword. */
+const MARKER_STATUS: Record<StatusMarker, { readonly legend: keyof typeof MARKER_LEGENDS; readonly text: string }> = {
+	dropped: { legend: "dropped", text: "a custom system prompt replaced this part; counted nowhere" },
+	moved: { legend: "moved", text: "in a different position in the system prompt than usual" },
+	forced: { legend: "forced", text: "an extension’s prompt replaced pi’s system prompt for this request" },
+	"forced-edit-sent": {
+		legend: "forced-edit",
+		text: "a forced prompt replaced this part’s request edit; Pi sent the forced prompt’s version",
+	},
+	"forced-edit-unsent": {
+		legend: "forced-edit",
+		text: "a forced prompt replaced this part’s request edit; Pi sent nothing",
+	},
 };
 
 /** Themed marker naming content pi never sent, for a preview subheader or a hierarchy row. */
@@ -143,7 +176,7 @@ export function forcedMarker(theme: Theme): string {
  */
 export function stateMarkers(theme: Theme, part: MarkedState): string {
 	let markers = part.dropped === true ? droppedMarker(theme) : part.moved === true ? movedMarker(theme) : "";
-	if (part.change === "forced") markers += forcedMarker(theme);
+	if (part.change === "forced" || part.forcedEdit !== undefined) markers += forcedMarker(theme);
 	if (part.requestOnly === true) markers += stateMarker(theme, MARKER_LEGENDS["request-only"]);
 	return markers;
 }
@@ -154,6 +187,7 @@ export function partMarkers(part: MarkedState & { readonly diff?: TokenDiff }): 
 	if (part.dropped === true) markers.push("dropped");
 	if (part.moved === true) markers.push("moved");
 	if (part.change === "forced") markers.push("forced");
+	if (part.forcedEdit !== undefined) markers.push("forced-edit");
 	if (part.diff !== undefined && (part.diff.added > 0 || part.diff.removed > 0)) markers.push("diff");
 	if (part.requestOnly === true) markers.push("request-only");
 	return markers;
@@ -193,8 +227,9 @@ export function markerLegendLines(
  * the marker's fixed color, then a dim colon and explanation.
  */
 export function markerStatusField(theme: Theme, marker: StatusMarker): string {
-	const { color, keyword } = MARKER_LEGENDS[marker];
-	return `${theme.fg(color, keyword)}${theme.fg("dim", `: ${MARKER_STATUS[marker]}`)}`;
+	const status = MARKER_STATUS[marker];
+	const { color, keyword } = MARKER_LEGENDS[status.legend];
+	return `${theme.fg(color, keyword)}${theme.fg("dim", `: ${status.text}`)}`;
 }
 
 /** One dim description bullet with a hanging indent, for a note that is not a marker legend. */
@@ -208,8 +243,10 @@ function stateMarker(theme: Theme, legend: MarkerLegend): string {
 }
 
 /** One bullet: dim marker, styled keyword in the colors it explains, dim sentence, hanging indent. */
-function bulletLines(theme: Theme, keyword: string, explanation: string, width: number): string[] {
-	const text = `${keyword}${theme.fg("dim", explanation)}`;
+function bulletLines(theme: Theme, keyword: string, explanation: LegendText, width: number): string[] {
+	const runs = typeof explanation === "string" ? [explanation] : explanation;
+	const sentence = runs.map((run) => typeof run === "string" ? theme.fg("dim", run) : theme.fg(run.color, run.text));
+	const text = `${keyword}${sentence.join("")}`;
 	const wrapped = wrapTextWithAnsi(text, Math.max(1, width - BULLET_INDENT.length));
 	const lead = `${BODY_INDENT}${theme.fg("dim", BULLET_MARKER)}`;
 	return wrapped.map((line, index) => fitLine(`${index === 0 ? lead : BULLET_INDENT}${line}`, width));

@@ -68,6 +68,9 @@ them. A scrolling legend must remain usable independently of the map.
 Usage shows the resulting composition, not a history of changes. Request-only
 edits belong to Injections; do not add change markers throughout this overview.
 
+The legend has no filter: it holds only a few categories, so scanning beats
+typing. Search starts inside a category preview.
+
 ## Category preview
 
 Preserve chronology and entry identity for conversation content, and meaningful
@@ -81,6 +84,22 @@ bodies to keep neighboring entries discoverable, and make hidden content
 apparent. Enter opens full content only for capped blocks; Escape restores the
 same block and viewport. Empty or unavailable content gets an explicit state,
 not a misleading blank preview.
+
+### Search
+
+`/` searches the open category under the shared
+[search and filter rules](../UI.md#search-and-filter). One search spans both
+preview levels of a category:
+
+- In a block stream it covers every entry header and each block's uncapped
+  content, so a match can lie in lines the block cap hides. Moving to a match
+  selects its block and highlights the match wherever it is visible; a hidden
+  match leaves its block selected, one Enter away.
+- Enter on that capped block opens its full content scrolled to the same
+  match, with the status counting that block's matches. Escape returns to the
+  stream with the search kept on the block; Escape from the stream ends it.
+- Single-entry categories search their full content directly. A category
+  without entries has nothing to search and offers no search.
 
 ### Thinking notation
 

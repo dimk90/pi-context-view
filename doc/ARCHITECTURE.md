@@ -100,7 +100,7 @@ flowchart TD
 | `src/capture/register.ts`    | Capture wiring: structured capture, payload pairing, dispatch events, and cleanup.                            |
 | `src/capture/tracker.ts`     | RequestTracker: number captures, pair payloads, and mark warm refreshes.                                      |
 | `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline, positioned request copy, forced prompt, model capabilities. |
-| `src/capture/dispatch.ts`    | DispatchConfirmer: accept one identity per paired request, consuming warm stream events.                      |
+| `src/capture/dispatch.ts`    | DispatchConfirmer: accept one identity per paired request from assistant events.                              |
 | `src/capture/payload.ts`     | PayloadParser: copy payloads, select parsers by API, extract message units and replay tool declarations.      |
 | `src/capture/adjustments.ts` | Rebuild/convert the captured request and render Pi's model-dependent text adjustments.                        |
 | `src/capture/messages.ts`    | Collect message units, align whitespace-insensitive keys, and retain changed lines.                           |
@@ -136,7 +136,7 @@ flowchart TD
 | `src/ui/`                    | Handle navigation, layout, previews, and fullscreen rendering.                                                |
 | `test/harness/`              | Mock provider, settings stub, and command runner for tests; see [validation.md](architecture/validation.md).  |
 | `test/fixtures/`             | Independent regular-test extensions that change requests at each lifecycle point, for both load orders.       |
-| `scripts/demo-injections/`   | Demo fixtures and `--mock` runner for `scripts/demo-injections.sh`; fixtures share no modules with tests.       |
+| `scripts/demo-injections/`   | Demo fixtures and `--mock` runner for `scripts/demo-injections.sh`; not run by `pnpm test`.                     |
 
 `src/ui/` and `src/usage.ts` import no capture or probe module, directly or
 indirectly; `test/module-boundaries.test.ts` enforces this. The probe layer

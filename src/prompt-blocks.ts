@@ -2,11 +2,11 @@
 import type { TextSpan } from "./model.ts";
 
 /** Block pi renders one bullet per visible tool into, in its `tools` section. */
-export const AVAILABLE_TOOLS_BLOCK = { id: "base-prompt:available-tools", label: "Available Tools" };
+export const AVAILABLE_TOOLS_BLOCK = { id: "base-prompt:available-tools", label: "Tools" };
 /** Block pi renders tool guideline bullets into, in its `rules` section. */
-export const GUIDELINES_BLOCK = { id: "base-prompt:guidelines", label: "Guidelines" };
+export const GUIDELINES_BLOCK = { id: "base-prompt:guidelines", label: "Rules" };
 /** Block pi renders its own documentation into, in its `docs` section. */
-export const DOCUMENTATION_BLOCK = { id: "base-prompt:documentation", label: "Documentation" };
+export const DOCUMENTATION_BLOCK = { id: "base-prompt:documentation", label: "Docs" };
 
 /** Pi's normal emission order, also the blocks a custom prompt replaces. */
 export const BASE_PROMPT_BLOCKS = [AVAILABLE_TOOLS_BLOCK, GUIDELINES_BLOCK, DOCUMENTATION_BLOCK];

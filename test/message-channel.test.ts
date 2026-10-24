@@ -91,6 +91,20 @@ test("a moved unit is a deletion plus an addition, never a modification", () => 
 	]);
 });
 
+test("trimming exactly equal ends keeps the findings of the whole alignment", () => {
+	const [first, empty, last] = [unit("user", "one"), unit("assistant", " "), unit("tool-result", "done")];
+	assert.deepEqual(compareMessageUnits([first, empty, unit("user", "old"), last], [first, unit("user", "new"), last], EXACT), [{
+		type: "payload-change", change: "modified", part: "user",
+		lines: [{ type: "removed", text: "old" }, { type: "added", text: "new" }],
+	}]);
+	// The leading key-equal unit matches first, so the exactly equal last unit is the added one
+	const spaced = unit("user", "a  b");
+	const plain = unit("user", "a b");
+	assert.deepEqual(compareMessageUnits([plain], [spaced, plain], EXACT),
+		[{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "a b" }] }]);
+	assert.deepEqual(compareMessageUnits([first, empty], [first], EXACT), []);
+});
+
 test("tool-call names match without case only when asked, as for Anthropic OAuth names", () => {
 	const before = [unit("tool-call", "{}", "read")];
 	const after = [unit("tool-call", "{}", "Read")];

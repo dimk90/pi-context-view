@@ -18,6 +18,7 @@ import {
 import {
 	analyzeSystemPrompt,
 	isPiPromptPart,
+	type PromptChanges,
 	SYSTEM_PROMPT_ITEM_ID,
 	textTokens,
 	type ToolSlice,
@@ -32,6 +33,7 @@ import {
 	type InjectionSnapshot,
 	type RequestChange,
 	sumTokenDiffs,
+	type TextDiff,
 	type TokenDiff,
 } from "./model.ts";
 import { type MessageFilter, type ProjectedMessage, readProjection } from "./projection.ts";
@@ -157,17 +159,87 @@ function measureRequestPrompt(input: InjectionsInput, baseline: readonly Request
 		...replayedToolSlices(base, request.deletedTools, input.allTools)
 			.map((tool) => withToolChange(tool, "deleted")),
 	];
-	const items = markForcedPrompt(analyzeSystemPrompt(
+	const options = { homeDir: process.env.HOME, customPrompt: input.options.customPrompt };
+	const additions = { sources: input.promptSources };
+	const measured = markForcedPrompt(analyzeSystemPrompt(
 		forced ?? systemMessageText(request.state),
-		{ homeDir: process.env.HOME, customPrompt: input.options.customPrompt },
+		options,
 		tools,
-		{ sources: input.promptSources },
+		additions,
 		forced === undefined ? request.prompt : {},
 	), forced);
+	// Measure the edited prompt Pi would have sent only when a forced prompt replaced some edit
+	const edited = forced !== undefined && hasPromptChanges(request.prompt)
+		? analyzeSystemPrompt(systemMessageText(request.state), options, tools, additions, request.prompt)
+		: undefined;
+	const items = edited === undefined ? measured : withForcedEdits(measured, edited);
 	return {
 		items: withPromptDiffs(items, measureSessionPrompt(input, base, hiddenTools)),
 		hiddenTools: declarations.hiddenNames,
 	};
+}
+
+/** Whether a request changed any prompt section or content, not only tools. */
+function hasPromptChanges(prompt: PromptChanges): boolean {
+	return (prompt.sections?.size ?? 0) > 0 || (prompt.deleted?.length ?? 0) > 0;
+}
+
+/**
+ * Mark the System Prompt parts whose request edit a forced prompt replaced.
+ * Pi projects the forced text after every `context_with_system` handler, so
+ * captured section and content edits never reach the provider. A part the
+ * forced prompt still sent keeps its estimate; an added or modified part it
+ * lacks is appended at 0 tokens. An undivided forced prompt has no parts to
+ * mark: its Forced marker already says the whole prompt was replaced.
+ */
+function withForcedEdits(items: readonly InjectionItem[], edited: readonly InjectionItem[]): InjectionItem[] {
+	const partEdits = new Map<string, InjectionItem>();
+	const recordEdits = new Map<string, InjectionItem>();
+	for (const item of edited) {
+		if (item.id === SYSTEM_PROMPT_ITEM_ID) {
+			for (const part of item.children ?? []) if (part.change !== undefined) partEdits.set(part.id, part);
+		} else if ((item.kind === "context-file" || item.kind === "skills") && item.change !== undefined) {
+			// Generated instruction-file and skill sections become their own items
+			recordEdits.set(item.id, item);
+		}
+	}
+	return items.map((item) => item.id === SYSTEM_PROMPT_ITEM_ID
+		? withForcedPartEdits(item, partEdits)
+		: withSentForcedEdit(item, recordEdits.get(item.id)));
+}
+
+/** System Prompt with its sent parts marked and the edited parts it lacks appended at 0 tokens. */
+function withForcedPartEdits(prompt: InjectionItem, edits: ReadonlyMap<string, InjectionItem>): InjectionItem {
+	const { children, sections } = prompt;
+	if (children === undefined || sections === undefined || edits.size === 0) return prompt;
+	const sent = children.map((child) => withSentForcedEdit(child, edits.get(child.id)));
+	const sentIds = new Set(children.map((child) => child.id));
+	// Deleting a part the forced prompt lacks anyway changes nothing
+	const unsent = [...edits.values()].filter((edit) => !sentIds.has(edit.id) && edit.change !== "deleted")
+		.map((edit): InjectionItem => ({
+			id: edit.id, kind: edit.kind, source: edit.source, label: edit.label,
+			chars: 0, tokens: 0, text: "", forcedEdit: { text: edit.text, sent: false },
+		}));
+	return {
+		...prompt,
+		children: [...sent, ...unsent],
+		sections: [
+			...sections.map((section, index) => {
+				const forcedEdit = sent[index]?.forcedEdit;
+				return forcedEdit === undefined ? section : { ...section, forcedEdit };
+			}),
+			...unsent.map((part): InjectionSection => ({
+				label: part.label, text: "", tokens: 0, forcedEdit: part.forcedEdit,
+			})),
+		],
+	};
+}
+
+/** A sent item with the edit the forced prompt replaced, unless the forced prompt sent that very text. */
+function withSentForcedEdit(item: InjectionItem, edit: InjectionItem | undefined): InjectionItem {
+	if (edit === undefined) return item;
+	const text = edit.change === "deleted" ? "" : edit.text;
+	return text === item.text ? item : { ...item, forcedEdit: { text, sent: true } };
 }
 
 /**
@@ -438,7 +510,8 @@ interface DiffContext {
  * preview subheaders show the same diffs and markers as the rows.
  */
 function withItemDiff(item: InjectionItem, context: DiffContext, promptPart: boolean): InjectionItem {
-	if (item.dropped === true) return item;
+	// An unsent part stands for an edit, not text: its parent counts any session text it lacks
+	if (item.dropped === true || item.forcedEdit?.sent === false) return item;
 	const children = item.children ?? [];
 	if (children.length === 0) {
 		const base = itemBase(item, context, promptPart);
@@ -454,15 +527,17 @@ function withItemDiff(item: InjectionItem, context: DiffContext, promptPart: boo
 		};
 		if (!promptPart) return diffed;
 		const editors = partEditors(diffed);
+		const textDiff = diffed.diff === undefined ? undefined : partTextDiff(item, base, request);
 		return {
 			...diffed,
 			...(hasSavedChange(item, base, context) ? { savedChange: true } : {}),
 			...(editors === undefined ? {} : { editors }),
+			...(textDiff === undefined ? {} : { textDiff }),
 		};
 	}
 	const parts = item.id === SYSTEM_PROMPT_ITEM_ID;
 	const diffed = children.map((child) => withItemDiff(child, context, parts));
-	const sent = new Set(children.map((child) => child.id));
+	const sent = new Set(children.filter((child) => child.forcedEdit?.sent !== false).map((child) => child.id));
 	const sessionOnly = (context.sessionById.get(item.id)?.children ?? []).filter((child) => !sent.has(child.id));
 	const diff = sumTokenDiffs([
 		...diffed.map((child) => child.diff),
@@ -476,8 +551,20 @@ function withItemDiff(item: InjectionItem, context: DiffContext, promptPart: boo
 			...section,
 			...diffField(diffed[index]?.diff),
 			...(diffed[index]?.requestOnly === true ? { requestOnly: true } : {}),
+			...(diffed[index]?.textDiff === undefined ? {} : { textDiff: diffed[index]?.textDiff }),
 		})),
 	};
+}
+
+/**
+ * The texts behind one changed System Prompt part's diff, against the same
+ * base as its token diff. Undefined for a part with extension lines: their
+ * highlighted, annotated lines show the change, and their owners' rows
+ * split the diff, so one body would not match each row's share.
+ */
+function partTextDiff(item: InjectionItem, base: DiffSide | undefined, request: DiffSide): TextDiff | undefined {
+	if ((item.injectedReferences?.length ?? 0) > 0) return undefined;
+	return { base: base?.text ?? "", request: request.text };
 }
 
 /**

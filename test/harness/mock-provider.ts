@@ -29,6 +29,8 @@ export interface MockProvider {
 	readonly requests: readonly RecordedRequest[];
 	/** Queue replies for the next requests, in order. */
 	enqueue(...replies: MockReply[]): void;
+	/** Drop replies no request has taken yet. */
+	clearReplies(): void;
 	/** Resolve once at least `count` requests arrived; reject after `timeoutMs`. */
 	waitForRequests(count: number, timeoutMs?: number): Promise<void>;
 	close(): Promise<void>;
@@ -85,6 +87,7 @@ export async function startMockProvider(): Promise<MockProvider> {
 		baseUrls: { "openai-completions": `${origin}/v1`, "openai-responses": `${origin}/v1`, "anthropic-messages": origin },
 		requests,
 		enqueue: (...next) => { replies.push(...next); },
+		clearReplies: () => { replies.length = 0; },
 		waitForRequests: (count, timeoutMs = DEFAULT_WAIT_MS) => new Promise((resolve, reject) => {
 			if (requests.length >= count) return resolve();
 			const timer = setTimeout(() => {

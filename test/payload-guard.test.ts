@@ -17,7 +17,7 @@ function capture(model: GuardModel | undefined = MODEL, origin: CaptureOrigin = 
 	const baseline = [{ entryId: "s", message: { role: "system" as const, content: "prompt", toolsAdded: [TOOL], timestamp: 1 } }];
 	return {
 		id: 1, origin, requestModel: model,
-		baseline: { leafId: "s", messages: baseline },
+		baseline: { leafId: "s", messages: baseline }, effectivePrompt: "prompt",
 		...copyRequest(baseline, baseline.map(({ message }) => message)),
 	};
 }
@@ -107,7 +107,9 @@ for (const api of ["pi-virtual", "openai-completions"]) {
 }
 
 test("unknown routed model and unsupported API settle incomplete", async () => {
-	for (const request of [capture({ ...MODEL, api: "pi-virtual" }), capture({ ...MODEL, api: "other" })]) {
+	// pi-messages sends Pi's own context to its backend; no parser supports it yet
+	const apis = ["pi-virtual", "pi-messages", "other"];
+	for (const request of apis.map((api) => capture({ ...MODEL, api }))) {
 		const h = harness(request);
 		h.guard.accept(request, payload());
 		h.guard.confirm(1, { ...DISPATCH, api: request.requestModel?.api ?? "unknown" }, () => undefined);
@@ -170,6 +172,7 @@ for (const api of ["openai-completions", "openai-responses", "anthropic-messages
 		];
 		const request: CapturedRequest = {
 			id: 1, origin: "real-turn", requestModel: model, baseline: { leafId: "u", messages: baseline },
+			effectivePrompt: "you are pi",
 			...copyRequest(baseline, baseline.map(({ message }) => message)),
 		};
 		const h = harness(request);
@@ -262,21 +265,15 @@ test("RequestTracker pairs latest captures once, skips marked warm limits, and c
 	assert.deepEqual(tracker.pair({ max_tokens: 1 }), { type: "unpaired" });
 });
 
-test("DispatchConfirmer accepts either event first, falls back to assistant end, and consumes warm streams", () => {
+test("DispatchConfirmer hands out each request once and returns one that a new request replaced", () => {
 	const confirmer = new DispatchConfirmer<number>();
-	for (const source of ["stream", "assistant"] as const) {
-		assert.equal(confirmer.expect(1), undefined);
-		assert.equal(confirmer.confirm(source), 1);
-		assert.equal(confirmer.confirm(source), undefined);
-	}
+	assert.equal(confirmer.expect(1), undefined);
+	assert.equal(confirmer.take(), 1);
+	assert.equal(confirmer.take(), undefined);
 	confirmer.expect(2);
-	confirmer.noteWarmRefresh();
-	assert.equal(confirmer.confirm("stream"), undefined);
-	assert.equal(confirmer.confirm("assistant"), 2);
-	confirmer.expect(3);
-	assert.equal(confirmer.expect(4), 3);
-	assert.equal(confirmer.takeUnconfirmed(), 4);
-	confirmer.expect(5);
+	assert.equal(confirmer.expect(3), 2);
+	assert.equal(confirmer.take(), 3);
+	confirmer.expect(4);
 	confirmer.clear();
-	assert.equal(confirmer.confirm("stream"), undefined);
+	assert.equal(confirmer.take(), undefined);
 });

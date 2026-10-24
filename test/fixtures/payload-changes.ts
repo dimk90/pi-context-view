@@ -14,7 +14,7 @@ export const PAYLOAD_CHANGE_ORIGINAL = "XYZZY_PAYLOAD_CHANGE_MODIFY: original re
 export const PAYLOAD_CHANGE_MODIFIED = "XYZZY_PAYLOAD_CHANGE_MODIFY: modified in the provider payload.";
 export const PAYLOAD_CHANGE_DELETED = "XYZZY_PAYLOAD_CHANGE_DELETE: removed from the provider payload.";
 export const PAYLOAD_CHANGE_ADDED = "XYZZY_PAYLOAD_CHANGE_ADD: added to the provider payload.";
-const PAYLOAD_CHANGE_ANCHOR = "XYZZY_PAYLOAD_CHANGE_ANCHOR: unchanged request-only note.";
+export const PAYLOAD_CHANGE_ANCHOR = "XYZZY_PAYLOAD_CHANGE_ANCHOR: unchanged request-only note.";
 
 /** Fields shared by the supported providers' user messages. */
 interface PayloadMessage {

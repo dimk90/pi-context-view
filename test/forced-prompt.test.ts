@@ -94,7 +94,7 @@ test("a forced prompt extending Pi's sections keeps the section parts and its ad
 	assert.equal(base?.children?.some((child) => child.change !== undefined), false);
 	assert.deepEqual(
 		base?.children?.map((child) => child.label),
-		["Preamble", "Available Tools", "Guidelines", "Documentation", "Appended Prompt", "Current Dir",
+		["Preamble", "Tools", "Rules", "Docs", "Addendum", "Current Dir",
 			"Extension Additions"],
 	);
 	assert.equal(base?.children?.at(-1)?.text.trim(), "EXTRA INSTRUCTION");
@@ -180,4 +180,72 @@ test("Usage measures the forced prompt on a branch with no recorded system messa
 	const session = SessionManager.inMemory(CWD);
 	assert.equal(usagePreviews(session, forcedSnapshot(session, FORCED_SYSTEM_PROMPT)).get("system-prompt"),
 		FORCED_SYSTEM_PROMPT);
+});
+
+/** Injections items of a forced request whose structured `system` changes the forced text replaced. */
+function forcedEditItems(forcedPrompt: string, system: SystemChange[]): InjectionItem[] {
+	const session = SessionManager.inMemory(CWD);
+	session.appendMessage({
+		role: "system", content: "", timestamp: 1,
+		sections: {
+			preamble: "Recorded preamble", cwd: `<cwd>\n${CWD}\n</cwd>`,
+			review: "<review>\nReview the change.\n</review>", legacy: "<legacy>\nLegacy note.\n</legacy>",
+		},
+	});
+	const snapshot = buildInjectionsSnapshot({
+		snapshot: forcedSnapshot(session, forcedPrompt, system),
+		entries: session.getEntries(),
+		filterMessages: (messages) => messages,
+		options: { cwd: CWD },
+		allTools: [],
+		systemPrompt: "live prompt",
+		activeToolNames: [],
+	});
+	return snapshot.groups.flatMap((group) => group.items);
+}
+
+/** Section edits that every `forcedEditItems` request captured before Pi's forced projection. */
+const REPLACED_EDITS: SystemChange[] = [
+	{ type: "section", name: "review", text: "<review>\nReview the change and its tests.\n</review>" },
+	{ type: "section", name: "legacy", text: null },
+	{ type: "section", name: "checklist", text: "<checklist>\nRun the tests.\n</checklist>" },
+];
+
+test("Injections marks section edits a forced prompt replaced, without counting them", () => {
+	const forced = "Recorded preamble\n\n<cwd>\n/fixture\n</cwd>\n\n<review>\nReview the change.\n</review>\n\n"
+		+ "<legacy>\nLegacy note.\n</legacy>\n\nEXTRA INSTRUCTION";
+	const items = forcedEditItems(forced, REPLACED_EDITS);
+	const base = items.find((item) => item.id === "base-prompt");
+	const parts = new Map(base?.children?.map((child) => [child.label, child]));
+	assert.match(base?.text ?? "", /EXTRA INSTRUCTION/);
+	assert.doesNotMatch(base?.text ?? "", /Run the tests|and its tests/, "replaced edits are never counted");
+	assert.deepEqual(parts.get("review")?.forcedEdit, { text: "Review the change and its tests.", sent: true });
+	assert.equal(parts.get("review")?.text, "Review the change.");
+	assert.deepEqual(parts.get("legacy")?.forcedEdit, { text: "", sent: true });
+	assert.ok((parts.get("legacy")?.tokens ?? 0) > 0, "the forced prompt still sent the section the edit deleted");
+	assert.deepEqual(parts.get("checklist")?.forcedEdit, { text: "Run the tests.", sent: false });
+	assert.equal(parts.get("checklist")?.tokens, 0);
+	assert.equal(parts.get("checklist")?.diff, undefined);
+	// Nothing request-only reached the provider: the forced text matches the session's sections
+	for (const label of ["review", "legacy", "checklist"]) assert.equal(parts.get(label)?.requestOnly, undefined);
+	assert.equal(parts.get("Current Dir")?.forcedEdit, undefined);
+	// Preview sections mirror the child rows, edits included
+	assert.deepEqual(base?.sections?.map((section) => section.forcedEdit), base?.children?.map((child) => child.forcedEdit));
+	assert.equal(base?.tokens, base?.children?.reduce((sum, child) => sum + child.tokens, 0));
+});
+
+test("an undivided forced prompt adds no parts for the edits it replaced", () => {
+	const base = forcedEditItems(FORCED_SYSTEM_PROMPT, REPLACED_EDITS).find((item) => item.id === "base-prompt");
+	assert.equal(base?.children, undefined);
+	assert.equal(base?.change, "forced");
+	assert.equal(base?.forcedEdit, undefined);
+});
+
+test("a forced prompt marks no edit without section or content changes", () => {
+	const forced = `${buildSystemPrompt(OPTIONS)}\n\nEXTRA INSTRUCTION`;
+	const items = forcedEditItems(forced, [
+		{ type: "tool", name: "search", declaration: { name: "search", description: "Request search", parameters: {} } },
+	]);
+	assert.ok(items.every((item) => item.forcedEdit === undefined
+		&& (item.children ?? []).every((child) => child.forcedEdit === undefined)));
 });

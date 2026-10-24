@@ -101,7 +101,7 @@ test("an unregistered recorded tool and its prompt lines belong to unattributed"
 		source: UNREGISTERED_TOOL_SOURCE,
 	}]);
 	const tools = items.find((entry) => entry.id === "base-prompt")?.children
-		?.find((part) => part.label === "Available Tools");
+		?.find((part) => part.label === "Tools");
 	assert.ok(tools);
 	assert.deepEqual(items.find((entry) => entry.kind === "tool")?.source, AGGREGATE_SOURCE,
 		"the tool joins the unattributed group instead of forming its own");

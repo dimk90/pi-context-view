@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { InjectionSnapshot, InjectionItem } from "../src/model.ts";
-import { buildInjectionRows, collectItemsById, ListNavigator, PreviewScroller } from "../src/ui/injections-model.ts";
+import type { InjectionItem, InjectionSnapshot } from "../src/model.ts";
+import {
+	buildInjectionRows,
+	collectItemsById,
+	filterInjections,
+	type InjectionFilterMode,
+	ListNavigator,
+	PreviewScroller,
+} from "../src/ui/injections-model.ts";
 
 /** A neutral leaf: the messages and payload-change rows have kinds of their own. */
 function item(id: string, sourceId: string, native: boolean, tokens: number): InjectionItem {
@@ -233,4 +240,112 @@ test("unattributed message and payload rows are leaves with unknown editors, and
 	const savedRow = unchanged.find((row) => row.kind === "item");
 	assert.deepEqual([savedRow?.scope, savedRow?.editors], [undefined, undefined],
 		"an unchanged messages row has no change or editor status");
+});
+
+/** Filter by a plain substring, the way the view compares labels and content. */
+function filtered(
+	mode: InjectionFilterMode,
+	query: string,
+	content: (item: InjectionItem) => string = (entry) => entry.text,
+	source: InjectionSnapshot = snapshot(),
+) {
+	return { source, result: filterInjections(source, {
+		mode,
+		nameMatches: (label) => label.includes(query),
+		contentMatches: (entry) => content(entry).includes(query),
+	}) };
+}
+
+/** Kind, label, and matched flag of every row a filter leaves. */
+function rowSummary(result: ReturnType<typeof filtered>): Array<[string, string, boolean]> {
+	return buildInjectionRows(result.source, result.result)
+		.filter((row) => row.kind === "group" || row.kind === "item")
+		.map((row) => [row.kind, row.label, row.matched === true]);
+}
+
+test("filterInjections keeps a name match's ancestors as unmatched context", () => {
+	assert.deepEqual(rowSummary(filtered("name", "bash")), [
+		["group", "pi", false],
+		["item", "tool:builtin", false],
+		["item", "tool:builtin:bash", true],
+	]);
+});
+
+test("filterInjections keeps the whole subtree of a matching group or item", () => {
+	assert.deepEqual(rowSummary(filtered("name", "tool:builtin")).map(([, label, matched]) => [label, matched]), [
+		["pi", false],
+		["tool:builtin", true],
+		["tool:builtin:bash", true],
+		["tool:builtin:read", true],
+	]);
+	assert.deepEqual(rowSummary(filtered("name", "npm:")), [
+		["group", "npm:web", true],
+		["item", "web_search", false],
+	]);
+	// Rows inside a matching group still count as matches when their own label matches.
+	assert.deepEqual(rowSummary(filtered("name", "web")), [
+		["group", "npm:web", true],
+		["item", "web_search", true],
+	]);
+});
+
+test("filterInjections matches content through children, not their concatenated parent", () => {
+	const texts: Record<string, string> = {
+		"tool:builtin": "runs bash and reads files",
+		"tool:builtin:bash": "runs bash",
+		"tool:builtin:read": "reads files",
+		"skills": "unrelated",
+	};
+	const content = (entry: InjectionItem) => texts[entry.id] ?? "";
+	assert.deepEqual(rowSummary(filtered("content", "bash", content)), [
+		["group", "pi", false],
+		["item", "tool:builtin", false],
+		["item", "tool:builtin:bash", true],
+	]);
+
+	// Content only the aggregate carries keeps it alone, without unrelated children.
+	texts["tool:builtin"] = "aggregate-only notes";
+	assert.deepEqual(rowSummary(filtered("content", "aggregate-only", content)), [
+		["group", "pi", false],
+		["item", "tool:builtin", true],
+	]);
+	// Group labels are names, so content mode never matches them.
+	assert.deepEqual(rowSummary(filtered("content", "npm:web", content)), []);
+});
+
+test("filterInjections leaves estimates, diffs, change scopes, and the snapshot total unchanged", () => {
+	const { source, result } = filtered("name", "bash");
+	const rows = buildInjectionRows(source, result);
+	assert.equal(rows.at(-1)?.tokens, 230);
+	assert.deepEqual(rows.filter((row) => row.kind !== "separator" && row.kind !== "total").map((row) => row.tokens),
+		[200, 60, 40]);
+	assert.deepEqual(buildInjectionRows(source, filtered("name", "missing").result).map((row) => row.kind),
+		["separator", "total"]);
+
+	// Hiding a changed parent's other children must not read as a request-only removal.
+	const saved: InjectionItem = { ...item("saved", "pi", true, 5), diff: { added: 3, removed: 0 } };
+	const other: InjectionItem = { ...item("other", "pi", true, 5), diff: { added: 2, removed: 0 } };
+	const parent: InjectionItem = { ...item("parent", "pi", true, 10), children: [saved, other],
+		diff: { added: 5, removed: 0 } };
+	const changed: InjectionSnapshot = { groups: [{ source: parent.source, items: [parent], totalTokens: 10,
+		diff: parent.diff }], totalTokens: 10 };
+	const scopes = (rows: ReturnType<typeof buildInjectionRows>) => rows
+		.filter((row) => row.kind === "group" || row.kind === "item")
+		.map((row) => [row.label, row.scope, row.diff]);
+	const unfiltered = new Map(scopes(buildInjectionRows(changed)).map(([label, ...rest]) => [label, rest]));
+	const kept = scopes(buildInjectionRows(changed, filtered("name", "saved", undefined, changed).result));
+	assert.deepEqual(kept.map(([label]) => label), ["pi", "parent", "saved"]);
+	for (const [label, ...rest] of kept) assert.deepEqual(rest, unfiltered.get(label), `${String(label)} keeps its status`);
+});
+
+test("PreviewScroller.reveal leaves visible lines alone and scrolls hidden ones into context", () => {
+	const scroller = new PreviewScroller();
+	scroller.setExtent(100, 10);
+	assert.equal(scroller.reveal(5, 2), false);
+	assert.equal(scroller.reveal(40, 2), true);
+	assert.equal(scroller.offset, 38);
+	assert.equal(scroller.reveal(99, 2), true);
+	assert.equal(scroller.offset, 90, "clamped to the last full page");
+	assert.equal(scroller.reveal(1, 2), true);
+	assert.equal(scroller.offset, 0);
 });

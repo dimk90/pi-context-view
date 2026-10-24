@@ -1,11 +1,11 @@
 /**
- * Asynchronous child-process runner for launcher tests. Unlike `spawnSync`, it
+ * Asynchronous child-process runner for tests. Unlike `spawnSync`, it
  * leaves the event loop free, so concurrent tests overlap their processes.
  */
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 
-/** Default limit for one command; a hung launcher fails the test instead of the run. */
+/** Default limit for one command; a hung command fails the test instead of the run. */
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 /** Options for one command. */

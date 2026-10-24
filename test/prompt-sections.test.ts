@@ -49,12 +49,12 @@ test("a custom prefix can restore selected native XML sections without marking t
 	const sections = { tools: "- search: Search the web", docs: "Restored docs" };
 	const prompt = buildSystemPrompt({ cwd: CWD, customPrompt: "Custom prefix", sections });
 	const items = analyzeSystemPrompt(prompt, { customPrompt: "Custom prefix", sections }, [TOOL]);
-	assert.deepEqual(items[0].children?.filter((part) => part.dropped).map((part) => part.label), ["Guidelines"]);
+	assert.deepEqual(items[0].children?.filter((part) => part.dropped).map((part) => part.label), ["Rules"]);
 	const tool = items.find((item) => item.kind === "tool");
 	// Only the dropped guideline stays on the tool; the restored snippet counts in System Prompt.
 	assert.deepEqual(tool?.sections?.map((part) => [part.label, part.dropped, part.tokens > 0]),
-		[["Guidelines", true, false], ["Definition", undefined, true]]);
-	assert.equal(items[0].sections?.find((part) => part.label === "Available Tools")?.injectedReferences?.length, 1);
+		[["Rules", true, false], ["Definition", undefined, true]]);
+	assert.equal(items[0].sections?.find((part) => part.label === "Tools")?.injectedReferences?.length, 1);
 });
 
 test("section discovery ignores nested and fenced examples, including unclosed fences inside sections", () => {
@@ -63,7 +63,7 @@ test("section discovery ignores nested and fenced examples, including unclosed f
 		"<cwd>\n/fixture\n</cwd>\n\n<review>\nReal section\n</review>";
 	assert.deepEqual(findPromptSections(prompt).map((section) => section.name), ["addendum", "cwd", "review"]);
 	const parts = analyzeSystemPrompt(prompt, {})[0].children ?? [];
-	assert.equal(parts.find((part) => part.label === "Appended Prompt")?.text,
+	assert.equal(parts.find((part) => part.label === "Addendum")?.text,
 		"<rules>\nNested example\n</rules>\n```\nUnclosed inner fence");
 	assert.equal(parts.find((part) => part.label === "review")?.text, "Real section");
 });

@@ -13,6 +13,7 @@ import { compareMessageUnits } from "./messages.ts";
 import {
 	copyPayload, type PayloadCopy, type PayloadDeclaration, parsePayloadMessages, parsePayloadTools,
 } from "./payload.ts";
+import { resolveForcedPrompt } from "./request.ts";
 import { compareToolDeclarations } from "./tools.ts";
 
 /** Model identity and the capabilities message normalization reads. */
@@ -24,8 +25,10 @@ export interface GuardModel extends ModelIdentity {
 }
 
 /** What the guard reads from a capture, before releasing the transcript. */
-export interface GuardCapture extends ConvertibleCapture {
+export interface GuardCapture extends Omit<ConvertibleCapture, "forcedPrompt"> {
 	readonly id: number;
+	/** `ctx.getSystemPrompt()` at capture; the guard detects a forced prompt from it. */
+	readonly effectivePrompt: string;
 	readonly requestModel?: GuardModel;
 	/** Tools Pi left out of the request; their missing declarations are expected. */
 	readonly hiddenTools?: readonly string[];
@@ -106,7 +109,7 @@ export class PayloadGuard {
 	}
 
 	/**
-	 * Read identity once, without parsing in a stream handler. Physical identity
+	 * Read identity once, without parsing in the event handler. Physical identity
 	 * mismatches invalidate the result, never reparse. Virtual
 	 * requests use the dispatched model's API, not the payload shape.
 	 */
@@ -231,7 +234,9 @@ function reduceCapture(capture: GuardCapture, blockImages: boolean): ExpectedReq
 			.map(({ name, description }) => ({ name, description })),
 	};
 	try {
-		return { ...tools, transcript: convertCapturedRequest(capture, { blockImages }) };
+		const forcedPrompt = resolveForcedPrompt(capture);
+		const convertible = forcedPrompt === undefined ? capture : { ...capture, forcedPrompt };
+		return { ...tools, transcript: convertCapturedRequest(convertible, { blockImages }) };
 	} catch {
 		return tools;
 	}

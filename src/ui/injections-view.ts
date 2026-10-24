@@ -11,6 +11,8 @@ import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import {
 	buildInjectionRows,
 	collectItemsById,
+	filterInjections,
+	type InjectionFilterMode,
 	type InjectionRow,
 	ListNavigator,
 	PreviewScroller,
@@ -22,9 +24,10 @@ import {
 	capNoticeLines,
 	DEFAULT_TERMINAL_ROWS,
 	descriptionBlockRows,
+	fitHintRow,
 	fitLine,
 	fitToTerminalHeight,
-	hintRow,
+	type Hint,
 	isPageBackKey,
 	isPageForwardKey,
 	isStepBackKey,
@@ -44,6 +47,17 @@ import {
 import {
 	descriptionNoteLines, findingNotes, injectionsNotes, payloadCheck, payloadCheckLabel, requestOriginLabel,
 } from "./notes.ts";
+import {
+	findMatches,
+	highlightLine,
+	labelMatches,
+	MATCH_STEP_KEY_HINT,
+	matchStatus,
+	PreviewSearch,
+	SEARCH_KEY,
+	searchableContent,
+	SearchPrompt,
+} from "./search.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { statusBarLines } from "./status-bar.ts";
 import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
@@ -66,6 +80,9 @@ const MAX_TOKEN_VALUE_COLUMN = 54;
 const TOKEN_LEADER_GAP = 4;
 /** Spaces before each diff column, after the value column. */
 const DIFF_COLUMN_GAP = 2;
+/** Lines kept above a match scrolled into view, so it is read in context. */
+const SEARCH_CONTEXT_LINES = 2;
+const EMPTY_FILTER_MESSAGE = "No injections match the filter.";
 
 /** Everything the Injections view renders. */
 export interface InjectionsViewInput {
@@ -123,9 +140,18 @@ export class InjectionsView {
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
 	private readonly wheelScrollLines: number;
-	private readonly rows: InjectionRow[];
-	private readonly navigator: ListNavigator;
+	/** Unfiltered rows; they fix the value column so filtering never shifts it. */
+	private readonly allRows: InjectionRow[];
+	private rows: InjectionRow[];
+	private navigator: ListNavigator;
+	/** Unfiltered selection and scroll from before the filter, restored when the query is cleared or canceled. */
+	private unfilteredNavigator: ListNavigator | undefined;
 	private readonly itemsById: Map<string, InjectionItem>;
+	private readonly filter = new SearchPrompt();
+	private filterMode: InjectionFilterMode = "name";
+	/** Searchable content per item id, built on first use by a content filter. */
+	private readonly contentById = new Map<string, string>();
+	private readonly previewSearch = new PreviewSearch();
 	private readonly previewScroller = new PreviewScroller();
 	private previewItem: InjectionItem | undefined;
 	private previewLines: string[] | undefined;
@@ -146,9 +172,9 @@ export class InjectionsView {
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
 		this.wheelScrollLines = wheelScrollLines;
-		this.rows = buildInjectionRows(input.snapshot);
-		// The trailing separator and total belong to the fixed footer, not the viewport
-		this.navigator = new ListNavigator(this.rows.length - 2, 1);
+		this.allRows = buildInjectionRows(input.snapshot);
+		this.rows = this.allRows;
+		this.navigator = listNavigator(this.rows);
 		this.itemsById = collectItemsById(input.snapshot);
 	}
 
@@ -157,8 +183,19 @@ export class InjectionsView {
 			this.handlePreviewInput(data);
 			return;
 		}
+		if (this.filter.editing) {
+			this.handleFilterInput(data);
+			return;
+		}
 		if (matchesKey(data, Key.escape) || data === "q") {
-			this.done(undefined);
+			if (this.filter.active) this.clearFilter();
+			else this.done(undefined);
+			return;
+		}
+		if (data === SEARCH_KEY) {
+			if (!this.filter.active) this.unfilteredNavigator = this.navigator;
+			this.filter.edit();
+			this.clearCache();
 			return;
 		}
 		// One notch moves the selection one row, like a single step key.
@@ -203,40 +240,40 @@ export class InjectionsView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const headerLines = this.headerLines(width);
+		const filterLines = this.filterLines(width);
 		const warningLines = this.degradedWarningLines(width);
 		// A blank row separates warnings from the list; the emergency frame drops it with the other spacing
 		const warningRows = warningLines.length === 0 ? 0 : warningLines.length + 1;
 		// The status bar never collapses: the list and the description give way to it
 		const statusLines = this.statusLines(width);
 		const statusRows = descriptionBlockRows(statusLines);
-		const availableRows = Math.max(
-			1,
-			terminalRows - LIST_FIXED_LINE_COUNT - (headerLines.length - 1) - warningRows - statusRows,
-		);
+		const prefixRows = headerLines.length - 1 + filterLines.length + warningRows;
+		const availableRows = Math.max(1, terminalRows - LIST_FIXED_LINE_COUNT - prefixRows - statusRows);
 		const descriptionLines = this.fittedDescriptionLines(width, availableRows);
-		const extraLineCount = headerLines.length - 1 + warningRows + statusRows
-			+ descriptionBlockRows(descriptionLines);
+		const extraLineCount = prefixRows + statusRows + descriptionBlockRows(descriptionLines);
 		const viewport = calculateViewport(
 			this.navigator.selectableCount, terminalRows, LIST_FIXED_LINE_COUNT, extraLineCount,
 		);
 		this.navigator.setVisibleCount(viewport.visibleCount);
-		const lines: string[] = [border, "", ...headerLines, "", ...warningLines, ...(warningRows > 0 ? [""] : [])];
-		const listLines = this.listLines(width);
+		const lines: string[] = [
+			border, "", ...headerLines, "", ...filterLines, ...warningLines, ...(warningRows > 0 ? [""] : []),
+		];
+		const listLines = this.navigator.selectableCount === 0
+			? [this.fit(theme.fg("muted", `${BODY_INDENT}${EMPTY_FILTER_MESSAGE}`), width)]
+			: this.listLines(width);
 		lines.push(...listLines);
 		if (viewport.showScroll) lines.push(this.scrollLine(width));
 		const total = this.totalLine(width);
 		lines.push("", total);
 		if (statusLines.length > 0) lines.push("", ...statusLines);
-		const hints = this.fit(hintRow(theme, [
-			[STEP_KEY_HINT, "Navigate"], ["Enter", "Preview"], ["Esc", "Close"],
-		]), width);
+		const hints = fitHintRow(theme, this.listHints(), width);
 		const tail = [...(descriptionLines.length > 0 ? ["", ...descriptionLines] : []), "", hints, "", border];
 		// Fill the terminal so the overlay hides the chat, keeping the list, total, and bar together
 		while (lines.length + tail.length < terminalRows) lines.push("");
 		lines.push(...tail);
 
 		const fittedLines = lines.length <= terminalRows ? lines : compactListLines({
-			border, header: this.headerLines(width, true), warnings: warningLines,
+			border, header: this.headerLines(width, true), filter: filterLines.slice(0, 1), warnings: warningLines,
 			selected: listLines[this.navigator.selected - this.navigator.offset],
 			total, status: statusLines, hints, terminalRows,
 		});
@@ -251,11 +288,183 @@ export class InjectionsView {
 		this.clearCache();
 	}
 
+	// === List filter ===
+
+	/**
+	 * Keys while the filter prompt is open: printable keys edit the query,
+	 * the arrow and page keys still move the selection, Tab switches between
+	 * names and content, Enter keeps the filter and opens the selected row,
+	 * and Escape drops the filter.
+	 */
+	private handleFilterInput(data: string): void {
+		if (matchesKey(data, Key.escape)) {
+			this.cancelFilter();
+			return;
+		}
+		if (matchesKey(data, Key.enter)) {
+			if (this.filter.active) {
+				this.filter.submit();
+				this.openPreview();
+			} else {
+				this.cancelFilter();
+			}
+			this.clearCache();
+			return;
+		}
+		if (matchesKey(data, Key.tab)) {
+			this.filterMode = this.filterMode === "name" ? "content" : "name";
+			this.applyFilter();
+			return;
+		}
+		const wheel = parseWheelDirection(data);
+		if (wheel !== undefined) {
+			if (this.navigator.moveBy(wheel)) this.clearCache();
+		} else if (matchesKey(data, Key.up)) {
+			if (this.navigator.moveBy(-1)) this.clearCache();
+		} else if (matchesKey(data, Key.down)) {
+			if (this.navigator.moveBy(1)) this.clearCache();
+		} else if (matchesKey(data, Key.pageUp)) {
+			if (this.navigator.page(-1)) this.clearCache();
+		} else if (matchesKey(data, Key.pageDown)) {
+			if (this.navigator.page(1)) this.clearCache();
+		} else if (this.filter.type(data)) {
+			this.applyFilter();
+		} else {
+			// The cursor may have moved without changing the query.
+			this.clearCache();
+		}
+	}
+
+	/** Rebuild rows for the current query, selecting the first row that matched itself. */
+	private applyFilter(): void {
+		const pattern = this.filter.pattern;
+		if (pattern === undefined) {
+			this.restoreUnfilteredRows();
+			return;
+		}
+		const filtered = filterInjections(this.input.snapshot, {
+			mode: this.filterMode,
+			nameMatches: (label) => labelMatches(label, pattern),
+			contentMatches: (item) => pattern.test(this.contentOf(item)),
+		});
+		const rows = buildInjectionRows(this.input.snapshot, filtered);
+		this.rows = rows;
+		this.navigator = listNavigator(rows);
+		this.navigator.moveTo(Math.max(0, rows.findIndex((row) => isMatchedRow(row))));
+		this.clearCache();
+	}
+
+	/** Drop the filter and restore every row, keeping the selected row selected. */
+	private clearFilter(): void {
+		const selected = this.selectedRowKey();
+		this.filter.clear();
+		this.unfilteredNavigator = undefined;
+		this.showRows(this.allRows, selected);
+	}
+
+	/** Drop the filter being typed and return to the selection and scroll from before it. */
+	private cancelFilter(): void {
+		this.filter.clear();
+		this.restoreUnfilteredRows();
+		this.unfilteredNavigator = undefined;
+	}
+
+	/** Show every row with the navigator saved before filtering, or keep the selected row without one. */
+	private restoreUnfilteredRows(): void {
+		if (this.unfilteredNavigator === undefined) {
+			this.showRows(this.allRows, this.selectedRowKey());
+			return;
+		}
+		this.rows = this.allRows;
+		this.navigator = this.unfilteredNavigator;
+		this.clearCache();
+	}
+
+	/** Replace the visible rows and reselect the row with `key`, or the first row. */
+	private showRows(rows: InjectionRow[], key: string | undefined): void {
+		this.rows = rows;
+		this.navigator = listNavigator(rows);
+		this.navigator.moveTo(Math.max(0, rows.findIndex((row) => rowKey(row) === key)));
+		this.clearCache();
+	}
+
+	private selectedRowKey(): string | undefined {
+		if (this.navigator.selectableCount === 0) return undefined;
+		const row = this.rows[this.navigator.selected];
+		return row === undefined ? undefined : rowKey(row);
+	}
+
+	/**
+	 * Searchable content of one item, cached for repeated keystrokes. JSON runs
+	 * expand as the preview shows them, so a query that keeps a row also finds
+	 * its match once the preview opens.
+	 */
+	private contentOf(item: InjectionItem): string {
+		let content = this.contentById.get(item.id);
+		if (content === undefined) {
+			const parts = item.sections?.length ? item.sections : [item];
+			content = searchableContent(parts.map((part) => expandJsonSpan(part.text, part.jsonSpan)).join(""));
+			this.contentById.set(item.id, content);
+		}
+		return content;
+	}
+
+	/** Prompt row and its trailing blank row, shown while a filter is typed or kept. */
+	private filterLines(width: number): string[] {
+		if (!this.filter.editing && !this.filter.active) return [];
+		const count = this.rows.filter(isMatchedRow).length;
+		const status = matchStatus(this.filter.active, count, undefined);
+		return [this.filter.renderAfter(this.theme, width, this.filterModeSwitcher(), status), ""];
+	}
+
+	/**
+	 * `◉ Name | ○ Content >` lead of the filter prompt, marked like pi's own scope toggles:
+	 * the active mode `◉` in bold accent, the other `○` dim.
+	 */
+	private filterModeSwitcher(): string {
+		const theme = this.theme;
+		const mode = (value: InjectionFilterMode, label: string): string =>
+			value === this.filterMode ? theme.bold(theme.fg("accent", `◉ ${label}`)) : theme.fg("dim", `○ ${label}`);
+		return `${mode("name", "Name")}${theme.fg("dim", " | ")}${mode("content", "Content")}${theme.fg("dim", " > ")}`;
+	}
+
+	/** List hints for the plain list, an open filter prompt, or a kept filter. */
+	private listHints(): Hint[] {
+		if (this.filter.editing) {
+			// The prompt shows both modes; the hint only names the key that switches them
+			return [
+				["↑↓", "Navigate"],
+				["Tab", "Mode"],
+				["Enter", "Preview"],
+				["Esc", "Clear"],
+			];
+		}
+		return [
+			[STEP_KEY_HINT, "Navigate"],
+			["Enter", "Preview"],
+			[SEARCH_KEY, "Filter", true],
+			["Esc", this.filter.active ? "Clear" : "Close"],
+		];
+	}
+
 	// === Preview mode ===
 
 	private handlePreviewInput(data: string): void {
+		if (this.previewSearch.prompt.editing) {
+			this.handlePreviewSearchInput(data);
+			return;
+		}
 		if (matchesKey(data, Key.escape) || data === "q") {
 			this.closePreview();
+			return;
+		}
+		if (data === SEARCH_KEY) {
+			this.previewSearch.edit(this.previewScroller.offset);
+			this.clearCache();
+			return;
+		}
+		if (data === "n" || data === "N") {
+			if (this.previewSearch.step(data === "n" ? 1 : -1)) this.clearCache();
 			return;
 		}
 		const wheel = parseWheelDirection(data);
@@ -278,6 +487,36 @@ export class InjectionsView {
 		}
 	}
 
+	/**
+	 * Keys while the preview search prompt is open: printable keys edit the
+	 * query, the arrow and page keys still scroll, Enter keeps the query, and
+	 * Escape drops it.
+	 */
+	private handlePreviewSearchInput(data: string): void {
+		const search = this.previewSearch;
+		const wheel = parseWheelDirection(data);
+		if (matchesKey(data, Key.escape)) {
+			search.clear();
+		} else if (matchesKey(data, Key.enter)) {
+			if (search.prompt.active) search.prompt.submit();
+			else search.clear();
+		} else if (wheel !== undefined) {
+			this.previewScroller.scrollBy(wheel * this.wheelScrollLines);
+		} else if (matchesKey(data, Key.up)) {
+			this.previewScroller.scrollBy(-1);
+		} else if (matchesKey(data, Key.down)) {
+			this.previewScroller.scrollBy(1);
+		} else if (matchesKey(data, Key.pageUp)) {
+			this.previewScroller.page(-1);
+		} else if (matchesKey(data, Key.pageDown)) {
+			this.previewScroller.page(1);
+		} else {
+			search.type(data);
+		}
+		this.clearCache();
+	}
+
+	/** Open the selected item; a content filter carries its query into the preview search. */
 	private openPreview(): void {
 		const row = this.rows[this.navigator.selected];
 		if (row?.kind !== "item") return;
@@ -286,11 +525,17 @@ export class InjectionsView {
 		this.previewItem = item;
 		this.clearPreviewContent();
 		this.previewScroller.reset();
+		this.previewSearch.clear();
+		if (this.filter.active && this.filterMode === "content") {
+			this.previewSearch.prompt.set(this.filter.query);
+			this.previewSearch.restart();
+		}
 		this.clearCache();
 	}
 
 	private closePreview(): void {
 		this.previewItem = undefined;
+		this.previewSearch.clear();
 		this.clearPreviewContent();
 		this.clearCache();
 	}
@@ -305,15 +550,25 @@ export class InjectionsView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const wrapped = this.getPreviewLines(width, item);
+		const search = this.previewSearch;
+		const searchRowCount = search.prompt.editing || search.prompt.active ? 2 : 0;
 		const descriptionLines = previewLegendLines(theme, [item], {
 			width,
-			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
+			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT - searchRowCount,
 			contentLineCount: wrapped.length,
 		}, findingNotes([item, ...(item.children ?? [])]).map((note) => note.text), previewDiffBase(item));
 		const viewport = calculateViewport(
-			wrapped.length, terminalRows, PREVIEW_FIXED_LINE_COUNT, descriptionBlockRows(descriptionLines),
+			wrapped.length,
+			terminalRows,
+			PREVIEW_FIXED_LINE_COUNT,
+			searchRowCount + descriptionBlockRows(descriptionLines),
 		);
 		this.previewScroller.setExtent(wrapped.length, viewport.visibleCount);
+		const revealLine = search.sync(wrapped);
+		if (revealLine !== undefined) this.previewScroller.reveal(revealLine, SEARCH_CONTEXT_LINES);
+		const searchLines = searchRowCount === 0
+			? []
+			: [search.prompt.render(theme, width, "Search", search.status), ""];
 
 		const lines: string[] = [border, ""];
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(item.label)));
@@ -325,7 +580,9 @@ export class InjectionsView {
 		const note = item.diffOnly === true
 			? theme.fg("dim", " · ") + theme.fg("muted", DIFF_ONLY_NOTE)
 			: "";
-		const marker = stateMarkers(theme, { moved: item.moved, change: item.change, requestOnly: item.requestOnly });
+		const marker = stateMarkers(theme, {
+			moved: item.moved, change: item.change, forcedEdit: item.forcedEdit, requestOnly: item.requestOnly,
+		});
 		// Drop the marker first when space runs out, then the accounting note, then the diff
 		const headerWidth = visibleWidth(title) + visibleWidth(meta) + 2;
 		const fitsDiff = headerWidth + visibleWidth(diff) <= width;
@@ -333,28 +590,34 @@ export class InjectionsView {
 		const fitsMarker = fitsNote && headerWidth + visibleWidth(diff) + visibleWidth(note) + visibleWidth(marker) <= width;
 		lines.push(this.spread(title,
 			`${meta}${fitsDiff ? diff : ""}${fitsNote ? note : ""}${fitsMarker ? marker : ""} `, width));
-		lines.push("");
+		lines.push("", ...searchLines);
 
 		const start = this.previewScroller.offset;
 		for (let index = start; index < start + viewport.visibleCount; index++) {
-			lines.push(wrapped[index] ?? "");
+			lines.push(search.highlight(theme, wrapped[index] ?? "", index));
 		}
 
 		if (viewport.showScroll) lines.push(this.previewScrollLine(width, wrapped.length));
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
-		lines.push(
-			this.fit(
-				hintRow(this.theme, [
-					[STEP_KEY_HINT, "Scroll"],
-					["PgUp/PgDn", "Page"],
-					["Esc", "Back"],
-				]),
-				width,
-			),
-		);
+		lines.push(fitHintRow(this.theme, this.previewHints(), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
+	}
+
+	/** Preview hints for plain scrolling, an open search prompt, or a kept search. */
+	private previewHints(): Hint[] {
+		const prompt = this.previewSearch.prompt;
+		if (prompt.editing) return [["↑↓", "Scroll"], ["Enter", "Done"], ["Esc", "Clear"]];
+		if (prompt.active) {
+			return [
+				[STEP_KEY_HINT, "Scroll"],
+				[MATCH_STEP_KEY_HINT, "Next/Prev"],
+				[SEARCH_KEY, "Search", true],
+				["Esc", "Back"],
+			];
+		}
+		return [[STEP_KEY_HINT, "Scroll"], ["PgUp/PgDn", "Page"], [SEARCH_KEY, "Search", true], ["Esc", "Back"]];
 	}
 
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
@@ -450,12 +713,23 @@ export class InjectionsView {
 		return this.fit(`${BODY_INDENT}${content}`, width);
 	}
 
+	/** Mark a name filter's query inside the rendered label of a row it matched. */
+	private highlightLabel(row: InjectionRow, label: string): string {
+		const pattern = this.filter.pattern;
+		if (pattern === undefined || this.filterMode !== "name" || !isMatchedRow(row)) return label;
+		const ranges = findMatches([label], pattern)
+			.flatMap((match) => match.segments)
+			.map((segment) => ({ start: segment.start, end: segment.end, current: false }));
+		return ranges.length === 0 ? label : highlightLine(this.theme, label, ranges);
+	}
+
 	/**
 	 * Choose the earliest useful shared value column, capped on wide terminals,
-	 * and size the diff columns from the widest `+N` and `-N` in the whole tree.
+	 * and size the diff columns from the widest `+N` and `-N` in the whole tree,
+	 * unfiltered so a filter never shifts them.
 	 */
 	private injectionColumns(width: number): InjectionColumns {
-		const contentRows = this.rows.filter((row) => row.kind !== "separator");
+		const contentRows = this.allRows.filter((row) => row.kind !== "separator");
 		const labelWidth = Math.max(1, ...contentRows.map((row) => visibleWidth(this.plainRowLabel(row))));
 		const tokenWidth = Math.max(
 			1,
@@ -486,10 +760,13 @@ export class InjectionsView {
 		selected: boolean,
 	): string {
 		const labelWidth = Math.max(1, columns.value - 1);
-		const left = fitLine(this.styledRowLabel(row, selected, labelWidth), labelWidth);
+		const left = this.highlightLabel(row, fitLine(this.styledRowLabel(row, selected, labelWidth), labelWidth));
 		const diffOnly = isDiffOnly(row);
 		const value = diffOnly ? "" : row.tokens.toLocaleString("en-US").padStart(columns.valueWidth);
-		const leader = this.tokenLeader(columns.value - visibleWidth(left) + (diffOnly ? columns.valueWidth : 0));
+		const leader = this.tokenLeader(
+			columns.value - visibleWidth(left) + (diffOnly ? columns.valueWidth : 0),
+			!diffOnly,
+		);
 		const tokens = row.kind === "total"
 			? this.theme.bold(this.theme.fg("text", value))
 			: this.theme.fg(selected ? "accent" : "muted", value);
@@ -535,10 +812,10 @@ export class InjectionsView {
 		return row.kind === "item" ? stateMarkers(this.theme, row) : "";
 	}
 
-	/** Fill a label/value gap with dim dots, retaining spaces at both ends. */
-	private tokenLeader(width: number): string {
+	/** Fill a label/value gap with dim dots, omitting the trailing space for an empty value. */
+	private tokenLeader(width: number, trailingSpace = true): string {
 		if (width < 3) return " ".repeat(Math.max(0, width));
-		return ` ${this.theme.fg("dim", ".".repeat(width - 2))} `;
+		return ` ${this.theme.fg("dim", ".".repeat(width - (trailingSpace ? 2 : 1)))}${trailingSpace ? " " : ""}`;
 	}
 
 	/** Unstyled hierarchy label used to keep the value column stable while scrolling. */
@@ -588,7 +865,8 @@ export class InjectionsView {
 
 	/** The selected row's wrapped fields, or one empty reserved line without a change or marker. */
 	private statusLines(width: number): string[] {
-		const row = this.rows[this.navigator.selected];
+		// An empty filter result selects nothing; its rows are only the footer
+		const row = this.navigator.selectableCount === 0 ? undefined : this.rows[this.navigator.selected];
 		const lines = row === undefined ? [] : statusBarLines(this.theme, row, width);
 		return lines.length > 0 ? lines : [""];
 	}
@@ -617,7 +895,8 @@ export class InjectionsView {
 	 */
 	private fittedDescriptionLines(width: number, availableRows: number): string[] {
 		const lines = this.descriptionLines(width);
-		const rowCount = this.navigator.selectableCount;
+		// An empty filter result still shows its one-row message
+		const rowCount = Math.max(1, this.navigator.selectableCount);
 		const floor = Math.min(LIST_DESCRIPTION_MIN_ROWS, rowCount);
 		const viewport = calculateViewport(rowCount, availableRows - descriptionBlockRows(lines), 0);
 		return viewport.visibleCount >= floor ? lines : [];
@@ -649,10 +928,28 @@ export class InjectionsView {
 	}
 }
 
+/** Navigator over rows whose trailing separator and total belong to the fixed footer, not the viewport. */
+function listNavigator(rows: readonly InjectionRow[]): ListNavigator {
+	return new ListNavigator(rows.length - 2, 1);
+}
+
+/** Whether a filter matched the row itself rather than keeping it as context. */
+function isMatchedRow(row: InjectionRow): boolean {
+	return (row.kind === "group" || row.kind === "item") && row.matched === true;
+}
+
+/** Identity that survives rebuilding rows for a different filter. */
+function rowKey(row: InjectionRow): string {
+	if (row.kind === "item") return `item:${row.itemId}`;
+	return `${row.kind}:${row.label}`;
+}
+
 /** Parts of an emergency list frame, in which the bar has priority over frame spacing. */
 interface CompactListInput {
 	readonly border: string;
 	readonly header: readonly string[];
+	/** The filter prompt row, without its trailing blank row; empty when no filter is shown. */
+	readonly filter: readonly string[];
 	readonly warnings: readonly string[];
 	readonly selected?: string;
 	readonly total: string;
@@ -663,13 +960,15 @@ interface CompactListInput {
 
 /**
  * When even a one-row list cannot fit, remove spare spacing and the title.
- * Keep capture status, degraded reasons, the selected row, the total, and the
- * bar between borders; add hints only if they fit, after empty rows that fill
+ * Keep capture status, the filter prompt, degraded reasons, the selected row,
+ * the total, and the bar between borders; add hints only if they fit, after empty rows that fill
  * the remaining height. Below that physical minimum, clip content.
  */
 function compactListLines(input: CompactListInput): string[] {
-	const { border, header, warnings, selected, total, status, hints, terminalRows } = input;
-	const lines = [border, ...header, ...warnings, ...(selected === undefined ? [] : [selected]), total, ...status];
+	const { border, header, filter, warnings, selected, total, status, hints, terminalRows } = input;
+	const lines = [
+		border, ...header, ...filter, ...warnings, ...(selected === undefined ? [] : [selected]), total, ...status,
+	];
 	const tail = lines.length + 2 <= terminalRows ? [hints, border] : [border];
 	while (lines.length + tail.length < terminalRows) lines.push("");
 	return fitToTerminalHeight([...lines, ...tail], terminalRows, border);

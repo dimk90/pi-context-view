@@ -217,7 +217,7 @@ test("analyzeSystemPrompt breaks the System Prompt into the parts pi assembles i
 
 	const items = analyzeSystemPrompt(systemPrompt, {}, tools);
 	const base = items.find((entry) => entry.id === "base-prompt");
-	const parts = ["Preamble", "Available Tools", "Guidelines", "Documentation", "Appended Prompt", "Current Dir"];
+	const parts = ["Preamble", "Tools", "Rules", "Docs", "Addendum", "Current Dir"];
 	assert.deepEqual(base?.children?.map((child) => child.label), parts);
 	assert.deepEqual(base?.sections?.map((section) => section.label), parts);
 	assert.deepEqual(
@@ -682,11 +682,11 @@ test("analyzeSystemPrompt marks the parts a replaced prompt drops without counti
 	}
 	assert.deepEqual(
 		findItem(items, "tool:npm:web:search")?.sections?.map((section) => section.label),
-		["Available Tools", "Guidelines", "Definition"],
+		["Tools", "Rules", "Definition"],
 	);
 	assert.deepEqual(
 		findItem(items, "tool:builtin:read")?.sections?.map((section) => section.label),
-		["Available Tools", "Definition"],
+		["Tools", "Definition"],
 	);
 });
 
