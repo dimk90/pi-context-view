@@ -32,14 +32,14 @@ test("colorize paints a literal color independently of the theme", () => {
 	const theme = createTheme("truecolor");
 
 	assert.equal(colorize(theme, "#80ff01", "■"), "\u001b[38;2;128;255;1m■\u001b[39m");
-	// Repeating a color reuses the cached literal theme instead of rebuilding it.
+	// Repeating a color reuses the cached literal theme instead of rebuilding it
 	assert.equal(colorize(theme, "#80ff01", "⛶"), "\u001b[38;2;128;255;1m⛶\u001b[39m");
 });
 
 test("colorize down-converts a literal color for a 256-color terminal", () => {
 	const limited = createTheme("256color");
 
-	// pi's own conversion: the closest 6x6x6 cube entry, here (2, 5, 0).
+	// pi's own conversion: the closest 6x6x6 cube entry, here (2, 5, 0)
 	assert.equal(colorize(limited, "#80ff01", "■"), "\u001b[38;5;118m■\u001b[39m");
 	assert.equal(colorize(limited, "#000000", "■"), "\u001b[38;5;16m■\u001b[39m");
 	assert.equal(colorize(limited, "accent", "■"), limited.fg("accent", "■"));

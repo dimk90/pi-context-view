@@ -54,7 +54,7 @@ test("SilentProbe sanitizes and filters only exact probe identities", async () =
 
 	probe.recordMessage(probeUser);
 	probe.recordMessage(probeAssistant);
-	// An already empty prompt needs no replacement.
+	// An already empty prompt needs no replacement
 	assert.equal(probe.sanitizeMessage(probeUser), undefined);
 	const sanitized = probe.sanitizeMessage(probeAssistant);
 	assert.equal(sanitized?.role, "assistant");
@@ -131,7 +131,7 @@ test("SilentProbe claims its run by token when an input transform rewrites the p
 	const { filter, probe } = createProbe();
 	const attempt = probe.start(1_000);
 
-	// Another extension prepends instructions to the synthetic empty prompt.
+	// Another extension prepends instructions to the synthetic empty prompt
 	const transformed = "Additional instructions\n";
 	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), true);
 	assert.equal(probe.beginRun("user", attempt.token), "claimed", "rewritten text must not hide the probe run");
@@ -150,13 +150,13 @@ test("SilentProbe leaves an unattributed run untouched and fails the attempt", a
 	const { probe } = createProbe();
 	const attempt = probe.start(1_000);
 
-	// A run without the token may belong to the user or to another extension.
+	// A run without the token may belong to the user or to another extension
 	assert.equal(probe.beginRun("user", undefined), "foreign");
 	assert.equal(probe.isCurrentRun, false, "an unattributed run must not arm the abort guard");
 	const result = await attempt.completion;
 	assert.equal(result.status === "failed" ? result.cause : undefined, "foreign-run");
 
-	// A delayed probe run is still claimed, so it is aborted and sanitized.
+	// A delayed probe run is still claimed, so it is aborted and sanitized
 	assert.equal(probe.beginRun("user", attempt.token), "claimed");
 	assert.equal(probe.isCurrentRun, true);
 	assert.equal(probe.settle(), true);
@@ -316,7 +316,7 @@ test("SilentProbe filters restored identities without consuming the probe attemp
 	assert.deepEqual(filter.filterMessages([probeUser, emptyRealUser]), [emptyRealUser]);
 	assert.deepEqual(filter.syntheticMessages, [{ role: "user", timestamp: 10 }]);
 
-	// Restoration must not consume this runtime's single probe attempt.
+	// Restoration must not consume this runtime's single probe attempt
 	assert.equal(probe.isCurrentRun, false);
 	const attempt = probe.start(1_000);
 	assert.equal(attempt.started, true);

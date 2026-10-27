@@ -7,6 +7,7 @@ import type { AssistantMessage, SystemMessage, Tool } from "@earendil-works/pi-a
 import { type ConvertibleCapture, convertCapturedRequest, renderExpectedUnits } from "../src/capture/adjustments.ts";
 import type { GuardModel } from "../src/capture/guard.ts";
 import { compareMessageUnits, diffLines, type MessageUnit } from "../src/capture/messages.ts";
+import { RESPONSES_TOOL_REMOVAL_NOTICE } from "../src/capture/payload.ts";
 import { copyRequest } from "../src/capture/request.ts";
 import type { RequestMessage } from "../src/snapshot.ts";
 
@@ -165,6 +166,36 @@ test("system messages render at their positions, collapse without support, and y
 	const converted = convertCapturedRequest(capture(messages, "Forced."), { blockImages: false });
 	const forced = renderExpectedUnits(converted, keeps);
 	assert.deepEqual(forced, [unit("system", "Forced."), unit("user", "one"), unit("user", "two")]);
+});
+
+test("Responses additional tools add Pi's incremental and removal notices only with mid-conversation system messages", () => {
+	const tool = (name: string, description = `${name} tool.`): Tool => ({ name, description, parameters: {} });
+	const system = (change: Pick<SystemMessage, "toolsAdded" | "toolsRemoved">): SystemMessage =>
+		({ role: "system", content: "", ...change, timestamp: 2 });
+	const messages = [
+		{ ...LEADING, toolsAdded: [tool("read")] }, user("one"),
+		system({ toolsAdded: [tool("write")] }), user("two"),
+		system({ toolsRemoved: [{ name: "read" }, { name: "write" }] }), user("three"),
+		system({ toolsAdded: [tool("write", "New.")], toolsRemoved: [{ name: "write" }] }), user("four"),
+	];
+	const model: GuardModel = {
+		...VISION, api: "openai-responses",
+		compat: { supportsMidConvoSystemMessages: true, supportsAdditionalTools: true },
+	};
+	const systemTexts = expected(messages, model).filter((item) => item.part === "system").map((item) => item.text);
+	assert.equal(systemTexts.length, 6, "one notice before each later additional_tools item");
+	assert.equal(systemTexts[0], "Base.\n\n<cwd>/a</cwd>");
+	assert.match(systemTexts[1], /^This is an incremental tools update\./);
+	assert.doesNotMatch(systemTexts[1], /Still unavailable/);
+	assert.equal(systemTexts[3].trim(), `${RESPONSES_TOOL_REMOVAL_NOTICE}\n- read\n- write`);
+	assert.match(systemTexts[4], /\nStill unavailable: read\.$/, "a redefinition makes only its own tool available");
+	assert.equal(systemTexts[5], "", "a redefinition announces no removal");
+
+	for (const compat of [{ supportsAdditionalTools: true }, { supportsMidConvoSystemMessages: true, supportsToolSearch: true }]) {
+		const notices = expected(messages, { ...model, compat }).filter((item) => item.part === "system"
+			&& (item.text.includes("incremental tools update") || item.text.includes(RESPONSES_TOOL_REMOVAL_NOTICE)));
+		assert.deepEqual(notices, [], `no notices with ${JSON.stringify(compat)}`);
+	}
 });
 
 for (const { model, sameText } of [

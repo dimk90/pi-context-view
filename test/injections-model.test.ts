@@ -109,7 +109,7 @@ test("PreviewScroller clamps scrolling to the wrapped extent", () => {
 	assert.equal(scroller.maxOffset, 14);
 	assert.equal(scroller.visibleEnd, 20);
 
-	// Re-declaring a smaller extent (narrower wrap) keeps the offset valid.
+	// Re-declaring a smaller extent (narrower wrap) keeps the offset valid
 	scroller.setExtent(10, 6);
 	assert.equal(scroller.offset, 4);
 	assert.equal(scroller.visibleEnd, 10);
@@ -282,7 +282,7 @@ test("filterInjections keeps the whole subtree of a matching group or item", () 
 		["group", "npm:web", true],
 		["item", "web_search", false],
 	]);
-	// Rows inside a matching group still count as matches when their own label matches.
+	// Rows inside a matching group still count as matches when their own label matches
 	assert.deepEqual(rowSummary(filtered("name", "web")), [
 		["group", "npm:web", true],
 		["item", "web_search", true],
@@ -303,13 +303,13 @@ test("filterInjections matches content through children, not their concatenated 
 		["item", "tool:builtin:bash", true],
 	]);
 
-	// Content only the aggregate carries keeps it alone, without unrelated children.
+	// Content only the aggregate carries keeps it alone, without unrelated children
 	texts["tool:builtin"] = "aggregate-only notes";
 	assert.deepEqual(rowSummary(filtered("content", "aggregate-only", content)), [
 		["group", "pi", false],
 		["item", "tool:builtin", true],
 	]);
-	// Group labels are names, so content mode never matches them.
+	// Group labels are names, so content mode never matches them
 	assert.deepEqual(rowSummary(filtered("content", "npm:web", content)), []);
 });
 
@@ -322,7 +322,7 @@ test("filterInjections leaves estimates, diffs, change scopes, and the snapshot 
 	assert.deepEqual(buildInjectionRows(source, filtered("name", "missing").result).map((row) => row.kind),
 		["separator", "total"]);
 
-	// Hiding a changed parent's other children must not read as a request-only removal.
+	// Hiding a changed parent's other children must not read as a request-only removal
 	const saved: InjectionItem = { ...item("saved", "pi", true, 5), diff: { added: 3, removed: 0 } };
 	const other: InjectionItem = { ...item("other", "pi", true, 5), diff: { added: 2, removed: 0 } };
 	const parent: InjectionItem = { ...item("parent", "pi", true, 10), children: [saved, other],

@@ -74,7 +74,7 @@ export function buildUsageMap(
 	const estimatedTotal = usage.categories.reduce((sum, category) => sum + category.tokens, 0);
 	const occupiedTokens = clamp(estimatedTotal, 0, mapScale);
 	const occupiedCells = occupiedTokens / mapScale * cellCount;
-	// Fit reserves its headroom as visible free space; the true-window buffer remains outside the mapped range.
+	// Fit reserves its headroom as visible free space; the true-window buffer remains outside the mapped range
 	const windowOccupancy = clamp(estimatedTotal, 0, contextWindow);
 	const bufferTokens = mapScale < contextWindow
 		? 0
@@ -119,7 +119,7 @@ function createCell(
 ): UsageMapCell {
 	const occupiedOverlap = overlap(index, index + 1, 0, occupiedCells);
 	if (occupiedOverlap <= 0) {
-		// An unoccupied cell belongs to the buffer when at least half of it lies past the trigger point.
+		// An unoccupied cell belongs to the buffer when at least half of it lies past the trigger point
 		return overlap(index, index + 1, bufferStart, index + 1) >= 0.5 ? { fill: "buffer" } : { fill: "free" };
 	}
 

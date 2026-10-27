@@ -342,7 +342,7 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 
 	pi.on("session_shutdown", () => {
 		// A shutdown mid-probe can leave probe messages already persisted in the
-		// session; write their identities so the next runtime keeps filtering them.
+		// session; write their identities so the next runtime keeps filtering them
 		persistIdentities();
 		probe.fail("shutdown");
 	});

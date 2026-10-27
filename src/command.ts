@@ -151,7 +151,7 @@ export function reportConfigCreation(context: ExtensionCommandContext, result: C
 			reportCommandMessage(context, `Cannot create configuration at ${result.filePath}: ${result.reason}`, "error");
 			break;
 		default: {
-			// Compile-time proof that every result variant is reported.
+			// Compile-time proof that every result variant is reported
 			const _exhaustive: never = result;
 			return _exhaustive;
 		}

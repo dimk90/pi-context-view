@@ -14,6 +14,13 @@ export const DEFERRED_PLACEHOLDER_NAME = "__pi_deferred_placeholder__";
 /** System block Pi puts before the prompt for an Anthropic OAuth token. */
 export const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
 
+/**
+ * First line of the text Pi appends to an OpenAI Responses system message for
+ * the tools it removes, one `- name` line each, when tools are declared in
+ * `additional_tools` items that cannot remove them.
+ */
+export const RESPONSES_TOOL_REMOVAL_NOTICE = "The following tools are no longer available. Do not call them:";
+
 /** Deepest nesting a payload copy follows; tool schemas are the deepest part of a payload. */
 const MAX_COPY_DEPTH = 256;
 
@@ -306,15 +313,34 @@ function isInlineResponsesTools(item: Item): boolean {
 	return item.type === "additional_tools" || item.type === "tool_search_output";
 }
 
-/** Request-level declarations, then inline additions in item order. */
+/**
+ * Request-level declarations, then in item order the inline additions and the
+ * tools that system messages announce as no longer available.
+ */
 function responsesDeclarations(payload: Item & { readonly input: readonly Item[] }): PayloadDeclaration[] {
 	const declared = new Map<string, PayloadDeclaration>();
 	const declare = (tool: Item) => addDeclaration(declared, tool.name as string, tool.description);
 	for (const tool of optionalItems(payload.tools) ?? []) declare(tool);
 	for (const item of payload.input) {
 		if (isInlineResponsesTools(item) && isItemList(item.tools)) item.tools.forEach(declare);
+		else if (responsesPart(item.role) === "system") {
+			for (const name of announcedRemovals(item.content)) declared.delete(name);
+		}
 	}
 	return [...declared.values()];
+}
+
+/** Names listed after Pi's tool removal notice in a system message's text; none without the notice. */
+function announcedRemovals(content: unknown): string[] {
+	const lines = (blockText(content, RESPONSES_CONTENT.system) ?? "").split("\n");
+	const start = lines.lastIndexOf(RESPONSES_TOOL_REMOVAL_NOTICE);
+	if (start < 0) return [];
+	const names: string[] = [];
+	for (const line of lines.slice(start + 1)) {
+		if (!line.startsWith("- ")) break;
+		names.push(line.slice(2));
+	}
+	return names;
 }
 
 /**

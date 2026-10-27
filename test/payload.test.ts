@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type { MessageUnit } from "../src/capture/messages.ts";
 import {
 	CLAUDE_CODE_IDENTITY, copyPayload, DEFERRED_PLACEHOLDER_NAME, hasWarmOutputLimit, parsePayloadMessages,
-	parsePayloadTools, PAYLOAD_SHAPE_CHECKS,
+	parsePayloadTools, PAYLOAD_SHAPE_CHECKS, RESPONSES_TOOL_REMOVAL_NOTICE,
 } from "../src/capture/payload.ts";
 import { compareToolDeclarations } from "../src/capture/tools.ts";
 
@@ -106,6 +106,21 @@ for (const inlineType of ["additional_tools", "tool_search_output"]) {
 		assert.deepEqual(declarations("openai-responses", payload), [READ, WRITE]);
 	});
 }
+
+test("Responses removes tools that a system message announces as no longer available", () => {
+	const removal = (role: string, names: readonly string[]) => ({
+		role, content: ["Update.", "", RESPONSES_TOOL_REMOVAL_NOTICE, ...names.map((name) => `- ${name}`)].join("\n"),
+	});
+	const payload = {
+		input: [
+			{ type: "additional_tools", role: "developer", tools: [{ type: "function", ...READ }, { type: "function", ...WRITE }] },
+			removal("developer", ["read", "write"]),
+			{ type: "additional_tools", role: "developer", tools: [{ type: "function", ...WRITE }] },
+			removal("user", ["write"]),
+		],
+	};
+	assert.deepEqual(declarations("openai-responses", payload), [WRITE], "a later item declares a tool again");
+});
 
 test("Anthropic replays inline addition, removal and same-name redefinition, ignoring the placeholder", () => {
 	const payload = {

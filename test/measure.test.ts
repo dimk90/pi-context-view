@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-// Deep import bypasses the package barrel, which does not re-export buildSystemPrompt.
+// Deep import bypasses the package barrel, which does not re-export buildSystemPrompt
 import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import { analyzeSystemPrompt, type PromptOptionsSlice, textTokens, type ToolSlice } from "../src/measure.ts";
 import { buildSnapshot, type InjectionItem } from "../src/model.ts";
@@ -97,7 +97,7 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 	assert.equal(contextFile?.kind, "context-file");
 	assert.equal(contextFile?.text, "Project rules");
 	assert.equal(contextFile?.chars, "Project rules".length);
-	// System Prompt counts the addition in its own part, annotated with its source.
+	// System Prompt counts the addition in its own part, annotated with its source
 	const additionsPart = findItem(items, "base-prompt:additions");
 	assert.equal(additionsPart?.label, "Extension Additions");
 	assert.equal(additionsPart?.text, extensionAddition);
@@ -161,19 +161,26 @@ test("analyzeSystemPrompt counts a tool's definition and leaves its prompt lines
 
 	const items = analyzeSystemPrompt(systemPrompt, {}, tools);
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
-	assert.deepEqual(search?.sections?.map((section) => section.label), ["Definition"]);
+	// The rendered lines show on the tool for reference, counted only in System Prompt
+	assert.deepEqual(
+		search?.sections?.map((section) => [section.label, section.countedInSystemPrompt, section.tokens]),
+		[["Tools", true, 0], ["Rules", true, 0], ["Definition", undefined, search?.tokens]],
+	);
+	assert.equal(search?.sections?.[1]?.text, `\n- ${guidelines[0]}\n- ${guidelines[1]}`);
 	assert.equal(search?.text, 'search: Search\n{"q":"string"}');
-	assert.equal(search?.sections?.[0]?.tokens, search?.tokens);
-	// The schema is marked where it was serialized, so previews expand it without detecting JSON.
-	const definition = search?.sections?.[0];
+	// The schema is marked where it was serialized, so previews expand it without detecting JSON
+	const definition = search?.sections?.[2];
 	const schemaSpan = definition?.jsonSpan;
 	assert.ok(schemaSpan !== undefined);
 	assert.equal(definition?.text.slice(schemaSpan.start, schemaSpan.end), '{"q":"string"}');
 
 	const builtin = items.find((entry) => entry.id === "tool:builtin")?.children?.[0];
-	assert.deepEqual(builtin?.sections?.map((section) => section.label), ["Definition"]);
-	assert.equal(builtin?.sections?.[0]?.tokens, builtin?.tokens);
-	// The lines pi renders for the extension tool count once, in System Prompt.
+	assert.deepEqual(builtin?.sections?.map((section) => [section.label, section.tokens]),
+		[["Tools", 0], ["Definition", builtin?.tokens]]);
+	// The aggregate part still marks the schema, since only the definition is in the child text
+	const part = items.find((entry) => entry.id === "tool:builtin")?.sections?.[0];
+	assert.equal(part?.text.slice(part.jsonSpan?.start, part.jsonSpan?.end), "{}");
+	// The lines pi renders for the extension tool count once, in System Prompt
 	const base = items.find((entry) => entry.id === "base-prompt");
 	for (const line of ["\n- search: Search the web", `\n- ${guidelines[0]}`, `\n- ${guidelines[1]}`]) {
 		assert.equal(base?.text.split(line).length, 2, line);
@@ -231,7 +238,7 @@ test("analyzeSystemPrompt breaks the System Prompt into the parts pi assembles i
 			"base-prompt:current-dir",
 		],
 	);
-	// Parts break the prompt down: they partition its text and its estimate.
+	// Parts break the prompt down: they partition its text and its estimate
 	assert.equal(base?.sections?.map((section) => section.text).join(""), base?.text);
 	assert.equal(base?.sections?.reduce((sum, section) => sum + section.tokens, 0), base?.tokens);
 	assert.equal(base?.children?.reduce((sum, child) => sum + child.tokens, 0), base?.tokens);
@@ -239,7 +246,7 @@ test("analyzeSystemPrompt breaks the System Prompt into the parts pi assembles i
 		base?.children?.map((child) => child.tokens),
 		base?.sections?.map((section) => section.tokens),
 	);
-	// The sections pi renders keep the lines it puts there, cwd included.
+	// The sections pi renders keep the lines it puts there, cwd included
 	assert.match(findItem(items, "base-prompt:available-tools")?.text ?? "", /^\n- read: Read files/);
 	assert.match(findItem(items, "base-prompt:guidelines")?.text ?? "", /^\n- /);
 	assert.match(findItem(items, "base-prompt:documentation")?.text ?? "", /^Pi documentation /);
@@ -256,7 +263,7 @@ test("analyzeSystemPrompt counts prompt additions in System Prompt and annotates
 
 	const items = analyzeSystemPrompt(systemPrompt, {}, [], { sources });
 
-	// No extension item counts the additions again.
+	// No extension item counts the additions again
 	assert.deepEqual(items.map((item) => item.id), ["base-prompt"]);
 	const base = findItem(items, "base-prompt");
 	const part = base?.children?.at(-1);
@@ -301,13 +308,13 @@ test("analyzeSystemPrompt exposes each aggregate child as a labeled part carryin
 	const items = analyzeSystemPrompt(systemPrompt, {}, tools);
 	const builtin = items.find((entry) => entry.id === "tool:builtin");
 	assert.deepEqual(builtin?.sections?.map((section) => section.label), ["bash", "read"]);
-	// Parts partition the aggregate text and reconcile with the children they name.
+	// Parts partition the aggregate text and reconcile with the children they name
 	assert.equal(builtin?.sections?.map((section) => section.text).join(""), builtin?.text);
 	assert.deepEqual(
 		builtin?.sections?.map((section) => section.tokens),
 		builtin?.children?.map((child) => child.tokens),
 	);
-	// Each part marks the schema of its own tool, including after the joining break.
+	// Each part marks the schema of its own tool, including after the joining break
 	assert.deepEqual(
 		builtin?.sections?.map((section) => section.text.slice(section.jsonSpan?.start, section.jsonSpan?.end)),
 		['{"command":"string"}', '{"path":"string"}'],
@@ -343,7 +350,7 @@ test("analyzeSystemPrompt gives a repeated guideline bullet to the tool pi rende
 
 	const items = analyzeSystemPrompt(systemPrompt, {}, tools);
 	const guidelines = findItem(items, "base-prompt:guidelines");
-	// Pi renders the shared bullet once, so only the first tool declaring it is named.
+	// Pi renders the shared bullet once, so only the first tool declaring it is named
 	assert.deepEqual(
 		guidelines?.injectedReferences?.map((reference) => [
 			guidelines.text.slice(reference.start, reference.end), reference.tool,
@@ -387,12 +394,15 @@ test("Available Tools annotates extension snippets inside the text it counts", (
 		base.sections?.find((section) => section.text === findItem(items, "base-prompt:available-tools")?.text)?.injectedReferences,
 		availableTools.injectedReferences,
 	);
-	// The part counts its whole body: pi's own bullets and the extension snippet alike.
+	// The part counts its whole body: pi's own bullets and the extension snippet alike
 	const start = prompt.indexOf("<tools>\n") + "<tools>".length;
 	assert.equal(availableTools.text, prompt.slice(start, prompt.indexOf("\n</tools>", start)));
 	assert.equal(availableTools.chars, availableTools.text.length);
-	// The snippet counts once, in System Prompt, never also on its tool.
-	assert.deepEqual(findItem(items, "tool:npm:web:search")?.sections?.map((section) => section.label), ["Definition"]);
+	// The snippet counts once, in System Prompt, never also on its tool
+	const search = findItem(items, "tool:npm:web:search");
+	assert.equal(search?.text.includes("Search the web"), false);
+	assert.deepEqual(search?.sections?.filter((section) => section.tokens > 0).map((section) => section.label),
+		["Definition"]);
 	assert.equal(base.tokens, textTokens(base.text));
 	assert.equal(base.sections?.reduce((sum, section) => sum + section.tokens, 0), base.tokens);
 	assert.equal(base.sections?.map((section) => section.text).join(""), base.text);
@@ -502,7 +512,7 @@ test("analyzeSystemPrompt names no extension tool for pi's own and built-in tool
 		["\n- search: Search the web", "npm:web", "search"],
 	]);
 	// Pi credits one bullet to the built-in tool that declared it first and adds
-	// the file-exploration bullet itself, so the extension tool is named on neither.
+	// the file-exploration bullet itself, so the extension tool is named on neither
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.ok(base?.text.includes(`\n- ${builtinGuideline}`));
 	assert.ok(base?.text.includes(`\n- ${piGuideline}`));
@@ -529,7 +539,7 @@ test("analyzeSystemPrompt annotates tool lines only in the blocks pi renders the
 
 	const items = analyzeSystemPrompt(systemPrompt, {}, tools);
 	// The guideline never reached the Guidelines block, so the identical context
-	// file line stays with the file and names no tool.
+	// file line stays with the file and names no tool
 	assert.deepEqual(annotatedLines(findItem(items, "base-prompt:available-tools")), [
 		["\n- search: Search the web", "npm:web", "search"],
 	]);
@@ -558,7 +568,7 @@ test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt
 
 	const items = analyzeSystemPrompt(systemPrompt, { customPrompt: "CUSTOM PROMPT" }, tools);
 	const search = items.find((entry) => entry.id === "tool:npm:web:search");
-	// The dropped lines stay out of the counted text, so the context file keeps them.
+	// The dropped lines stay out of the counted text, so the context file keeps them
 	assert.equal(search?.text, "search: Search\n{}");
 	assert.equal(findItem(items, `context-file:${filePath}`)?.text.includes("- Cite sources"), true);
 	assert.equal(findItem(items, "base-prompt:preamble")?.text.trim(), "CUSTOM PROMPT");
@@ -567,7 +577,7 @@ test("analyzeSystemPrompt does not attribute context-file lines as custom-prompt
 test("analyzeSystemPrompt measures a replaced prompt as the content pi actually sends", () => {
 	const customPrompt = "You are a terse reviewer.\nAnswer in one sentence.";
 	const guidelines = ["Cite sources"];
-	// Pi builds the custom branch, which ignores toolSnippets and promptGuidelines entirely.
+	// Pi builds the custom branch, which ignores toolSnippets and promptGuidelines entirely
 	const systemPrompt = buildSystemPrompt({
 		cwd: CWD,
 		customPrompt,
@@ -599,17 +609,17 @@ test("analyzeSystemPrompt measures a replaced prompt as the content pi actually 
 
 	const items = analyzeSystemPrompt(systemPrompt, { customPrompt }, tools);
 
-	// System Prompt carries the replacement text itself, not pi's replaced base prompt.
+	// System Prompt carries the replacement text itself, not pi's replaced base prompt
 	assert.equal(findItem(items, "base-prompt:preamble")?.text.trim(), customPrompt);
 	assert.equal(findItem(items, "base-prompt:appended")?.text, "APPENDED RULE");
-	// The blocks the replacement gave up stay visible, at no cost, instead of vanishing.
+	// The blocks the replacement gave up stay visible, at no cost, instead of vanishing
 	assert.deepEqual(
 		findItem(items, "base-prompt")?.children?.map((child) => child.id),
 		["preamble", "available-tools", "guidelines", "documentation", "appended", "current-dir"].map((id) => `base-prompt:${id}`),
 	);
 	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
 	assert.equal(findItem(items, "skills")?.children?.length, 1);
-	// Nothing outside the sections remains, so no text is an extension addition.
+	// Nothing outside the sections remains, so no text is an extension addition
 	assert.equal(findItem(items, "base-prompt:additions"), undefined);
 });
 
@@ -646,7 +656,7 @@ test("analyzeSystemPrompt marks the parts a replaced prompt drops without counti
 	const basePrompt = findItem(items, "base-prompt");
 	const droppedChildren = (basePrompt?.children ?? []).filter((child) => child.dropped === true);
 
-	// Every dropped block is present, empty of pi's own text, and free.
+	// Every dropped block is present, empty of pi's own text, and free
 	assert.deepEqual(droppedChildren.map((child) => child.id),
 		["available-tools", "guidelines", "documentation"].map((id) => `base-prompt:${id}`));
 	assert.ok(droppedChildren.every((child) => child.chars === 0 && child.tokens === 0));
@@ -659,7 +669,7 @@ test("analyzeSystemPrompt marks the parts a replaced prompt drops without counti
 		(basePrompt?.sections ?? []).reduce((sum, section) => sum + section.tokens, 0),
 	);
 
-	// Only extension lines stay visible in a dropped block, attributed to their tool.
+	// Only extension lines stay visible in a dropped block, attributed to their tool
 	const availableTools = findItem(items, "base-prompt:available-tools");
 	assert.equal(availableTools?.text, "\n- search: Search the web");
 	assert.deepEqual(annotatedLines(availableTools), [["\n- search: Search the web", "npm:web", "search"]]);
@@ -671,7 +681,7 @@ test("analyzeSystemPrompt marks the parts a replaced prompt drops without counti
 		["\n- search: Search the web", "\n- Cite sources", ""],
 	);
 
-	// Each tool keeps its own dropped lines, at 0 tokens, outside its counted text.
+	// Each tool keeps its own dropped lines, at 0 tokens, outside its counted text
 	for (const id of ["tool:npm:web:search", "tool:builtin:read"]) {
 		const tool = findItem(items, id);
 		const dropped = (tool?.sections ?? []).filter((section) => section.dropped === true);
@@ -728,7 +738,7 @@ test("analyzeSystemPrompt marks the tool sections an extension relocated past cw
 	const items = analyzeSystemPrompt(systemPrompt, {}, RELOCATION_TOOLS);
 	const basePrompt = findItem(items, "base-prompt");
 
-	// The moved sections stay pi's parts, following the cwd section they now sit behind.
+	// The moved sections stay pi's parts, following the cwd section they now sit behind
 	assert.deepEqual(
 		basePrompt?.children?.map((child) => child.id),
 		["preamble", "documentation", "current-dir", "available-tools", "guidelines", "additions"].map((id) => `base-prompt:${id}`),
@@ -742,7 +752,7 @@ test("analyzeSystemPrompt marks the tool sections an extension relocated past cw
 		basePrompt?.children?.filter((child) => child.moved === true).map((child) => child.text),
 	);
 
-	// A moved block counts exactly like an unmoved one: shares still reconcile.
+	// A moved block counts exactly like an unmoved one: shares still reconcile
 	assert.equal(basePrompt?.tokens, textTokens(basePrompt?.text ?? ""));
 	assert.equal(
 		basePrompt?.tokens,
@@ -751,7 +761,7 @@ test("analyzeSystemPrompt marks the tool sections an extension relocated past cw
 	assert.equal(findItem(items, "base-prompt:available-tools")?.text.includes("- read: Read files"), true);
 	assert.equal(findItem(items, "base-prompt:guidelines")?.text.includes("- Be concise in your responses"), true);
 
-	// Extension lines in the moved blocks are annotated as usual.
+	// Extension lines in the moved blocks are annotated as usual
 	assert.deepEqual(annotatedLines(findItem(items, "base-prompt:available-tools")), [
 		["\n- search: Search the web", "npm:web", "search"],
 	]);
@@ -759,7 +769,7 @@ test("analyzeSystemPrompt marks the tool sections an extension relocated past cw
 		["\n- Cite sources", "npm:web", "search"],
 	]);
 
-	// Pi's own text stays pi's: only the real addition is attributed to an extension.
+	// Pi's own text stays pi's: only the real addition is attributed to an extension
 	assert.equal(findItem(items, "base-prompt:additions")?.text.trim(), addition);
 });
 
@@ -815,7 +825,7 @@ test("separated moved sections preserve additions on both sides and never recrea
 test("analyzeSystemPrompt measures a forced prompt without sections as one undivided part", () => {
 	const systemPrompt = [
 		"FORCED PROMPT",
-		// Text shaped like pi's own blocks is not evidence of them without XML sections.
+		// Text shaped like pi's own blocks is not evidence of them without XML sections
 		"Available tools:",
 		"- search: Search the web",
 		`Current working directory: ${CWD}`,
@@ -828,10 +838,10 @@ test("analyzeSystemPrompt measures a forced prompt without sections as one undiv
 	assert.deepEqual(items.map((entry) => entry.id), ["base-prompt", "tool:npm:web:search"]);
 	assert.equal(items[0]?.text, systemPrompt);
 	assert.equal(items[0]?.tokens, textTokens(systemPrompt));
-	// One part is no breakdown: an undivided prompt exposes no sub-items.
+	// One part is no breakdown: an undivided prompt exposes no sub-items
 	assert.equal(items[0]?.children, undefined);
 	assert.equal(items[0]?.sections, undefined);
-	// Tool declarations still reach the provider; no prompt line is carved for them.
+	// Tool declarations still reach the provider; no prompt line is carved for them
 	assert.deepEqual(items[1]?.sections?.map((section) => section.label), ["Definition"]);
 });
 

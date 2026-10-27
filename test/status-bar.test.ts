@@ -113,7 +113,7 @@ test("status wrapping preserves the entire explanation, including Unicode metada
 test("unchanged and non-selectable rows have no status text", () => {
 	const theme = createTheme();
 	for (const entry of [row(),
-		{ kind: "group", label: "pi", tokens: 10, depth: 0 },
+		{ kind: "group", groupKey: "source:pi", label: "pi", tokens: 10, depth: 0 },
 		{ kind: "separator", label: "", tokens: 0, depth: 0 },
 		...buildInjectionRows({ groups: [], totalTokens: 10 }).filter((row) => row.kind === "total"),
 	] satisfies InjectionRow[]) assert.deepEqual(statusBarLines(theme, entry, 120), []);

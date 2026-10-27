@@ -50,7 +50,7 @@ test("captureActiveTools keeps pi's active-tool order and drops repeated names",
 	);
 
 	// Guideline ownership follows this order, so it must match the order pi
-	// builds its Guidelines section from.
+	// builds its Guidelines section from
 	assert.deepEqual(tools.map((entry) => entry.name), ["search", "read"]);
 });
 

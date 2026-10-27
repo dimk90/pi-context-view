@@ -19,14 +19,14 @@ test("parseWheelDirection decodes vertical SGR and X10 notches only", () => {
 	assert.equal(parseWheelDirection("\u001b[<64;20;5M"), -1);
 	assert.equal(parseWheelDirection("\u001b[<65;20;5M"), 1);
 
-	// Modifier bits and the release form still describe a plain vertical notch.
+	// Modifier bits and the release form still describe a plain vertical notch
 	assert.equal(parseWheelDirection("\u001b[<69;1;1M"), 1, "shift + wheel down");
 	assert.equal(parseWheelDirection("\u001b[<80;1;1m"), -1, "ctrl + wheel up");
 
 	assert.equal(parseWheelDirection(x10Report(64, 19, 4)), -1);
 	assert.equal(parseWheelDirection(x10Report(65, 19, 4)), 1);
 
-	// Horizontal notches, plain buttons, keys, and text are not vertical scrolling.
+	// Horizontal notches, plain buttons, keys, and text are not vertical scrolling
 	assert.equal(parseWheelDirection("\u001b[<66;20;5M"), undefined, "wheel left");
 	assert.equal(parseWheelDirection("\u001b[<67;20;5M"), undefined, "wheel right");
 	assert.equal(parseWheelDirection("\u001b[<0;20;5M"), undefined, "left button press");
@@ -43,7 +43,7 @@ test("readWheelScrollLines honors pi's own step and falls back when it is unread
 	assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(1)), 1);
 	assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(2.7)), 2);
 
-	// A pi without the private field, or with an unusable value, must not scroll by zero or backwards.
+	// A pi without the private field, or with an unusable value, must not scroll by zero or backwards
 	assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(undefined)), DEFAULT_WHEEL_SCROLL_LINES);
 	assert.equal(readWheelScrollLines(tuiWithWheelScrollLines("4")), DEFAULT_WHEEL_SCROLL_LINES);
 	assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(Number.NaN)), DEFAULT_WHEEL_SCROLL_LINES);

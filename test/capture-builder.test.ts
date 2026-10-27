@@ -130,8 +130,10 @@ test("a request copy keeps only the differing messages and the replayed system s
 	assert.ok(schema);
 	schema.properties.path = { type: "string" };
 	if (requestSystem.sections) requestSystem.sections.cwd = "<cwd>/changed</cwd>";
-	assert.deepEqual(copy.systemTexts, [{ position: 0, content: "Prompt", sections: { cwd: "<cwd>/a</cwd>" } }],
-		"system texts are owned copies");
+	requestSystem.toolsAdded?.push({ name: "added_after_capture", description: "", parameters: {} });
+	assert.deepEqual(copy.systemTexts, [{
+		position: 0, content: "Prompt", sections: { cwd: "<cwd>/a</cwd>" }, toolNames: { added: ["read"], removed: [] },
+	}], "system texts are owned copies");
 	const snapshot = buildRequestSnapshot({
 		id: 1, origin: "real-turn", baseline: { leafId: "leaf", messages: baseline }, ...copy,
 		effectivePrompt: getCurrentSystemPrompt(baseline.map(({ message }) => message)),

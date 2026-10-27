@@ -107,7 +107,11 @@ label. Its prompt references use the same unknown source.
 
 A tool item counts only its definition: name, description, and parameter
 schema. Pi renders the tool's snippet and guideline bullets into its prompt,
-so System Prompt counts them with the rest of its text.
+so System Prompt counts them with the rest of its text. The tool keeps each
+matched bullet in a Tools or Rules section marked as counted in System
+Prompt. Such a section has zero tokens and contributes no counted text,
+characters, or token shares. A bullet pi did not render as written gets no
+section.
 
 Match a tool's complete prompt bullets only in the first `tools` and `rules`
 sections, including moved ones. Never match unrelated text or only a prefix of

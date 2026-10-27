@@ -13,8 +13,8 @@ without extra navigation levels or repeated headings. Keep related metadata
 with its part and use whitespace to separate bodies.
 
 Token shares explain the parent estimate; they never add to it. Retain parts
-whose state matters even without counted text, such as deletions or dropped
-content. Diff-only references show changes, not misleading zero-token shares.
+whose state matters even without counted text, such as deletions, dropped
+content, or a tool's prompt lines that System Prompt counts. Diff-only references show changes, not misleading zero-token shares.
 Otherwise omit empty placeholders. Preserve the content's meaningful order,
 not an order chosen for visual convenience.
 
@@ -63,6 +63,7 @@ as the marks themselves. Keep these meanings distinct:
 | Highlighted | Text contributed by extensions to pi's prompt |
 | (guess) | Attribution inferred rather than reported |
 | Dropped | Replaced content that counts nowhere |
+| Counted in System Prompt | A tool's prompt lines, counted in the System Prompt part of the same name |
 | Moved | A different prompt position, not a different owner |
 | Forced | An extension's prompt replaced pi's for this request, or replaced a part's request edit |
 | +N / -N | Added and removed tokens against the stated base |

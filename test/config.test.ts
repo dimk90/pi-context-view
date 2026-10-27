@@ -38,7 +38,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	// The documented example is the exact file, blank lines between key groups included
 	const documented = /```json\n([\s\S]*?\n)```/.exec(readFileSync(new URL("../doc/CONFIG.md", import.meta.url), "utf8"));
 	assert.equal(text, documented?.[1]);
-	// Entries, not the parsed object: the file must also list keys in legend order.
+	// Entries, not the parsed object: the file must also list keys in legend order
 	assert.deepEqual(Object.entries(JSON.parse(text)), [
 		["systemPromptColor", "mdHeading"],
 		["instructionFilesColor", "mdCodeBlock"],
@@ -67,7 +67,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(loaded.config.mapSize, DEFAULT_CONFIG.mapSize);
 	assert.equal(loaded.config.autoProbing, true);
 
-	// Repeating the command hits the write's EEXIST, the only branch that may report "exists".
+	// Repeating the command hits the write's EEXIST, the only branch that may report "exists"
 	assert.deepEqual(createDefaultConfigFile(filePath), { type: "exists", filePath });
 	assert.equal(readFileSync(filePath, "utf8"), text);
 });
@@ -77,7 +77,7 @@ test("createDefaultConfigFile reports an unusable path instead of claiming the f
 	writeFileSync(blockingFile, "not a directory");
 	const filePath = join(blockingFile, "pi-context-view.json");
 
-	// mkdir reports EEXIST for a parent that is a file; only the write may mean "exists".
+	// mkdir reports EEXIST for a parent that is a file; only the write may mean "exists"
 	const result = createDefaultConfigFile(filePath);
 	assert.equal(result.type, "failed");
 	assert.equal(result.filePath, filePath);
@@ -102,7 +102,7 @@ test("ConfigStore picks up a file created after its first load", (context) => {
 	const created = store.load();
 	assert.deepEqual(created.warnings, []);
 	assert.deepEqual(created.config.categoryColors, DEFAULT_CONFIG.categoryColors);
-	// A re-read builds its own map; the shared default instance would prove a stale cache.
+	// A re-read builds its own map; the shared default instance would prove a stale cache
 	assert.notEqual(created.config, DEFAULT_CONFIG);
 });
 
@@ -275,7 +275,7 @@ for (const { old, current, categoryId } of RENAMED_KEY_CASES) {
 		assert.deepEqual(renamed.warnings, []);
 		assert.equal(resolveCategoryColor(renamed.config.categoryColors, categoryId), "warning");
 
-		// Both names present: the current one wins whichever order the file lists them in.
+		// Both names present: the current one wins whichever order the file lists them in
 		writeFileSync(filePath, `{"${current}":"success","${old}":"warning"}`);
 		assert.equal(resolveCategoryColor(loadConfigFile(filePath).config.categoryColors, categoryId), "success");
 		writeFileSync(filePath, `{"${old}":"warning","${current}":"success"}`);

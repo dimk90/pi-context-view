@@ -111,7 +111,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(lines[headerIndex + 1], "");
 	assert.equal(stripSgr(lines[headerIndex] ?? "").indexOf("Context Injections"), 0);
 	assert.ok((lines[tabIndex] ?? "").includes(theme.fg("mdHeading", theme.bold(requestOriginLabel()))));
-	// Runtime stays hidden until the runtime-inspection roadmap step.
+	// Runtime stays hidden until the runtime-inspection roadmap step
 	assert.ok(!lines.some((line) => stripSgr(line).includes("RUNTIME")));
 	assert.ok(!lines.some((line) => stripSgr(line).includes("Runtime Logging:")));
 	const selectedGroup = lines.find((line) => stripSgr(line).includes("→ pi"));
@@ -147,7 +147,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.equal(new Set(alignedValues).size, 1);
 	assert.ok((alignedValues[0] ?? 80) < 64, "the capped token column stays near the hierarchy");
 
-	// TOTAL is the final table row and sums the snapshot without double-counting children.
+	// TOTAL is the final table row and sums the snapshot without double-counting children
 	const totalRowIndex = lines.findIndex((line) => stripSgr(line).includes("TOTAL (Prompt, Tools, Injections)"));
 	const descIndex = noteIndex(lines);
 	assert.ok(totalRowIndex >= 0 && totalRowIndex < descIndex);
@@ -572,11 +572,11 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 		closed = true;
 	}, () => 24);
 
-	// Enter on a group row does nothing.
+	// Enter on a group row does nothing
 	view.handleInput("\r");
 	assert.doesNotMatch(view.render(80).join("\n"), /pi-0 preview line/);
 
-	// Select the second item row and open its preview.
+	// Select the second item row and open its preview
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	const listBefore = view.render(80).join("\n");
@@ -589,14 +589,14 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	const previewHeaderIndex = previewLines.findIndex((line) => stripSgr(line).includes("tokens"));
 	const firstContentIndex = previewLines.findIndex((line) => stripSgr(line).includes("preview line 0"));
 	assert.ok(previewHeaderIndex >= 0 && firstContentIndex === previewHeaderIndex + 2);
-	// Preview content is indented two spaces.
+	// Preview content is indented two spaces
 	assert.equal(stripSgr(previewLines[firstContentIndex] ?? "").indexOf("pi-1"), 2);
 	assert.equal(previewLines[previewHeaderIndex + 1], "");
 	const hintIndex = previewLines.findIndex((line) => stripSgr(line).includes("↑↓/jk Scroll"));
 	assert.ok(hintIndex > 0);
 	assert.equal(previewLines[hintIndex - 1], "");
 
-	// Scrolling changes the visible window; Escape returns to the unchanged list.
+	// Scrolling changes the visible window; Escape returns to the unchanged list
 	view.handleInput("\u001b[6~"); // PgDn
 	const scrolled = view.render(80).join("\n");
 	assert.notEqual(scrolled, preview);
@@ -608,7 +608,7 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	assert.equal(closed, false);
 	assert.equal(view.render(80).join("\n"), listBefore);
 
-	// A fresh preview starts back at the top.
+	// A fresh preview starts back at the top
 	view.handleInput("\r");
 	assert.match(view.render(80).join("\n"), /preview line 0 /);
 });
@@ -661,7 +661,7 @@ test("preview drops a pi block header its part label already shows", () => {
 		"  - Be concise in your responses",
 		"", "",
 		"  Documentation · 27 tokens",
-		// A header carrying more than its label is content, not a repetition.
+		// A header carrying more than its label is content, not a repetition
 		"  Pi documentation (read only when the user asks about pi itself):",
 		"  - Main docs: /pi/README.md",
 	]);
@@ -714,10 +714,10 @@ test("InjectionsView preview labels every known section", () => {
 	assert.ok(snippetIndex > 0, "missing Available Tools subheader");
 	assert.ok(guidelinesIndex > snippetIndex, "Guidelines does not follow Available Tools");
 	assert.ok(definitionIndex > guidelinesIndex, "Definition does not follow Guidelines");
-	// Parts use syntaxKeyword, leaving mdHeading to the headings they nest under.
+	// Parts use syntaxKeyword, leaving mdHeading to the headings they nest under
 	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));
 	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("muted", " · 17 tokens")));
-	// Section bodies start directly below their subheader, separated only between sections.
+	// Section bodies start directly below their subheader, separated only between sections
 	assert.equal(plainLines[snippetIndex + 1], "  - search: Search the web");
 	assert.equal(plainLines[guidelinesIndex + 1], "  - Use search when the user asks for current information");
 	assert.equal(plainLines[guidelinesIndex + 2], "  - Cite sources");
@@ -727,7 +727,7 @@ test("InjectionsView preview labels every known section", () => {
 	assert.equal(plainLines[definitionIndex - 3], "  - Cite sources");
 	assert.equal(plainLines[definitionIndex + 1], "  search: Search");
 
-	// A single known section retains the same labeled structure.
+	// A single known section retains the same labeled structure
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
@@ -765,7 +765,7 @@ test("InjectionsView preview expands the JSON runs the model marks", () => {
 		},
 	}, () => {}, () => 24);
 
-	// The item preview is full content, so a labeled part expands its marked schema.
+	// The item preview is full content, so a labeled part expands its marked schema
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
 	const sectionLines = view.render(80).map((line) => stripSgr(line));
@@ -775,7 +775,7 @@ test("InjectionsView preview expands the JSON runs the model marks", () => {
 	assert.equal(sectionLines[definitionIndex + 2], "  {");
 	assert.equal(sectionLines[definitionIndex + 3], '    "type": "object",');
 
-	// An item without parts expands the whole marked text.
+	// An item without parts expands the whole marked text
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
@@ -833,7 +833,7 @@ test("InjectionsView preview separates aggregate children and expands each child
 	view.handleInput("\r");
 	const lines = view.render(80).map((line) => stripSgr(line));
 
-	// Every child keeps its own subheader, token share, and expanded schema.
+	// Every child keeps its own subheader, token share, and expanded schema
 	const bashIndex = lines.indexOf("  bash · 20 tokens");
 	const readIndex = lines.indexOf("  read · 14 tokens");
 	assert.ok(bashIndex > 0 && readIndex > bashIndex, "missing per-child subheaders");
@@ -875,7 +875,7 @@ test("InjectionsView omits a skill name its heading already shows", () => {
 		},
 	}, () => {}, () => 40);
 
-	// Each part of the aggregate preview opens with the description, not the name above it.
+	// Each part of the aggregate preview opens with the description, not the name above it
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
 	const aggregate = view.render(80).map((line) => stripSgr(line));
@@ -887,7 +887,7 @@ test("InjectionsView omits a skill name its heading already shows", () => {
 	assert.deepEqual(aggregate.slice(commitIndex - 2, commitIndex), ["", ""]);
 	assert.equal(aggregate[commitIndex - 3], "  /skills/code-style/SKILL.md");
 
-	// The child preview keeps its whole estimate while dropping the same repeated line.
+	// The child preview keeps its whole estimate while dropping the same repeated line
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
@@ -939,11 +939,11 @@ test("InjectionsView accepts j/k wherever it accepts the arrow keys", () => {
 	}, () => 24);
 	const frame = (view: InjectionsView) => view.render(80).join("\n");
 
-	// Both views must render once so the viewport size is known before any input.
+	// Both views must render once so the viewport size is known before any input
 	const start = frame(vim);
 	assert.equal(frame(arrows), start);
 
-	// List navigation: j and k move exactly like Down and Up.
+	// List navigation: j and k move exactly like Down and Up
 	for (let step = 0; step < 3; step++) {
 		arrows.handleInput("\u001b[B");
 		vim.handleInput("j");
@@ -956,7 +956,7 @@ test("InjectionsView accepts j/k wherever it accepts the arrow keys", () => {
 	assert.match(stripSgr(frame(vim)), /→ ├─ pi-1/);
 	assert.equal(frame(vim), frame(arrows));
 
-	// Preview scrolling: j and k move the wrapped text, and neither key closes the view.
+	// Preview scrolling: j and k move the wrapped text, and neither key closes the view
 	arrows.handleInput("\r");
 	vim.handleInput("\r");
 	const previewTop = frame(vim);
@@ -981,7 +981,7 @@ test("InjectionsView accepts Ctrl+u/d wherever it accepts the page keys", () => 
 	const aliases = createView(30);
 	const frame = (view: InjectionsView) => view.render(80).join("\n");
 
-	// Both views must render once so the viewport size is known before any input.
+	// Both views must render once so the viewport size is known before any input
 	const listTop = frame(aliases);
 	assert.equal(frame(pageKeys), listTop);
 
@@ -1012,24 +1012,24 @@ test("InjectionsView accepts Ctrl+u/d wherever it accepts the page keys", () => 
 });
 
 test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step", () => {
-	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences.
+	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences
 	const wheelUp = "\u001b[<64;20;5M";
 	const wheelDown = "\u001b[<65;20;5M";
 	const arrows = createView(8);
 	const wheel = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => {}, () => 24, 4);
 	const frame = (view: InjectionsView) => view.render(80).join("\n");
 
-	// Both views must render once so the viewport size is known before any input.
+	// Both views must render once so the viewport size is known before any input
 	const start = frame(wheel);
 	assert.equal(frame(arrows), start);
 
-	// List: one notch selects one row, regardless of the scroll step.
+	// List: one notch selects one row, regardless of the scroll step
 	arrows.handleInput("\u001b[B");
 	wheel.handleInput(wheelDown);
 	assert.match(stripSgr(frame(wheel)), /→ ├─ pi-0/);
 	assert.equal(frame(wheel), frame(arrows));
 
-	// Preview: one notch scrolls pi's own line step.
+	// Preview: one notch scrolls pi's own line step
 	arrows.handleInput("\r");
 	wheel.handleInput("\r");
 	const previewTop = frame(wheel);
@@ -2077,7 +2077,7 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	assert.ok((lines[promptIndex + 4] ?? "").includes(SEARCH_MATCH_BG), "the matched label text is highlighted");
 	assert.match(plain.join("\n"), /TOTAL \(Prompt, Tools, Injections\) \.+ 180/, "the snapshot total is unchanged");
 
-	// Enter keeps the filter and opens the selected match; Escape returns to the filtered list.
+	// Enter keeps the filter and opens the selected match; Escape returns to the filtered list
 	view.handleInput("\r");
 	assert.match(plainFrame(view)[2] ?? "", /^cymbal/);
 	view.handleInput("\u001b");
@@ -2085,7 +2085,7 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	assert.match(plain[promptIndex] ?? "", /^ {2}◉ Name \| ○ Content > cym +1 match$/);
 	assert.match(plain.join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · Esc Clear/);
 
-	// Escape drops the filter but keeps the selected row, then closes the view.
+	// Escape drops the filter but keeps the selected row, then closes the view
 	view.handleInput("\u001b");
 	plain = plainFrame(view);
 	assert.ok(!plain.some((line) => line.includes("Content >")));
@@ -2117,7 +2117,7 @@ test("InjectionsView erasing or canceling a typed filter restores the selection 
 	for (let step = 0; step < 10; step++) view.handleInput("j");
 	const before = plainFrame(view);
 
-	// Erasing the query restores the list exactly, selection and scroll included.
+	// Erasing the query restores the list exactly, selection and scroll included
 	view.handleInput("/");
 	const prompt = plainFrame(view);
 	typeKeys(view, "pi");
@@ -2125,11 +2125,31 @@ test("InjectionsView erasing or canceling a typed filter restores the selection 
 	view.handleInput("\u007f");
 	assert.deepEqual(plainFrame(view), prompt, "erasing the query returns to the pre-filter row");
 
-	// Escape while typing, after moving through the matches, also restores it.
+	// Escape while typing, after moving through the matches, also restores it
 	typeKeys(view, "pi");
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b");
 	assert.deepEqual(plainFrame(view), before, "Escape returns to the pre-filter row");
+});
+
+test("InjectionsView clearing a filter keeps a selected group whose label another group shares", () => {
+	const sameLabel = (sourceId: string, items: InjectionItem[]): InjectionGroup => {
+		const base = group(sourceId, false, items);
+		return { ...base, source: { ...base.source, label: "tools" } };
+	};
+	const alpha = { ...item("alpha", "local:a", false, 10), label: "alpha" };
+	const beta = { ...item("beta", "local:b", false, 20), label: "beta" };
+	const view = new InjectionsView(createTheme(), {
+		snapshot: { groups: [sameLabel("local:a", [alpha]), sameLabel("local:b", [beta])], totalTokens: 30 },
+	}, () => {}, () => 30);
+	view.handleInput("/");
+	typeKeys(view, "beta");
+	view.handleInput("\r");
+	view.handleInput("\u001b");
+	view.handleInput("k");
+	view.handleInput("\u001b");
+	const groupRows = plainFrame(view).map(withoutLeaders).filter((line) => /^. {1,3}tools /.test(line));
+	assert.deepEqual(groupRows, ["  tools 10", "\u2192 tools 20"]);
 });
 
 test("InjectionsView content filter carries its query into the preview search", () => {
@@ -2148,7 +2168,7 @@ test("InjectionsView content filter carries its query into the preview search", 
 	assert.ok(plain.some((line) => line.includes("└─ web_search")));
 	assert.ok(!plain.some((line) => line.includes("agent-browser")));
 
-	// The preview opens on the first match, far below the first page, with its query kept.
+	// The preview opens on the first match, far below the first page, with its query kept
 	view.handleInput("\r");
 	const lines = view.render(80);
 	plain = lines.map((line) => stripStyle(line).trimEnd());
@@ -2168,7 +2188,7 @@ test("InjectionsView content filter carries its query into the preview search", 
 	view.handleInput("N");
 	assert.match(plainFrame(view)[4] ?? "", /2\/2$/, "N wraps back to the last match");
 
-	// Escape leaves the preview, keeping the content filter on the list.
+	// Escape leaves the preview, keeping the content filter on the list
 	view.handleInput("\u001b");
 	assert.match(plainFrame(view).join("\n"), /○ Name \| ◉ Content > tree-sitter +2 matches/);
 });
@@ -2186,7 +2206,7 @@ test("InjectionsView preview search types live, keeps the query on Enter, and dr
 	let plain = plainFrame(view);
 	assert.match(plain[4] ?? "", /^ {2}Search: again +1\/1$/);
 	assert.ok(plain.some((line) => line.includes("tree-sitter again")));
-	// j and k type into the open prompt instead of scrolling.
+	// j and k type into the open prompt instead of scrolling
 	typeKeys(view, "jk");
 	assert.match(plainFrame(view)[4] ?? "", /Search: againjk +No matches$/);
 	view.handleInput("\u007f");

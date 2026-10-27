@@ -24,7 +24,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-import { PAYLOAD_SHAPE_CHECKS } from "../src/capture/payload.ts";
+import { PAYLOAD_SHAPE_CHECKS, RESPONSES_TOOL_REMOVAL_NOTICE } from "../src/capture/payload.ts";
 import { type MockApi, type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
 import { useSettings } from "./harness/settings.ts";
 
@@ -227,26 +227,43 @@ suite("payload representation per API", { concurrency: true }, () => {
 		});
 	}
 
-	for (const compat of [{ supportsAdditionalTools: true }, { supportsToolSearch: true }]) {
-		test(`openai-responses with ${Object.keys(compat)[0]}: later additions are inline until the history is not additive`,
-			async (t) => {
-				const runtime = await createRuntime(t, { model: ["openai-responses", "text"], compat, tools: ["read", "ls"] });
-				runtime.session.setActiveToolsByName(["read"]);
-				await runtime.session.prompt("first prompt");
-				runtime.session.setActiveToolsByName(["read", "ls"]);
-				await runtime.session.prompt("tool added");
-				runtime.session.setActiveToolsByName(["ls"]);
-				await runtime.session.prompt("tool removed");
+	test("openai-responses with supportsAdditionalTools: every tool is inline and removals are announced as text",
+		async (t) => {
+			const { added, removed } = await exerciseResponsesToolChanges(t, { supportsAdditionalTools: true });
+			assert.deepEqual(toolNames(added?.tools), [], "the request-level list stays empty");
+			assert.deepEqual(inlineToolNames(added), ["read", "ls"]);
+			assert.match(JSON.stringify(added?.input), /incremental tools update/);
+			assert.deepEqual(toolNames(removed?.tools), []);
+			assert.deepEqual(inlineToolNames(removed), ["read", "ls"], "a removed tool stays declared inline");
+			assert.ok(JSON.stringify(removed?.input).includes(`${RESPONSES_TOOL_REMOVAL_NOTICE}\\n- read`));
+		});
 
-				assert.deepEqual(runtime.errors, []);
-				const [, added, removed] = runtime.requests.map((request) => request.payload);
-				assert.deepEqual(toolNames(added?.tools), ["read"], "the request-level list keeps the initial tools");
-				assert.deepEqual(inlineToolNames(added), ["ls"]);
-				assert.deepEqual(toolNames(removed?.tools), ["ls"], "a removal sends the current tools at request level");
-				assert.deepEqual(inlineToolNames(removed), []);
-			});
-	}
+	test("openai-responses with supportsToolSearch: later additions are inline after the last non-additive change",
+		async (t) => {
+			const { added, removed } = await exerciseResponsesToolChanges(t, { supportsToolSearch: true });
+			assert.deepEqual(toolNames(added?.tools), ["read"], "the request-level list keeps the initial tools");
+			assert.deepEqual(inlineToolNames(added), ["ls"]);
+			assert.deepEqual(toolNames(removed?.tools), ["ls"], "a removal sends the current tools at request level");
+			assert.deepEqual(inlineToolNames(removed), []);
+		});
 });
+
+/** Payloads of an OpenAI Responses session that adds a tool, then removes the initial one. */
+async function exerciseResponsesToolChanges(
+	t: TestContext,
+	compat: Record<string, unknown>,
+): Promise<{ readonly added?: Item; readonly removed?: Item }> {
+	const runtime = await createRuntime(t, { model: ["openai-responses", "text"], compat, tools: ["read", "ls"] });
+	runtime.session.setActiveToolsByName(["read"]);
+	await runtime.session.prompt("first prompt");
+	runtime.session.setActiveToolsByName(["read", "ls"]);
+	await runtime.session.prompt("tool added");
+	runtime.session.setActiveToolsByName(["ls"]);
+	await runtime.session.prompt("tool removed");
+	assert.deepEqual(runtime.errors, []);
+	const [, added, removed] = runtime.requests.map((request) => request.payload);
+	return { added, removed };
+}
 
 /**
  * Build an isolated runtime with one mock provider per API, the given

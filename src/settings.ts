@@ -38,7 +38,7 @@ export function readAutoCompactReserveTokens(pi: ExtensionAPI, model?: Compactio
 	try {
 		return resolveAutoCompactReserveTokens(readLiveSettings(pi), model);
 	} catch {
-		// Unreadable settings degrade to a map without the buffer, not a failed view.
+		// Unreadable settings degrade to a map without the buffer, not a failed view
 		return undefined;
 	}
 }
@@ -56,7 +56,7 @@ export function resolveAutoCompactReserveTokens(
 		if (!settings.getCompactionEnabled()) return undefined;
 		return settings.getCompactionReserveTokens(model);
 	} catch {
-		// Pi rejects invalid reserve values; show no buffer rather than a wrong one.
+		// Pi rejects invalid reserve values; show no buffer rather than a wrong one
 		return undefined;
 	}
 }

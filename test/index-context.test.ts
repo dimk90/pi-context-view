@@ -59,7 +59,7 @@ function flush(): Promise<void> {
 
 test("only context_with_system observes requests: the filter returns a result, capture reads the baseline once", () => {
 	// A resumed session with one real user message and the probe identities
-	// persisted by a prior runtime.
+	// persisted by a prior runtime
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	const entries: SessionEntry[] = [
 		{
@@ -95,7 +95,7 @@ test("only context_with_system observes requests: the filter returns a result, c
 	} as unknown as ExtensionContext;
 	const { emit, handles } = registerOnFakePi(ctx);
 
-	// Rehydrate the persisted probe identity.
+	// Rehydrate the persisted probe identity
 	emit({ type: "session_start", reason: "resume" });
 	assert.equal(sessionReads, 1);
 	assert.equal(handles("context"), false, "no handler observes the conversation-only context event");

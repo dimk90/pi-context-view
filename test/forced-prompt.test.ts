@@ -8,7 +8,7 @@ import { test } from "node:test";
 
 import { type BuildSystemPromptOptions, SessionManager, type ToolInfo } from "@earendil-works/pi-coding-agent";
 
-// Deep import bypasses the package barrel, which does not re-export buildSystemPrompt.
+// Deep import bypasses the package barrel, which does not re-export buildSystemPrompt
 import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import type { InjectionItem, UsagePreviewEntry } from "../src/model.ts";
@@ -79,10 +79,10 @@ test("Injections measures a forced prompt instead of the recorded sections", () 
 	assert.equal(base?.text, FORCED_SYSTEM_PROMPT);
 	assert.equal(base?.change, "forced");
 	assert.deepEqual(items.filter((item) => item.change !== undefined).map((item) => item.id), ["base-prompt"]);
-	// Sections Pi recorded but did not send must be neither counted nor attributed.
+	// Sections Pi recorded but did not send must be neither counted nor attributed
 	assert.doesNotMatch(items.map((item) => item.text).join("\n"), /Recorded preamble/);
 	assert.equal(base?.children, undefined);
-	// Tool declarations still reach the provider, whatever the forced text says.
+	// Tool declarations still reach the provider, whatever the forced text says
 	assert.equal(items.find((item) => item.kind === "tool")?.id, "tool:npm:web:search");
 });
 
@@ -110,7 +110,7 @@ function usageEntries(session: SessionManager, snapshot: RequestSnapshot): Map<s
 		filterMessages: (projected) => projected,
 	});
 	const usageSnapshot = buildUsageSnapshot({
-		// An idle read returns Pi's base prompt, never the forced text of the last run.
+		// An idle read returns Pi's base prompt, never the forced text of the last run
 		systemPrompt: buildSystemPrompt({ cwd: "/current" }),
 		options: { cwd: "/current" },
 		allTools: [SEARCH],
@@ -141,7 +141,7 @@ test("Usage measures the forced prompt while the recorded system state is unchan
 	const previews = usagePreviews(session, snapshot);
 	assert.equal(previews.get("system-prompt"), FORCED_SYSTEM_PROMPT);
 	assert.deepEqual(systemPromptChanges(session, snapshot), ["forced"]);
-	// Tool declarations still reach the provider, whatever the forced text says.
+	// Tool declarations still reach the provider, whatever the forced text says
 	assert.match(previews.get("custom-tools") ?? "", /Recorded search definition/);
 	assert.doesNotMatch([...previews.values()].join("\n"), /Recorded preamble|Pi documentation/);
 });

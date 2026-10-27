@@ -169,7 +169,7 @@ test("buildUsageMap leaves the true-window buffer beyond a smaller Fit range", (
 });
 
 test("buildUsageMap shrinks the buffer when content grows into the reserve", () => {
-	// 90 occupied + 20 reserve overflows the window: only the remaining 10 tokens can be buffer.
+	// 90 occupied + 20 reserve overflows the window: only the remaining 10 tokens can be buffer
 	const map = buildUsageMap(
 		usage([{ id: "messages", label: "Messages", tokens: 90 }], { contextWindow: 100 }, 20),
 		10,

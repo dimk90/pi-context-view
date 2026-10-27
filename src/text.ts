@@ -35,7 +35,7 @@ function stripTerminalStrings(text: string): string {
 		offset = TERMINAL_STRING_END.lastIndex;
 		TERMINAL_STRING_START.lastIndex = offset;
 	}
-	// Preserve an incomplete string for the existing escape/control sanitizers.
+	// Preserve an incomplete string for the existing escape/control sanitizers
 	parts.push(text.slice(offset));
 	return parts.join("");
 }

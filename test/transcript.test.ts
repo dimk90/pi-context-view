@@ -92,7 +92,7 @@ test("Usage counts replayed sections and declarations once instead of live state
 	assert.equal(usage.categories.some((category) => category.id === "extensions"), false);
 	assert.equal(usage.categories.some((category) => category.id === "built-in-tools"), false);
 	assert.equal(usage.categories.find((category) => category.id === "custom-tools")?.children?.[0]?.label, "search");
-	// Collapsing the same state has exactly the same semantic estimate, not another patch charge.
+	// Collapsing the same state has exactly the same semantic estimate, not another patch charge
 	const state = getCurrentSystemMessage(messages);
 	assert.ok(state);
 	assert.equal(usage.estimatedTokens, usageFor([state]).estimatedTokens);
@@ -164,7 +164,7 @@ for (const transcriptBacked of [false, true]) {
 			appendCacheWarm(session);
 		}
 
-		// Entry-based rendering still sees billed work, including the final leaf; model context must not.
+		// Entry-based rendering still sees billed work, including the final leaf; model context must not
 		const entries = session.getEntries();
 		assert.equal(entries.filter((entry) => entry.type === "usage").length, messages.length + 1);
 		assert.equal(session.getLeafEntry()?.type, "usage");
@@ -180,7 +180,7 @@ for (const transcriptBacked of [false, true]) {
 		assert.match(previewText(usage), /Real injected text/);
 		assert.doesNotMatch(previewText(usage), /cache_warm|warming-model|CACHE_WARM_NOTE/);
 
-		// Restore the entry tree as on resume, then navigate to the warming-only branch prefix.
+		// Restore the entry tree as on resume, then navigate to the warming-only branch prefix
 		const header = session.getHeader();
 		assert.ok(header);
 		const restored = SessionManager.inMemory("/fixture", undefined, [header, ...entries]);

@@ -148,13 +148,22 @@ reject mismatches.
   `tool_removal` blocks; a redefinition under the same name has no
   `tool_removal`. The parser removes these blocks from the message channel and
   replays them in order on the initial list; a later definition wins.
-- OpenAI Responses tool additions (`compat.supportsMidConvoSystemMessages` with
-  `supportsAdditionalTools` or `supportsToolSearch`): while the tool history
-  only adds tools, later additions appear inline at their system message, as an
-  `additional_tools` developer item or a `tool_search_call` and
-  `tool_search_output` pair. After a removal or redefinition, the
-  request-level list holds the current tool set and nothing is inline. The
-  parser removes these items from the message channel and adds their tools.
+- OpenAI Responses tool changes. The parser removes inline declaration items
+  from the message channel and adds their tools in item order:
+  - `additional_tools` (`compat.supportsMidConvoSystemMessages` with
+    `supportsAdditionalTools`): the request-level list is empty, and every
+    system message that adds tools, the leading one included, is preceded by
+    an `additional_tools` developer item. These items cannot remove tools, so
+    Pi appends a removal notice to the system message's text:
+    `The following tools are no longer available. Do not call them:` and one
+    `- name` line per tool. A redefinition under the same name has no notice.
+    The parser applies these notices from system and developer messages in
+    order, so a tool declared again in a later item is available again.
+  - Tool search (`supportsToolSearch` without `supportsAdditionalTools`): the
+    request-level list holds the tool set after the last removal or
+    redefinition, or the initial tools without one. Later additions appear
+    inline at their system message as a `tool_search_call` and
+    `tool_search_output` pair.
 - OpenAI Completions with `supportsMidConvoSystemMessages` and
   `supportsMidConvoToolAdditions` can declare later tools in a system
   message's `tools` list; these additions join the same channel.
@@ -230,7 +239,11 @@ exported, so uncertain differences are never treated as proven Pi adjustments.
   items. Grammar inputs require `supportsOpenAIGrammarTools` and a captured
   grammar declaration with one required string property; that property is sent
   as raw input, not JSON arguments. Declarations come from the captured
-  request, not from baseline tool history.
+  request, not from baseline tool history. With `additional_tools`
+  declarations, Responses sends an incremental-update notice as its own
+  system message before every such item after the first, restating the tools
+  still unavailable, and appends the removal notice to its system message;
+  capture keeps each system message's added and removed tool names for this.
 - **Anthropic.** Unsigned thinking becomes text unless `allowEmptySignature`
   accepts it as thinking. Signed and redacted thinking remains outside the text
   channel. If an error tool result still has images after blocking and capability

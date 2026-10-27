@@ -197,7 +197,7 @@ export function getConfigFilePath(): string {
  */
 export function createDefaultConfigFile(filePath: string = getConfigFilePath()): ConfigCreationResult {
 	try {
-		// Separate from the write below: mkdir also reports EEXIST, for a parent that is a file.
+		// Separate from the write below: mkdir also reports EEXIST, for a parent that is a file
 		mkdirSync(dirname(filePath), { recursive: true });
 	} catch (error) {
 		return { type: "failed", filePath, reason: describeError(error) };
@@ -254,7 +254,7 @@ export function loadConfigFile(filePath: string): ConfigLoadResult {
 	try {
 		text = readFileSync(filePath, "utf8");
 	} catch (error) {
-		// An absent file is the expected state for users who never configured anything.
+		// An absent file is the expected state for users who never configured anything
 		if (hasErrorCode(error, "ENOENT")) return { config: DEFAULT_CONFIG, warnings: [] };
 		return degraded(`Cannot read ${filePath}: ${describeError(error)}.`);
 	}
@@ -303,7 +303,7 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 	const warnings: string[] = [];
 	for (const [key, value] of Object.entries(raw)) {
 		const currentKey = RENAMED_CONFIG_KEYS.get(key);
-		// The current name always wins, so a file carrying both names loads order-independently.
+		// The current name always wins, so a file carrying both names loads order-independently
 		if (currentKey !== undefined && currentKey in raw) continue;
 		const warning = applyOverride(currentKey ?? key, key, value, config);
 		if (warning !== undefined) warnings.push(warning);

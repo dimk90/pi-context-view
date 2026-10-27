@@ -42,7 +42,7 @@ export function registerCompactionTracking(pi: ExtensionAPI, compaction: Compact
 		compaction.begin(event.signal);
 	});
 
-	// Pi ends every observed compaction with exactly one of these two events.
+	// Pi ends every observed compaction with exactly one of these two events
 	pi.on("session_compact", () => {
 		compaction.finish();
 	});

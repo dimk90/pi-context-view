@@ -168,13 +168,13 @@ test("computeUsage classifies snapshot components and live session messages with
 	assert.equal(category(usage.categories, "tool-output").tokens, 8);
 	assert.equal(category(usage.categories, "tool-result:read").tokens, 2);
 	assert.equal(findCategory(usage.categories, "tool-results"), undefined);
-	// Extensions holds injected messages by customType; prompt additions count in System Prompt.
+	// Extensions holds injected messages by customType; prompt additions count in System Prompt
 	assert.equal(category(usage.categories, "extensions").tokens, 1);
 	assert.deepEqual(
 		category(usage.categories, "extensions").children?.map((entry) => [entry.label, entry.tokens]),
 		[["marker", 1]],
 	);
-	// Bash and summary estimates cover pi's LLM-transform text, not just command/output/summary.
+	// Bash and summary estimates cover pi's LLM-transform text, not just command/output/summary
 	assert.equal(category(usage.categories, "bash-executions").tokens, 6);
 	assert.equal(category(usage.categories, "compacted-data").tokens, 55);
 	assert.equal(usage.estimatedTokens, usage.categories.reduce((sum, entry) => sum + entry.tokens, 0));
@@ -202,7 +202,7 @@ test("computeUsage orders prompt categories the way pi assembles a request", () 
 test("computeUsage produces exactly the top-level categories that carry a configurable color", () => {
 	const usage = computeUsage({ snapshot: snapshot(), messages: sessionMessages() });
 
-	// Buffer and free space are view-local rows, so they are configurable without a computed category.
+	// Buffer and free space are view-local rows, so they are configurable without a computed category
 	const configuredIds = [...DEFAULT_CATEGORY_COLORS.keys()]
 		.filter((id) => id !== AUTO_COMPACT_BUFFER_CATEGORY_ID && id !== FREE_SPACE_CATEGORY_ID)
 		.sort();
@@ -243,7 +243,7 @@ test("computeUsage carries measured tool parts into tool preview entries", () =>
 
 	const customEntry = collectPreviewEntries(category(usage.categories, "custom-tools"))[0];
 	assert.deepEqual(customEntry?.sections?.map((section) => section.label), ["Tools", "Definition"]);
-	// Parts break the entry down; they never add tokens to it.
+	// Parts break the entry down; they never add tokens to it
 	assert.equal(customEntry?.sections?.reduce((sum, section) => sum + section.tokens, 0), customEntry?.tokens);
 	assert.equal(customEntry?.sections?.map((section) => section.text).join(""), customEntry?.text);
 
@@ -276,7 +276,7 @@ test("computeUsage keeps System Prompt parts as sections of one entry, not separ
 		messages: [],
 	});
 
-	// Prompt parts break one preview block down; they never become blocks of their own.
+	// Prompt parts break one preview block down; they never become blocks of their own
 	const entries = collectPreviewEntries(category(usage.categories, "system-prompt"));
 	assert.equal(entries.length, 1);
 	assert.equal(entries[0]?.tokens, 13);
@@ -384,7 +384,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 	]);
 	assert.equal(textEntries[1]?.text, "first block");
 
-	// Tool calls: one entry per call with the tool name as a breadcrumb cell.
+	// Tool calls: one entry per call with the tool name as a breadcrumb cell
 	const callEntries = category(usage.categories, "tool-calls").entries ?? [];
 	assert.deepEqual(callEntries.map((entry) => [entry.timestamp, [...entry.breadcrumb]]), [
 		[2, ["assistant", "read"]],
@@ -392,7 +392,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 		[20, ["assistant", "bash"]],
 	]);
 	assert.equal(callEntries[2]?.text, 'bash({"command":"ls"})');
-	// Arguments are marked where they were serialized, between the call parentheses.
+	// Arguments are marked where they were serialized, between the call parentheses
 	const argumentsSpan = callEntries[2]?.jsonSpan;
 	assert.ok(argumentsSpan !== undefined);
 	assert.equal(callEntries[2]?.text.slice(argumentsSpan.start, argumentsSpan.end), '{"command":"ls"}');
@@ -404,7 +404,7 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 		[30, ["bash"], "$ ls\nout"],
 	]);
 
-	// Snapshot-backed categories carry timeless content entries.
+	// Snapshot-backed categories carry timeless content entries
 	const promptEntries = category(usage.categories, "system-prompt").children?.flatMap(
 		(child) => child.entries ?? [],
 	) ?? [];
@@ -432,7 +432,7 @@ test("computeUsage counts pi's LLM-transform text for bash executions and summar
 
 	const usage = computeUsage({ snapshot: snapshot(), messages });
 
-	// "Ran `ls`" plus output fences or "(no output)", cancellation, exit code, and truncation notice.
+	// "Ran `ls`" plus output fences or "(no output)", cancellation, exit code, and truncation notice
 	const bash = category(usage.categories, "bash-executions");
 	assert.deepEqual(bash.entries?.map((entry) => [entry.timestamp, entry.tokens]), [
 		[1, 6],
@@ -442,17 +442,17 @@ test("computeUsage counts pi's LLM-transform text for bash executions and summar
 		[5, 18],
 	]);
 	assert.equal(bash.tokens, 53);
-	// `!!` bash executions never reach the provider and are excluded entirely.
+	// `!!` bash executions never reach the provider and are excluded entirely
 	assert.ok(!bash.entries?.some((entry) => entry.text.includes("hidden")));
 
-	// Summary prefix plus <summary> tags: 96 + 8 + 11 and 89 + 4 + 10 characters.
+	// Summary prefix plus <summary> tags: 96 + 8 + 11 and 89 + 4 + 10 characters
 	const compacted = category(usage.categories, "compacted-data");
 	assert.deepEqual(compacted.entries?.map((entry) => [...entry.breadcrumb, entry.tokens]), [
 		["compaction", 29],
 		["branch", 26],
 	]);
 	assert.equal(compacted.tokens, 55);
-	// Previews still show only the bare summary text, without the transform wrapper.
+	// Previews still show only the bare summary text, without the transform wrapper
 	assert.deepEqual(compacted.entries?.map((entry) => entry.text), ["abcdefgh", "abcd"]);
 });
 
@@ -508,7 +508,7 @@ test("computeUsage uses provider reasoning per message and keeps signature estim
 	const thinking = category(usage.categories, "assistant-thinking");
 	const entries = thinking.entries ?? [];
 
-	// Per-message totals are max(visible chars/4, reported reasoning): 11 + 2 + 4 + 6.
+	// Per-message totals are max(visible chars/4, reported reasoning): 11 + 2 + 4 + 6
 	assert.equal(thinking.tokens, 23);
 	assert.equal(thinking.tokens, entries.reduce((sum, entry) => sum + entry.tokens, 0));
 	assert.deepEqual(entries.map((entry) => entry.tokens), [10, 1, 2, 4, 6]);
@@ -631,7 +631,7 @@ test("collectPreviewEntries flattens aggregates chronologically", () => {
 	const flattened = collectPreviewEntries(category(usage.categories, "tool-output"));
 	assert.deepEqual(flattened.map((entry) => entry.text), ["earlier bash", "later read"]);
 
-	// Timeless snapshot entries keep category order instead of sorting.
+	// Timeless snapshot entries keep category order instead of sorting
 	const builtInTools = collectPreviewEntries(category(usage.categories, "built-in-tools"));
 	assert.deepEqual(builtInTools.map((entry) => [...entry.breadcrumb]), [["bash"], ["read"]]);
 });

@@ -119,13 +119,13 @@ function classifyPromptCategories(snapshot: InjectionSnapshot): UsageCategory[] 
 					skills.push(...breakdownFromItem(item));
 					break;
 				case "message":
-					// Custom messages live in the session; classifyMessages counts them.
+					// Custom messages live in the session; classifyMessages counts them
 					break;
 			}
 		}
 	}
 	// Categories follow the order pi assembles them into a request: prompt text,
-	// context files, and skills first, then the tool definitions sent alongside.
+	// context files, and skills first, then the tool definitions sent alongside
 	return withoutEmpty([
 		aggregate("system-prompt", SYSTEM_PROMPT_LABEL, systemPrompt),
 		aggregate("context-files", INSTRUCTION_FILES_LABEL, contextFiles),
@@ -164,7 +164,7 @@ function classifyMessages(
 	for (const message of messages) {
 		switch (message.role) {
 			case "system":
-				// Sections and tool deltas already contribute through the replayed snapshot.
+				// Sections and tool deltas already contribute through the replayed snapshot
 				break;
 			case "user":
 				user.push({
@@ -189,7 +189,7 @@ function classifyMessages(
 						breadcrumb: ["assistant", block.name],
 						tokens: textTokens(block.name.length + args.length),
 						text: `${block.name}(${args})`,
-						// The arguments sit between the call parentheses this entry adds around them.
+						// The arguments sit between the call parentheses this entry adds around them
 						jsonSpan: { start: block.name.length + 1, end: block.name.length + 1 + args.length },
 					});
 				}
@@ -203,7 +203,7 @@ function classifyMessages(
 				break;
 			case "bashExecution": {
 				const tokens = transformedTokens(message);
-				// The transform drops `!!` bash executions: they never reach the provider.
+				// The transform drops `!!` bash executions: they never reach the provider
 				if (tokens !== undefined) {
 					bashExecutions.push({
 						timestamp: message.timestamp,
@@ -271,7 +271,7 @@ function leafFromItem(item: InjectionItem): UsageCategory {
 			tokens: item.tokens,
 			text: item.text,
 			jsonSpan: item.jsonSpan,
-			// Tool parts stay a preview breakdown of the same estimate, never separate entries.
+			// Tool parts stay a preview breakdown of the same estimate, never separate entries
 			sections: item.sections,
 			change: item.change,
 		}],

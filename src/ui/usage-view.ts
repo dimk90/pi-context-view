@@ -43,7 +43,14 @@ import {
 } from "./layout.ts";
 import { forcedMarker } from "./markers.ts";
 import { descriptionNoteLines, emptyPreviewNote, probingDisabledNote, thinkingNote, usageNote } from "./notes.ts";
-import { MATCH_STEP_KEY_HINT, PreviewSearch, SEARCH_KEY } from "./search.ts";
+import {
+	isSearchNavigationKey,
+	matchStepDirection,
+	PreviewSearch,
+	SEARCH_CONTEXT_LINES,
+	SEARCH_KEY,
+	searchHints,
+} from "./search.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, calculateFitMapScale, type UsageMap, type UsageMapCell } from "./usage-map.ts";
@@ -90,8 +97,6 @@ const MAP_KEY_SIZE_LABEL = "Block Size";
 const MAP_KEY_DETAILED_SPARE_ROWS = 5;
 /** Rows the single-line key costs beside the complete legend: one separator plus one key row. */
 const MAP_KEY_COMPACT_SPARE_ROWS = 2;
-/** Lines kept above a match scrolled into view, so it is read in context. */
-const SEARCH_CONTEXT_LINES = 2;
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -257,7 +262,7 @@ export class UsageView {
 		this.categoryColors = input.categoryColors;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
-		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable.
+		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable
 		const selectableCount = this.legendRows.filter((row) => row.type === "category").length;
 		this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
 	}
@@ -265,10 +270,13 @@ export class UsageView {
 	/** Handle category navigation, preview opening, and close keys. */
 	public handleInput(data: string): void {
 		if (this.previewRow !== undefined) {
-			// Route on the same predicate the renderer uses, so keys always target the visible level.
+			// Route on the same predicate the renderer uses, so keys always target the visible level
 			const blockStream = this.getFullContentEntry(this.previewRow) === undefined;
-			if (this.search.prompt.editing) this.handleSearchInput(data, blockStream);
-			else if (blockStream) this.handlePreviewInput(data);
+			// Navigation keys still navigate the level while the search prompt is open
+			if (this.search.prompt.editing && !isSearchNavigationKey(data)) {
+				this.search.handlePromptKey(data);
+				this.clearCache();
+			} else if (blockStream) this.handlePreviewInput(data);
 			else this.handleContentInput(data);
 			return;
 		}
@@ -276,7 +284,7 @@ export class UsageView {
 			this.done(undefined);
 			return;
 		}
-		// One notch moves the selection one row, like a single step key.
+		// One notch moves the selection one row, like a single step key
 		const wheel = parseWheelDirection(data);
 		if (wheel !== undefined) {
 			if (this.navigator.moveBy(wheel)) this.clearCache();
@@ -518,7 +526,7 @@ export class UsageView {
 		const keyLines = map === undefined ? [] : this.mapKeyLines(map, width, rows);
 		const reservedLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT +
 			(keyLines.length === 0 ? 0 : keyLines.length + 1);
-		// The counter sits below the last legend row, so it consumes one of the available rows.
+		// The counter sits below the last legend row, so it consumes one of the available rows
 		const viewport = calculateViewport(this.legendRows.length, rows, reservedLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 
@@ -531,7 +539,7 @@ export class UsageView {
 			const row = this.legendRows[index];
 			if (row === undefined) break;
 			const selected = index === this.navigator.selected;
-			// The cursor stays in one fixed column at the start of the legend.
+			// The cursor stays in one fixed column at the start of the legend
 			const cursor = selected ? theme.fg("accent", "→ ") : "  ";
 			visibleRows.push(this.fit(`${cursor}${this.legendLine(row, columns, rowWidth, selected)}`, width));
 		}
@@ -769,40 +777,13 @@ export class UsageView {
 
 	// === Preview mode ===
 
-	/**
-	 * Keys while the search prompt is open at either preview level: printable
-	 * keys edit the query, the arrow and page keys still navigate, Enter keeps
-	 * the query, and Escape drops it.
-	 */
-	private handleSearchInput(data: string, blockStream: boolean): void {
-		const search = this.search;
-		if (matchesKey(data, Key.escape)) {
-			search.clear();
-		} else if (matchesKey(data, Key.enter)) {
-			if (search.prompt.active) search.prompt.submit();
-			else search.clear();
-		} else if (
-			parseWheelDirection(data) !== undefined ||
-			matchesKey(data, Key.up) ||
-			matchesKey(data, Key.down) ||
-			matchesKey(data, Key.pageUp) ||
-			matchesKey(data, Key.pageDown)
-		) {
-			// Plain navigation keys never type into the prompt, so the level handles them as usual.
-			if (blockStream) this.handlePreviewInput(data);
-			else this.handleContentInput(data);
-		} else {
-			search.type(data);
-		}
-		this.clearCache();
-	}
-
 	/** `/` opens the search prompt and `n`/`N` step through matches; false for any other key. */
 	private handleSearchKey(data: string, anchorRow: number): boolean {
+		const matchStep = matchStepDirection(data);
 		if (data === SEARCH_KEY) {
 			this.search.edit(anchorRow);
-		} else if (data === "n" || data === "N") {
-			this.search.step(data === "n" ? 1 : -1);
+		} else if (matchStep !== undefined) {
+			this.search.step(matchStep);
 		} else {
 			return false;
 		}
@@ -816,13 +797,13 @@ export class UsageView {
 			this.closePreview();
 			return;
 		}
-		// Decide from the entries, not render caches: keys can arrive before the stream first renders.
+		// Decide from the entries, not render caches: keys can arrive before the stream first renders
 		const row = this.previewRow;
 		if (row !== undefined && this.previewEntries(row).length > 0) {
 			const anchor = this.cachedStreamSearch?.starts[this.blockNavigator.selected] ?? 0;
 			if (this.handleSearchKey(data, anchor)) return;
 		}
-		// Blocks are selected rather than scrolled, so one notch steps one block.
+		// Blocks are selected rather than scrolled, so one notch steps one block
 		const wheel = parseWheelDirection(data);
 		if (wheel !== undefined) {
 			const moved = wheel < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
@@ -903,11 +884,11 @@ export class UsageView {
 	 * it lies in this block, so a match hidden by the cap is one Enter away.
 	 */
 	private openBlock(): void {
-		// The rendered stream carries the height-dependent cap the user sees, so it decides what Enter opens.
+		// The rendered stream carries the height-dependent cap the user sees, so it decides what Enter opens
 		const index = this.blockNavigator.selected;
 		const block = this.cachedStream?.blocks[index];
 		if (block === undefined || block.hiddenLineCount === 0) return;
-		// The opened level searches the same header and content rows, so offsets carry over unchanged.
+		// The opened level searches the same header and content rows, so offsets carry over unchanged
 		const start = this.cachedStreamSearch?.starts[index] ?? 0;
 		const blockLineCount = block.lines.length + block.hiddenLineCount;
 		const currentRow = this.currentMatchRow();
@@ -947,7 +928,7 @@ export class UsageView {
 	private renderPreview(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const searchRowCount = this.searchRowCount();
+		const searchRowCount = this.search.promptRowCount;
 		const descriptionLines = this.previewDescriptionLines(width, terminalRows - searchRowCount, row);
 		const reservedLineCount = descriptionBlockRows(descriptionLines) + searchRowCount;
 		const stream = this.previewStream(width, previewBlockMaxLines(terminalRows, reservedLineCount), row);
@@ -962,7 +943,7 @@ export class UsageView {
 		const revealRow = this.search.sync(searchLines.lines);
 		if (revealRow !== undefined) this.blockNavigator.select(blockAtRow(searchLines.starts, revealRow));
 
-		const lines: string[] = [border, "", this.categoryHeaderLine(row, width), "", ...this.searchPromptLines(width)];
+		const lines: string[] = [border, "", this.categoryHeaderLine(row, width), "", ...this.search.promptLines(theme, width)];
 		lines.push(...this.previewStreamLines(stream, viewport.visibleCount, width));
 		if (viewport.showScroll) {
 			lines.push(
@@ -977,17 +958,6 @@ export class UsageView {
 		lines.push(fitHintRow(theme, this.streamHints(stream.blocks.length), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
-	}
-
-	/** Rows the search prompt and its trailing blank row take while a query is typed or kept. */
-	private searchRowCount(): number {
-		return this.search.prompt.editing || this.search.prompt.active ? 2 : 0;
-	}
-
-	/** Search prompt row and its trailing blank row, rendered after the frame's matches are known. */
-	private searchPromptLines(width: number): string[] {
-		if (this.searchRowCount() === 0) return [];
-		return [this.search.prompt.render(this.theme, width, "Search", this.search.status), ""];
 	}
 
 	/** Cached search lines of the open stream; rebuilt with the content they flatten. */
@@ -1017,22 +987,7 @@ export class UsageView {
 	/** Block stream hints; an empty stream moves nowhere and has nothing to search. */
 	private streamHints(blockCount: number): Hint[] {
 		if (blockCount === 0) return [["Esc", "Back"]];
-		return this.searchHints("Navigate");
-	}
-
-	/** Hints for plain navigation, an open search prompt, or a kept search. */
-	private searchHints(stepLabel: string): Hint[] {
-		const prompt = this.search.prompt;
-		if (prompt.editing) return [["↑↓", stepLabel], ["Enter", "Done"], ["Esc", "Clear"]];
-		if (prompt.active) {
-			return [
-				[STEP_KEY_HINT, stepLabel],
-				[MATCH_STEP_KEY_HINT, "Next/Prev"],
-				[SEARCH_KEY, "Search", true],
-				["Esc", "Back"],
-			];
-		}
-		return [[STEP_KEY_HINT, stepLabel], ["PgUp/PgDn", "Page"], [SEARCH_KEY, "Search", true], ["Esc", "Back"]];
+		return searchHints(this.search.prompt, "Navigate");
 	}
 
 	/** Full content with an identity header unless the System Prompt category already identifies it. */
@@ -1047,7 +1002,7 @@ export class UsageView {
 		const body = this.blockBodyLines(width, row, entry);
 		const showEntryHeader = row.rootId !== "system-prompt" || this.openBlockIndex !== undefined;
 		const fixedLineCount = (showEntryHeader ? BLOCK_FIXED_LINE_COUNT : PREVIEW_FIXED_LINE_COUNT) +
-			this.searchRowCount();
+			this.search.promptRowCount;
 		const descriptionLines = row.rootId === "assistant-thinking" && this.openBlockIndex === undefined
 			? this.thinkingDescriptionLines(width, row)
 			: previewLegendLines(theme, [entry], {
@@ -1060,7 +1015,7 @@ export class UsageView {
 		);
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
 		const searchLines = this.contentSearch(body, showEntryHeader ? this.entryHeader(entry) : undefined);
-		// Body rows follow the header row when it is searched.
+		// Body rows follow the header row when it is searched
 		const bodyRow = searchLines.header === undefined ? 0 : 1;
 		const revealLine = this.search.sync(searchLines.lines);
 		if (revealLine !== undefined) {
@@ -1072,7 +1027,7 @@ export class UsageView {
 			"",
 			this.categoryHeaderLine(row, width),
 			"",
-			...this.searchPromptLines(width),
+			...this.search.promptLines(theme, width),
 			...(searchLines.header === undefined
 				? []
 				: [this.fit(`${BODY_INDENT}${this.search.highlight(theme, searchLines.header, 0)}`, width), ""]),
@@ -1088,7 +1043,7 @@ export class UsageView {
 		}
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
-		lines.push(fitHintRow(theme, this.searchHints("Scroll"), width));
+		lines.push(fitHintRow(theme, searchHints(this.search.prompt, "Scroll"), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
@@ -1233,7 +1188,7 @@ export class UsageView {
 			cells.push(theme.fg("dim", `[${formatEntryTimestamp(entry.timestamp)}]`));
 		}
 		entry.breadcrumb.forEach((cell, index) => {
-			// The leading cell names the producer and heads the whole block, so it is bold.
+			// The leading cell names the producer and heads the whole block, so it is bold
 			const lead = index === 0;
 			const color: ThemeColor = lead ? "mdHeading" : "muted";
 			const name = normalizeInlineText(cell);
@@ -1351,7 +1306,7 @@ function maxMapColumns(width: number): number {
 	if (width < MAP_SIDE_BY_SIDE_MIN_WIDTH) return 0;
 	const spaced = width >= SPACED_MAP_MIN_WIDTH;
 	const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
-	// Spaced cells cost two columns each, except the last one, which has no trailing space.
+	// Spaced cells cost two columns each, except the last one, which has no trailing space
 	const available = width - BODY_INDENT.length - gap - MIN_DETAIL_WIDTH + (spaced ? 1 : 0);
 	return Math.max(0, Math.floor(available / (spaced ? 2 : 1)));
 }
@@ -1370,9 +1325,9 @@ function previewWrapWidth(width: number): number {
  * the height alone, never from the viewport, whose scroll counter depends on the
  * stream this cap produces.
  */
-function previewBlockMaxLines(terminalRows: number, descriptionLineCount: number): number {
-	// Assume the counter row; a stream short enough to drop it loses at most one line per block.
-	const visibleCount = terminalRows - PREVIEW_FIXED_LINE_COUNT - descriptionLineCount - 1;
+function previewBlockMaxLines(terminalRows: number, reservedLineCount: number): number {
+	// Assume the counter row; a stream short enough to drop it loses at most one line per block
+	const visibleCount = terminalRows - PREVIEW_FIXED_LINE_COUNT - reservedLineCount - 1;
 	const fitted = Math.floor((visibleCount - TWO_BLOCK_FRAME_ROWS) / 2);
 	return Math.max(PREVIEW_BLOCK_MIN_LINES, Math.min(PREVIEW_BLOCK_MAX_LINES, fitted));
 }

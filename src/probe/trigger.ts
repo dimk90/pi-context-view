@@ -84,7 +84,7 @@ export class ProbeTrigger {
 		try {
 			// Pi emits `input` and `before_agent_start` from inside this call, so the
 			// token reaches both handlers and identifies the run even when another
-			// extension's input transform rewrites the prompt text.
+			// extension's input transform rewrites the prompt text
 			runWithProbeToken(attempt.token, () => this.pi.sendUserMessage(""));
 		} catch (error) {
 			this.probe.fail("startup", error instanceof Error ? error.message : String(error));

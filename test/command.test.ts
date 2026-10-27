@@ -90,7 +90,7 @@ test("reportTuiOnly names the refused view instead of the whole command", () => 
 	reportTuiOnly(context, "usage");
 	reportTuiOnly(context, "injections");
 
-	// Only views are refused; /context config needs no UI and runs in every mode.
+	// Only views are refused; /context config needs no UI and runs in every mode
 	assert.deepEqual(notified, [
 		{ message: "/context usage is available in TUI mode only.", type: "warning" },
 		{ message: "/context injections is available in TUI mode only.", type: "warning" },
@@ -126,7 +126,7 @@ test("reportConfigCreation reports every create outcome with its own severity", 
 
 	reportConfigCreation(context, { type: "created", filePath });
 	reportConfigCreation(context, { type: "exists", filePath });
-	// OS error text is untrusted, so it must reach the terminal sanitized.
+	// OS error text is untrusted, so it must reach the terminal sanitized
 	reportConfigCreation(context, { type: "failed", filePath, reason: "EACCES: \u001b[31mdenied\u0007" });
 
 	assert.deepEqual(notified, [
@@ -146,7 +146,7 @@ test("resolveRequestSnapshot sends the synthetic prompt inside the probe token s
 		sendUserMessage: (content: string) => {
 			sentContent = content;
 			tokenDuringSend = readProbeToken();
-			// No agent lifecycle follows in this harness; end the attempt at once.
+			// No agent lifecycle follows in this harness; end the attempt at once
 			probe.fail("startup", "No agent run in this harness.");
 		},
 	} as unknown as ExtensionAPI;

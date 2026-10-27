@@ -15,7 +15,7 @@ const MARKER_SEPARATOR = " · ";
 
 /** Markers a frame can show, in the fixed order their legend bullets render. */
 const MARKER_ORDER = [
-	"highlighted", "guess", "dropped", "moved", "forced", "forced-edit", "diff", "request-only",
+	"highlighted", "guess", "dropped", "counted-in-system-prompt", "moved", "forced", "forced-edit", "diff", "request-only",
 ] as const;
 
 /** One marked state a description bullet explains; `diff` stands for `+N`/`-N` token diffs. */
@@ -27,6 +27,7 @@ export type ContextMarker = (typeof MARKER_ORDER)[number];
  */
 export interface MarkedState {
 	readonly dropped?: boolean;
+	readonly countedInSystemPrompt?: boolean;
 	readonly moved?: boolean;
 	readonly change?: RequestChange;
 	readonly forcedEdit?: Pick<ForcedEdit, "sent">;
@@ -67,7 +68,7 @@ interface MarkerLegend {
 const MARKER_LEGENDS: Record<Exclude<ContextMarker, "diff">, MarkerLegend> = {
 	highlighted: {
 		keyword: "Highlighted",
-		// Extension lines carry this color, so the bullet opens in it too.
+		// Extension lines carry this color, so the bullet opens in it too
 		color: "syntaxNumber",
 		explanation: " parts are injected by extensions into pi’s system prompt.",
 	},
@@ -80,6 +81,11 @@ const MARKER_LEGENDS: Record<Exclude<ContextMarker, "diff">, MarkerLegend> = {
 		keyword: "Dropped",
 		color: "toolDiffRemoved",
 		explanation: " parts were replaced by a custom system prompt and are counted nowhere.",
+	},
+	"counted-in-system-prompt": {
+		keyword: "Counted in System Prompt",
+		color: "muted",
+		explanation: " parts are already counted in the System Prompt part with the same name.",
 	},
 	moved: {
 		keyword: "Moved",
@@ -170,12 +176,13 @@ export function forcedMarker(theme: Theme): string {
 }
 
 /**
- * Every state marker of one part, in legend order: dropped, moved, forced,
- * then request-only. Empty when the part carries none. Token diffs, not
- * markers, show what an added, modified, or deleted part changed.
+ * Every state marker of one part, in legend order: dropped, counted in System
+ * Prompt, moved, forced, then request-only. Empty when the part carries none.
+ * Token diffs, not markers, show what an added, modified, or deleted part changed.
  */
 export function stateMarkers(theme: Theme, part: MarkedState): string {
 	let markers = part.dropped === true ? droppedMarker(theme) : part.moved === true ? movedMarker(theme) : "";
+	if (part.countedInSystemPrompt === true) markers += stateMarker(theme, MARKER_LEGENDS["counted-in-system-prompt"]);
 	if (part.change === "forced" || part.forcedEdit !== undefined) markers += forcedMarker(theme);
 	if (part.requestOnly === true) markers += stateMarker(theme, MARKER_LEGENDS["request-only"]);
 	return markers;
@@ -185,6 +192,7 @@ export function stateMarkers(theme: Theme, part: MarkedState): string {
 export function partMarkers(part: MarkedState & { readonly diff?: TokenDiff }): ContextMarker[] {
 	const markers: ContextMarker[] = [];
 	if (part.dropped === true) markers.push("dropped");
+	if (part.countedInSystemPrompt === true) markers.push("counted-in-system-prompt");
 	if (part.moved === true) markers.push("moved");
 	if (part.change === "forced") markers.push("forced");
 	if (part.forcedEdit !== undefined) markers.push("forced-edit");

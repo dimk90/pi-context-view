@@ -203,7 +203,7 @@ export interface InjectedReference extends TextSpan {
 export interface InjectionSection {
 	/** Section name rendered as a preview subheader. */
 	readonly label: string;
-	/** Preview text; zero-token dropped and deleted parts do not add to the item's text. */
+	/** Preview text; zero-token dropped, deleted, and elsewhere-counted parts do not add to the item's text. */
 	readonly text: string;
 	/** Share of the parent estimate; sections sum exactly to the item total. A diff-only part has no share. */
 	readonly tokens: number;
@@ -212,6 +212,12 @@ export interface InjectionSection {
 	 * sent its text, so it carries no counted characters and always reads 0 tokens.
 	 */
 	readonly dropped?: boolean;
+	/**
+	 * True for a tool's prompt lines pi renders into the System Prompt part of
+	 * the same label: that part counts them, so this one carries no counted
+	 * characters and always reads 0 tokens.
+	 */
+	readonly countedInSystemPrompt?: boolean;
 	/**
 	 * True when an extension moved this part out of the region pi renders it
 	 * into. Pi still sends the text, so it counts exactly as an unmoved part.

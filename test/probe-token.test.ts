@@ -12,7 +12,7 @@ test("readProbeToken sees the token only inside its own call scope", async () =>
 	assert.equal(readProbeToken(), undefined);
 
 	// Pi awaits the `input` and `before_agent_start` handlers from inside the
-	// sendUserMessage() call, so the token has to survive intervening awaits.
+	// sendUserMessage() call, so the token has to survive intervening awaits
 	const observed = await runWithProbeToken(token, async () => {
 		const beforeAwait = readProbeToken();
 		await Promise.resolve();

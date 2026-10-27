@@ -149,7 +149,7 @@ test("extensionSource labels path extensions by their shortest unique path tail"
 	assert.deepEqual(extensionSource(fixture, roster),
 		{ id: "tool-source:cli:/repo/test/fixtures/hidden-tools.ts", label: "hidden-tools.ts", native: false });
 	assert.equal(extensionSource(folder, roster).label, "my-ext");
-	// Package paths never collide with loose files, which need just enough of their path to differ.
+	// Package paths never collide with loose files, which need just enough of their path to differ
 	assert.equal(extensionSource(first, roster).label, "a/tools/web.ts");
 	assert.equal(extensionSource(second, roster).label, "b/tools/web.ts");
 	assert.equal(extensionSource(second).label, "web.ts");

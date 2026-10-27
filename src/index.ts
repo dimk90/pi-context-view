@@ -129,7 +129,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			}),
 			degradedReason: latest.type === "missing" ? latest.degradedReason : undefined,
 			probingDisabled: latest.type === "unprobed",
-			// Reported inside the view: a notification would stay hidden behind the fullscreen overlay.
+			// Reported inside the view: a notification would stay hidden behind the fullscreen overlay
 			notices: loadedConfig.warnings,
 			categoryColors: loadedConfig.config.categoryColors,
 			mapSize: loadedConfig.config.mapSize,
@@ -150,7 +150,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportCommandMessage(ctx, command.message, "error");
 				return;
 			}
-			// Creating the file needs no UI, so it stays available in every run mode.
+			// Creating the file needs no UI, so it stays available in every run mode
 			if (command.type === "config") {
 				reportConfigCreation(ctx, createDefaultConfigFile());
 				return;

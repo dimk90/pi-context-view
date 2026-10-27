@@ -77,7 +77,7 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InjectionSnapshot
 	const options = copyPromptOptions(input.options);
 	const items = analyzeSystemPrompt(forced ?? systemMessageText(request.state), {
 		...options,
-		// Current loader overrides are not evidence of what this branch recorded.
+		// Current loader overrides are not evidence of what this branch recorded
 		customPrompt: undefined, sections: undefined,
 		// The replayed layout locates inline or unwrapped request sections; Usage marks no section changes
 	}, tools, { sources: input.promptSources }, forced === undefined ? { replayed: request.prompt.replayed } : {});

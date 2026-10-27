@@ -72,6 +72,8 @@ interface RuntimeOptions {
 	readonly sessionManager?: SessionManager;
 	readonly modelId?: "vision" | "text";
 	readonly mode?: "tui" | "rpc";
+	/** Enable automatic compaction, which also enables truncated-response recovery. */
+	readonly autoCompaction?: boolean;
 }
 
 /** A Pi runtime with the extension, its snapshot store, and every publication in order. */
@@ -114,6 +116,38 @@ suite("structured capture calibration", { concurrency: true }, () => {
 			const settled = origin === "synthetic-probe" ? "incomplete" : "complete";
 			assert.ok([`pending,${settled}`, settled].includes(statuses.join()), `${id}: ${statuses}`);
 		}
+	});
+
+	test("truncated-response recovery hides the tool call and its result from the diff", async (t) => {
+		const provider = await startProvider(t);
+		const directory = await temporaryDirectory(t);
+		// A session that ends with a tool call cut off by the output limit and its "not executed" result (pi#11227):
+		// the next prompt's recovery hides both with context edits
+		const sessionManager = SessionManager.inMemory(directory);
+		const usage = {
+			input: 10, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 11,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		};
+		sessionManager.appendMessage({ role: "user", content: [{ type: "text", text: "first prompt" }], timestamp: Date.now() });
+		sessionManager.appendMessage({
+			role: "assistant", content: [{ type: "toolCall", id: "call_x", name: "read", arguments: { path: "missing.txt" } }],
+			api: "openai-completions", provider: PROVIDER, model: "vision", usage, stopReason: "length", timestamp: Date.now(),
+		});
+		sessionManager.appendMessage({
+			role: "toolResult", toolCallId: "call_x", toolName: "read", content: [{ type: "text", text: "not executed" }],
+			isError: true, timestamp: Date.now(),
+		});
+		const runtime = await createRuntime(t, provider, { factories: [], sessionManager, autoCompaction: true });
+		await runtime.session.prompt("after recovery");
+
+		const entries = runtime.session.sessionManager.getBranch();
+		const edits = entries.filter((entry) => entry.type === "context_edit");
+		assert.equal(edits.length, 2, "pi hides the truncated call and its result");
+		const snapshots = await runtime.settled();
+		assert.deepEqual(runtime.errors, []);
+		for (const snapshot of snapshots) assertEmpty(snapshot);
+		const last = provider.requests.at(-1)?.body.messages as Array<{ role: string }>;
+		assert.ok(!last.some((message) => message.role === "tool"), "the request has no orphaned tool result");
 	});
 
 	test("a resumed session on another model has an empty diff", async (t) => {
@@ -558,7 +592,11 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 	const directory = await temporaryDirectory(t);
 	// Keep almost nothing on manual compaction, so a short session can compact
 	const settingsManager = SettingsManager.inMemory({
-		cacheWarming: "off", compaction: { enabled: false, keepRecentTokens: 1 },
+		cacheWarming: "off",
+		compaction: options.autoCompaction
+			// Keep the whole short session, so hidden messages stay in the projected tail
+			? { enabled: true, keepRecentTokens: 50_000 }
+			: { enabled: false, keepRecentTokens: 1 },
 	});
 	useSettings(t, directory, () => settingsManager);
 	const modelRuntime = await ModelRuntime.create({

@@ -69,6 +69,8 @@ export interface InjectionFilterResult {
 export type InjectionRow =
 	| {
 		readonly kind: "group";
+		/** Stable `source:<id>` key, the same one filter results use. */
+		readonly groupKey: string;
 		readonly label: string;
 		readonly tokens: number;
 		readonly depth: 0;
@@ -149,55 +151,49 @@ export function collectItemsById(snapshot: InjectionSnapshot): Map<string, Injec
 export function filterInjections(snapshot: InjectionSnapshot, filter: InjectionFilter): InjectionFilterResult {
 	const kept = new Set<string>();
 	const matched = new Set<string>();
-	const matches = (item: InjectionItem): boolean => filter.mode === "name"
-		? filter.nameMatches(item.label)
-		: filter.contentMatches(item);
 	for (const group of snapshot.groups) {
 		const wholeGroup = filter.mode === "name" && filter.nameMatches(group.source.label);
 		if (wholeGroup) matched.add(groupKey(group));
 		let groupKept = wholeGroup;
 		for (const item of group.items) {
-			if (filterItem(item, filter.mode, matches, wholeGroup, kept, matched)) groupKept = true;
+			const result = filterItem(item, filter, wholeGroup);
+			for (const id of result.kept) kept.add(id);
+			for (const id of result.matched) matched.add(id);
+			if (result.kept.length > 0) groupKept = true;
 		}
 		if (groupKept) kept.add(groupKey(group));
 	}
 	return { kept, matched };
 }
 
-/**
- * Record which rows of one item the filter keeps and matches; true when any
- * is kept. `whole` keeps the full subtree, as inside a matching group.
- */
-function filterItem(
-	item: InjectionItem,
-	mode: InjectionFilterMode,
-	matches: (item: InjectionItem) => boolean,
-	whole: boolean,
-	kept: Set<string>,
-	matched: Set<string>,
-): boolean {
-	const children = item.children ?? [];
-	const matchedChildren = children.filter(matches);
-	for (const child of matchedChildren) matched.add(child.id);
-	const itemMatched = matches(item);
-	if (whole || (mode === "name" && itemMatched)) {
-		if (itemMatched) matched.add(item.id);
-		for (const entry of [item, ...children]) kept.add(entry.id);
-		return true;
-	}
-	if (matchedChildren.length > 0) {
-		for (const entry of [item, ...matchedChildren]) kept.add(entry.id);
-		return true;
-	}
-	if (mode === "content" && itemMatched) {
-		matched.add(item.id);
-		kept.add(item.id);
-		return true;
-	}
-	return false;
+/** Ids of one item's rows that a filter keeps and matches; both empty when the item is hidden. */
+interface ItemFilterResult {
+	readonly kept: readonly string[];
+	readonly matched: readonly string[];
 }
 
-/** Match key of a group row, kept apart from item ids. */
+/** Filter one item and its children; `whole` keeps the full subtree, as inside a matching group. */
+function filterItem(item: InjectionItem, filter: InjectionFilter, whole: boolean): ItemFilterResult {
+	const children = item.children ?? [];
+	const matchedChildIds = children.filter((child) => itemMatches(child, filter)).map((child) => child.id);
+	const itemMatched = itemMatches(item, filter);
+	if (whole || (filter.mode === "name" && itemMatched)) {
+		return {
+			kept: [item, ...children].map((entry) => entry.id),
+			matched: itemMatched ? [item.id, ...matchedChildIds] : matchedChildIds,
+		};
+	}
+	if (matchedChildIds.length > 0) return { kept: [item.id, ...matchedChildIds], matched: matchedChildIds };
+	if (filter.mode === "content" && itemMatched) return { kept: [item.id], matched: [item.id] };
+	return { kept: [], matched: [] };
+}
+
+/** Whether one item matches the filter by its label or by its content, per the filter mode. */
+function itemMatches(item: InjectionItem, filter: InjectionFilter): boolean {
+	return filter.mode === "name" ? filter.nameMatches(item.label) : filter.contentMatches(item);
+}
+
+/** Stable key of a group row, kept apart from item ids; labels of different sources can collide. */
 function groupKey(group: InjectionGroup): string {
 	return `source:${group.source.id}`;
 }
@@ -215,6 +211,7 @@ export function buildInjectionRows(snapshot: InjectionSnapshot, filter?: Injecti
 		if (!shown(groupKey(group))) continue;
 		rows.push({
 			kind: "group",
+			groupKey: groupKey(group),
 			label: group.source.label,
 			tokens: group.totalTokens,
 			depth: 0,

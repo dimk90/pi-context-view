@@ -162,7 +162,10 @@ filtering, `turn_end` omission edits, `hiddenTools` in Pi's prompt options,
 `before_agent_start.messageType`, and the probe's
 [abort form](probe.md#keeping-probe-messages-out-of-real-context).
 The guard mirrors Pi 1.3's foreign-thinking removal and Anthropic error-image
-relocation ([Pi's own adjustments](payload-guard.md#pis-own-adjustments)).
+relocation ([Pi's own adjustments](payload-guard.md#pis-own-adjustments)),
+and Pi 1.4's OpenAI Responses `additional_tools` representation. On Pi 1.3
+with `supportsAdditionalTools`, its tool notices are missing from the payload
+and appear as payload changes.
 The Pi packages stay `"*"` peer dependencies, so an older Pi can still load
 the extension. The factory therefore compares Pi's `VERSION` with
 `MIN_PI_VERSION` and, on an older Pi, registers no lifecycle handlers: nothing

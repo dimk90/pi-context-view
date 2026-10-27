@@ -20,6 +20,9 @@ export interface Viewport {
 	showScroll: boolean;
 }
 
+/** One hint pair; an optional hint is the first to go when the row is too narrow. */
+export type Hint = readonly [key: string, description: string, optional?: boolean];
+
 /** Divide terminal rows between content and an overflow indicator. */
 export function calculateViewport(
 	itemCount: number,
@@ -141,9 +144,6 @@ export function hintRow(theme: Theme, hints: readonly Hint[]): string {
 	const separator = theme.fg("dim", " · ");
 	return `${BODY_INDENT}${hints.map(([key, description]) => hint(theme, key, description)).join(separator)}`;
 }
-
-/** One hint pair; an optional hint is the first to go when the row is too narrow. */
-export type Hint = readonly [key: string, description: string, optional?: boolean];
 
 /**
  * Hint row fitted to the width: optional hints drop out whole before any

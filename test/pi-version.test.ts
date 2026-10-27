@@ -9,7 +9,7 @@ test("isSupportedPiVersion accepts the minimum and newer releases", () => {
 	for (const version of [MIN_PI_VERSION, "1.3.1", "1.4.0", "2.0.0", "10.0.0", "v1.3.0", "1.3.0-beta.1"]) {
 		assert.equal(isSupportedPiVersion(version), true, version);
 	}
-	// The pinned development dependency must pass its own check.
+	// The pinned development dependency must pass its own check
 	assert.equal(isSupportedPiVersion(VERSION), true);
 });
 

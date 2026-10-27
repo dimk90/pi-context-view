@@ -33,9 +33,9 @@ export interface Baseline {
 }
 
 /**
- * Text of one request system message, without its tool changes. The payload
- * guard renders it as Pi does, at its position, for models that keep later
- * system messages in place.
+ * Text of one request system message, with only the names of its tool
+ * changes. The payload guard renders it as Pi does, at its position, for
+ * models that keep later system messages in place.
  */
 export interface SystemText {
 	/** Number of non-system request messages before this one. */
@@ -43,6 +43,14 @@ export interface SystemText {
 	/** Plain content; text blocks are joined as Pi renders them. */
 	readonly content: string;
 	readonly sections?: Readonly<Record<string, string | null>>;
+	/** Tool changes, which OpenAI Responses announces as text; absent when there are none. */
+	readonly toolNames?: SystemToolNames;
+}
+
+/** Names of the tools one system message adds and removes; a redefinition is in both. */
+export interface SystemToolNames {
+	readonly added: readonly string[];
+	readonly removed: readonly string[];
 }
 
 /**
@@ -216,8 +224,8 @@ function copySystemState(system: SystemMessage, copyTool: (tool: Tool) => Tool):
 
 /**
  * Copy the text of every system message with its position. Strings are
- * immutable, so a shallow copy of the sections suffices; tool changes are
- * left out because the replayed system state already holds them.
+ * immutable, so a shallow copy of the sections suffices; tool changes keep
+ * only their names because the replayed system state holds the definitions.
  */
 function copySystemTexts(messages: readonly RequestMessage[]): SystemText[] {
 	const texts: SystemText[] = [];
@@ -227,12 +235,22 @@ function copySystemTexts(messages: readonly RequestMessage[]): SystemText[] {
 			position++;
 			continue;
 		}
-		const content = contentText(message.content);
-		texts.push(message.sections === undefined
-			? { position, content }
-			: { position, content, sections: { ...message.sections } });
+		const toolNames = copyToolNames(message);
+		texts.push({
+			position,
+			content: contentText(message.content),
+			...(message.sections === undefined ? {} : { sections: { ...message.sections } }),
+			...(toolNames === undefined ? {} : { toolNames }),
+		});
 	}
 	return texts;
+}
+
+/** Names of a system message's tool changes; undefined when it has none. */
+function copyToolNames(message: SystemMessage): SystemToolNames | undefined {
+	const added = (message.toolsAdded ?? []).map(({ name }) => name);
+	const removed = (message.toolsRemoved ?? []).map(({ name }) => name);
+	return added.length === 0 && removed.length === 0 ? undefined : { added, removed };
 }
 
 /**

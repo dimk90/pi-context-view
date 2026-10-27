@@ -194,7 +194,7 @@ function contentBodyLines(
 	for (const reference of references) {
 		text += normalizePreviewText(content.text.slice(offset, reference.start));
 		const captured = content.text.slice(reference.start, reference.end);
-		// A part that opens with an extension line drops its captured lead, as plain text does.
+		// A part that opens with an extension line drops its captured lead, as plain text does
 		const line = text.trim().length === 0 ? captured.replace(/^\n+/, "") : captured;
 		text += theme.fg("syntaxNumber", normalizePreviewText(line));
 		text += theme.fg("borderMuted", SOURCE_ARROW);

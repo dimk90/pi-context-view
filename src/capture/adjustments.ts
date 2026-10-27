@@ -25,7 +25,8 @@ import type { RequestMessage } from "../snapshot.ts";
 import { canonicalJson } from "./diff.ts";
 import type { GuardModel } from "./guard.ts";
 import { type MessageUnit, UnitCollector } from "./messages.ts";
-import type { BaselineMessage, RequestCopy, SystemText } from "./request.ts";
+import { RESPONSES_TOOL_REMOVAL_NOTICE } from "./payload.ts";
+import type { BaselineMessage, RequestCopy, SystemText, SystemToolNames } from "./request.ts";
 
 /** Text that replaces each run of images while `images.blockImages` is on. */
 const BLOCKED_IMAGE_TEXT = "Image reading is disabled.";
@@ -43,6 +44,10 @@ const EMPTY_RESULT_TEXT = "(no tool output)";
 const TOOL_RESULT_BRIDGE_TEXT = "I have processed the tool results.";
 /** OpenAI Completions' user message that carries tool-result images. */
 const TOOL_IMAGES_TEXT = "Attached image(s) from tool result:";
+/** OpenAI Responses' system message before each `additional_tools` item after the first. */
+const INCREMENTAL_TOOLS_NOTICE = "This is an incremental tools update. Previously declared tools remain available "
+	+ "unless explicitly marked unavailable. A tool declared again here is available again, and its latest "
+	+ "definition replaces the earlier one.";
 
 /** What conversion reads from a capture. */
 export interface ConvertibleCapture
@@ -138,11 +143,25 @@ function rebuildRequest(capture: ConvertibleCapture): RequestMessage[] {
 	return messages;
 }
 
-/** A system message with the captured text and no tool changes. */
-function toSystemMessage(text: SystemText): SystemMessage {
-	return text.sections === undefined
-		? { role: "system", content: text.content, timestamp: 0 }
-		: { role: "system", content: text.content, sections: { ...text.sections }, timestamp: 0 };
+/**
+ * A rebuilt system message: the captured text, and only the names of its tool
+ * changes instead of their definitions. Conversion and the model-dependent
+ * transform keep system message objects as they are, so the names reach the
+ * serializer rules.
+ */
+interface RebuiltSystemMessage extends SystemMessage {
+	readonly toolNames?: SystemToolNames;
+}
+
+/** A system message with the captured text and the names of its tool changes. */
+function toSystemMessage(text: SystemText): RebuiltSystemMessage {
+	return {
+		role: "system",
+		content: text.content,
+		...(text.sections === undefined ? {} : { sections: { ...text.sections } }),
+		...(text.toolNames === undefined ? {} : { toolNames: text.toolNames }),
+		timestamp: 0,
+	};
 }
 
 /** Replace each run of images with Pi's blocked-image text, as its `convertToLlm` wrapper does. */
@@ -480,20 +499,31 @@ function completionsUnits(
 /**
  * Responses sends the leading system prompt in full and later ones as
  * updates, one item per assistant text block and tool call, and tool outputs
- * with fillers. Thinking travels as opaque reasoning items.
+ * with fillers. Thinking travels as opaque reasoning items. Tool changes in
+ * `additional_tools` items add the texts of {@link ResponsesToolNotices}.
  */
 function responsesUnits(
 	messages: readonly Message[],
 	model: GuardModel,
 	grammar: ReadonlyMap<string, string>,
 ): MessageUnit[] {
+	const notices = compatFlag(model, "supportsMidConvoSystemMessages") && compatFlag(model, "supportsAdditionalTools")
+		? new ResponsesToolNotices()
+		: undefined;
 	const units = new UnitCollector();
 	for (const [index, message] of messages.entries()) {
 		units.boundary();
 		switch (message.role) {
-			case "system":
+			case "system": {
+				const tools = notices?.next((message as RebuiltSystemMessage).toolNames);
+				if (tools?.incremental !== undefined) {
+					units.text("system", tools.incremental);
+					units.boundary();
+				}
 				units.text("system", index === 0 ? getSystemMessageText(message) : renderSystemMessageUpdate(message));
+				if (tools?.removal !== undefined) units.text("system", tools.removal);
 				break;
+			}
 			case "user":
 				units.text("user", typeof message.content === "string" ? message.content : textOf(message.content));
 				break;
@@ -510,6 +540,55 @@ function responsesUnits(
 		}
 	}
 	return units.result();
+}
+
+/** Texts Responses adds for one system message's tool changes. */
+interface ResponsesToolTexts {
+	/** Its own message before the message's `additional_tools` item. */
+	readonly incremental?: string;
+	/** Appended to the message's text. */
+	readonly removal?: string;
+}
+
+/**
+ * Pi's texts for tool changes declared in `additional_tools` items, which can
+ * add tools but not remove them. Every item after the first follows an
+ * incremental-update notice that restates the tools still unavailable, and a
+ * removal that is not a redefinition is announced in its system message.
+ */
+class ResponsesToolNotices {
+	private declared = false;
+	/** Tools announced as removed and not declared again since, in announcement order. */
+	private readonly unavailable = new Set<string>();
+
+	/** The texts for the next system message's tool changes, in transcript order. */
+	public next(names: SystemToolNames | undefined): ResponsesToolTexts {
+		const added = names?.added ?? [];
+		for (const name of added) this.unavailable.delete(name);
+		let incremental: string | undefined;
+		if (added.length > 0) {
+			if (this.declared) incremental = this.renderIncremental();
+			this.declared = true;
+		}
+		const removed = (names?.removed ?? []).filter((name) => !added.includes(name));
+		for (const name of removed) this.unavailable.add(name);
+		return {
+			...(incremental === undefined ? {} : { incremental }),
+			...(removed.length === 0 ? {} : { removal: renderToolRemoval(removed) }),
+		};
+	}
+
+	/** The incremental-update notice with the tools still unavailable. */
+	private renderIncremental(): string {
+		return this.unavailable.size === 0
+			? INCREMENTAL_TOOLS_NOTICE
+			: `${INCREMENTAL_TOOLS_NOTICE}\nStill unavailable: ${[...this.unavailable].join(", ")}.`;
+	}
+}
+
+/** The removal notice with one line per removed tool. */
+function renderToolRemoval(names: readonly string[]): string {
+	return [RESPONSES_TOOL_REMOVAL_NOTICE, ...names.map((name) => `- ${name}`)].join("\n");
 }
 
 // ============================================================================

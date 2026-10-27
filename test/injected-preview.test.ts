@@ -49,13 +49,13 @@ function plain(lines: readonly string[]): string {
 function assertAttribution(lines: readonly string[], theme: Theme, text = GUIDELINE): void {
 	assertLegend(lines, theme, ["highlighted"]);
 	assert.ok(plain(lines).includes(`- ${text}${ARROW}${SOURCE}:${TOOL}`));
-	// The annotation marks counted text in place; the line is never shown twice.
+	// The annotation marks counted text in place; the line is never shown twice
 	assert.equal(plain(lines).split(`- ${text}`).length, 2);
 	const rendered = lines.find((line) => line.includes(text));
 	assert.ok(rendered?.includes(theme.fg("syntaxNumber", `- ${text}`)));
 	assert.ok(rendered?.includes(theme.fg("borderMuted", ARROW)));
 	assert.ok(rendered?.includes(theme.fg("mdLink", SOURCE)));
-	// The tool is a distinct span, so a themed label never swallows its qualifier.
+	// The tool is a distinct span, so a themed label never swallows its qualifier
 	assert.ok(rendered?.includes(theme.fg("mdLinkUrl", `:${TOOL}`)));
 }
 
@@ -205,10 +205,14 @@ test("Injections shows attributed guidelines only after Enter, for parent and ch
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[F"); // Last tool
 	view.handleInput("\r");
-	// The tool counts only its definition; System Prompt counts and shows its guideline.
-	assert.match(plain(view.render(120)), /Definition · \d+ tokens/);
-	assert.doesNotMatch(plain(view.render(120)), /verify claims|<-\u00A0npm:web/);
-	assert.ok(!hasHighlightLegend(view.render(120)));
+	// The tool counts only its definition; it shows its guideline as counted in System Prompt
+	const tool = view.render(120);
+	assert.match(plain(tool), /Definition · \d+ tokens/);
+	const counted = plain([stateMarkers(theme, { countedInSystemPrompt: true })]);
+	assert.ok(plain(tool).replace(/\s+/g, " ").includes(`Rules · 0 tokens${counted} - ${GUIDELINE}`));
+	assert.doesNotMatch(plain(tool), /<-\u00A0npm:web/);
+	assert.ok(!hasHighlightLegend(tool));
+	assertLegend(tool, theme, ["counted-in-system-prompt"]);
 });
 
 test("Injections attributes Available Tools snippets in the parent and standalone child", () => {
@@ -219,7 +223,7 @@ test("Injections attributes Available Tools snippets in the parent and standalon
 	const parent = view.render(120);
 	assertAttribution(parent, theme, SNIPPET_LINE);
 	assertAttribution(parent, theme);
-	// Pi's own bullet keeps the plain body treatment in the same part.
+	// Pi's own bullet keeps the plain body treatment in the same part
 	assert.match(plain(parent), /- read: Read files/);
 	assert.equal(frameText(parent).split(frameText(markerLegendLines(theme, ["highlighted"], 1_000))).length, 2);
 	view.handleInput("\u001b");
@@ -286,7 +290,7 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 		sources: [{ source: "npm:web", path: "/pkgs/web/index.ts" }],
 	}));
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
-	// System Prompt counts the addition; no extension row counts it again.
+	// System Prompt counts the addition; no extension row counts it again
 	const list = plain(view.render(120));
 	assert.match(list, /└─ Extension Additions \.+ +9\n/);
 	assert.doesNotMatch(list, /npm:web|system prompt additions/);
@@ -297,7 +301,7 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 	assert.ok(plain(parent).includes(`${addition.trim()}${ARROW}npm:web (guess)`));
 	const rendered = parent.find((line) => line.includes("(guess)"));
 	assert.ok(rendered?.includes(theme.fg("mdLink", "npm:web")));
-	// One marker covers a guessed extension and any tool guessed inside it.
+	// One marker covers a guessed extension and any tool guessed inside it
 	assert.ok(rendered?.includes(theme.fg("dim", " (guess)")));
 	assertLegend(parent, theme, ["highlighted", "guess"]);
 
@@ -308,7 +312,7 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 	assert.ok(plain(child).includes(`${addition.trim()}${ARROW}npm:web (guess)`));
 	assertLegend(child, theme, ["highlighted", "guess"]);
 
-	// Usage counts it in System Prompt too, not under the contributing extension.
+	// Usage counts it in System Prompt too, not under the contributing extension
 	const usage = computeUsage({ snapshot, messages: [] });
 	assert.equal(usage.categories.some((category) => category.id === "extensions"), false);
 	assert.equal(usage.categories.find((category) => category.id === "system-prompt")?.tokens, snapshot.totalTokens);
@@ -500,16 +504,16 @@ test("a replaced prompt marks its dropped blocks in the tree and in previews", (
 	const view = new InjectionsView(theme, { snapshot: createReplacedSnapshot() }, () => {}, () => height);
 	const list = view.render(120);
 
-	// Dropped blocks stay visible at 0 tokens, marked after the estimate they explain.
+	// Dropped blocks stay visible at 0 tokens, marked after the estimate they explain
 	for (const label of ["Tools", "Rules", "Docs"]) {
 		assert.match(plain(list).replace(/\.{2,}/g, "\u2026"), new RegExp(`${label} \u2026 +0 · Dropped`));
 	}
 	const row = list.find((line) => plain([line]).includes("Docs"));
 	assert.ok(row?.includes(styledMarker(theme, "dropped")), "a dim separator carries the keyword's fixed color");
-	// The status bar explains the marker of the selected row.
+	// The status bar explains the marker of the selected row
 	for (let step = 0; step < 3; step++) view.handleInput("j"); // Available Tools
 	assertStatusMarker(view.render(120), theme, "dropped");
-	// A marker that no longer fits is dropped whole rather than truncated, while the bar still explains it.
+	// A marker that no longer fits is dropped whole rather than truncated, while the bar still explains it
 	const narrow = view.render(25);
 	assert.match(rowLine(narrow, "Docs"), /Docs/);
 	assert.doesNotMatch(rowLine(narrow, "Docs"), /Dropped/);
@@ -582,7 +586,7 @@ test("a relocated block stays a counted System Prompt part, marked where it now 
 	const view = new InjectionsView(theme, { snapshot: createRelocatedSnapshot() }, () => {}, () => height);
 	const list = view.render(120);
 
-	// Both sections follow cwd, keep their estimates, and name their new position.
+	// Both sections follow cwd, keep their estimates, and name their new position
 	const rows = plain(list).replace(/\.{2,}/g, "\u2026").split("\n");
 	assert.deepEqual(
 		rows.map((row) => row.replace(/^[\s│├└─]+/, ""))
@@ -593,7 +597,7 @@ test("a relocated block stays a counted System Prompt part, marked where it now 
 	assert.ok(row?.includes(styledMarker(theme, "moved")), "a dim separator carries the keyword's fixed color");
 	for (let step = 0; step < 5; step++) view.handleInput("j"); // Guidelines
 	assertStatusMarker(view.render(120), theme, "moved");
-	// A marker that no longer fits is dropped whole rather than truncated, while the bar still explains it.
+	// A marker that no longer fits is dropped whole rather than truncated, while the bar still explains it
 	const narrow = view.render(27);
 	assert.match(rowLine(narrow, "Rules"), /Rules/);
 	assert.doesNotMatch(rowLine(narrow, "Rules"), /Moved/);
@@ -652,10 +656,10 @@ test("a tool preview shows its dropped prompt lines without claiming their token
 	const preview = plain(view.render(120)).replace(/\s+/g, " ");
 	assert.match(preview, new RegExp(`Tools · 0 tokens · Dropped - search: ${SNIPPET}`));
 	assert.match(preview, new RegExp(`Rules · 0 tokens · Dropped - ${GUIDELINE}`));
-	// A tool's own lines are not injections into someone else's text.
+	// A tool's own lines are not injections into someone else's text
 	assert.ok(!hasHighlightLegend([preview]));
 
-	// Usage counts the same tool without its dropped lines.
+	// Usage counts the same tool without its dropped lines
 	const usage = computeUsage({ snapshot, messages: [] });
 	const customTools = usage.categories.find((category) => category.id === "custom-tools");
 	const entry = collectPreviewEntries(customTools ?? { id: "", label: "", tokens: 0 })[0];
@@ -684,7 +688,7 @@ test("Usage explains markers in categories beyond the System Prompt, at both pre
 
 	const direct = open([tools]);
 	assert.match(plain(direct), /Tools · 0 tokens · Dropped/);
-	// A tool's own lines are not injections, so the state marker alone is explained.
+	// A tool's own lines are not injections, so the state marker alone is explained
 	assertLegend(direct, theme, ["dropped"]);
 
 	const stream = open([{

@@ -39,7 +39,7 @@ import {
 	type PromptSection,
 } from "./prompt-blocks.ts";
 
-/** Part names shared by a tool's dropped prompt lines and pi's own prompt blocks. */
+/** Part names shared by a tool's prompt lines and pi's own prompt blocks. */
 const AVAILABLE_TOOLS_LABEL = AVAILABLE_TOOLS_BLOCK.label;
 const GUIDELINES_LABEL = GUIDELINES_BLOCK.label;
 
@@ -308,7 +308,7 @@ function measureGeneratedSection(
 		return true;
 	}
 	if (name === "skills" && body.includes("<available_skills>")) {
-		// Read the captured records, not today's loader metadata after resume or a patch.
+		// Read the captured records, not today's loader metadata after resume or a patch
 		const record =
 			/<skill>\s*<name>(.*?)<\/name>\s*<description>([\s\S]*?)<\/description>\s*<location>(.*?)<\/location>/g;
 		const skills = [...body.matchAll(record)].map((match) => ({
@@ -385,10 +385,11 @@ interface ToolPromptLines {
 
 /**
  * Measure active tool definitions and locate the prompt snippet/guideline lines
- * pi rendered for extension tools, which System Prompt counts. Built-in tools
- * collapse into one aggregate pi-native item. Lines a `--system-prompt`
- * replacement suppressed belong to the parts named by `droppedPartIds`; each
- * tool keeps those as dropped, uncounted sections. `roster` holds every
+ * pi rendered for each tool, which System Prompt counts. Each tool shows its
+ * rendered lines as uncounted sections, and only extension lines are annotated
+ * in System Prompt. Built-in tools collapse into one aggregate pi-native item.
+ * Lines a `--system-prompt` replacement suppressed belong to the parts named by
+ * `droppedPartIds`; each tool keeps those as dropped, uncounted sections. `roster` holds every
  * extension's provenance, so path extensions get distinct labels.
  */
 function measureTools(
@@ -412,13 +413,14 @@ function measureTools(
 		}
 		// Built-in tools claim their bullets without annotating them, so a later
 		// extension tool repeating one cannot take a line pi already renders for
-		// pi itself or for a built-in tool.
+		// pi itself or for a built-in tool
 		const ownedGuidelines = claimGuidelines(tool, claimedGuidelines);
 		const definition = { ...createDefinitionSection(tool), ...changeField(tool.change) };
 		const lines = toolPromptLines(tool, ownedGuidelines);
 		const droppedLines = lines.filter((line) => droppedPartIds.includes(line.partId));
+		const renderedLines = locateRenderedLines(prompt, blocks, lines);
 		// A tool counts only its definition; its rendered lines count in System Prompt
-		const sections = [...droppedSections(droppedLines), definition];
+		const sections = [...promptLineSections(lines, droppedLines, renderedLines), definition];
 		if (tool.source === "builtin") {
 			builtinChildren.push(withChange(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, sections),
 				tool.change));
@@ -426,7 +428,7 @@ function measureTools(
 		}
 		const owner: InjectedOwner = { source: toolSource(tool, roster), tool: tool.name };
 		collectDroppedLines(dropped, droppedLines, owner);
-		rendered.push(...locateRenderedLines(prompt, blocks, lines, owner));
+		rendered.push(...renderedLines.map(({ line, span }) => ({ ...span, ...owner, partId: line.partId })));
 		items.push(withChange(createToolItem(`tool:${tool.source}:${tool.name}`, owner.source, tool.name, sections),
 			tool.change));
 	}
@@ -496,20 +498,29 @@ function toolPromptLines(tool: ToolSlice, ownedGuidelines: string[]): ToolPrompt
 }
 
 /**
- * Group one tool's dropped lines into a preview-only section per part, so its
- * preview shows what the replacement gave up without claiming tokens pi never
- * sent.
+ * Group one tool's dropped and rendered prompt lines into a preview-only
+ * section per part and state, in line order. A dropped section shows what the
+ * replacement gave up without claiming tokens pi never sent; a rendered one
+ * shows a line System Prompt already counts. A line pi neither dropped nor
+ * rendered as written gets no section.
  */
-function droppedSections(lines: readonly ToolPromptLine[]): SectionDraft[] {
+function promptLineSections(
+	lines: readonly ToolPromptLine[],
+	droppedLines: readonly ToolPromptLine[],
+	renderedLines: readonly RenderedToolLine[],
+): SectionDraft[] {
 	const sections: SectionDraft[] = [];
 	for (const line of lines) {
+		const dropped = droppedLines.includes(line);
+		if (!dropped && !renderedLines.some((rendered) => rendered.line === line)) continue;
 		const last = sections.length - 1;
 		const current = sections[last];
-		if (current !== undefined && current.label === line.label) {
+		if (current !== undefined && current.label === line.label && (current.dropped === true) === dropped) {
 			sections[last] = { ...current, text: current.text + line.text };
 			continue;
 		}
-		sections.push({ label: line.label, text: line.text, dropped: true });
+		const state = dropped ? { dropped: true } : { countedInSystemPrompt: true };
+		sections.push({ label: line.label, text: line.text, ...state });
 	}
 	return sections;
 }
@@ -539,6 +550,8 @@ interface SectionDraft {
 	readonly text: string;
 	/** True for text a `--system-prompt` replacement dropped: shown for reference, never counted. */
 	readonly dropped?: boolean;
+	/** True for a tool's prompt lines that System Prompt already counts: shown for reference, never counted here. */
+	readonly countedInSystemPrompt?: boolean;
 	/** True for a block an extension moved out of the region pi rendered it into. */
 	readonly moved?: boolean;
 	/** Request-only change; a deleted section is shown for reference, never counted. */
@@ -571,19 +584,24 @@ interface InjectedSpan extends Span, InjectedOwner {
 	readonly partId: string;
 }
 
+/** One tool prompt line and where pi rendered it in the prompt. */
+interface RenderedToolLine {
+	readonly line: ToolPromptLine;
+	readonly span: Span;
+}
+
 /**
- * Locate one extension tool's lines in the bullet regions of the blocks pi
- * renders them into. A line pi did not render there gets no annotation.
+ * Locate one tool's lines in the bullet regions of the blocks pi renders them
+ * into. A line pi did not render there is left out.
  */
 function locateRenderedLines(
 	prompt: string,
 	blocks: readonly LocatedPromptBlock[],
 	lines: readonly ToolPromptLine[],
-	owner: InjectedOwner,
-): InjectedSpan[] {
+): RenderedToolLine[] {
 	return lines.flatMap((line) => {
 		const span = findBlockLine(prompt, blocks.find((block) => block.id === line.partId)?.bullets, line.text);
-		return span === undefined ? [] : [{ ...span, ...owner, partId: line.partId }];
+		return span === undefined ? [] : [{ line, span }];
 	});
 }
 
@@ -758,7 +776,7 @@ function createToolItem(
 	return { ...createItem(id, "tool", source, label, text), sections: allocateSectionTokens(sections) };
 }
 
-/** Text an item actually sends: everything but dropped and deleted parts. */
+/** Text an item counts: everything but dropped, deleted, and elsewhere-counted parts. */
 function countedText(parts: readonly UncountablePart[]): string {
 	return parts.filter((part) => !isUncounted(part)).map((part) => part.text).join("");
 }
@@ -767,19 +785,23 @@ function countedText(parts: readonly UncountablePart[]): string {
 interface UncountablePart {
 	readonly text: string;
 	readonly dropped?: boolean;
+	readonly countedInSystemPrompt?: boolean;
 	readonly change?: RequestChange;
 }
 
-/** Whether a part's text is shown for reference only: a replacement dropped it, or the request deleted it. */
+/**
+ * Whether a part's text is shown for reference only: a replacement dropped it,
+ * the request deleted it, or System Prompt already counts it.
+ */
 function isUncounted(part: UncountablePart): boolean {
-	return part.dropped === true || part.change === "deleted";
+	return part.dropped === true || part.change === "deleted" || part.countedInSystemPrompt === true;
 }
 
 /**
  * Give each section its share of the item estimate. Shares are cumulative
  * differences rather than independently rounded counts, so they always sum to
- * the item total. A dropped or deleted section reads 0 tokens and leaves the
- * shares of the sections pi did send unchanged.
+ * the item total. A dropped, deleted, or elsewhere-counted section reads 0
+ * tokens and leaves the shares of the counted sections unchanged.
  */
 function allocateSectionTokens(sections: SectionDraft[]): InjectionSection[] {
 	let chars = 0;
@@ -840,13 +862,14 @@ function childSection(child: InjectionItem, separator: string): InjectionSection
 
 /**
  * The JSON run marked inside a child's whole text: its own span, or the span of
- * its single part. A child split into several parts marks each part separately,
- * so no one run covers its text and the aggregate part expands nothing.
+ * its single counted part, as uncounted parts are not in that text. A child
+ * split into several counted parts marks each part separately, so no one run
+ * covers its text and the aggregate part expands nothing.
  */
 function childJsonSpan(child: InjectionItem): JsonSpan | undefined {
-	const sections = child.sections;
-	if (sections === undefined) return child.jsonSpan;
-	return sections.length === 1 ? sections[0]?.jsonSpan : undefined;
+	if (child.sections === undefined) return child.jsonSpan;
+	const counted = child.change === "deleted" ? child.sections : child.sections.filter((part) => !isUncounted(part));
+	return counted.length === 1 ? counted[0]?.jsonSpan : undefined;
 }
 
 /** Replace a leading home-directory prefix with `~` for compact path labels. */

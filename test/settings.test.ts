@@ -35,7 +35,7 @@ test("resolveAutoCompactReserveTokens falls back through the ordinary setting to
 			modelOverrides: { "anthropic/claude-sonnet-4-5": { reserveTokens: 50_000 } },
 		},
 	});
-	// A model without its own override, and a session with no model selected yet.
+	// A model without its own override, and a session with no model selected yet
 	assert.equal(resolveAutoCompactReserveTokens(configured, GEMINI), 20_000);
 	assert.equal(resolveAutoCompactReserveTokens(configured, undefined), 20_000);
 
@@ -53,7 +53,7 @@ test("resolveAutoCompactReserveTokens follows a model switch within one session"
 			},
 		},
 	});
-	// The view re-reads per open, so switching models changes the reserve.
+	// The view re-reads per open, so switching models changes the reserve
 	assert.equal(resolveAutoCompactReserveTokens(settings, SONNET), 50_000);
 	assert.equal(resolveAutoCompactReserveTokens(settings, GEMINI), 120_000);
 });
@@ -88,7 +88,7 @@ test("resolveAutoCompactReserveTokens reports no reserve for invalid settings", 
 		},
 	});
 	assert.equal(resolveAutoCompactReserveTokens(invalidOverride, SONNET), undefined);
-	// Only the override is invalid: other models keep the ordinary setting.
+	// Only the override is invalid: other models keep the ordinary setting
 	assert.equal(resolveAutoCompactReserveTokens(invalidOverride, GEMINI), 20_000);
 
 	const invalidOrdinary = settingsWith({

@@ -73,7 +73,7 @@ test("findMatches finds case-insensitive matches and splits a phrase wrapped acr
 test("findMatches maps columns through escape sequences and wide characters", () => {
 	const lines = ["\u001b[38;2;1;2;3m  名前 cymbal\u001b[39m"];
 	const matches = findMatches(lines, pattern("cymbal"));
-	// The two CJK characters occupy two columns each.
+	// The two CJK characters occupy two columns each
 	assert.deepEqual(matches[0]?.segments, [{ row: 0, start: 7, end: 13 }]);
 	assert.deepEqual(findMatches(lines, pattern("名前"))[0]?.segments, [{ row: 0, start: 2, end: 6 }]);
 });

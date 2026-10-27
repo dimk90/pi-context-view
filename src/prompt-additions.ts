@@ -51,7 +51,7 @@ export function splitPromptAdditions(
 		let previous: { text: string; source: InjectionSource; tool?: string } | undefined;
 		for (const text of splitBlocks(region)) {
 			const owner = guessOwner(text, options.sources ?? []);
-			// Merge only inside one region: text on either side of a section has different authors.
+			// Merge only inside one region: text on either side of a section has different authors
 			if (previous?.source.id === owner.source.id && previous.tool === owner.tool) {
 				previous.text += text;
 				continue;
@@ -78,7 +78,7 @@ export function collectPromptSources(
 ): PromptSourceSlice[] {
 	const sources = new Map<string, CollectedPromptSource>();
 	for (const tool of allTools) addPromptSource(sources, tool.sourceInfo, tool.name);
-	// Prompt text refers to a command the way a user types it, so keep its slash.
+	// Prompt text refers to a command the way a user types it, so keep its slash
 	for (const command of commands) {
 		addPromptSource(sources, command.sourceInfo, command.name.startsWith("/") ? command.name : `/${command.name}`);
 	}
@@ -108,7 +108,7 @@ function splitBlocks(text: string): string[] {
 		blocks.push(text.slice(start, separator.index));
 		start = separator.index;
 	}
-	// Removing a section can leave a separator behind; blank text has no author.
+	// Removing a section can leave a separator behind; blank text has no author
 	if (text.slice(start).trim().length > 0) blocks.push(text.slice(start));
 	return blocks;
 }
@@ -188,7 +188,7 @@ function containsPackage(text: string, name: string): boolean {
 function containsPath(text: string, path: string | undefined): boolean {
 	if (path === undefined) return false;
 	const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
-	// A relative or synthetic provenance such as `<builtin:read>` is no evidence of authorship.
+	// A relative or synthetic provenance such as `<builtin:read>` is no evidence of authorship
 	if (!/^(\/|[A-Za-z]:\/).+/.test(normalized)) return false;
 	return new RegExp(`(?:^|[^\\w/.-])${escapePattern(normalized)}(?=$|${PATH_BOUNDARY})`).test(text);
 }
@@ -216,7 +216,7 @@ function addPromptSource(
 		collected = {
 			source: sourceInfo.source,
 			path: sourceInfo.path,
-			// A top-level extension's baseDir is a shared directory, not its own root.
+			// A top-level extension's baseDir is a shared directory, not its own root
 			baseDir: sourceInfo.origin === "package" ? sourceInfo.baseDir : undefined,
 			names: [],
 		};
