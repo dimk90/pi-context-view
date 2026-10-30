@@ -83,7 +83,6 @@ function createView(
 		{ snapshot: snapshot(itemsPerGroup), degradedReason },
 		() => {},
 		getTerminalRows,
-		undefined,
 		actions,
 	);
 }
@@ -1017,12 +1016,13 @@ test("InjectionsView accepts Ctrl+u/d wherever it accepts the page keys", () => 
 	assert.equal(frame(pageKeys), previewTop);
 });
 
-test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step", () => {
-	// Fullscreen pi parses wheel reports and passes them to the focused overlay as mouse events
-	const wheelUp = wheelEvent(-1);
-	const wheelDown = wheelEvent(1);
+test("InjectionsView scrolls with the mouse wheel and honors pi's wheel delta", () => {
+	// Fullscreen pi parses wheel reports and passes them to the focused overlay as mouse events, with
+	// `wheelDelta` already scaled by the user's step and acceleration
+	const wheelUp = wheelEvent(-4);
+	const wheelDown = wheelEvent(4);
 	const arrows = createView(8);
-	const wheel = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => {}, () => 24, 4);
+	const wheel = createView(8);
 	const frame = (view: InjectionsView) => view.render(80).join("\n");
 
 	// Both views must render once so the viewport size is known before any input
@@ -1034,13 +1034,13 @@ test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step
 	assert.deepEqual(wheel.handleMouse(wheelUp), { handled: true, render: false });
 	assert.equal(frame(wheel), start);
 
-	// List: one notch selects one row, regardless of the scroll step
+	// List: one notch selects one row, regardless of the wheel delta
 	arrows.handleInput("\u001b[B");
 	assert.deepEqual(wheel.handleMouse(wheelDown), { handled: true, render: true });
 	assert.match(stripSgr(frame(wheel)), /→ ├─ pi-0/);
 	assert.equal(frame(wheel), frame(arrows));
 
-	// Preview: one notch scrolls pi's own line step
+	// Preview: one notch scrolls by the wheel delta
 	arrows.handleInput("\r");
 	wheel.handleInput("\r");
 	const previewTop = frame(wheel);
@@ -2317,7 +2317,7 @@ test("InjectionsView reports an empty item without writing the clipboard", async
 		label: "empty", chars: 0, tokens: 0, text: "",
 	};
 	const snap: InjectionSnapshot = { groups: [group("pi", true, [empty])], totalTokens: 0 };
-	const view = new InjectionsView(createTheme(), { snapshot: snap }, () => {}, () => 24, undefined, {
+	const view = new InjectionsView(createTheme(), { snapshot: snap }, () => {}, () => 24, {
 		copyText: async (text) => { copied.push(text); },
 	});
 	view.handleInput("j");
@@ -2347,7 +2347,7 @@ test("InjectionsView copies only the visible items of a filtered group", async (
 test("InjectionsView stops publishing a copy result after close", async () => {
 	let closed = false;
 	const pending: Array<() => void> = [];
-	const view = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => { closed = true; }, () => 24, undefined, {
+	const view = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => { closed = true; }, () => 24, {
 		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
 	});
 	view.handleInput("c");

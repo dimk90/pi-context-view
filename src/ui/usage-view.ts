@@ -68,7 +68,6 @@ import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, calculateFitMapScale, type UsageMap, type UsageMapCell } from "./usage-map.ts";
 import { BlockNavigator, layoutPreviewBlocks, type PreviewLayout } from "./usage-preview.ts";
-import { DEFAULT_WHEEL_SCROLL_LINES, readWheelScrollLines } from "./wheel.ts";
 
 /** Dashboard rows below the content, excluding the collapsible description: blank, hints, blank, border. */
 const USAGE_TAIL_FIXED_LINE_COUNT = 4;
@@ -211,7 +210,7 @@ interface ContentSearchLines {
 export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new UsageView(theme, input, done, () => tui.terminal.rows, readWheelScrollLines(tui), {
+			const view = new UsageView(theme, input, done, () => tui.terminal.rows, {
 				refresh: () => tui.requestRender(),
 			});
 			return {
@@ -238,7 +237,6 @@ export class UsageView {
 	private readonly input: UsageViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
-	private readonly wheelScrollLines: number;
 	private readonly copy: CopyNotices;
 	private readonly usage: ContextUsageSnapshot;
 	private readonly categoryColors: CategoryColors;
@@ -269,14 +267,12 @@ export class UsageView {
 		input: UsageViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
-		wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES,
 		actions: CopyActions = {},
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
-		this.wheelScrollLines = wheelScrollLines;
 		this.copy = new CopyNotices(actions.copyText, () => {
 			this.clearCache();
 			actions.refresh?.();
@@ -293,24 +289,26 @@ export class UsageView {
 	/**
 	 * Handle fullscreen wheel notches on the visible level: one notch moves the
 	 * category selection one row, steps one block in a block stream, or scrolls
-	 * open content by the wheel step. Every other mouse event falls through to pi.
+	 * open content by pi's `wheelDelta`, which already applies the user's step and
+	 * acceleration. Every other mouse event falls through to pi.
 	 */
 	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
 		this.copy.clear();
-		const moved = this.scrollByWheel(Math.sign(event.wheelDelta));
+		const moved = this.scrollByWheel(event.wheelDelta);
 		if (moved) this.clearCache();
 		return { handled: true, render: moved };
 	}
 
-	/** Apply one wheel notch to the visible level and report whether it moved. */
-	private scrollByWheel(direction: number): boolean {
+	/** Apply one wheel notch of `wheelDelta` lines to the visible level and report whether it moved. */
+	private scrollByWheel(wheelDelta: number): boolean {
+		const direction = Math.sign(wheelDelta);
 		if (this.previewRow === undefined) return this.navigator.moveBy(direction);
 		// Blocks are selected rather than scrolled, so one notch steps one block
 		if (this.getFullContentEntry(this.previewRow) === undefined) {
 			return direction < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
 		}
-		return this.previewScroller.scrollBy(direction * this.wheelScrollLines);
+		return this.previewScroller.scrollBy(wheelDelta);
 	}
 
 	/** Handle category navigation, preview opening, and close keys. */

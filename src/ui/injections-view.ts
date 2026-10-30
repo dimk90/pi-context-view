@@ -78,7 +78,6 @@ import {
 } from "./search.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { statusBarLines } from "./status-bar.ts";
-import { DEFAULT_WHEEL_SCROLL_LINES, readWheelScrollLines } from "./wheel.ts";
 
 /**
  * List frame rows excluding the status bar and the collapsible description:
@@ -133,7 +132,7 @@ export async function showInjectionsView(
 ): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows, readWheelScrollLines(tui), {
+			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows, {
 				refresh: () => tui.requestRender(),
 			});
 			return {
@@ -160,7 +159,6 @@ export class InjectionsView {
 	private readonly input: InjectionsViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
-	private readonly wheelScrollLines: number;
 	private readonly copy: CopyNotices;
 	/** Unfiltered rows; they fix the value column so filtering never shifts it. */
 	private readonly allRows: InjectionRow[];
@@ -187,14 +185,12 @@ export class InjectionsView {
 		input: InjectionsViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
-		wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES,
 		actions: CopyActions = {},
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
-		this.wheelScrollLines = wheelScrollLines;
 		this.copy = new CopyNotices(actions.copyText, () => {
 			this.clearCache();
 			actions.refresh?.();
@@ -206,17 +202,17 @@ export class InjectionsView {
 	}
 
 	/**
-	 * Handle fullscreen wheel notches: one notch scrolls an open preview by the
-	 * wheel step, or moves the list selection one row like a single step key.
-	 * Every other mouse event falls through to pi.
+	 * Handle fullscreen wheel notches: a notch scrolls an open preview by pi's
+	 * `wheelDelta`, which already applies the user's step and acceleration, or
+	 * moves the list selection one row like a single step key. Every other mouse
+	 * event falls through to pi.
 	 */
 	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
 		this.copy.clear();
-		const direction = Math.sign(event.wheelDelta);
 		const moved = this.previewItem !== undefined
-			? this.previewScroller.scrollBy(direction * this.wheelScrollLines)
-			: this.navigator.moveBy(direction);
+			? this.previewScroller.scrollBy(event.wheelDelta)
+			: this.navigator.moveBy(Math.sign(event.wheelDelta));
 		if (moved) this.clearCache();
 		return { handled: true, render: moved };
 	}

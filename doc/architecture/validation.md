@@ -158,8 +158,8 @@ rules in [UI.md](../UI.md) without freezing incidental copy or layout values:
   search prompt, within the width.
 
 `usage-view`, `usage-map`, `injections-view`, `usage-preview`, `injected-preview`,
-`diff-preview`, `json-preview`, `skill-preview`, `status-bar`, `notes`, `color`,
-`search`, and `wheel` cover these areas; the focused cases above cover accounting and attribution.
+`diff-preview`, `json-preview`, `skill-preview`, `status-bar`, `notes`, `color`, and
+`search` cover these areas; the focused cases above cover accounting and attribution.
 
 Keep these tests independent of display wording:
 

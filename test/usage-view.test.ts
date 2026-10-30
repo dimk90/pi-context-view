@@ -98,7 +98,6 @@ function createView(
 	},
 	done: (result: undefined) => void,
 	getTerminalRows?: () => number,
-	wheelScrollLines?: number,
 	actions?: CopyActions,
 ): UsageView {
 	const colors = input.categoryColors ?? DEFAULT_CATEGORY_COLORS;
@@ -108,7 +107,6 @@ function createView(
 		{ ...input, categoryColors: colors, mapSize },
 		done,
 		getTerminalRows,
-		wheelScrollLines,
 		actions,
 	);
 }
@@ -740,7 +738,7 @@ test("UsageView scrolls a single Tool Output child and restores its category sel
 	};
 	let rows = 24;
 	const arrows = createView(createTheme(), { usage: scrollUsage }, () => {}, () => rows);
-	const aliases = createView(createTheme(), { usage: scrollUsage }, () => {}, () => rows, 4);
+	const aliases = createView(createTheme(), { usage: scrollUsage }, () => {}, () => rows);
 	for (const view of [arrows, aliases]) {
 		view.render(80);
 		view.handleInput("j"); // The bash child has one entry; its parent still has two
@@ -756,13 +754,13 @@ test("UsageView scrolls a single Tool Output child and restores its category sel
 	}
 	assert.deepEqual(aliases.render(80), top);
 	for (let step = 0; step < 4; step++) arrows.handleInput("j");
-	aliases.handleMouse(wheelEvent(1));
+	aliases.handleMouse(wheelEvent(4));
 	const scrolled = aliases.render(80);
 	assert.notDeepEqual(scrolled, top);
-	assert.deepEqual(scrolled, arrows.render(80), "the wheel scrolls by pi's configured line step");
+	assert.deepEqual(scrolled, arrows.render(80), "the wheel scrolls by pi's wheel delta");
 	aliases.handleInput("\r");
 	assert.deepEqual(aliases.render(80), scrolled);
-	aliases.handleMouse(wheelEvent(-1));
+	aliases.handleMouse(wheelEvent(-4));
 	assert.deepEqual(aliases.render(80), top);
 
 	for (const width of [24, 40, 60, 80, 120]) {
@@ -1114,10 +1112,11 @@ test("UsageView accepts Ctrl+u/d wherever it accepts the page keys", () => {
 	assert.equal(frame(pageKeys), blockTop);
 });
 
-test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", () => {
-	// Fullscreen pi parses wheel reports and passes them to the focused overlay as mouse events
-	const wheelUp = wheelEvent(-1);
-	const wheelDown = wheelEvent(1);
+test("UsageView scrolls with the mouse wheel and honors pi's wheel delta", () => {
+	// Fullscreen pi parses wheel reports and passes them to the focused overlay as mouse events, with
+	// `wheelDelta` already scaled by the user's step and acceleration
+	const wheelUp = wheelEvent(-4);
+	const wheelDown = wheelEvent(4);
 	const longText = Array.from({ length: 60 }, (_, line) => `line ${line + 1}`).join("\n");
 	const wheelUsage: ContextUsageSnapshot = {
 		...usage(1_000),
@@ -1138,10 +1137,9 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 		estimatedTokens: 1_000,
 	};
 	// A terminal short enough to cap both blocks, so the full-content level scrolls
-	const createWheelView = (wheelScrollLines?: number) =>
-		createView(createTheme(), { usage: wheelUsage }, () => {}, () => 24, wheelScrollLines);
+	const createWheelView = () => createView(createTheme(), { usage: wheelUsage }, () => {}, () => 24);
 	const arrows = createWheelView();
-	const wheel = createWheelView(4);
+	const wheel = createWheelView();
 	const frame = (view: UsageView) => view.render(80).join("\n");
 
 	// Both views must render once so the viewport size is known before any input
@@ -1153,7 +1151,7 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 	assert.deepEqual(wheel.handleMouse(wheelUp), { handled: true, render: false });
 	assert.equal(frame(wheel), start);
 
-	// Legend: one notch selects one row, regardless of the scroll step
+	// Legend: one notch selects one row, regardless of the wheel delta
 	arrows.handleInput("\u001b[B");
 	assert.deepEqual(wheel.handleMouse(wheelDown), { handled: true, render: true });
 	assert.match(stripSgr(frame(wheel)), /→ ■ Tool Output \.{2,}/);
@@ -1173,7 +1171,7 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 	assert.equal(frame(wheel), streamTop);
 	assert.equal(frame(arrows), streamTop);
 
-	// Full block content: one notch scrolls pi's own line step
+	// Full block content: one notch scrolls by the wheel delta
 	arrows.handleInput("\r");
 	wheel.handleInput("\r");
 	const blockTop = frame(wheel);
@@ -1874,7 +1872,7 @@ async function settleCopy(): Promise<void> {
 
 test("UsageView copies the highlighted category, block, and open content", async () => {
 	const copied: string[] = [];
-	const view = createView(createTheme(), { usage: searchUsage() }, () => {}, () => 30, undefined, {
+	const view = createView(createTheme(), { usage: searchUsage() }, () => {}, () => 30, {
 		copyText: async (text) => { copied.push(text); },
 	});
 	selectCategory(view, "Tool Output");
@@ -1898,7 +1896,7 @@ test("UsageView copies the highlighted category, block, and open content", async
 	assert.equal(copied[1], "first result");
 	assert.match(plainFrame(view).join("\n"), /Copied [\d,]+ chars/);
 
-	const single = createView(createTheme(), { usage: usage() }, () => {}, () => 30, undefined, {
+	const single = createView(createTheme(), { usage: usage() }, () => {}, () => 30, {
 		copyText: async (text) => { copied.push(text); },
 	});
 	openCategory(single, "read");
@@ -1917,7 +1915,7 @@ test("UsageView reports an empty highlighted category without writing the clipbo
 		categories: [{ id: "context-files", label: "Instruction Files", tokens: 0 }],
 		estimatedTokens: 0,
 	};
-	const view = createView(createTheme(), { usage: empty }, () => {}, () => 30, undefined, {
+	const view = createView(createTheme(), { usage: empty }, () => {}, () => 30, {
 		copyText: async (text) => { copied.push(text); },
 	});
 	view.handleInput("c");
@@ -1929,7 +1927,7 @@ test("UsageView reports an empty highlighted category without writing the clipbo
 test("UsageView clears the copy notice on the next key and stops publishing after close", async () => {
 	const pending: Array<() => void> = [];
 	let closed = false;
-	const view = createView(createTheme(), { usage: usage() }, () => { closed = true; }, () => 30, undefined, {
+	const view = createView(createTheme(), { usage: usage() }, () => { closed = true; }, () => 30, {
 		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
 	});
 	selectCategory(view, "Tool Output");
@@ -1954,7 +1952,7 @@ test("UsageView clears the copy notice on the next key and stops publishing afte
 test("UsageView stops redrawing a copy result after the host disposes it", async () => {
 	const pending: Array<() => void> = [];
 	let refreshes = 0;
-	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30, undefined, {
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30, {
 		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
 		refresh: () => { refreshes++; },
 	});
