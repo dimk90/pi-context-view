@@ -17,6 +17,7 @@ import { previewBodyLines, previewLegendLines } from "../src/ui/section-preview.
 import { UsageView } from "../src/ui/usage-view.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
 import { containsBlock, createTheme, frameText, wholeOrAbsent } from "./harness/frame.ts";
+import { wheelEvent } from "./harness/mouse.ts";
 
 const GUIDELINE = "Use search to verify claims";
 const SNIPPET = "Search the web";
@@ -433,8 +434,9 @@ for (const target of ["injections-parent", "injections-child", "usage-single", "
 		const initial = view.render(120);
 		assertAttribution(initial, theme);
 		const legendStart = assertLegendBullets(initial, theme, ["highlighted"]);
-		for (const key of ["j", "\u001b[6~", "\u001b[F", "\u001b[<65;1;1M", "\u001b[5~", "\u001b[H"]) {
-			view.handleInput(key);
+		for (const input of ["j", "\u001b[6~", "\u001b[F", wheelEvent(1), "\u001b[5~", "\u001b[H"]) {
+			if (typeof input === "string") view.handleInput(input);
+			else view.handleMouse(input);
 			assert.deepEqual(view.render(120).slice(legendStart), initial.slice(legendStart));
 		}
 		for (const width of [30, 51, 60, 80, 120]) {

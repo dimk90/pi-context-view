@@ -17,6 +17,7 @@ import {
 	type DescriptionNote, type InjectionsNotesInput, type PayloadCheck,
 } from "../src/ui/notes.ts";
 import { assertFrame, containsBlock, createTheme, frameText, stripSgr, stripStyle, wholeOrAbsent } from "./harness/frame.ts";
+import { mouseEvent, wheelEvent } from "./harness/mouse.ts";
 
 /** Expected note selected by semantic kind, never by an English sentence. */
 function noteLines(kind: DescriptionNote["kind"], width = 1_000, input: Partial<InjectionsNotesInput> = {}): string[] {
@@ -217,8 +218,9 @@ test("InjectionsView pins TOTAL below the viewport through navigation, resize, a
 			view.handleInput("\u001b[H");
 			let fixedTotal: string | undefined;
 			let fixedIndex: number | undefined;
-			for (const key of ["", "j", "\u001b[6~", "\u001b[F", "\u001b[<65;20;5M", "\u001b[H"]) {
-				view.handleInput(key);
+			for (const input of ["", "j", "\u001b[6~", "\u001b[F", wheelEvent(1), "\u001b[H"]) {
+				if (typeof input === "string") view.handleInput(input);
+				else view.handleMouse(input);
 				const frame = view.render(width);
 				const plain = frame.map(stripSgr);
 				const total = plain.findIndex((line) => line.startsWith("  TOTAL"));
@@ -1016,9 +1018,9 @@ test("InjectionsView accepts Ctrl+u/d wherever it accepts the page keys", () => 
 });
 
 test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step", () => {
-	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences
-	const wheelUp = "\u001b[<64;20;5M";
-	const wheelDown = "\u001b[<65;20;5M";
+	// Fullscreen pi parses wheel reports and passes them to the focused overlay as mouse events
+	const wheelUp = wheelEvent(-1);
+	const wheelDown = wheelEvent(1);
 	const arrows = createView(8);
 	const wheel = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => {}, () => 24, 4);
 	const frame = (view: InjectionsView) => view.render(80).join("\n");
@@ -1027,9 +1029,14 @@ test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step
 	const start = frame(wheel);
 	assert.equal(frame(arrows), start);
 
+	// Other mouse events fall through to pi; a notch at the edge is handled but needs no redraw
+	assert.equal(wheel.handleMouse(mouseEvent("click", { button: "left" })), undefined);
+	assert.deepEqual(wheel.handleMouse(wheelUp), { handled: true, render: false });
+	assert.equal(frame(wheel), start);
+
 	// List: one notch selects one row, regardless of the scroll step
 	arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	assert.deepEqual(wheel.handleMouse(wheelDown), { handled: true, render: true });
 	assert.match(stripSgr(frame(wheel)), /→ ├─ pi-0/);
 	assert.equal(frame(wheel), frame(arrows));
 
@@ -1039,11 +1046,11 @@ test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step
 	const previewTop = frame(wheel);
 	assert.equal(frame(arrows), previewTop);
 	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	wheel.handleMouse(wheelDown);
 	assert.notEqual(frame(wheel), previewTop);
 	assert.equal(frame(wheel), frame(arrows));
 	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[A");
-	wheel.handleInput(wheelUp);
+	wheel.handleMouse(wheelUp);
 	assert.equal(frame(wheel), previewTop);
 	assert.equal(frame(arrows), previewTop);
 });

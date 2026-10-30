@@ -5,7 +5,14 @@
  * block streams with opt-in full content for multi-entry categories.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import {
+	Key,
+	matchesKey,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 
 import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
@@ -215,10 +222,7 @@ export async function showUsageView(context: ExtensionCommandContext, input: Usa
 					view.handleInput(data);
 					tui.requestRender();
 				},
-				handleMouse: (event: TuiMouseEvent): TuiMouseEventResult | undefined => {
-					return view.handleMouse(event);
-					// tui.requestRender();
-				},
+				handleMouse: (event: TuiMouseEvent) => view.handleMouse(event),
 			};
 		},
 		{
@@ -286,30 +290,27 @@ export class UsageView {
 		this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
 	}
 
+	/**
+	 * Handle fullscreen wheel notches on the visible level: one notch moves the
+	 * category selection one row, steps one block in a block stream, or scrolls
+	 * open content by the wheel step. Every other mouse event falls through to pi.
+	 */
 	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "wheel" || !event.wheelDelta) {
-			return undefined;
-		}
-		const wheel = event.wheelDelta > 0 ? 1 : -1;
+		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
+		this.copy.clear();
+		const moved = this.scrollByWheel(Math.sign(event.wheelDelta));
+		if (moved) this.clearCache();
+		return { handled: true, render: moved };
+	}
 
-		if (!!this.previewRow) {
-			const blockStream = this.getFullContentEntry(this.previewRow) === undefined;
-			if (blockStream) {
-				const moved = wheel < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
-				if (moved) {
-					this.clearCache();
-				}
-			} else {
-				if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) {
-					this.clearCache();
-				}
-			}
-		} else {
-			if (this.navigator.moveBy(wheel)) {
-				this.clearCache();
-			}
+	/** Apply one wheel notch to the visible level and report whether it moved. */
+	private scrollByWheel(direction: number): boolean {
+		if (this.previewRow === undefined) return this.navigator.moveBy(direction);
+		// Blocks are selected rather than scrolled, so one notch steps one block
+		if (this.getFullContentEntry(this.previewRow) === undefined) {
+			return direction < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
 		}
-		return { handled: true };
+		return this.previewScroller.scrollBy(direction * this.wheelScrollLines);
 	}
 
 	/** Handle category navigation, preview opening, and close keys. */
@@ -333,12 +334,6 @@ export class UsageView {
 		}
 		if (matchesKey(data, "c")) {
 			this.copyDashboardSelection();
-			return;
-		}
-		// One notch moves the selection one row, like a single step key
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.navigator.moveBy(wheel)) this.clearCache();
 			return;
 		}
 		if (matchesKey(data, "z")) {
@@ -861,7 +856,6 @@ export class UsageView {
 			const anchor = this.cachedStreamSearch?.starts[this.blockNavigator.selected] ?? 0;
 			if (this.handleSearchKey(data, anchor)) return;
 		}
-
 		if (matchesKey(data, Key.enter)) {
 			this.openBlock();
 		} else if (isStepBackKey(data)) {
@@ -891,7 +885,6 @@ export class UsageView {
 			return;
 		}
 		if (this.handleSearchKey(data, this.previewScroller.offset)) return;
-
 		if (isStepBackKey(data)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {

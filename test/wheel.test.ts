@@ -5,11 +5,6 @@ import type { TUI } from "@earendil-works/pi-tui";
 
 import { DEFAULT_WHEEL_SCROLL_LINES, readWheelScrollLines } from "../src/ui/wheel.ts";
 
-/** One X10 wheel report: `ESC [ M` plus offset-encoded button, column, and row bytes. */
-function x10Report(button: number, column: number, row: number): string {
-	return `\u001b[M${String.fromCharCode(button + 32, column + 33, row + 33)}`;
-}
-
 /** Stand-in for the TUI object pi hands to a custom view, with an arbitrary wheel step. */
 function tuiWithWheelScrollLines(lines: unknown): TUI {
 	return { wheelScrollLines: lines } as unknown as TUI;

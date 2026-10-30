@@ -137,8 +137,9 @@ export function matchStepDirection(data: string): -1 | 1 | undefined {
 }
 
 /**
- * Whether a key still navigates while a search prompt is open: the arrows,
- * the page keys, and the wheel. Letter keys such as `j`/`k` type instead.
+ * Whether a key still navigates while a search prompt is open: the arrows and
+ * the page keys. Letter keys such as `j`/`k` type instead. The wheel arrives
+ * as a mouse event, so it navigates without passing through this check.
  */
 export function isSearchNavigationKey(data: string): boolean {
 	return matchesKey(data, Key.up) ||

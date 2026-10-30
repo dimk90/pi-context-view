@@ -3,7 +3,14 @@
  * snapshot. The Runtime label stays hidden until the runtime-inspection roadmap step.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import {
+	Key,
+	matchesKey,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 
 import type { InjectionItem, InjectionSnapshot, TokenDiff } from "../model.ts";
 import type { GuardResult } from "../snapshot.ts";
@@ -137,10 +144,7 @@ export async function showInjectionsView(
 					view.handleInput(data);
 					tui.requestRender();
 				},
-				handleMouse: (event: TuiMouseEvent): TuiMouseEventResult | undefined => {
-					return view.handleMouse(event);
-					// tui.requestRender();
-				},
+				handleMouse: (event: TuiMouseEvent) => view.handleMouse(event),
 			};
 		},
 		{
@@ -201,22 +205,20 @@ export class InjectionsView {
 		this.itemsById = collectItemsById(input.snapshot);
 	}
 
+	/**
+	 * Handle fullscreen wheel notches: one notch scrolls an open preview by the
+	 * wheel step, or moves the list selection one row like a single step key.
+	 * Every other mouse event falls through to pi.
+	 */
 	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "wheel" || !event.wheelDelta) {
-			return undefined;
-		}
-		const wheel = event.wheelDelta > 0 ? 1 : -1;
-
-		if (!!this.previewItem) {
-			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) {
-				this.clearCache();
-			}
-		} else {
-			if (this.navigator.moveBy(wheel)) {
-				this.clearCache();
-			}
-		}
-		return { handled: true };
+		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
+		this.copy.clear();
+		const direction = Math.sign(event.wheelDelta);
+		const moved = this.previewItem !== undefined
+			? this.previewScroller.scrollBy(direction * this.wheelScrollLines)
+			: this.navigator.moveBy(direction);
+		if (moved) this.clearCache();
+		return { handled: true, render: moved };
 	}
 
 	public handleInput(data: string): void {
@@ -248,7 +250,6 @@ export class InjectionsView {
 			this.clearCache();
 			return;
 		}
-
 		if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
@@ -520,7 +521,6 @@ export class InjectionsView {
 			if (this.previewSearch.step(matchStep)) this.clearCache();
 			return;
 		}
-
 		if (isStepBackKey(data)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {

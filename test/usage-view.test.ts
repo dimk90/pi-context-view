@@ -20,6 +20,7 @@ import {
 	descriptionNoteLines, emptyPreviewNote, probingDisabledNote, thinkingNote, usageNote,
 } from "../src/ui/notes.ts";
 import { assertFrame, containsBlock, createTheme, frameText, stripSgr, stripStyle, wholeOrAbsent } from "./harness/frame.ts";
+import { mouseEvent, wheelEvent } from "./harness/mouse.ts";
 
 /** Render the overview independently of the dashboard's layout and collapse decision. */
 function usageDescription(width = 1_000): string[] {
@@ -755,13 +756,13 @@ test("UsageView scrolls a single Tool Output child and restores its category sel
 	}
 	assert.deepEqual(aliases.render(80), top);
 	for (let step = 0; step < 4; step++) arrows.handleInput("j");
-	aliases.handleInput("\u001b[<65;1;1M");
+	aliases.handleMouse(wheelEvent(1));
 	const scrolled = aliases.render(80);
 	assert.notDeepEqual(scrolled, top);
 	assert.deepEqual(scrolled, arrows.render(80), "the wheel scrolls by pi's configured line step");
 	aliases.handleInput("\r");
 	assert.deepEqual(aliases.render(80), scrolled);
-	aliases.handleInput("\u001b[<64;1;1M");
+	aliases.handleMouse(wheelEvent(-1));
 	assert.deepEqual(aliases.render(80), top);
 
 	for (const width of [24, 40, 60, 80, 120]) {
@@ -1114,9 +1115,9 @@ test("UsageView accepts Ctrl+u/d wherever it accepts the page keys", () => {
 });
 
 test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", () => {
-	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences
-	const wheelUp = "\u001b[<64;20;5M";
-	const wheelDown = "\u001b[<65;20;5M";
+	// Fullscreen pi parses wheel reports and passes them to the focused overlay as mouse events
+	const wheelUp = wheelEvent(-1);
+	const wheelDown = wheelEvent(1);
 	const longText = Array.from({ length: 60 }, (_, line) => `line ${line + 1}`).join("\n");
 	const wheelUsage: ContextUsageSnapshot = {
 		...usage(1_000),
@@ -1147,9 +1148,14 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 	const start = frame(wheel);
 	assert.equal(frame(arrows), start);
 
+	// Other mouse events fall through to pi; a notch at the edge is handled but needs no redraw
+	assert.equal(wheel.handleMouse(mouseEvent("click", { button: "left" })), undefined);
+	assert.deepEqual(wheel.handleMouse(wheelUp), { handled: true, render: false });
+	assert.equal(frame(wheel), start);
+
 	// Legend: one notch selects one row, regardless of the scroll step
 	arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	assert.deepEqual(wheel.handleMouse(wheelDown), { handled: true, render: true });
 	assert.match(stripSgr(frame(wheel)), /→ ■ Tool Output \.{2,}/);
 	assert.equal(frame(wheel), frame(arrows));
 
@@ -1159,11 +1165,11 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 	const streamTop = frame(wheel);
 	assert.equal(frame(arrows), streamTop);
 	arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	wheel.handleMouse(wheelDown);
 	assert.notEqual(frame(wheel), streamTop);
 	assert.equal(frame(wheel), frame(arrows));
 	arrows.handleInput("\u001b[A");
-	wheel.handleInput(wheelUp);
+	wheel.handleMouse(wheelUp);
 	assert.equal(frame(wheel), streamTop);
 	assert.equal(frame(arrows), streamTop);
 
@@ -1174,11 +1180,11 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 	assert.equal(frame(arrows), blockTop);
 	assert.match(stripSgr(blockTop), /line 1\b/);
 	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	wheel.handleMouse(wheelDown);
 	assert.notEqual(frame(wheel), blockTop);
 	assert.equal(frame(wheel), frame(arrows));
 	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[A");
-	wheel.handleInput(wheelUp);
+	wheel.handleMouse(wheelUp);
 	assert.equal(frame(wheel), blockTop);
 	assert.equal(frame(arrows), blockTop);
 });
