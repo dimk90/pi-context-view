@@ -5,7 +5,7 @@
  * block streams with opt-in full content for multi-entry categories.
  */
 import type { ExtensionCommandContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, matchesKey, visibleWidth, wrapTextWithAnsi, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 
 import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
@@ -61,7 +61,7 @@ import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
 import { buildUsageMap, calculateFitMapScale, type UsageMap, type UsageMapCell } from "./usage-map.ts";
 import { BlockNavigator, layoutPreviewBlocks, type PreviewLayout } from "./usage-preview.ts";
-import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
+import { DEFAULT_WHEEL_SCROLL_LINES, readWheelScrollLines } from "./wheel.ts";
 
 /** Dashboard rows below the content, excluding the collapsible description: blank, hints, blank, border. */
 const USAGE_TAIL_FIXED_LINE_COUNT = 4;
@@ -215,6 +215,10 @@ export async function showUsageView(context: ExtensionCommandContext, input: Usa
 					view.handleInput(data);
 					tui.requestRender();
 				},
+				handleMouse: (event: TuiMouseEvent): TuiMouseEventResult | undefined => {
+					return view.handleMouse(event);
+					// tui.requestRender();
+				},
 			};
 		},
 		{
@@ -280,6 +284,32 @@ export class UsageView {
 		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable
 		const selectableCount = this.legendRows.filter((row) => row.type === "category").length;
 		this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
+	}
+
+	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "wheel" || !event.wheelDelta) {
+			return undefined;
+		}
+		const wheel = event.wheelDelta > 0 ? 1 : -1;
+
+		if (!!this.previewRow) {
+			const blockStream = this.getFullContentEntry(this.previewRow) === undefined;
+			if (blockStream) {
+				const moved = wheel < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
+				if (moved) {
+					this.clearCache();
+				}
+			} else {
+				if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) {
+					this.clearCache();
+				}
+			}
+		} else {
+			if (this.navigator.moveBy(wheel)) {
+				this.clearCache();
+			}
+		}
+		return { handled: true };
 	}
 
 	/** Handle category navigation, preview opening, and close keys. */
@@ -831,13 +861,7 @@ export class UsageView {
 			const anchor = this.cachedStreamSearch?.starts[this.blockNavigator.selected] ?? 0;
 			if (this.handleSearchKey(data, anchor)) return;
 		}
-		// Blocks are selected rather than scrolled, so one notch steps one block
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			const moved = wheel < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
-			if (moved) this.clearCache();
-			return;
-		}
+
 		if (matchesKey(data, Key.enter)) {
 			this.openBlock();
 		} else if (isStepBackKey(data)) {
@@ -867,11 +891,7 @@ export class UsageView {
 			return;
 		}
 		if (this.handleSearchKey(data, this.previewScroller.offset)) return;
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
-			return;
-		}
+
 		if (isStepBackKey(data)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {

@@ -3,7 +3,7 @@
  * snapshot. The Runtime label stays hidden until the runtime-inspection roadmap step.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, matchesKey, visibleWidth, wrapTextWithAnsi, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 
 import type { InjectionItem, InjectionSnapshot, TokenDiff } from "../model.ts";
 import type { GuardResult } from "../snapshot.ts";
@@ -71,7 +71,7 @@ import {
 } from "./search.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { statusBarLines } from "./status-bar.ts";
-import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
+import { DEFAULT_WHEEL_SCROLL_LINES, readWheelScrollLines } from "./wheel.ts";
 
 /**
  * List frame rows excluding the status bar and the collapsible description:
@@ -137,6 +137,10 @@ export async function showInjectionsView(
 					view.handleInput(data);
 					tui.requestRender();
 				},
+				handleMouse: (event: TuiMouseEvent): TuiMouseEventResult | undefined => {
+					return view.handleMouse(event);
+					// tui.requestRender();
+				},
 			};
 		},
 		{
@@ -197,6 +201,24 @@ export class InjectionsView {
 		this.itemsById = collectItemsById(input.snapshot);
 	}
 
+	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "wheel" || !event.wheelDelta) {
+			return undefined;
+		}
+		const wheel = event.wheelDelta > 0 ? 1 : -1;
+
+		if (!!this.previewItem) {
+			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) {
+				this.clearCache();
+			}
+		} else {
+			if (this.navigator.moveBy(wheel)) {
+				this.clearCache();
+			}
+		}
+		return { handled: true };
+	}
+
 	public handleInput(data: string): void {
 		this.copy.clear();
 		if (this.previewItem !== undefined) {
@@ -226,12 +248,7 @@ export class InjectionsView {
 			this.clearCache();
 			return;
 		}
-		// One notch moves the selection one row, like a single step key
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.navigator.moveBy(wheel)) this.clearCache();
-			return;
-		}
+
 		if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
@@ -503,11 +520,7 @@ export class InjectionsView {
 			if (this.previewSearch.step(matchStep)) this.clearCache();
 			return;
 		}
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
-			return;
-		}
+
 		if (isStepBackKey(data)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
