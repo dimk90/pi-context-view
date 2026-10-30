@@ -5,6 +5,9 @@
 ### New
 * `[views]` Add `c` to copy the highlighted row or open preview to the clipboard ([#16](https://github.com/dimk90/pi-context-view/pull/16) by @felipezan).
 
+### Fixed
+* `[views]` Fix mouse and trackpad wheel scrolling by using Pi's TUI mouse events ([#18](https://github.com/dimk90/pi-context-view/pull/18) by @danielweck).
+
 
 ## `[v0.8.1]` - 26.10.2026
 
