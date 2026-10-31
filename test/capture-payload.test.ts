@@ -25,7 +25,7 @@ function harness(probe = false) {
 	const sessionManager = SessionManager.inMemory();
 	sessionManager.appendMessage({ ...SYSTEM, toolsAdded: [TOOL] });
 	const context = {
-		sessionManager, model: { ...MODEL }, getSystemPrompt: () => "prompt",
+		mode: "tui", sessionManager, model: { ...MODEL }, getSystemPrompt: () => "prompt",
 		modelRegistry: { find: () => MODEL },
 	} as unknown as ExtensionContext;
 	const pi = {

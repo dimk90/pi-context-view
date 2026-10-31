@@ -3,8 +3,9 @@
  * observes every agent request in `context_with_system`, pairs it with its
  * provider payload in `before_provider_request`, and confirms
  * the dispatch from assistant message events. Observe only:
- * handlers return nothing and never change provider-bound data. Runs in every
- * run mode, without any consumer, and imports no trigger or consumer code.
+ * handlers return nothing and never change provider-bound data. Captures only
+ * in TUI mode, where the views can show snapshots, but without waiting for a
+ * consumer; imports no trigger or consumer code.
  */
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -58,6 +59,9 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 	});
 
 	pi.on("context_with_system", (event, ctx) => {
+		// No view can show a snapshot in other modes. Without a tracked capture, the
+		// payload, dispatch, and settle handlers have nothing to do.
+		if (ctx.mode !== "tui") return;
 		settleUnpaired();
 		let request: CapturedRequest;
 		try {

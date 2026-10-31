@@ -2,8 +2,8 @@
 
 Part of the [architecture](../ARCHITECTURE.md). Capture describes every agent
 request as structured changes against the session projection and publishes
-them as request snapshots to SnapshotStore. It runs in every run mode,
-independently of any consumer. The [payload guard](payload-guard.md) then
+them as request snapshots to SnapshotStore. It runs only in TUI mode, where
+the views can show snapshots, and independently of any consumer. The [payload guard](payload-guard.md) then
 compares the same request with its provider payload.
 
 ## Scope

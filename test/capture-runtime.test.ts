@@ -197,13 +197,13 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		}
 	});
 
-	test("capture runs in RPC mode without any consumer", async (t) => {
+	test("capture publishes nothing outside TUI mode", async (t) => {
 		const provider = await startProvider(t);
 		const runtime = await createRuntime(t, provider, { factories: [contextAdd], mode: "rpc" });
 		await runtime.session.prompt("prompt");
-		const [snapshot] = await runtime.settled();
+		assert.deepEqual(await runtime.settled(), []);
 		assert.deepEqual(runtime.errors, []);
-		assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
+		assert.equal(provider.requests.length, 1, "the request proceeds");
 	});
 });
 

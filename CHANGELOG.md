@@ -7,6 +7,7 @@
 
 ### Fixed
 * `[views]` Fix mouse and trackpad wheel scrolling by using Pi's TUI mouse events ([#18](https://github.com/dimk90/pi-context-view/pull/18) by @danielweck).
+* `[capture]` Capture requests only in TUI mode, where the views can show them.
 
 
 ## `[v0.8.1]` - 26.10.2026
