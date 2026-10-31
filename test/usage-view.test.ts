@@ -15,7 +15,7 @@ import {
 import type { ContextUsageSnapshot } from "../src/model.ts";
 import { formatPercent, formatTokens, UsageView, type UsageViewInput } from "../src/ui/usage-view.ts";
 import { colorize } from "../src/ui/color.ts";
-import type { CopyActions } from "../src/ui/copy.ts";
+import { type CopyActions, copiedNotice, type ScheduleTimeout } from "../src/ui/copy.ts";
 import {
 	descriptionNoteLines, emptyPreviewNote, probingDisabledNote, thinkingNote, usageNote,
 } from "../src/ui/notes.ts";
@@ -1870,16 +1870,29 @@ async function settleCopy(): Promise<void> {
 	await new Promise((resolve) => setImmediate(resolve));
 }
 
+/** Notice timer that never fires, so a test can read the notice at its own pace. */
+const KEEP_NOTICE: ScheduleTimeout = () => () => {};
+
+/** The frame's top border as plain text, where the copy notice appears. */
+function topBorderText(view: UsageView): string {
+	return plainFrame(view)[0] ?? "";
+}
+
+/** The plain top border the frame shows without a copy notice. */
+function plainBorder(view: UsageView): string {
+	return "─".repeat(visibleWidth(topBorderText(view)));
+}
+
 test("UsageView copies the highlighted category, block, and open content", async () => {
 	const copied: string[] = [];
 	const view = createView(createTheme(), { usage: searchUsage() }, () => {}, () => 30, {
 		copyText: async (text) => { copied.push(text); },
+		schedule: KEEP_NOTICE,
 	});
 	selectCategory(view, "Tool Output");
 	assert.match(plainFrame(view).find((line) => line.includes("Navigate")) ?? "", /c Copy/);
 
 	view.handleInput("c");
-	assert.match(plainFrame(view).join("\n"), /Copying…/);
 	await settleCopy();
 	assert.equal(copied[0], [
 		"first result",
@@ -1887,24 +1900,25 @@ test("UsageView copies the highlighted category, block, and open content", async
 			Array.from({ length: 10 }, (_, line) => `tail line ${line}`).join("\n"),
 		"another needle up top",
 	].join("\n\n"));
-	assert.match(plainFrame(view).join("\n"), /Copied [\d,]+ chars/);
+	assert.ok(topBorderText(view).includes(copiedNotice(copied[0] ?? "").text));
 
 	openCategory(view, "Tool Output");
 	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
 	view.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[1], "first result");
-	assert.match(plainFrame(view).join("\n"), /Copied [\d,]+ chars/);
+	assert.ok(topBorderText(view).includes(copiedNotice("first result").text));
 
 	const single = createView(createTheme(), { usage: usage() }, () => {}, () => 30, {
 		copyText: async (text) => { copied.push(text); },
+		schedule: KEEP_NOTICE,
 	});
 	openCategory(single, "read");
 	assert.match(plainFrame(single).join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
 	single.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[2], "read result content line\nsecond line");
-	assert.match(plainFrame(single).join("\n"), /Copied [\d,]+ chars/);
+	assert.ok(topBorderText(single).includes(copiedNotice(copied[2]).text));
 });
 
 test("UsageView reports an empty highlighted category without writing the clipboard", async () => {
@@ -1917,28 +1931,37 @@ test("UsageView reports an empty highlighted category without writing the clipbo
 	};
 	const view = createView(createTheme(), { usage: empty }, () => {}, () => 30, {
 		copyText: async (text) => { copied.push(text); },
+		schedule: KEEP_NOTICE,
 	});
 	view.handleInput("c");
 	await settleCopy();
 	assert.deepEqual(copied, []);
-	assert.match(plainFrame(view).join("\n"), /Nothing to copy/);
+	assert.match(topBorderText(view), /Nothing to copy/);
 });
 
-test("UsageView clears the copy notice on the next key and stops publishing after close", async () => {
+test("UsageView keeps the copy notice across keys until it expires, and stops publishing after close", async () => {
 	const pending: Array<() => void> = [];
+	const expiries: Array<() => void> = [];
 	let closed = false;
 	const view = createView(createTheme(), { usage: usage() }, () => { closed = true; }, () => 30, {
 		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
+		schedule: (callback) => {
+			expiries.push(callback);
+			return () => {};
+		},
 	});
 	selectCategory(view, "Tool Output");
 
 	view.handleInput("c");
 	pending[0]?.();
 	await settleCopy();
-	assert.match(plainFrame(view).join("\n"), /Copied [\d,]+ chars/);
+	const notice = topBorderText(view);
+	assert.notEqual(notice, plainBorder(view));
 
 	view.handleInput("j");
-	assert.doesNotMatch(plainFrame(view).join("\n"), /Copying…|Copied/);
+	assert.equal(topBorderText(view), notice);
+	expiries[0]?.();
+	assert.equal(topBorderText(view), plainBorder(view));
 	view.handleInput("k");
 
 	view.handleInput("c");
@@ -1946,7 +1969,7 @@ test("UsageView clears the copy notice on the next key and stops publishing afte
 	assert.ok(closed);
 	pending[1]?.();
 	await settleCopy();
-	assert.doesNotMatch(plainFrame(view).join("\n"), /Copied/);
+	assert.equal(topBorderText(view), plainBorder(view));
 });
 
 test("UsageView stops redrawing a copy result after the host disposes it", async () => {
@@ -1963,7 +1986,7 @@ test("UsageView stops redrawing a copy result after the host disposes it", async
 	pending[0]?.();
 	await settleCopy();
 	assert.equal(refreshes, refreshesAtDispose);
-	assert.doesNotMatch(plainFrame(view).join("\n"), /Copied/);
+	assert.equal(topBorderText(view), plainBorder(view));
 });
 
 test("UsageView drops the copy hint whole when the dashboard hint row is narrow", () => {

@@ -7,7 +7,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { AGGREGATE_SOURCE, type InjectionSnapshot, type InjectionGroup, type InjectionItem } from "../src/model.ts";
 import type { GuardResult } from "../src/snapshot.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
-import type { CopyActions } from "../src/ui/copy.ts";
+import { type CopyActions, copiedNotice } from "../src/ui/copy.ts";
 import { previewBodyLines } from "../src/ui/section-preview.ts";
 import { buildInjectionRows } from "../src/ui/injections-model.ts";
 import { statusBarLines } from "../src/ui/status-bar.ts";
@@ -2283,7 +2283,7 @@ async function settleCopy(): Promise<void> {
 
 test("InjectionsView copies a highlighted group, item, and open preview", async () => {
 	const copied: string[] = [];
-	const actions: CopyActions = { copyText: async (text) => { copied.push(text); } };
+	const actions: CopyActions = { copyText: async (text) => { copied.push(text); }, schedule: () => () => {} };
 	const view = createView(8, undefined, () => 24, actions);
 
 	// The first highlighted row is the pi group; copy every item in it.
@@ -2307,7 +2307,8 @@ test("InjectionsView copies a highlighted group, item, and open preview", async 
 	view.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[2], itemText);
-	assert.match(plainFrame(view).join("\n"), /Copied [\d,]+ chars/);
+	// The notice sits on the top border
+	assert.ok(plainFrame(view)[0]?.includes(copiedNotice(itemText).text));
 });
 
 test("InjectionsView reports an empty item without writing the clipboard", async () => {
@@ -2324,7 +2325,7 @@ test("InjectionsView reports an empty item without writing the clipboard", async
 	view.handleInput("c");
 	await settleCopy();
 	assert.deepEqual(copied, []);
-	assert.match(plainFrame(view).join("\n"), /Nothing to copy/);
+	assert.match(plainFrame(view)[0] ?? "", /Nothing to copy/);
 });
 
 test("InjectionsView copies only the visible items of a filtered group", async () => {
@@ -2344,6 +2345,16 @@ test("InjectionsView copies only the visible items of a filtered group", async (
 	assert.match(copied[0] ?? "", /^pi-3 preview line 0/);
 });
 
+/** The frame's top border as plain text, where the copy notice appears. */
+function topBorderText(view: InjectionsView): string {
+	return plainFrame(view)[0] ?? "";
+}
+
+/** The plain top border the frame shows without a copy notice. */
+function plainBorder(view: InjectionsView): string {
+	return "─".repeat(visibleWidth(topBorderText(view)));
+}
+
 test("InjectionsView stops publishing a copy result after close", async () => {
 	let closed = false;
 	const pending: Array<() => void> = [];
@@ -2355,7 +2366,7 @@ test("InjectionsView stops publishing a copy result after close", async () => {
 	assert.ok(closed);
 	pending[0]?.();
 	await settleCopy();
-	assert.doesNotMatch(plainFrame(view).join("\n"), /Copied/);
+	assert.equal(topBorderText(view), plainBorder(view));
 });
 
 test("InjectionsView stops redrawing a copy result after the host disposes it", async () => {
@@ -2371,17 +2382,26 @@ test("InjectionsView stops redrawing a copy result after the host disposes it", 
 	pending[0]?.();
 	await settleCopy();
 	assert.equal(refreshes, refreshesAtDispose);
-	assert.doesNotMatch(plainFrame(view).join("\n"), /Copied/);
+	assert.equal(topBorderText(view), plainBorder(view));
 });
 
-test("InjectionsView keeps a cleared notice cleared when a copy resolves late", async () => {
+test("InjectionsView keeps a late copy result across keys until it expires", async () => {
 	const pending: Array<() => void> = [];
+	const expiries: Array<() => void> = [];
 	const view = createView(8, undefined, () => 24, {
 		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
+		schedule: (callback) => {
+			expiries.push(callback);
+			return () => {};
+		},
 	});
 	view.handleInput("c");
 	view.handleInput("j");
 	pending[0]?.();
 	await settleCopy();
-	assert.doesNotMatch(plainFrame(view).join("\n"), /Copied/);
+	assert.notEqual(topBorderText(view), plainBorder(view));
+	view.handleInput("j");
+	assert.notEqual(topBorderText(view), plainBorder(view));
+	expiries[0]?.();
+	assert.equal(topBorderText(view), plainBorder(view));
 });

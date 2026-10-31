@@ -273,9 +273,12 @@ export class UsageView {
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
-		this.copy = new CopyNotices(actions.copyText, () => {
-			this.clearCache();
-			actions.refresh?.();
+		this.copy = new CopyNotices({
+			...actions,
+			refresh: () => {
+				this.clearCache();
+				actions.refresh?.();
+			},
 		});
 		this.usage = input.usage;
 		this.categoryColors = input.categoryColors;
@@ -294,7 +297,6 @@ export class UsageView {
 	 */
 	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
-		this.copy.clear();
 		const moved = this.scrollByWheel(event.wheelDelta);
 		if (moved) this.clearCache();
 		return { handled: true, render: moved };
@@ -313,7 +315,6 @@ export class UsageView {
 
 	/** Handle category navigation, preview opening, and close keys. */
 	public handleInput(data: string): void {
-		this.copy.clear();
 		if (this.previewRow !== undefined) {
 			// Route on the same predicate the renderer uses, so keys always target the visible level
 			const blockStream = this.getFullContentEntry(this.previewRow) === undefined;
@@ -399,7 +400,7 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const notices = this.noticeLines(width);
-		const prefix = [border, "", ...this.headerLines(width), "", ...notices, ...(notices.length > 0 ? [""] : [])];
+		const prefix = [this.copy.topBorder(theme, width), "", ...this.headerLines(width), "", ...notices, ...(notices.length > 0 ? [""] : [])];
 		const availableRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT);
 		const map = this.dashboardMap(width, availableRows);
 		const descriptionLines = this.dashboardDescriptionLines(width, availableRows, map);
@@ -408,7 +409,7 @@ export class UsageView {
 		while (dashboard.length < dashboardRows) dashboard.push("");
 		const tail = [
 			...(descriptionLines.length === 0 ? [] : ["", ...descriptionLines]),
-			this.copy.line(this.theme, width),
+			"",
 			fitHintRow(theme, this.dashboardHints(width), width),
 			"",
 			border,
@@ -1009,7 +1010,9 @@ export class UsageView {
 		const revealRow = this.search.sync(searchLines.lines);
 		if (revealRow !== undefined) this.blockNavigator.select(blockAtRow(searchLines.starts, revealRow));
 
-		const lines: string[] = [border, "", this.categoryHeaderLine(row, width), "", ...this.search.promptLines(theme, width)];
+		const lines: string[] = [
+			this.copy.topBorder(theme, width), "", this.categoryHeaderLine(row, width), "", ...this.search.promptLines(theme, width),
+		];
 		lines.push(...this.previewStreamLines(stream, viewport.visibleCount, width));
 		if (viewport.showScroll) {
 			lines.push(
@@ -1020,7 +1023,7 @@ export class UsageView {
 			);
 		}
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
-		lines.push(this.copy.line(this.theme, width));
+		lines.push("");
 		lines.push(fitHintRow(theme, this.streamHints(stream.blocks.length), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
@@ -1089,7 +1092,7 @@ export class UsageView {
 		}
 
 		const lines: string[] = [
-			border,
+			this.copy.topBorder(theme, width),
 			"",
 			this.categoryHeaderLine(row, width),
 			"",
@@ -1108,7 +1111,7 @@ export class UsageView {
 			);
 		}
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
-		lines.push(this.copy.line(this.theme, width));
+		lines.push("");
 		lines.push(fitHintRow(theme, searchHints(this.search.prompt, "Scroll", COPY_HINT), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);

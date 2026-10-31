@@ -191,9 +191,12 @@ export class InjectionsView {
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
-		this.copy = new CopyNotices(actions.copyText, () => {
-			this.clearCache();
-			actions.refresh?.();
+		this.copy = new CopyNotices({
+			...actions,
+			refresh: () => {
+				this.clearCache();
+				actions.refresh?.();
+			},
 		});
 		this.allRows = buildInjectionRows(input.snapshot);
 		this.rows = this.allRows;
@@ -209,7 +212,6 @@ export class InjectionsView {
 	 */
 	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
-		this.copy.clear();
 		const moved = this.previewItem !== undefined
 			? this.previewScroller.scrollBy(event.wheelDelta)
 			: this.navigator.moveBy(Math.sign(event.wheelDelta));
@@ -218,7 +220,6 @@ export class InjectionsView {
 	}
 
 	public handleInput(data: string): void {
-		this.copy.clear();
 		if (this.previewItem !== undefined) {
 			this.handlePreviewInput(data);
 			return;
@@ -281,6 +282,7 @@ export class InjectionsView {
 		}
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
+		const topBorder = this.copy.topBorder(theme, width);
 		const headerLines = this.headerLines(width);
 		const filterLines = this.filterLines(width);
 		const warningLines = this.degradedWarningLines(width);
@@ -298,7 +300,7 @@ export class InjectionsView {
 		);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 		const lines: string[] = [
-			border, "", ...headerLines, "", ...filterLines, ...warningLines, ...(warningRows > 0 ? [""] : []),
+			topBorder, "", ...headerLines, "", ...filterLines, ...warningLines, ...(warningRows > 0 ? [""] : []),
 		];
 		const listLines = this.navigator.selectableCount === 0
 			? [this.fit(theme.fg("muted", `${BODY_INDENT}${EMPTY_FILTER_MESSAGE}`), width)]
@@ -311,7 +313,7 @@ export class InjectionsView {
 		const hints = fitHintRow(theme, this.listHints(), width);
 		const tail = [
 			...(descriptionLines.length > 0 ? ["", ...descriptionLines] : []),
-			this.copy.line(this.theme, width),
+			"",
 			hints,
 			"",
 			border,
@@ -321,7 +323,7 @@ export class InjectionsView {
 		lines.push(...tail);
 
 		const fittedLines = lines.length <= terminalRows ? lines : compactListLines({
-			border, header: this.headerLines(width, true), filter: filterLines.slice(0, 1), warnings: warningLines,
+			topBorder, border, header: this.headerLines(width, true), filter: filterLines.slice(0, 1), warnings: warningLines,
 			selected: listLines[this.navigator.selected - this.navigator.offset],
 			total, status: statusLines, hints, terminalRows,
 		});
@@ -606,7 +608,7 @@ export class InjectionsView {
 		if (revealLine !== undefined) this.previewScroller.reveal(revealLine, SEARCH_CONTEXT_LINES);
 		const searchLines = search.promptLines(theme, width);
 
-		const lines: string[] = [border, ""];
+		const lines: string[] = [this.copy.topBorder(theme, width), ""];
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(item.label)));
 		const source = normalizeInlineText(item.source.label);
 		const meta = theme.fg("muted", item.diffOnly === true
@@ -635,7 +637,7 @@ export class InjectionsView {
 
 		if (viewport.showScroll) lines.push(this.previewScrollLine(width, wrapped.length));
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
-		lines.push(this.copy.line(this.theme, width));
+		lines.push("");
 		lines.push(fitHintRow(this.theme, searchHints(search.prompt, "Scroll", COPY_HINT), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
@@ -968,6 +970,8 @@ function rowKey(row: InjectionRow): string {
 
 /** Parts of an emergency list frame, in which the bar has priority over frame spacing. */
 interface CompactListInput {
+	/** First row; carries the copy notice. */
+	readonly topBorder: string;
 	readonly border: string;
 	readonly header: readonly string[];
 	/** The filter prompt row, without its trailing blank row; empty when no filter is shown. */
@@ -987,9 +991,9 @@ interface CompactListInput {
  * empty rows that fill the remaining height. Below that physical minimum, clip content.
  */
 function compactListLines(input: CompactListInput): string[] {
-	const { border, header, filter, warnings, selected, total, status, hints, terminalRows } = input;
+	const { topBorder, border, header, filter, warnings, selected, total, status, hints, terminalRows } = input;
 	const lines = [
-		border, ...header, ...filter, ...warnings, ...(selected === undefined ? [] : [selected]), total, ...status,
+		topBorder, ...header, ...filter, ...warnings, ...(selected === undefined ? [] : [selected]), total, ...status,
 	];
 	const tail = lines.length + 2 <= terminalRows ? [hints, border] : [border];
 	while (lines.length + tail.length < terminalRows) lines.push("");
