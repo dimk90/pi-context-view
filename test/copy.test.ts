@@ -32,6 +32,8 @@ test("copyableJoin keeps one blank line between non-empty pieces", () => {
 
 test("copy notices count characters and sanitize failures", () => {
 	assert.deepEqual(copiedNotice("hello\nworld"), { text: "Copied 11 chars", kind: "success" });
+	// An emoji, a combined accent, and a ZWJ family each count as one character
+	assert.equal(copiedNotice("\u{1F600}e\u0301\u{1F468}\u200D\u{1F469}\u200D\u{1F467}").text, "Copied 3 chars");
 	assert.deepEqual(copyFailureNotice(new Error("failed\u001b]52;c;secret\u0007")), {
 		text: "Copy failed: failed",
 		kind: "error",

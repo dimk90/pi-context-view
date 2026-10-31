@@ -11,6 +11,8 @@ import { BODY_INDENT, fitLine, type Hint } from "./layout.ts";
 
 /** Hint-row entry advertising the copy action; it is optional, so narrow rows drop it whole. */
 export const COPY_HINT: Hint = ["c", "Copy", true];
+/** Splits copied text into graphemes, the characters a user sees. */
+const SEGMENTER = new Intl.Segmenter();
 
 /** Clipboard writer injected by the host, or stubbed by a test. */
 export type CopyText = (text: string) => Promise<void>;
@@ -44,7 +46,14 @@ export function copyableJoin(texts: Iterable<string>): string {
 
 /** Short, human-readable confirmation of how much text reached the clipboard. */
 export function copiedNotice(text: string): CopyNotice {
-	return { text: `Copied ${text.length.toLocaleString("en-US")} chars`, kind: "success" };
+	return { text: `Copied ${countCharacters(text).toLocaleString("en-US")} chars`, kind: "success" };
+}
+
+/** Count user-visible characters, so an emoji or a combined accent counts once. */
+function countCharacters(text: string): number {
+	let count = 0;
+	for (const _segment of SEGMENTER.segment(text)) count++;
+	return count;
 }
 
 /** Failure feedback for a clipboard write, with any terminal control text removed. */
