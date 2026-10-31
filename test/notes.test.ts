@@ -5,7 +5,7 @@ import { test } from "node:test";
 import type { InjectionItem } from "../src/model.ts";
 import type { GuardResult } from "../src/snapshot.ts";
 import {
-	descriptionNoteLines, injectionsNotes, payloadCheck, payloadCheckLabel, requestOriginLabel,
+	descriptionNoteLines, injectionsNotes, payloadCheck, requestOriginLabel,
 	thinkingNote, usageNote, type PayloadCheck,
 } from "../src/ui/notes.ts";
 import { markerLegendLines, partMarkers, type ContextMarker } from "../src/ui/markers.ts";
@@ -25,9 +25,6 @@ test("payload attention distinguishes pending, unchecked, partial, complete, and
 		const notes = injectionsNotes(createTheme(), { guard, items: [] });
 		assert.equal(notes.some((note) => note.kind === "payload-check"), expected !== undefined);
 	}
-	const labels = (["pending", "unchecked", "partial"] as const).map(payloadCheckLabel);
-	assert.ok(labels.every((label) => label.trim().length > 0));
-	assert.equal(new Set(labels).size, 3);
 	assert.notEqual(requestOriginLabel(true), requestOriginLabel(false));
 });
 

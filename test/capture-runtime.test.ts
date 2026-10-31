@@ -27,7 +27,7 @@ import { applyRequestSnapshot } from "../src/projection.ts";
 import { buildUsageSnapshot } from "../src/replay.ts";
 import type { ConversationChange, RequestSnapshot, SystemChange } from "../src/snapshot.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
-import { injectionsNotes, payloadCheckLabel, requestOriginLabel, type DescriptionNote } from "../src/ui/notes.ts";
+import { injectionsNotes, requestOriginLabel, type DescriptionNote } from "../src/ui/notes.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
 import { containsBlock, createTheme, frameText, stripSgr } from "./harness/frame.ts";
 import agentStartMessage, {
@@ -525,7 +525,6 @@ suite("Injections composition", { concurrency: true }, () => {
 			const probe = await runtime.renderView();
 			const probeNotes = noteKindsShown(probe, true, true);
 			assert.ok(containsBlock(probe, [requestOriginLabel(true)]));
-			assert.ok(containsBlock(probe, [`Payload: ${payloadCheckLabel("unchecked")}`]));
 			assert.ok(probeNotes.has("probe") && probeNotes.has("payload-check"));
 
 			await runtime.session.prompt("real prompt");

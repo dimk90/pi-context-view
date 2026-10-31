@@ -50,7 +50,6 @@ import {
 	normalizeTerminalRows,
 	spreadLine,
 	STEP_KEY_HINT,
-	wrapDescriptionLines,
 } from "./layout.ts";
 import {
 	type DiffBase,
@@ -59,9 +58,7 @@ import {
 	formatDiffRemoved,
 	stateMarkers,
 } from "./markers.ts";
-import {
-	descriptionNoteLines, findingNotes, injectionsNotes, payloadCheck, payloadCheckLabel, requestOriginLabel,
-} from "./notes.ts";
+import { descriptionNoteLines, findingNotes, injectionsNotes, requestOriginLabel } from "./notes.ts";
 import {
 	findMatches,
 	highlightLine,
@@ -681,27 +678,18 @@ export class InjectionsView {
 		);
 	}
 
-	/** Keep capture origin and payload attention visible, wrapping below the title rather than omitting status. */
+	/** Keep the capture origin visible, wrapping below the title rather than omitting it. */
 	private headerLines(width: number, compact = false): string[] {
 		const theme = this.theme;
-		const separator = theme.fg("dim", " · ");
 		const probe = this.input.probe === true;
 		const label = theme.fg("mdHeading", theme.bold(requestOriginLabel(probe)));
-		const payloadState = payloadCheck(this.input.guard);
-		const status = payloadState === undefined ? ""
-			: theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadCheckLabel(payloadState)}`);
-		// An emergency frame drops the title, never the origin or payload attention
-		if (compact) return wrapTextWithAnsi(`${label}${status === "" ? "" : separator + status}`, Math.max(1, width));
+		// An emergency frame drops the title, never the origin
+		if (compact) return wrapTextWithAnsi(label, Math.max(1, width));
 		const title = theme.fg("accent", theme.bold("Context Injections"));
-		const combined = `${title}${separator}${label}`;
-		const lines = visibleWidth(combined) <= width
+		const combined = `${title}${theme.fg("dim", " · ")}${label}`;
+		return visibleWidth(combined) <= width
 			? [combined]
 			: [this.fit(title, width), "", ...wrapTextWithAnsi(label, Math.max(1, width))];
-		if (status === "") return lines;
-		if (lines.length === 1 && visibleWidth(combined) + visibleWidth(status) < width) {
-			return [this.spread(combined, status, width)];
-		}
-		return [...lines, ...wrapDescriptionLines(theme, status, "dim", width)];
 	}
 
 	/** Render the current hierarchy viewport against one stable, nearby value column. */

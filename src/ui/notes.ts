@@ -7,7 +7,7 @@ import { normalizeInlineText } from "../text.ts";
 import { wrapDescriptionLines } from "./layout.ts";
 import { noteBulletLines } from "./markers.ts";
 
-/** Payload attention is independent of its compact label or longer explanation. */
+/** Payload comparison state that needs a description note. */
 export type PayloadCheck = "pending" | "unchecked" | "partial";
 
 /** A note's identity survives copy changes; text may contain theme styling, never raw content. */
@@ -32,14 +32,6 @@ export function payloadCheck(guard: GuardResult | undefined): PayloadCheck | und
 	if (guard?.status === "pending") return "pending";
 	if (guard?.status === "incomplete") return guard.findings === undefined ? "unchecked" : "partial";
 	return undefined;
-}
-
-/** Compact wording for an independently classified payload check. */
-export function payloadCheckLabel(check: PayloadCheck): string {
-	const labels: Record<PayloadCheck, string> = {
-		pending: "pending", unchecked: "not checked", partial: "partly checked",
-	};
-	return labels[check];
 }
 
 /** Origin stays visible even when the optional notes collapse. */

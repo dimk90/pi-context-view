@@ -13,8 +13,8 @@ import { buildInjectionRows } from "../src/ui/injections-model.ts";
 import { statusBarLines } from "../src/ui/status-bar.ts";
 import { markerLegendLines, markerStatusField } from "../src/ui/markers.ts";
 import {
-	descriptionNoteLines, injectionsNotes, payloadCheckLabel, requestOriginLabel,
-	type DescriptionNote, type InjectionsNotesInput, type PayloadCheck,
+	descriptionNoteLines, injectionsNotes, requestOriginLabel,
+	type DescriptionNote, type InjectionsNotesInput,
 } from "../src/ui/notes.ts";
 import { assertFrame, containsBlock, createTheme, frameText, stripSgr, stripStyle, wholeOrAbsent } from "./harness/frame.ts";
 import { mouseEvent, wheelEvent } from "./harness/mouse.ts";
@@ -1365,7 +1365,6 @@ test("InjectionsView renders selected capture notes without conflating origin an
 		guard: { status: "incomplete", reason: "fixture-payload-reason" } } as const;
 	const lines = new InjectionsView(theme, input, () => {}, () => 100).render(120);
 	assert.ok(containsBlock(lines, [requestOriginLabel(true)]));
-	assert.ok(containsBlock(lines, [`Payload: ${payloadCheckLabel("unchecked")}`]));
 	for (const kind of ["probe", "payload-check"] as const) {
 		assert.ok(containsBlock(lines, noteLines(kind, 120, input)));
 	}
@@ -1377,7 +1376,6 @@ test("InjectionsView renders selected capture notes without conflating origin an
 	assert.ok(!containsBlock(short, noteLines("probe", 120, input)));
 	assert.ok(!containsBlock(short, noteLines("payload-check", 120, input)));
 	assert.ok(containsBlock(short, [requestOriginLabel(true)]));
-	assert.ok(containsBlock(short, [`Payload: ${payloadCheckLabel("unchecked")}`]));
 });
 
 test("InjectionsView collapses and restores all probe notes together", () => {
@@ -1520,7 +1518,6 @@ test("InjectionsView reports a partial payload comparison", () => {
 	assert.ok(containsBlock(plain, noteLines("payload-check", 200, { guard: {
 		status: "incomplete", reason: "The captured request could not be converted for comparison.", findings: [],
 	} })));
-	assert.ok(containsBlock(plain, [`Payload: ${payloadCheckLabel("partial")}`]));
 });
 
 test("InjectionsView previews payload changes as one part per finding with colored changed lines", () => {
@@ -1844,19 +1841,19 @@ test("InjectionsView lists messages in one unattributed row and previews one par
 	assert.deepEqual(view.render(100), list, "Escape returns to the same row");
 });
 
-test("InjectionsView keeps payload attention states visible without the description", () => {
+test("InjectionsView keeps payload check states out of the header", () => {
 	const dispatch = { provider: "fixture", api: "fixture", model: "fixture" };
 	const finding = { type: "payload-change", change: "added", part: "user", lines: [] } as const;
-	const cases: [GuardResult | undefined, PayloadCheck | undefined][] = [
-		[{ status: "pending" }, "pending"],
-		[{ status: "incomplete", reason: "No payload." }, "unchecked"],
-		[{ status: "incomplete", reason: "One channel failed.", findings: [] }, "partial"],
-		[{ status: "incomplete", reason: "One channel failed.", findings: [finding] }, "partial"],
-		[{ status: "complete", dispatch, findings: [] }, undefined],
-		[{ status: "complete", dispatch, findings: [finding] }, undefined],
-		[undefined, undefined],
+	const guards: Array<GuardResult | undefined> = [
+		{ status: "pending" },
+		{ status: "incomplete", reason: "No payload." },
+		{ status: "incomplete", reason: "One channel failed.", findings: [] },
+		{ status: "incomplete", reason: "One channel failed.", findings: [finding] },
+		{ status: "complete", dispatch, findings: [] },
+		{ status: "complete", dispatch, findings: [finding] },
+		undefined,
 	];
-	for (const [guard, state] of cases) {
+	for (const guard of guards) {
 		const theme = createTheme();
 		const view = new InjectionsView(theme, { snapshot: guardedSnapshot(), guard }, () => {}, () => 14);
 		const lines = view.render(120);
@@ -1864,13 +1861,7 @@ test("InjectionsView keeps payload attention states visible without the descript
 		assert.ok(header.includes(theme.fg("mdHeading", theme.bold(requestOriginLabel()))));
 		assert.ok(!containsBlock(lines, noteLines("overview", 120)));
 		assert.doesNotMatch(frameText(lines), /No payload|channel failed/);
-		if (state === undefined) {
-			assert.doesNotMatch(stripSgr(header), /Payload:/);
-		} else {
-			assert.ok(header.endsWith(theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadCheckLabel(state)}`)));
-			assert.equal(visibleWidth(header), 120, "payload status is right-aligned");
-		}
-		assert.doesNotMatch(stripSgr(header), /Hidden|hidden|bash|write/);
+		assert.doesNotMatch(stripSgr(header), /Payload|Hidden|hidden|bash|write/);
 	}
 });
 
@@ -1895,7 +1886,7 @@ test("InjectionsView keeps request origins bold mdHeading and complete payload s
 	}
 });
 
-test("InjectionsView moves payload status below a narrow header and wraps instead of dropping it", () => {
+test("InjectionsView moves the request origin below a narrow header and wraps instead of dropping it", () => {
 	const theme = createTheme();
 	const view = new InjectionsView(theme, {
 		snapshot: snapshot(2), probe: true,
@@ -1908,7 +1899,6 @@ test("InjectionsView moves payload status below a narrow header and wraps instea
 		if (width >= 4) assert.ok(selected >= 0);
 		const headingText = lines.slice(0, selected < 0 ? undefined : selected).join("").replace(/\s+/g, "");
 		assert.ok(headingText.includes(requestOriginLabel(true).replace(/\s/g, "")), `${width}: origin`);
-		assert.ok(headingText.includes(`Payload:${payloadCheckLabel("partial")}`.replace(/\s/g, "")), `${width}: status`);
 	}
 });
 
@@ -1936,7 +1926,6 @@ test("InjectionsView preserves capture status through scrolling, preview return,
 				const selected = frame.findIndex((line) => line.startsWith("→"));
 				assert.ok(selected >= 0);
 				assert.ok(containsBlock(frame.slice(1, selected), [requestOriginLabel(true)]));
-				assert.ok(containsBlock(frame.slice(1, selected), [`Payload: ${payloadCheckLabel("unchecked")}`]));
 				if (frame[2]?.startsWith("Context Injections")) {
 					assert.deepEqual(frame.slice(2, 2 + header.length), header);
 				}
@@ -1950,7 +1939,6 @@ test("InjectionsView preserves capture status through scrolling, preview return,
 		const beforePreview = view.render(width);
 		view.handleInput("\r");
 		assert.ok(!containsBlock(view.render(width), [requestOriginLabel(true)]));
-		assert.ok(!containsBlock(view.render(width), [`Payload: ${payloadCheckLabel("unchecked")}`]));
 		view.handleInput("\u001b");
 		assert.deepEqual(view.render(width), beforePreview);
 	}
@@ -1970,7 +1958,6 @@ test("InjectionsView keeps compact capture status and the selected bar when the 
 			assert.ok(lines.length <= height);
 			assert.ok(lines.every((line) => visibleWidth(line) <= width));
 			assert.ok(containsBlock(plain, [requestOriginLabel(true)]));
-			assert.ok(containsBlock(plain, [`Payload: ${payloadCheckLabel("pending")}`]));
 			assert.ok(plain.some((line) => line.startsWith("→")));
 			assert.ok(containsBlock(lines, expectedStatus(changedSnapshot(), 2)));
 		}
@@ -2011,7 +1998,6 @@ test("InjectionsView rebuilds persistent capture colors after theme invalidation
 	view.invalidate();
 	const header = view.render(80)[2] ?? "";
 	assert.ok(header.includes(theme.fg("mdHeading", theme.bold(requestOriginLabel(true)))));
-	assert.ok(header.endsWith(theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadCheckLabel("pending")}`)));
 	assert.notEqual(header, before[2]);
 });
 
