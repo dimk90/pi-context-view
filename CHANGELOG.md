@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## `[v0.8.2]` - 31.10.2026
+
+Adds clipboard copy and fixes mouse and trackpad wheel scrolling.
 
 ### New
 * `[views]` Add `c` to copy the highlighted row or open preview to the clipboard ([#16](https://github.com/dimk90/pi-context-view/pull/16) by @felipezan).
