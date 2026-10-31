@@ -85,6 +85,10 @@ apparent. Enter opens full content only for capped blocks; Escape restores the
 same block and viewport. Empty or unavailable content gets an explicit state,
 not a misleading blank preview.
 
+`c` copies the highlighted category, the highlighted block, or the open full
+content. It uses the entry's captured text, so the clipboard never contains
+preview-only wrapping, gutters, headers, or expanded JSON.
+
 ### Search
 
 `/` searches the open category under the shared

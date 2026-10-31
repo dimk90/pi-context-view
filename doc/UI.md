@@ -80,6 +80,18 @@ not in notifications it would hide.
   as a level.
 - `/` filters the Injections tree or searches a preview, per
   [Search and filter](#search-and-filter).
+- `c` copies the highlighted row or block, or the open content when a single
+  item is already open. Copy the captured, sanitized content itself, without
+  preview wrapping, indentation, subheaders, or JSON expansion. A list filter
+  applies: copy only what the view shows. The view reports the outcome, the
+  copied size or the failure, as a flash message near the right end of its top
+  border: `─ [ Copied: 486 chars ] ───`. The placement is the same in inline and
+  fullscreen modes.
+- The flash message text uses the dim color, so it stays quiet on the border.
+- The flash message timing follows pi's fullscreen flash, and changes when
+  pi's flash changes. Today that means it shows once the write settles, keys do
+  not clear it, and the newest copy replaces it. It expires after 5 s for a failure, as in pi, and after 3 s for
+  a success instead of pi's 1 s, so the copied size stays readable.
 - Skip non-selectable rows and keep selection and scrolling bounded after
   resize. View-specific actions must be available and advertised together.
 
@@ -87,9 +99,10 @@ Use pi's keybinding APIs. In fullscreen mode, the mouse wheel follows keyboard
 navigation; in regular mode it remains terminal scrollback. Keep hints usable
 without mouse support.
 
-Raw content appears only after explicit Enter selection, never in overview
-rows, descriptions, or status bars. Sanitize dynamic text before styling and
-rendering; [privacy.md](architecture/privacy.md#privacy) owns the full contract.
+Raw content appears on screen only after explicit Enter selection, never in
+overview rows, descriptions, or status bars. Sanitize dynamic text before
+styling and rendering; [privacy.md](architecture/privacy.md#privacy) owns the
+full contract.
 
 ### Search and filter
 

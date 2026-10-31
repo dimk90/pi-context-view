@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { normalizeInlineText, normalizePreviewText } from "../src/text.ts";
+import { normalizeMultilineText, normalizeInlineText, normalizePreviewText } from "../src/text.ts";
 import { runCommand } from "./harness/run-command.ts";
 
 test("normalizePreviewText normalizes whitespace and removes terminal controls", () => {
 	assert.equal(normalizePreviewText("a\r\nb\rc\td"), "a\nb\nc    d");
+	assert.equal(normalizeMultilineText("a\r\nb\rc\td"), "a\nb\nc\td");
+	assert.equal(normalizeMultilineText("  leading\tspaces\u001b]52;c;secret\u0007 stay"), "  leading\tspaces stay");
+	assert.equal(normalizeMultilineText("before\u001b]0;unterminated"), "before0;unterminated");
 	assert.equal(normalizePreviewText("plain \u001b[31mansi\u001b[0m"), "plain ansi");
 	assert.equal(normalizePreviewText("before\u001b]0;owned\u0007after\u0008!"), "beforeafter!");
 	assert.equal(normalizePreviewText("before\u001bPpayload\u001b\\after\u009B2J"), "beforeafter");

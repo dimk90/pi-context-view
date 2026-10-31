@@ -15,10 +15,12 @@ import {
 import type { ContextUsageSnapshot } from "../src/model.ts";
 import { formatPercent, formatTokens, UsageView, type UsageViewInput } from "../src/ui/usage-view.ts";
 import { colorize } from "../src/ui/color.ts";
+import { type CopyActions, copiedNotice, type ScheduleTimeout } from "../src/ui/copy.ts";
 import {
 	descriptionNoteLines, emptyPreviewNote, probingDisabledNote, thinkingNote, usageNote,
 } from "../src/ui/notes.ts";
 import { assertFrame, containsBlock, createTheme, frameText, stripSgr, stripStyle, wholeOrAbsent } from "./harness/frame.ts";
+import { mouseEvent, wheelEvent } from "./harness/mouse.ts";
 
 /** Render the overview independently of the dashboard's layout and collapse decision. */
 function usageDescription(width = 1_000): string[] {
@@ -96,7 +98,7 @@ function createView(
 	},
 	done: (result: undefined) => void,
 	getTerminalRows?: () => number,
-	wheelScrollLines?: number,
+	actions?: CopyActions,
 ): UsageView {
 	const colors = input.categoryColors ?? DEFAULT_CATEGORY_COLORS;
 	const mapSize = input.mapSize ?? DEFAULT_MAP_SIZE;
@@ -105,7 +107,7 @@ function createView(
 		{ ...input, categoryColors: colors, mapSize },
 		done,
 		getTerminalRows,
-		wheelScrollLines,
+		actions,
 	);
 }
 
@@ -649,7 +651,7 @@ test("UsageView opens a category block stream and skips full previews for comple
 	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){15}/.test(line)));
 	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.ok(hintIndex > 0);
-	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · Esc Back/);
+	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
 	assert.ok(!plain[hintIndex]?.includes("Enter"));
 
 	// Down moves the gutter to the next block without touching the entry order
@@ -704,7 +706,7 @@ test("UsageView opens every single-entry category directly without a block cap o
 				assert.match(plain, /\[Only entry\] 42/);
 			}
 			assert.match(plain, /    line 1\b/);
-			assert.match(plain, /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · Esc Back/);
+			assert.match(plain, /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
 			assert.doesNotMatch(plain, /┃|… \+|Enter|unsafe|\u0007/);
 			view.handleInput("\r");
 			assert.deepEqual(view.render(80), content, `${id}: Enter never adds another level`);
@@ -736,7 +738,7 @@ test("UsageView scrolls a single Tool Output child and restores its category sel
 	};
 	let rows = 24;
 	const arrows = createView(createTheme(), { usage: scrollUsage }, () => {}, () => rows);
-	const aliases = createView(createTheme(), { usage: scrollUsage }, () => {}, () => rows, 4);
+	const aliases = createView(createTheme(), { usage: scrollUsage }, () => {}, () => rows);
 	for (const view of [arrows, aliases]) {
 		view.render(80);
 		view.handleInput("j"); // The bash child has one entry; its parent still has two
@@ -752,13 +754,13 @@ test("UsageView scrolls a single Tool Output child and restores its category sel
 	}
 	assert.deepEqual(aliases.render(80), top);
 	for (let step = 0; step < 4; step++) arrows.handleInput("j");
-	aliases.handleInput("\u001b[<65;1;1M");
+	aliases.handleMouse(wheelEvent(4));
 	const scrolled = aliases.render(80);
 	assert.notDeepEqual(scrolled, top);
-	assert.deepEqual(scrolled, arrows.render(80), "the wheel scrolls by pi's configured line step");
+	assert.deepEqual(scrolled, arrows.render(80), "the wheel scrolls by pi's wheel delta");
 	aliases.handleInput("\r");
 	assert.deepEqual(aliases.render(80), scrolled);
-	aliases.handleInput("\u001b[<64;1;1M");
+	aliases.handleMouse(wheelEvent(-4));
 	assert.deepEqual(aliases.render(80), top);
 
 	for (const width of [24, 40, 60, 80, 120]) {
@@ -1110,10 +1112,11 @@ test("UsageView accepts Ctrl+u/d wherever it accepts the page keys", () => {
 	assert.equal(frame(pageKeys), blockTop);
 });
 
-test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", () => {
-	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences
-	const wheelUp = "\u001b[<64;20;5M";
-	const wheelDown = "\u001b[<65;20;5M";
+test("UsageView scrolls with the mouse wheel and honors pi's wheel delta", () => {
+	// Fullscreen pi parses wheel reports and passes them to the focused overlay as mouse events, with
+	// `wheelDelta` already scaled by the user's step and acceleration
+	const wheelUp = wheelEvent(-4);
+	const wheelDown = wheelEvent(4);
 	const longText = Array.from({ length: 60 }, (_, line) => `line ${line + 1}`).join("\n");
 	const wheelUsage: ContextUsageSnapshot = {
 		...usage(1_000),
@@ -1134,19 +1137,23 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 		estimatedTokens: 1_000,
 	};
 	// A terminal short enough to cap both blocks, so the full-content level scrolls
-	const createWheelView = (wheelScrollLines?: number) =>
-		createView(createTheme(), { usage: wheelUsage }, () => {}, () => 24, wheelScrollLines);
+	const createWheelView = () => createView(createTheme(), { usage: wheelUsage }, () => {}, () => 24);
 	const arrows = createWheelView();
-	const wheel = createWheelView(4);
+	const wheel = createWheelView();
 	const frame = (view: UsageView) => view.render(80).join("\n");
 
 	// Both views must render once so the viewport size is known before any input
 	const start = frame(wheel);
 	assert.equal(frame(arrows), start);
 
-	// Legend: one notch selects one row, regardless of the scroll step
+	// Other mouse events fall through to pi; a notch at the edge is handled but needs no redraw
+	assert.equal(wheel.handleMouse(mouseEvent("click", { button: "left" })), undefined);
+	assert.deepEqual(wheel.handleMouse(wheelUp), { handled: true, render: false });
+	assert.equal(frame(wheel), start);
+
+	// Legend: one notch selects one row, regardless of the wheel delta
 	arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	assert.deepEqual(wheel.handleMouse(wheelDown), { handled: true, render: true });
 	assert.match(stripSgr(frame(wheel)), /→ ■ Tool Output \.{2,}/);
 	assert.equal(frame(wheel), frame(arrows));
 
@@ -1156,26 +1163,26 @@ test("UsageView scrolls with the mouse wheel and honors pi's own wheel step", ()
 	const streamTop = frame(wheel);
 	assert.equal(frame(arrows), streamTop);
 	arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	wheel.handleMouse(wheelDown);
 	assert.notEqual(frame(wheel), streamTop);
 	assert.equal(frame(wheel), frame(arrows));
 	arrows.handleInput("\u001b[A");
-	wheel.handleInput(wheelUp);
+	wheel.handleMouse(wheelUp);
 	assert.equal(frame(wheel), streamTop);
 	assert.equal(frame(arrows), streamTop);
 
-	// Full block content: one notch scrolls pi's own line step
+	// Full block content: one notch scrolls by the wheel delta
 	arrows.handleInput("\r");
 	wheel.handleInput("\r");
 	const blockTop = frame(wheel);
 	assert.equal(frame(arrows), blockTop);
 	assert.match(stripSgr(blockTop), /line 1\b/);
 	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	wheel.handleMouse(wheelDown);
 	assert.notEqual(frame(wheel), blockTop);
 	assert.equal(frame(wheel), frame(arrows));
 	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[A");
-	wheel.handleInput(wheelUp);
+	wheel.handleMouse(wheelUp);
 	assert.equal(frame(wheel), blockTop);
 	assert.equal(frame(arrows), blockTop);
 });
@@ -1718,16 +1725,18 @@ function plainFrame(view: UsageView, width = 80): string[] {
 }
 
 /** Move the legend selection down to the category labelled `label` and open it. */
-function openCategory(view: UsageView, label: string): void {
+function selectCategory(view: UsageView, label: string): void {
 	const selected = new RegExp(`→ +(?:\\S+ +)?${label} \\.`);
 	for (let step = 0; step < 50; step++) {
-		if (plainFrame(view).some((line) => selected.test(line))) {
-			view.handleInput("\r");
-			return;
-		}
+		if (plainFrame(view).some((line) => selected.test(line))) return;
 		view.handleInput("j");
 	}
 	assert.fail(`no legend row ${label}`);
+}
+
+function openCategory(view: UsageView, label: string): void {
+	selectCategory(view, label);
+	view.handleInput("\r");
 }
 
 /** Usage whose Tool Output holds three bash results; the first match hides below the block cap. */
@@ -1774,7 +1783,7 @@ test("UsageView block stream search selects the matching block and opens a cappe
 	openCategory(view, "Tool Output");
 	let plain = plainFrame(view);
 	assert.match(plain[2] ?? "", /^Tool Output/);
-	assert.match(plain.join("\n"), /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · Esc Back/);
+	assert.match(plain.join("\n"), /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
 
 	view.handleInput("/");
 	typeKeys(view, "needle");
@@ -1785,7 +1794,7 @@ test("UsageView block stream search selects the matching block and opens a cappe
 	const selectedHeader = plain.find((line) => line.startsWith("┃ ["));
 	assert.match(selectedHeader ?? "", /:02:00\]/);
 	assert.ok(!plain.some((line) => line.includes("the needle is here")));
-	assert.match(plain.join("\n"), /↑↓\/jk Navigate · n\/N Next\/Prev · \/ Search · Esc Back/);
+	assert.match(plain.join("\n"), /↑↓\/jk Navigate · n\/N Next\/Prev · \/ Search · c Copy · Esc Back/);
 
 	view.handleInput("\r");
 	const lines = view.render(80);
@@ -1817,7 +1826,7 @@ test("UsageView searches single-entry content and keeps every line within the wi
 	openCategory(view, "read");
 	let plain = plainFrame(view);
 	assert.match(plain[2] ?? "", /^read/);
-	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · Esc Back/);
+	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
 
 	view.handleInput("/");
 	typeKeys(view, "SECOND");
@@ -1854,4 +1863,137 @@ test("UsageView keeps an entry-header match when its capped block opens", () => 
 	const header = plain.findIndex((line) => /^ {2}\[.*:02:00\] \[bash\]/.test(line));
 	assert.ok(header > 0);
 	assert.ok((lines[header] ?? "").includes(SEARCH_MATCH_BG));
+});
+
+/** Let a resolved clipboard promise update the view before the next render. */
+async function settleCopy(): Promise<void> {
+	await new Promise((resolve) => setImmediate(resolve));
+}
+
+/** Notice timer that never fires, so a test can read the notice at its own pace. */
+const KEEP_NOTICE: ScheduleTimeout = () => () => {};
+
+/** The frame's top border as plain text, where the copy notice appears. */
+function topBorderText(view: UsageView): string {
+	return plainFrame(view)[0] ?? "";
+}
+
+/** The plain top border the frame shows without a copy notice. */
+function plainBorder(view: UsageView): string {
+	return "─".repeat(visibleWidth(topBorderText(view)));
+}
+
+test("UsageView copies the highlighted category, block, and open content", async () => {
+	const copied: string[] = [];
+	const view = createView(createTheme(), { usage: searchUsage() }, () => {}, () => 30, {
+		copyText: async (text) => { copied.push(text); },
+		schedule: KEEP_NOTICE,
+	});
+	selectCategory(view, "Tool Output");
+	assert.match(plainFrame(view).find((line) => line.includes("Navigate")) ?? "", /c Copy/);
+
+	view.handleInput("c");
+	await settleCopy();
+	assert.equal(copied[0], [
+		"first result",
+		Array.from({ length: 30 }, (_, line) => `output line ${line}`).join("\n") + "\nthe needle is here\n" +
+			Array.from({ length: 10 }, (_, line) => `tail line ${line}`).join("\n"),
+		"another needle up top",
+	].join("\n\n"));
+	assert.ok(topBorderText(view).includes(copiedNotice(copied[0] ?? "").text));
+
+	openCategory(view, "Tool Output");
+	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
+	view.handleInput("c");
+	await settleCopy();
+	assert.equal(copied[1], "first result");
+	assert.ok(topBorderText(view).includes(copiedNotice("first result").text));
+
+	const single = createView(createTheme(), { usage: usage() }, () => {}, () => 30, {
+		copyText: async (text) => { copied.push(text); },
+		schedule: KEEP_NOTICE,
+	});
+	openCategory(single, "read");
+	assert.match(plainFrame(single).join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
+	single.handleInput("c");
+	await settleCopy();
+	assert.equal(copied[2], "read result content line\nsecond line");
+	assert.ok(topBorderText(single).includes(copiedNotice(copied[2]).text));
+});
+
+test("UsageView reports an empty highlighted category without writing the clipboard", async () => {
+	const copied: string[] = [];
+	const empty: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-11T12:00:00Z"),
+		modelLabel: "claude-opus-4-8",
+		categories: [{ id: "context-files", label: "Instruction Files", tokens: 0 }],
+		estimatedTokens: 0,
+	};
+	const view = createView(createTheme(), { usage: empty }, () => {}, () => 30, {
+		copyText: async (text) => { copied.push(text); },
+		schedule: KEEP_NOTICE,
+	});
+	view.handleInput("c");
+	await settleCopy();
+	assert.deepEqual(copied, []);
+	assert.match(topBorderText(view), /Nothing to copy/);
+});
+
+test("UsageView keeps the copy notice across keys until it expires, and stops publishing after close", async () => {
+	const pending: Array<() => void> = [];
+	const expiries: Array<() => void> = [];
+	let closed = false;
+	const view = createView(createTheme(), { usage: usage() }, () => { closed = true; }, () => 30, {
+		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
+		schedule: (callback) => {
+			expiries.push(callback);
+			return () => {};
+		},
+	});
+	selectCategory(view, "Tool Output");
+
+	view.handleInput("c");
+	pending[0]?.();
+	await settleCopy();
+	const notice = topBorderText(view);
+	assert.notEqual(notice, plainBorder(view));
+
+	view.handleInput("j");
+	assert.equal(topBorderText(view), notice);
+	expiries[0]?.();
+	assert.equal(topBorderText(view), plainBorder(view));
+	view.handleInput("k");
+
+	view.handleInput("c");
+	view.handleInput("\u001b");
+	assert.ok(closed);
+	pending[1]?.();
+	await settleCopy();
+	assert.equal(topBorderText(view), plainBorder(view));
+});
+
+test("UsageView stops redrawing a copy result after the host disposes it", async () => {
+	const pending: Array<() => void> = [];
+	let refreshes = 0;
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30, {
+		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
+		refresh: () => { refreshes++; },
+	});
+	selectCategory(view, "Tool Output");
+	view.handleInput("c");
+	view.dispose();
+	const refreshesAtDispose = refreshes;
+	pending[0]?.();
+	await settleCopy();
+	assert.equal(refreshes, refreshesAtDispose);
+	assert.equal(topBorderText(view), plainBorder(view));
+});
+
+test("UsageView drops the copy hint whole when the dashboard hint row is narrow", () => {
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
+	// The copy hint is optional and the Zoom hint is not, so a width that fits the
+	// rest of the row must drop the copy hint whole rather than cut "Esc Close".
+	const hints = plainFrame(view, 58).find((line) => line.includes("Navigate")) ?? "";
+	assert.match(hints, /Esc Close/);
+	assert.doesNotMatch(hints, /c Copy/);
 });

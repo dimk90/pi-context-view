@@ -7,17 +7,18 @@ show, and persist, and how it loads and writes its configuration.
 
 ### Raw Text and Message Previews
 
-Keep raw prompt and message content in this process only. Sanitize it before
-terminal rendering, and reveal it only after explicit Enter preview. Never log
-it, include it in notifications, persist extra copies, or inject it into a
-later model request. This applies to request copies, payload copies, guard
-findings, and snapshots alike: snapshots live only in memory and are never
-saved with the session.
+Keep captured raw content in this process only, and sanitize it before it
+reaches the terminal or the clipboard. This covers request copies, payload
+copies, guard findings, and snapshots alike.
 
-The Injections content filter reads the same text to decide which rows stay
-visible. Its sanitized, whitespace-collapsed copy lives only as long as the
-view, and rows never show the matching text; raw text still appears only in an
-opened preview.
+Expose raw content only on an explicit user action: Enter opens a preview, and
+`c` copies through pi's clipboard support. Nothing exposes it automatically:
+never log it, include it in notifications, save it with the session, or inject
+it into a later model request. What happens to copied text after that is
+outside this extension.
+
+The Injections content filter reads the same text to choose visible rows. Its
+copy lives only as long as the view, and rows never show the matching text.
 
 Capture message content, not the whole message object:
 

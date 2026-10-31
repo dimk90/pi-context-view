@@ -1,5 +1,17 @@
 # Changelog
 
+## `[v0.8.2]` - 31.10.2026
+
+Adds clipboard copy and fixes mouse and trackpad wheel scrolling.
+
+### New
+* `[views]` Add `c` to copy the highlighted row or open preview to the clipboard ([#16](https://github.com/dimk90/pi-context-view/pull/16) by @felipezan).
+
+### Fixed
+* `[views]` Fix mouse and trackpad wheel scrolling by using Pi's TUI mouse events ([#18](https://github.com/dimk90/pi-context-view/pull/18) by @danielweck).
+* `[capture]` Capture requests only in TUI mode, where the views can show them.
+
+
 ## `[v0.8.1]` - 26.10.2026
 
 Maintenance release with support for Pi 1.4.0 and a few small fixes.
@@ -10,7 +22,6 @@ Maintenance release with support for Pi 1.4.0 and a few small fixes.
 ### Fixed
 * `[capture]` Match Pi 1.4's Responses `additional_tools` declarations and tool notices.
 * `[injections]` Keep the selected group when clearing a filter, even if labels repeat.
-
 
 ## `[v0.8.0]` - 24.10.2026
 

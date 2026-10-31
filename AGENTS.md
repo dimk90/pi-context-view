@@ -21,7 +21,7 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 ## Repository rules
 
 - **Architecture contract.** Preserve the invariants in `doc/ARCHITECTURE.md`; update the owning `doc/architecture/` page with any lifecycle, capture, attribution, or usage behavior change.
-- **Privacy gate.** Keep raw prompts and messages process-local and terminal-sanitized; expose them only after explicit Enter preview, and never log them, persist extra copies, include them in notifications, or inject them into later requests.
+- **Privacy gate.** Keep captured raw content process-local and sanitized; expose it only on explicit user action (Enter preview, `c` copy), never automatically through logs, notifications, session files, or later requests.
 - **Module boundaries.** Keep `src/index.ts` to wiring: create the layers, call their `register*()` functions in the required order, and register the command. Put independently testable state, measurement, and rendering behavior in focused modules under `src/`, `src/capture/`, `src/probe/`, and `src/ui/`.
 - **Command contract.** Keep parsing, completions, registration text, README usage, and command tests synchronized whenever the `/context` grammar or mode guard changes.
 - **Config contract.** Keep user-configurable state override-only: defaults in code, no auto-created or default-backfilled config file, invalid entries degrading to defaults. `doc/architecture/privacy.md` holds the full load and write contract.

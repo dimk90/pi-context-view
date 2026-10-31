@@ -3,7 +3,14 @@
  * snapshot. The Runtime label stays hidden until the runtime-inspection roadmap step.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+	Key,
+	matchesKey,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 
 import type { InjectionItem, InjectionSnapshot, TokenDiff } from "../model.ts";
 import type { GuardResult } from "../snapshot.ts";
@@ -12,11 +19,19 @@ import {
 	buildInjectionRows,
 	collectItemsById,
 	filterInjections,
+	groupKey,
 	type InjectionFilterMode,
 	type InjectionRow,
 	ListNavigator,
 	PreviewScroller,
 } from "./injections-model.ts";
+import {
+	type CopyActions,
+	COPY_HINT,
+	copyableJoin,
+	copyableText,
+	CopyNotices,
+} from "./copy.ts";
 import { expandJsonSpan } from "./json-preview.ts";
 import {
 	BODY_INDENT,
@@ -35,7 +50,6 @@ import {
 	normalizeTerminalRows,
 	spreadLine,
 	STEP_KEY_HINT,
-	wrapDescriptionLines,
 } from "./layout.ts";
 import {
 	type DiffBase,
@@ -44,9 +58,7 @@ import {
 	formatDiffRemoved,
 	stateMarkers,
 } from "./markers.ts";
-import {
-	descriptionNoteLines, findingNotes, injectionsNotes, payloadCheck, payloadCheckLabel, requestOriginLabel,
-} from "./notes.ts";
+import { descriptionNoteLines, findingNotes, injectionsNotes, requestOriginLabel } from "./notes.ts";
 import {
 	findMatches,
 	highlightLine,
@@ -63,7 +75,6 @@ import {
 } from "./search.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { statusBarLines } from "./status-bar.ts";
-import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 /**
  * List frame rows excluding the status bar and the collapsible description:
@@ -118,14 +129,18 @@ export async function showInjectionsView(
 ): Promise<void> {
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
-			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows, readWheelScrollLines(tui));
+			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows, {
+				refresh: () => tui.requestRender(),
+			});
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
+				dispose: () => view.dispose(),
 				handleInput: (data: string) => {
 					view.handleInput(data);
 					tui.requestRender();
 				},
+				handleMouse: (event: TuiMouseEvent) => view.handleMouse(event),
 			};
 		},
 		{
@@ -141,7 +156,7 @@ export class InjectionsView {
 	private readonly input: InjectionsViewInput;
 	private readonly done: (result: undefined) => void;
 	private readonly getTerminalRows: () => number;
-	private readonly wheelScrollLines: number;
+	private readonly copy: CopyNotices;
 	/** Unfiltered rows; they fix the value column so filtering never shifts it. */
 	private readonly allRows: InjectionRow[];
 	private rows: InjectionRow[];
@@ -167,17 +182,38 @@ export class InjectionsView {
 		input: InjectionsViewInput,
 		done: (result: undefined) => void,
 		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
-		wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES,
+		actions: CopyActions = {},
 	) {
 		this.theme = theme;
 		this.input = input;
 		this.done = done;
 		this.getTerminalRows = getTerminalRows;
-		this.wheelScrollLines = wheelScrollLines;
+		this.copy = new CopyNotices({
+			...actions,
+			refresh: () => {
+				this.clearCache();
+				actions.refresh?.();
+			},
+		});
 		this.allRows = buildInjectionRows(input.snapshot);
 		this.rows = this.allRows;
 		this.navigator = listNavigator(this.rows);
 		this.itemsById = collectItemsById(input.snapshot);
+	}
+
+	/**
+	 * Handle fullscreen wheel notches: a notch scrolls an open preview by pi's
+	 * `wheelDelta`, which already applies the user's step and acceleration, or
+	 * moves the list selection one row like a single step key. Every other mouse
+	 * event falls through to pi.
+	 */
+	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
+		const moved = this.previewItem !== undefined
+			? this.previewScroller.scrollBy(event.wheelDelta)
+			: this.navigator.moveBy(Math.sign(event.wheelDelta));
+		if (moved) this.clearCache();
+		return { handled: true, render: moved };
 	}
 
 	public handleInput(data: string): void {
@@ -190,21 +226,22 @@ export class InjectionsView {
 			this.handleFilterInput(data);
 			return;
 		}
+		if (matchesKey(data, "c")) {
+			this.copyRowSelection();
+			return;
+		}
 		if (matchesKey(data, Key.escape) || data === "q") {
 			if (this.filter.active) this.clearFilter();
-			else this.done(undefined);
+			else {
+				this.dispose();
+				this.done(undefined);
+			}
 			return;
 		}
 		if (data === SEARCH_KEY) {
 			if (!this.filter.active) this.unfilteredNavigator = this.navigator;
 			this.filter.edit();
 			this.clearCache();
-			return;
-		}
-		// One notch moves the selection one row, like a single step key
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.navigator.moveBy(wheel)) this.clearCache();
 			return;
 		}
 		if (matchesKey(data, Key.enter)) {
@@ -242,6 +279,7 @@ export class InjectionsView {
 		}
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
+		const topBorder = this.copy.topBorder(theme, width);
 		const headerLines = this.headerLines(width);
 		const filterLines = this.filterLines(width);
 		const warningLines = this.degradedWarningLines(width);
@@ -259,7 +297,7 @@ export class InjectionsView {
 		);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 		const lines: string[] = [
-			border, "", ...headerLines, "", ...filterLines, ...warningLines, ...(warningRows > 0 ? [""] : []),
+			topBorder, "", ...headerLines, "", ...filterLines, ...warningLines, ...(warningRows > 0 ? [""] : []),
 		];
 		const listLines = this.navigator.selectableCount === 0
 			? [this.fit(theme.fg("muted", `${BODY_INDENT}${EMPTY_FILTER_MESSAGE}`), width)]
@@ -270,13 +308,19 @@ export class InjectionsView {
 		lines.push("", total);
 		if (statusLines.length > 0) lines.push("", ...statusLines);
 		const hints = fitHintRow(theme, this.listHints(), width);
-		const tail = [...(descriptionLines.length > 0 ? ["", ...descriptionLines] : []), "", hints, "", border];
+		const tail = [
+			...(descriptionLines.length > 0 ? ["", ...descriptionLines] : []),
+			"",
+			hints,
+			"",
+			border,
+		];
 		// Fill the terminal so the overlay hides the chat, keeping the list, total, and bar together
 		while (lines.length + tail.length < terminalRows) lines.push("");
 		lines.push(...tail);
 
 		const fittedLines = lines.length <= terminalRows ? lines : compactListLines({
-			border, header: this.headerLines(width, true), filter: filterLines.slice(0, 1), warnings: warningLines,
+			topBorder, border, header: this.headerLines(width, true), filter: filterLines.slice(0, 1), warnings: warningLines,
 			selected: listLines[this.navigator.selected - this.navigator.offset],
 			total, status: statusLines, hints, terminalRows,
 		});
@@ -289,6 +333,11 @@ export class InjectionsView {
 	public invalidate(): void {
 		this.clearPreviewContent();
 		this.clearCache();
+	}
+
+	/** Stop pending copies from redrawing once the overlay closes, however it closes. */
+	public dispose(): void {
+		this.copy.dispose();
 	}
 
 	// === List filter ===
@@ -435,6 +484,7 @@ export class InjectionsView {
 			[STEP_KEY_HINT, "Navigate"],
 			["Enter", "Preview"],
 			[SEARCH_KEY, "Filter", true],
+			...(this.navigator.selectableCount > 0 ? [COPY_HINT] : []),
 			["Esc", this.filter.active ? "Clear" : "Close"],
 		];
 	}
@@ -446,6 +496,10 @@ export class InjectionsView {
 		if (this.previewSearch.prompt.editing && !isSearchNavigationKey(data)) {
 			this.previewSearch.handlePromptKey(data);
 			this.clearCache();
+			return;
+		}
+		if (matchesKey(data, "c")) {
+			this.copyPreviewItem();
 			return;
 		}
 		if (matchesKey(data, Key.escape) || data === "q") {
@@ -462,11 +516,6 @@ export class InjectionsView {
 			if (this.previewSearch.step(matchStep)) this.clearCache();
 			return;
 		}
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
-			return;
-		}
 		if (isStepBackKey(data)) {
 			if (this.previewScroller.scrollBy(-1)) this.clearCache();
 		} else if (isStepForwardKey(data)) {
@@ -480,6 +529,28 @@ export class InjectionsView {
 		} else if (matchesKey(data, Key.end)) {
 			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
 		}
+	}
+
+	/** Copy the highlighted list row: one item, or every visible item of a highlighted group. */
+	private copyRowSelection(): void {
+		const row = this.rows[this.navigator.selected];
+		if (row?.kind === "item") {
+			const item = this.itemsById.get(row.itemId);
+			if (item !== undefined) this.copy.copy(copyableText(item.text));
+		} else if (row?.kind === "group") {
+			const group = this.input.snapshot.groups.find((entry) => groupKey(entry) === row.groupKey);
+			if (group === undefined) return;
+			// The group row counts the whole snapshot; copy only the items the filter keeps
+			const visible = new Set(this.rows.flatMap((entry) => (entry.kind === "item" ? [entry.itemId] : [])));
+			this.copy.copy(copyableJoin(
+				group.items.filter((item) => visible.has(item.id)).map((item) => item.text),
+			));
+		}
+	}
+
+	/** Copy the item open in the preview. */
+	private copyPreviewItem(): void {
+		if (this.previewItem !== undefined) this.copy.copy(copyableText(this.previewItem.text));
 	}
 
 	/** Open the selected item; a content filter carries its query into the preview search. */
@@ -534,7 +605,7 @@ export class InjectionsView {
 		if (revealLine !== undefined) this.previewScroller.reveal(revealLine, SEARCH_CONTEXT_LINES);
 		const searchLines = search.promptLines(theme, width);
 
-		const lines: string[] = [border, ""];
+		const lines: string[] = [this.copy.topBorder(theme, width), ""];
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(item.label)));
 		const source = normalizeInlineText(item.source.label);
 		const meta = theme.fg("muted", item.diffOnly === true
@@ -564,7 +635,7 @@ export class InjectionsView {
 		if (viewport.showScroll) lines.push(this.previewScrollLine(width, wrapped.length));
 		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
 		lines.push("");
-		lines.push(fitHintRow(this.theme, searchHints(search.prompt, "Scroll"), width));
+		lines.push(fitHintRow(this.theme, searchHints(search.prompt, "Scroll", COPY_HINT), width));
 		lines.push("", border);
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
@@ -607,27 +678,18 @@ export class InjectionsView {
 		);
 	}
 
-	/** Keep capture origin and payload attention visible, wrapping below the title rather than omitting status. */
+	/** Keep the capture origin visible, wrapping below the title rather than omitting it. */
 	private headerLines(width: number, compact = false): string[] {
 		const theme = this.theme;
-		const separator = theme.fg("dim", " · ");
 		const probe = this.input.probe === true;
 		const label = theme.fg("mdHeading", theme.bold(requestOriginLabel(probe)));
-		const payloadState = payloadCheck(this.input.guard);
-		const status = payloadState === undefined ? ""
-			: theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadCheckLabel(payloadState)}`);
-		// An emergency frame drops the title, never the origin or payload attention
-		if (compact) return wrapTextWithAnsi(`${label}${status === "" ? "" : separator + status}`, Math.max(1, width));
+		// An emergency frame drops the title, never the origin
+		if (compact) return wrapTextWithAnsi(label, Math.max(1, width));
 		const title = theme.fg("accent", theme.bold("Context Injections"));
-		const combined = `${title}${separator}${label}`;
-		const lines = visibleWidth(combined) <= width
+		const combined = `${title}${theme.fg("dim", " · ")}${label}`;
+		return visibleWidth(combined) <= width
 			? [combined]
 			: [this.fit(title, width), "", ...wrapTextWithAnsi(label, Math.max(1, width))];
-		if (status === "") return lines;
-		if (lines.length === 1 && visibleWidth(combined) + visibleWidth(status) < width) {
-			return [this.spread(combined, status, width)];
-		}
-		return [...lines, ...wrapDescriptionLines(theme, status, "dim", width)];
 	}
 
 	/** Render the current hierarchy viewport against one stable, nearby value column. */
@@ -896,6 +958,8 @@ function rowKey(row: InjectionRow): string {
 
 /** Parts of an emergency list frame, in which the bar has priority over frame spacing. */
 interface CompactListInput {
+	/** First row; carries the copy notice. */
+	readonly topBorder: string;
 	readonly border: string;
 	readonly header: readonly string[];
 	/** The filter prompt row, without its trailing blank row; empty when no filter is shown. */
@@ -915,9 +979,9 @@ interface CompactListInput {
  * empty rows that fill the remaining height. Below that physical minimum, clip content.
  */
 function compactListLines(input: CompactListInput): string[] {
-	const { border, header, filter, warnings, selected, total, status, hints, terminalRows } = input;
+	const { topBorder, border, header, filter, warnings, selected, total, status, hints, terminalRows } = input;
 	const lines = [
-		border, ...header, ...filter, ...warnings, ...(selected === undefined ? [] : [selected]), total, ...status,
+		topBorder, ...header, ...filter, ...warnings, ...(selected === undefined ? [] : [selected]), total, ...status,
 	];
 	const tail = lines.length + 2 <= terminalRows ? [hints, border] : [border];
 	while (lines.length + tail.length < terminalRows) lines.push("");

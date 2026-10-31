@@ -14,11 +14,11 @@ origin recognizable even when optional explanations collapse.
 
 Distinguish pending, unchecked, and partially checked payload comparisons from
 a completed comparison. No findings from an incomplete check must never imply
-that the payload matched. Keep incomplete status near the header; detailed
-reasons can live in the description. A degraded fallback also needs its precise
-reason visible, not only a generic warning. Configuration problems follow it in
-a bounded notice block that makes omitted notices apparent; the degraded reason
-itself is never cut. Disabled probing is an expected state, not a degradation:
+that the payload matched. Explain an incomplete check and its reason only as a
+description note; the header shows no payload status. A degraded fallback also
+needs its precise reason visible, not only a generic warning. Configuration
+problems follow it in a bounded notice block that makes omitted notices
+apparent; the degraded reason itself is never cut. Disabled probing is an expected state, not a degradation:
 explain it only as a description note.
 
 The view describes one request, not the whole session or necessarily the last
@@ -126,6 +126,13 @@ explicitly, and Enter then opens nothing.
 
 Enter on a content-mode match opens its preview with the same query already
 searched, at its first match.
+
+`c` copies the highlighted row or open preview. A group row copies its visible
+items in order, so an active filter applies and never copies a hidden top-level
+row; a kept parent still copies its whole captured text, which includes its
+children. An item row and its preview copy that item's captured text. The
+clipboard receives the sanitized content itself, without tree glyphs, counts,
+or preview subheaders.
 
 ## Injection preview
 

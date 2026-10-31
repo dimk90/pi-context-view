@@ -66,7 +66,7 @@ mode: run them in a real PTY as the `pi-extension` skill describes.
 | Messages during probe     | An extension in either order steers a user message and sends a custom message from `before_agent_start` during the probe. Both stay visible in the session and in the next real request, the probe makes no provider request, and the extra turn's abort is blanked. A user message with the prompt's timestamp is not recorded, blanked, omitted, or filtered.          | `probe-runtime`, `silent-probe`, `probe-filter`                    |
 | Custom-message runs       | After an active-tool change, an idle `pi.sendMessage(..., { triggerTurn: true })` run's `real-turn` snapshot has the new hidden set and, with `forced-prompt.ts` in either order, the forced prompt.                                                                                                                                                                     | `hidden-tools-runtime`                                             |
 | Probe trigger             | One automatic attempt per runtime; concurrent callers share it; every precondition falls back without consuming the attempt.                                                                                                                                                                                                                                             | `probe-trigger`, `probe-guards`                                    |
-| Snapshot store            | Keeps only the latest snapshot by ID; same-ID guard updates replace it, older ones only notify; a real request replaces a probe. Capture runs with no consumer and in RPC mode. Consumers import no capture or probe internals.                                                                                                                                          | `snapshot`, `capture-runtime`, `module-boundaries`                 |
+| Snapshot store            | Keeps only the latest snapshot by ID; same-ID guard updates replace it, older ones only notify; a real request replaces a probe. Capture runs with no consumer in TUI mode and publishes nothing in RPC mode. Consumers import no capture or probe internals.                                                                                                            | `snapshot`, `capture-runtime`, `module-boundaries`                 |
 | Cleanup and privacy       | Pending data is released on settlement and shutdown; raw content stays out of logs, session entries, and notifications. Persisted probe records contain only role and timestamp.                                                                                                                                                                                         | `capture-builder`, `payload-guard`, `silent-probe`, `probe-filter` |
 
 Test names refer to `test/<name>.test.ts`. `pnpm check` runs all of them.
@@ -158,8 +158,8 @@ rules in [UI.md](../UI.md) without freezing incidental copy or layout values:
   search prompt, within the width.
 
 `usage-view`, `usage-map`, `injections-view`, `usage-preview`, `injected-preview`,
-`diff-preview`, `json-preview`, `skill-preview`, `status-bar`, `notes`, `color`,
-`search`, and `wheel` cover these areas; the focused cases above cover accounting and attribution.
+`diff-preview`, `json-preview`, `skill-preview`, `status-bar`, `notes`, `color`, and
+`search` cover these areas; the focused cases above cover accounting and attribution.
 
 Keep these tests independent of display wording:
 

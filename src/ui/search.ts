@@ -19,7 +19,6 @@ import {
 
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { BODY_INDENT, fitLine, type Hint, spreadLine, STEP_KEY_HINT } from "./layout.ts";
-import { parseWheelDirection } from "./wheel.ts";
 
 /** Hint-row key label that opens the search prompt in either view. */
 export const SEARCH_KEY = "/";
@@ -138,29 +137,33 @@ export function matchStepDirection(data: string): -1 | 1 | undefined {
 }
 
 /**
- * Whether a key still navigates while a search prompt is open: the arrows,
- * the page keys, and the wheel. Letter keys such as `j`/`k` type instead.
+ * Whether a key still navigates while a search prompt is open: the arrows and
+ * the page keys. Letter keys such as `j`/`k` type instead. The wheel arrives
+ * as a mouse event, so it navigates without passing through this check.
  */
 export function isSearchNavigationKey(data: string): boolean {
-	return parseWheelDirection(data) !== undefined ||
-		matchesKey(data, Key.up) ||
+	return matchesKey(data, Key.up) ||
 		matchesKey(data, Key.down) ||
 		matchesKey(data, Key.pageUp) ||
 		matchesKey(data, Key.pageDown);
 }
 
-/** Preview hints for plain navigation, an open search prompt, or a kept search. */
-export function searchHints(prompt: SearchPrompt, stepLabel: string): Hint[] {
+/**
+ * Preview hints for plain navigation, an open search prompt, or a kept search.
+ * `extra` sits before the closing hint; both views pass their copy action.
+ */
+export function searchHints(prompt: SearchPrompt, stepLabel: string, extra?: Hint): Hint[] {
+	const close: Hint[] = extra === undefined ? [["Esc", "Back"]] : [extra, ["Esc", "Back"]];
 	if (prompt.editing) return [["↑↓", stepLabel], ["Enter", "Done"], ["Esc", "Clear"]];
 	if (prompt.active) {
 		return [
 			[STEP_KEY_HINT, stepLabel],
 			[MATCH_STEP_KEY_HINT, "Next/Prev"],
 			[SEARCH_KEY, "Search", true],
-			["Esc", "Back"],
+			...close,
 		];
 	}
-	return [[STEP_KEY_HINT, stepLabel], ["PgUp/PgDn", "Page"], [SEARCH_KEY, "Search", true], ["Esc", "Back"]];
+	return [[STEP_KEY_HINT, stepLabel], ["PgUp/PgDn", "Page"], [SEARCH_KEY, "Search", true], ...close];
 }
 
 /** Selection change waiting for the next render, which knows the wrapped lines. */

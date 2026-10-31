@@ -308,7 +308,7 @@ async function createRuntime(t: TestContext, options: RuntimeOptions): Promise<R
 	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
-	await session.bindExtensions({ mode: "rpc", onError: (error) => { errors.push(`${error.event}: ${error.error}`); } });
+	await session.bindExtensions({ mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); } });
 	return {
 		session, provider, requests, errors,
 		model: (providerId, id) => {

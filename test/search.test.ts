@@ -11,6 +11,7 @@ import {
 	matchStatus,
 	PreviewSearch,
 	searchableContent,
+	searchHints,
 	searchPattern,
 	SearchPrompt,
 } from "../src/ui/search.ts";
@@ -167,4 +168,15 @@ test("highlightLine closes every highlight and keeps the line's own trailing res
 	assert.equal(stripTerminalSequences(highlighted), "needle and needle");
 	assert.ok(highlighted.endsWith(`${matchStyle("needle")}\u001b[39m`), "the last match closes before the line's reset");
 	assert.equal(highlightLine(sgrTheme, line, []), line);
+});
+
+test("searchHints closes with one Back hint, after an optional extra hint", () => {
+	const prompt = new SearchPrompt();
+	const backHints = (hints: ReturnType<typeof searchHints>) =>
+		hints.filter(([key, label]) => key === "Esc" && label === "Back");
+	assert.equal(backHints(searchHints(prompt, "Scroll")).length, 1);
+	const extra = ["c", "Copy", true] as const;
+	const withExtra = searchHints(prompt, "Scroll", extra);
+	assert.equal(backHints(withExtra).length, 1);
+	assert.deepEqual(withExtra.slice(-2), [extra, ["Esc", "Back"]]);
 });

@@ -194,7 +194,7 @@ function itemMatches(item: InjectionItem, filter: InjectionFilter): boolean {
 }
 
 /** Stable key of a group row, kept apart from item ids; labels of different sources can collide. */
-function groupKey(group: InjectionGroup): string {
+export function groupKey(group: InjectionGroup): string {
 	return `source:${group.source.id}`;
 }
 

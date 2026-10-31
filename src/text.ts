@@ -10,16 +10,20 @@ const TERMINAL_CSI_SEQUENCE = /(?:\u001B\[|\u009B)[\u0030-\u003F]*[\u0020-\u002F
 const TERMINAL_ESCAPE_SEQUENCE = /\u001B[\u0020-\u002F]*[\u0030-\u007E]/g;
 const TERMINAL_CONTROL_CHARACTER = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 
-/** Normalize whitespace and remove terminal control sequences from raw preview text. */
-export function normalizePreviewText(text: string): string {
+/** Normalize line endings and remove terminal control sequences, keeping tabs and spacing. */
+export function normalizeMultilineText(text: string): string {
 	const normalized = text
 		.replaceAll("\r\n", "\n")
-		.replaceAll("\r", "\n")
-		.replaceAll("\t", "    ");
+		.replaceAll("\r", "\n");
 	return stripTerminalStrings(normalized)
 		.replace(TERMINAL_CSI_SEQUENCE, "")
 		.replace(TERMINAL_ESCAPE_SEQUENCE, "")
 		.replace(TERMINAL_CONTROL_CHARACTER, "");
+}
+
+/** Normalize whitespace and remove terminal control sequences from raw preview text. */
+export function normalizePreviewText(text: string): string {
+	return normalizeMultilineText(text).replaceAll("\t", "    ");
 }
 
 /** Remove complete terminal strings without rescanning an unterminated suffix for every start. */

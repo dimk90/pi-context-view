@@ -27,7 +27,7 @@ import { applyRequestSnapshot } from "../src/projection.ts";
 import { buildUsageSnapshot } from "../src/replay.ts";
 import type { ConversationChange, RequestSnapshot, SystemChange } from "../src/snapshot.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
-import { injectionsNotes, payloadCheckLabel, requestOriginLabel, type DescriptionNote } from "../src/ui/notes.ts";
+import { injectionsNotes, requestOriginLabel, type DescriptionNote } from "../src/ui/notes.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
 import { containsBlock, createTheme, frameText, stripSgr } from "./harness/frame.ts";
 import agentStartMessage, {
@@ -197,13 +197,13 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		}
 	});
 
-	test("capture runs in RPC mode without any consumer", async (t) => {
+	test("capture publishes nothing outside TUI mode", async (t) => {
 		const provider = await startProvider(t);
 		const runtime = await createRuntime(t, provider, { factories: [contextAdd], mode: "rpc" });
 		await runtime.session.prompt("prompt");
-		const [snapshot] = await runtime.settled();
+		assert.deepEqual(await runtime.settled(), []);
 		assert.deepEqual(runtime.errors, []);
-		assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
+		assert.equal(provider.requests.length, 1, "the request proceeds");
 	});
 });
 
@@ -525,7 +525,6 @@ suite("Injections composition", { concurrency: true }, () => {
 			const probe = await runtime.renderView();
 			const probeNotes = noteKindsShown(probe, true, true);
 			assert.ok(containsBlock(probe, [requestOriginLabel(true)]));
-			assert.ok(containsBlock(probe, [`Payload: ${payloadCheckLabel("unchecked")}`]));
 			assert.ok(probeNotes.has("probe") && probeNotes.has("payload-check"));
 
 			await runtime.session.prompt("real prompt");

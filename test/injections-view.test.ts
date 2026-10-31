@@ -7,15 +7,17 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { AGGREGATE_SOURCE, type InjectionSnapshot, type InjectionGroup, type InjectionItem } from "../src/model.ts";
 import type { GuardResult } from "../src/snapshot.ts";
 import { InjectionsView } from "../src/ui/injections-view.ts";
+import { type CopyActions, copiedNotice } from "../src/ui/copy.ts";
 import { previewBodyLines } from "../src/ui/section-preview.ts";
 import { buildInjectionRows } from "../src/ui/injections-model.ts";
 import { statusBarLines } from "../src/ui/status-bar.ts";
 import { markerLegendLines, markerStatusField } from "../src/ui/markers.ts";
 import {
-	descriptionNoteLines, injectionsNotes, payloadCheckLabel, requestOriginLabel,
-	type DescriptionNote, type InjectionsNotesInput, type PayloadCheck,
+	descriptionNoteLines, injectionsNotes, requestOriginLabel,
+	type DescriptionNote, type InjectionsNotesInput,
 } from "../src/ui/notes.ts";
 import { assertFrame, containsBlock, createTheme, frameText, stripSgr, stripStyle, wholeOrAbsent } from "./harness/frame.ts";
+import { mouseEvent, wheelEvent } from "./harness/mouse.ts";
 
 /** Expected note selected by semantic kind, never by an English sentence. */
 function noteLines(kind: DescriptionNote["kind"], width = 1_000, input: Partial<InjectionsNotesInput> = {}): string[] {
@@ -74,12 +76,14 @@ function createView(
 	itemsPerGroup = 8,
 	degradedReason?: string,
 	getTerminalRows: () => number = () => 24,
+	actions?: CopyActions,
 ): InjectionsView {
 	return new InjectionsView(
 		createTheme(),
 		{ snapshot: snapshot(itemsPerGroup), degradedReason },
 		() => {},
 		getTerminalRows,
+		actions,
 	);
 }
 
@@ -213,8 +217,9 @@ test("InjectionsView pins TOTAL below the viewport through navigation, resize, a
 			view.handleInput("\u001b[H");
 			let fixedTotal: string | undefined;
 			let fixedIndex: number | undefined;
-			for (const key of ["", "j", "\u001b[6~", "\u001b[F", "\u001b[<65;20;5M", "\u001b[H"]) {
-				view.handleInput(key);
+			for (const input of ["", "j", "\u001b[6~", "\u001b[F", wheelEvent(1), "\u001b[H"]) {
+				if (typeof input === "string") view.handleInput(input);
+				else view.handleMouse(input);
 				const frame = view.render(width);
 				const plain = frame.map(stripSgr);
 				const total = plain.findIndex((line) => line.startsWith("  TOTAL"));
@@ -1011,35 +1016,41 @@ test("InjectionsView accepts Ctrl+u/d wherever it accepts the page keys", () => 
 	assert.equal(frame(pageKeys), previewTop);
 });
 
-test("InjectionsView scrolls with the mouse wheel and honors pi's own wheel step", () => {
-	// Fullscreen pi forwards wheel reports to the focused overlay as raw SGR sequences
-	const wheelUp = "\u001b[<64;20;5M";
-	const wheelDown = "\u001b[<65;20;5M";
+test("InjectionsView scrolls with the mouse wheel and honors pi's wheel delta", () => {
+	// Fullscreen pi parses wheel reports and passes them to the focused overlay as mouse events, with
+	// `wheelDelta` already scaled by the user's step and acceleration
+	const wheelUp = wheelEvent(-4);
+	const wheelDown = wheelEvent(4);
 	const arrows = createView(8);
-	const wheel = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => {}, () => 24, 4);
+	const wheel = createView(8);
 	const frame = (view: InjectionsView) => view.render(80).join("\n");
 
 	// Both views must render once so the viewport size is known before any input
 	const start = frame(wheel);
 	assert.equal(frame(arrows), start);
 
-	// List: one notch selects one row, regardless of the scroll step
+	// Other mouse events fall through to pi; a notch at the edge is handled but needs no redraw
+	assert.equal(wheel.handleMouse(mouseEvent("click", { button: "left" })), undefined);
+	assert.deepEqual(wheel.handleMouse(wheelUp), { handled: true, render: false });
+	assert.equal(frame(wheel), start);
+
+	// List: one notch selects one row, regardless of the wheel delta
 	arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	assert.deepEqual(wheel.handleMouse(wheelDown), { handled: true, render: true });
 	assert.match(stripSgr(frame(wheel)), /→ ├─ pi-0/);
 	assert.equal(frame(wheel), frame(arrows));
 
-	// Preview: one notch scrolls pi's own line step
+	// Preview: one notch scrolls by the wheel delta
 	arrows.handleInput("\r");
 	wheel.handleInput("\r");
 	const previewTop = frame(wheel);
 	assert.equal(frame(arrows), previewTop);
 	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[B");
-	wheel.handleInput(wheelDown);
+	wheel.handleMouse(wheelDown);
 	assert.notEqual(frame(wheel), previewTop);
 	assert.equal(frame(wheel), frame(arrows));
 	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[A");
-	wheel.handleInput(wheelUp);
+	wheel.handleMouse(wheelUp);
 	assert.equal(frame(wheel), previewTop);
 	assert.equal(frame(arrows), previewTop);
 });
@@ -1354,7 +1365,6 @@ test("InjectionsView renders selected capture notes without conflating origin an
 		guard: { status: "incomplete", reason: "fixture-payload-reason" } } as const;
 	const lines = new InjectionsView(theme, input, () => {}, () => 100).render(120);
 	assert.ok(containsBlock(lines, [requestOriginLabel(true)]));
-	assert.ok(containsBlock(lines, [`Payload: ${payloadCheckLabel("unchecked")}`]));
 	for (const kind of ["probe", "payload-check"] as const) {
 		assert.ok(containsBlock(lines, noteLines(kind, 120, input)));
 	}
@@ -1366,7 +1376,6 @@ test("InjectionsView renders selected capture notes without conflating origin an
 	assert.ok(!containsBlock(short, noteLines("probe", 120, input)));
 	assert.ok(!containsBlock(short, noteLines("payload-check", 120, input)));
 	assert.ok(containsBlock(short, [requestOriginLabel(true)]));
-	assert.ok(containsBlock(short, [`Payload: ${payloadCheckLabel("unchecked")}`]));
 });
 
 test("InjectionsView collapses and restores all probe notes together", () => {
@@ -1509,7 +1518,6 @@ test("InjectionsView reports a partial payload comparison", () => {
 	assert.ok(containsBlock(plain, noteLines("payload-check", 200, { guard: {
 		status: "incomplete", reason: "The captured request could not be converted for comparison.", findings: [],
 	} })));
-	assert.ok(containsBlock(plain, [`Payload: ${payloadCheckLabel("partial")}`]));
 });
 
 test("InjectionsView previews payload changes as one part per finding with colored changed lines", () => {
@@ -1833,19 +1841,19 @@ test("InjectionsView lists messages in one unattributed row and previews one par
 	assert.deepEqual(view.render(100), list, "Escape returns to the same row");
 });
 
-test("InjectionsView keeps payload attention states visible without the description", () => {
+test("InjectionsView keeps payload check states out of the header", () => {
 	const dispatch = { provider: "fixture", api: "fixture", model: "fixture" };
 	const finding = { type: "payload-change", change: "added", part: "user", lines: [] } as const;
-	const cases: [GuardResult | undefined, PayloadCheck | undefined][] = [
-		[{ status: "pending" }, "pending"],
-		[{ status: "incomplete", reason: "No payload." }, "unchecked"],
-		[{ status: "incomplete", reason: "One channel failed.", findings: [] }, "partial"],
-		[{ status: "incomplete", reason: "One channel failed.", findings: [finding] }, "partial"],
-		[{ status: "complete", dispatch, findings: [] }, undefined],
-		[{ status: "complete", dispatch, findings: [finding] }, undefined],
-		[undefined, undefined],
+	const guards: Array<GuardResult | undefined> = [
+		{ status: "pending" },
+		{ status: "incomplete", reason: "No payload." },
+		{ status: "incomplete", reason: "One channel failed.", findings: [] },
+		{ status: "incomplete", reason: "One channel failed.", findings: [finding] },
+		{ status: "complete", dispatch, findings: [] },
+		{ status: "complete", dispatch, findings: [finding] },
+		undefined,
 	];
-	for (const [guard, state] of cases) {
+	for (const guard of guards) {
 		const theme = createTheme();
 		const view = new InjectionsView(theme, { snapshot: guardedSnapshot(), guard }, () => {}, () => 14);
 		const lines = view.render(120);
@@ -1853,13 +1861,7 @@ test("InjectionsView keeps payload attention states visible without the descript
 		assert.ok(header.includes(theme.fg("mdHeading", theme.bold(requestOriginLabel()))));
 		assert.ok(!containsBlock(lines, noteLines("overview", 120)));
 		assert.doesNotMatch(frameText(lines), /No payload|channel failed/);
-		if (state === undefined) {
-			assert.doesNotMatch(stripSgr(header), /Payload:/);
-		} else {
-			assert.ok(header.endsWith(theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadCheckLabel(state)}`)));
-			assert.equal(visibleWidth(header), 120, "payload status is right-aligned");
-		}
-		assert.doesNotMatch(stripSgr(header), /Hidden|hidden|bash|write/);
+		assert.doesNotMatch(stripSgr(header), /Payload|Hidden|hidden|bash|write/);
 	}
 });
 
@@ -1884,7 +1886,7 @@ test("InjectionsView keeps request origins bold mdHeading and complete payload s
 	}
 });
 
-test("InjectionsView moves payload status below a narrow header and wraps instead of dropping it", () => {
+test("InjectionsView moves the request origin below a narrow header and wraps instead of dropping it", () => {
 	const theme = createTheme();
 	const view = new InjectionsView(theme, {
 		snapshot: snapshot(2), probe: true,
@@ -1897,7 +1899,6 @@ test("InjectionsView moves payload status below a narrow header and wraps instea
 		if (width >= 4) assert.ok(selected >= 0);
 		const headingText = lines.slice(0, selected < 0 ? undefined : selected).join("").replace(/\s+/g, "");
 		assert.ok(headingText.includes(requestOriginLabel(true).replace(/\s/g, "")), `${width}: origin`);
-		assert.ok(headingText.includes(`Payload:${payloadCheckLabel("partial")}`.replace(/\s/g, "")), `${width}: status`);
 	}
 });
 
@@ -1925,7 +1926,6 @@ test("InjectionsView preserves capture status through scrolling, preview return,
 				const selected = frame.findIndex((line) => line.startsWith("→"));
 				assert.ok(selected >= 0);
 				assert.ok(containsBlock(frame.slice(1, selected), [requestOriginLabel(true)]));
-				assert.ok(containsBlock(frame.slice(1, selected), [`Payload: ${payloadCheckLabel("unchecked")}`]));
 				if (frame[2]?.startsWith("Context Injections")) {
 					assert.deepEqual(frame.slice(2, 2 + header.length), header);
 				}
@@ -1939,7 +1939,6 @@ test("InjectionsView preserves capture status through scrolling, preview return,
 		const beforePreview = view.render(width);
 		view.handleInput("\r");
 		assert.ok(!containsBlock(view.render(width), [requestOriginLabel(true)]));
-		assert.ok(!containsBlock(view.render(width), [`Payload: ${payloadCheckLabel("unchecked")}`]));
 		view.handleInput("\u001b");
 		assert.deepEqual(view.render(width), beforePreview);
 	}
@@ -1959,7 +1958,6 @@ test("InjectionsView keeps compact capture status and the selected bar when the 
 			assert.ok(lines.length <= height);
 			assert.ok(lines.every((line) => visibleWidth(line) <= width));
 			assert.ok(containsBlock(plain, [requestOriginLabel(true)]));
-			assert.ok(containsBlock(plain, [`Payload: ${payloadCheckLabel("pending")}`]));
 			assert.ok(plain.some((line) => line.startsWith("→")));
 			assert.ok(containsBlock(lines, expectedStatus(changedSnapshot(), 2)));
 		}
@@ -2000,7 +1998,6 @@ test("InjectionsView rebuilds persistent capture colors after theme invalidation
 	view.invalidate();
 	const header = view.render(80)[2] ?? "";
 	assert.ok(header.includes(theme.fg("mdHeading", theme.bold(requestOriginLabel(true)))));
-	assert.ok(header.endsWith(theme.fg("muted", "Payload") + theme.fg("dim", `: ${payloadCheckLabel("pending")}`)));
 	assert.notEqual(header, before[2]);
 });
 
@@ -2057,7 +2054,7 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	const view = new InjectionsView(theme, { snapshot: searchSnapshot() }, () => {
 		closed = true;
 	}, () => 30);
-	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · Esc Close/);
+	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · c Copy · Esc Close/);
 
 	view.handleInput("/");
 	let plain = plainFrame(view);
@@ -2083,7 +2080,7 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	view.handleInput("\u001b");
 	plain = plainFrame(view);
 	assert.match(plain[promptIndex] ?? "", /^ {2}◉ Name \| ○ Content > cym +1 match$/);
-	assert.match(plain.join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · Esc Clear/);
+	assert.match(plain.join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · c Copy · Esc Clear/);
 
 	// Escape drops the filter but keeps the selected row, then closes the view
 	view.handleInput("\u001b");
@@ -2177,7 +2174,7 @@ test("InjectionsView content filter carries its query into the preview search", 
 	assert.ok(matchRow > 0);
 	assert.ok((lines[matchRow] ?? "").includes(SEARCH_MATCH_BG));
 	assert.ok(!plain.some((line) => line.includes("Navigate code.")), "scrolled to the match");
-	assert.match(plain.join("\n"), /↑↓\/jk Scroll · n\/N Next\/Prev · \/ Search · Esc Back/);
+	assert.match(plain.join("\n"), /↑↓\/jk Scroll · n\/N Next\/Prev · \/ Search · c Copy · Esc Back/);
 
 	view.handleInput("n");
 	plain = plainFrame(view);
@@ -2219,7 +2216,7 @@ test("InjectionsView preview search types live, keeps the query on Enter, and dr
 	view.handleInput("\u001b");
 	plain = plainFrame(view);
 	assert.ok(!plain.some((line) => line.includes("Search:")));
-	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · Esc Back/);
+	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
 });
 
 test("InjectionsView search stays within the width and drops the filter hint before others", () => {
@@ -2263,4 +2260,134 @@ test("InjectionsView content filter matches JSON as its preview expands it", () 
 	assert.match(plainFrame(view).join("\n"), /○ Name \| ◉ Content > "type": "object" +1 match/);
 	view.handleInput("\r");
 	assert.match(plainFrame(view)[4] ?? "", /^ {2}Search: "type": "object" +1\/1$/);
+});
+
+/** Let a resolved clipboard promise update the view before the next render. */
+async function settleCopy(): Promise<void> {
+	await new Promise((resolve) => setImmediate(resolve));
+}
+
+test("InjectionsView copies a highlighted group, item, and open preview", async () => {
+	const copied: string[] = [];
+	const actions: CopyActions = { copyText: async (text) => { copied.push(text); }, schedule: () => () => {} };
+	const view = createView(8, undefined, () => 24, actions);
+
+	// The first highlighted row is the pi group; copy every item in it.
+	assert.match(plainFrame(view).find((line) => line.includes("Navigate")) ?? "", /c Copy/);
+	view.handleInput("c");
+	await settleCopy();
+	assert.equal(copied[0]?.split("\n\n").length, 8);
+	assert.match(copied[0] ?? "", /^pi-0 preview line 0/);
+	assert.match(copied[0] ?? "", /pi-7 preview line 39/);
+
+	// One item row copies only that item.
+	view.handleInput("j");
+	const itemText = copied[0]?.split("\n\n")[0] ?? "";
+	view.handleInput("c");
+	await settleCopy();
+	assert.equal(copied[1], itemText);
+
+	// Its open preview copies the same item text.
+	view.handleInput("\r");
+	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
+	view.handleInput("c");
+	await settleCopy();
+	assert.equal(copied[2], itemText);
+	// The notice sits on the top border
+	assert.ok(plainFrame(view)[0]?.includes(copiedNotice(itemText).text));
+});
+
+test("InjectionsView reports an empty item without writing the clipboard", async () => {
+	const copied: string[] = [];
+	const empty: InjectionItem = {
+		id: "empty", kind: "base-prompt", source: { id: "pi", label: "pi", native: true },
+		label: "empty", chars: 0, tokens: 0, text: "",
+	};
+	const snap: InjectionSnapshot = { groups: [group("pi", true, [empty])], totalTokens: 0 };
+	const view = new InjectionsView(createTheme(), { snapshot: snap }, () => {}, () => 24, {
+		copyText: async (text) => { copied.push(text); },
+	});
+	view.handleInput("j");
+	view.handleInput("c");
+	await settleCopy();
+	assert.deepEqual(copied, []);
+	assert.match(plainFrame(view)[0] ?? "", /Nothing to copy/);
+});
+
+test("InjectionsView copies only the visible items of a filtered group", async () => {
+	const copied: string[] = [];
+	const view = createView(8, undefined, () => 24, { copyText: async (text) => { copied.push(text); } });
+
+	// Submit a name filter that keeps one item, then return to the group row.
+	view.handleInput("/");
+	typeKeys(view, "pi-3");
+	view.handleInput("\r");
+	view.handleInput("\u001b");
+	view.handleInput("k");
+	view.handleInput("c");
+	await settleCopy();
+
+	assert.equal(copied[0]?.split("\n\n").length, 1);
+	assert.match(copied[0] ?? "", /^pi-3 preview line 0/);
+});
+
+/** The frame's top border as plain text, where the copy notice appears. */
+function topBorderText(view: InjectionsView): string {
+	return plainFrame(view)[0] ?? "";
+}
+
+/** The plain top border the frame shows without a copy notice. */
+function plainBorder(view: InjectionsView): string {
+	return "─".repeat(visibleWidth(topBorderText(view)));
+}
+
+test("InjectionsView stops publishing a copy result after close", async () => {
+	let closed = false;
+	const pending: Array<() => void> = [];
+	const view = new InjectionsView(createTheme(), { snapshot: snapshot(8) }, () => { closed = true; }, () => 24, {
+		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
+	});
+	view.handleInput("c");
+	view.handleInput("\u001b");
+	assert.ok(closed);
+	pending[0]?.();
+	await settleCopy();
+	assert.equal(topBorderText(view), plainBorder(view));
+});
+
+test("InjectionsView stops redrawing a copy result after the host disposes it", async () => {
+	const pending: Array<() => void> = [];
+	let refreshes = 0;
+	const view = createView(8, undefined, () => 24, {
+		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
+		refresh: () => { refreshes++; },
+	});
+	view.handleInput("c");
+	view.dispose();
+	const refreshesAtDispose = refreshes;
+	pending[0]?.();
+	await settleCopy();
+	assert.equal(refreshes, refreshesAtDispose);
+	assert.equal(topBorderText(view), plainBorder(view));
+});
+
+test("InjectionsView keeps a late copy result across keys until it expires", async () => {
+	const pending: Array<() => void> = [];
+	const expiries: Array<() => void> = [];
+	const view = createView(8, undefined, () => 24, {
+		copyText: () => new Promise<void>((resolve) => pending.push(resolve)),
+		schedule: (callback) => {
+			expiries.push(callback);
+			return () => {};
+		},
+	});
+	view.handleInput("c");
+	view.handleInput("j");
+	pending[0]?.();
+	await settleCopy();
+	assert.notEqual(topBorderText(view), plainBorder(view));
+	view.handleInput("j");
+	assert.notEqual(topBorderText(view), plainBorder(view));
+	expiries[0]?.();
+	assert.equal(topBorderText(view), plainBorder(view));
 });

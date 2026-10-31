@@ -1,8 +1,8 @@
 /**
  * pi-context-view - inspect what occupies the model context.
  *
- * Structured capture publishes a snapshot of every request to SnapshotStore,
- * which keeps the latest one. Injections shows that request as it was sent;
+ * In TUI mode, structured capture publishes a snapshot of every request to
+ * SnapshotStore, which keeps the latest one. Injections shows that request as it was sent;
  * Usage applies it to the current branch. Either view runs one on-demand
  * silent probe when opened before any request, unless configuration disables it. On a Pi version older than the
  * supported one, it registers no lifecycle handlers, captures nothing, and
