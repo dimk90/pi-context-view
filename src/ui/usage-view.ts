@@ -126,6 +126,7 @@ export interface UsageViewInput {
 
 /** View-local denominator selected for the context map. */
 type UsageMapScale = "window" | "fit";
+type PercentageScale = "window" | "used";
 
 interface CategoryLegendRow {
 	readonly type: "category";
@@ -250,6 +251,7 @@ export class UsageView {
 	private readonly blockNavigator = new BlockNavigator();
 	private readonly fitMapScale: number | undefined;
 	private mapScale: UsageMapScale = "window";
+	private percentageScale: PercentageScale = "window";
 	private currentWidth: number | undefined;
 	private previewRow: CategoryLegendRow | undefined;
 	private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
@@ -337,6 +339,9 @@ export class UsageView {
 		}
 		if (matchesKey(data, "z")) {
 			this.toggleMapScale();
+		} else if (matchesKey(data, "p")) {
+			this.percentageScale = this.percentageScale === "window" ? "used" : "window";
+			this.clearCache();
 		} else if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
@@ -501,6 +506,7 @@ export class UsageView {
 		];
 		if (this.legendRows[this.navigator.selected]?.type === "category") hints.push(COPY_HINT);
 		if (this.canToggleMapScale(width)) hints.push(["Z", "Zoom"]);
+		if (width >= 64) hints.push(["P", this.percentageScale === "window" ? "% Used" : "% Window"]);
 		hints.push(["Esc", "Close"]);
 		return hints;
 	}
@@ -779,9 +785,11 @@ export class UsageView {
 
 	/** Percentage text used by the independently aligned rightmost column. */
 	private plainLegendPercent(tokens: number): string {
-		const contextWindow = this.usage.reported?.contextWindow;
-		if (contextWindow === undefined || contextWindow <= 0) return "";
-		return formatPercent(tokens / contextWindow);
+		const denominator = this.percentageScale === "used"
+			? this.usage.reported?.tokens ?? this.usage.estimatedTokens
+			: this.usage.reported?.contextWindow;
+		if (denominator === undefined || denominator <= 0) return "";
+		return formatPercent(tokens / denominator);
 	}
 
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */

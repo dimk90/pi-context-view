@@ -299,6 +299,22 @@ test("UsageView explains disabled probing in its description, not as a notice", 
 	assert.deepEqual(plain.slice(0, 6), plainView.slice(0, 6), "no notice rows above the dashboard");
 });
 
+test("UsageView switches legend percentages from window to current used context", () => {
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 80);
+	const windowPlain = view.render(100).map(stripSgr);
+	assert.ok(windowPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
+	assert.ok(windowPlain.some((line) => line.includes("P % Used")));
+
+	view.handleInput("p");
+	const usedPlain = view.render(100).map(stripSgr);
+	assert.ok(usedPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+8\.4%/.test(line)));
+	assert.ok(usedPlain.some((line) => /Tool Output \.{2,}\s+5k\s+11%/.test(line)));
+	assert.ok(usedPlain.some((line) => line.includes("P % Window")));
+
+	view.handleInput("p");
+	assert.deepEqual(view.render(100).map(stripSgr), windowPlain);
+});
+
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
 	const zoomUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
 	const view = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
@@ -308,7 +324,7 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	const windowCells = windowMap.flatMap((line) => line.slice(2, 2 + 16 * 2 - 1).split(" "));
 
 	assert.ok(!windowPlain.some((line) => line.includes("Zoom 1M")));
-	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · Esc Close")));
+	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · P % Used · Esc Close")));
 	assert.ok(windowCells.includes("⛝"));
 
 	view.handleInput("z");
