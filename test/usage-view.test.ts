@@ -300,7 +300,7 @@ test("UsageView explains disabled probing in its description, not as a notice", 
 });
 
 test("UsageView switches legend percentages from window to current used context", () => {
-	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 80);
+	const view = createView(createTheme(), { usage: { ...usage(), autoCompactReserveTokens: 16_384 } }, () => {}, () => 80);
 	const windowPlain = view.render(100).map(stripSgr);
 	assert.ok(windowPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
 	assert.ok(windowPlain.some((line) => line.includes("P % Used")));
@@ -309,6 +309,8 @@ test("UsageView switches legend percentages from window to current used context"
 	const usedPlain = view.render(100).map(stripSgr);
 	assert.ok(usedPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+8\.4%/.test(line)));
 	assert.ok(usedPlain.some((line) => /Tool Output \.{2,}\s+5k\s+11%/.test(line)));
+	assert.ok(usedPlain.some((line) => /Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/.test(line)));
+	assert.ok(usedPlain.some((line) => /Free Space \.{2,}\s+939\.8k\s+94%/.test(line)));
 	assert.ok(usedPlain.some((line) => line.includes("P % Window")));
 
 	view.handleInput("p");

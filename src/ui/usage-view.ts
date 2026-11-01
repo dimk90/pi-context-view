@@ -725,7 +725,7 @@ export class UsageView {
 		const rows = this.legendRows;
 		const labelWidth = Math.max(1, ...rows.map((row) => this.plainLegendLabel(row).length));
 		const tokenWidth = Math.max(1, ...rows.map((row) => formatTokens(legendTokens(row)).length));
-		const percentWidth = Math.max(0, ...rows.map((row) => this.plainLegendPercent(legendTokens(row)).length));
+		const percentWidth = Math.max(0, ...rows.map((row) => this.plainLegendPercent(row, legendTokens(row)).length));
 		const rightWidth = tokenWidth + (percentWidth > 0 ? LEGEND_VALUE_GAP + percentWidth : 0);
 		const idealValue = Math.min(MAX_LEGEND_VALUE_COLUMN, labelWidth + LEGEND_LEADER_GAP);
 		return {
@@ -742,7 +742,7 @@ export class UsageView {
 		const tokens = formatTokens(legendTokens(row));
 		const valueColor = selected ? "accent" : row.type === "category" && row.depth > 1 ? "dim" : "muted";
 		const tokenPadding = " ".repeat(Math.max(0, columns.tokenWidth - tokens.length));
-		const percent = this.plainLegendPercent(legendTokens(row));
+		const percent = this.plainLegendPercent(row, legendTokens(row));
 		const percentPart = percent === ""
 			? ""
 			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "dim", percent)}`;
@@ -784,10 +784,10 @@ export class UsageView {
 	}
 
 	/** Percentage text used by the independently aligned rightmost column. */
-	private plainLegendPercent(tokens: number): string {
-		const denominator = this.percentageScale === "used"
-			? this.usage.reported?.tokens ?? this.usage.estimatedTokens
-			: this.usage.reported?.contextWindow;
+	private plainLegendPercent(row: LegendRow, tokens: number): string {
+		const denominator = row.type !== "category" || this.percentageScale === "window"
+			? this.usage.reported?.contextWindow
+			: this.usage.reported?.tokens ?? this.usage.estimatedTokens;
 		if (denominator === undefined || denominator <= 0) return "";
 		return formatPercent(tokens / denominator);
 	}
@@ -1133,7 +1133,7 @@ export class UsageView {
 	private categoryHeaderLine(row: CategoryLegendRow, width: number): string {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(row.category.label)));
-		const percent = this.plainLegendPercent(row.category.tokens);
+		const percent = this.plainLegendPercent(row, row.category.tokens);
 		const meta = theme.fg("muted", `${formatTokens(row.category.tokens)}${percent === "" ? "" : ` · ${percent}`}`);
 		const forced = this.previewEntries(row).some((entry) => entry.change === "forced");
 		const marker = forced ? forcedMarker(theme) : "";
