@@ -584,8 +584,13 @@ export class UsageView {
 		const viewport = calculateViewport(this.legendRows.length, rows, reservedLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 
-		const heading = theme.fg("mdHeading", theme.bold("Category:"));
 		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
+		const heading = theme.fg("mdHeading", theme.bold("Category:"));
+		// Name the active percentage scale above the shared column, since the hint names the other mode
+		const scaleLabel = this.percentageColumnLabel();
+		const headingRow = scaleLabel === undefined
+			? heading
+			: spreadLine(heading, theme.fg("muted", scaleLabel), rowWidth);
 		const columns = this.legendColumns(rowWidth);
 		const visibleRows: string[] = [];
 		const start = this.navigator.offset;
@@ -604,7 +609,7 @@ export class UsageView {
 			)]
 			: [];
 		return [
-			heading,
+			headingRow,
 			...visibleRows,
 			...counterLines,
 			...(keyLines.length === 0 ? [] : ["", ...keyLines]),
@@ -785,11 +790,26 @@ export class UsageView {
 
 	/** Percentage text used by the independently aligned rightmost column. */
 	private plainLegendPercent(row: LegendRow, tokens: number): string {
-		const denominator = row.type !== "category" || this.percentageScale === "window"
-			? this.usage.reported?.contextWindow
-			: this.usage.reported?.tokens ?? this.usage.estimatedTokens;
-		if (denominator === undefined || denominator <= 0) return "";
-		return formatPercent(tokens / denominator);
+		if (this.percentageScale === "used") {
+			// Used mode norms category shares to the estimated used total, so the
+			// categories add up to about 100%. Capacity shares stay window-relative
+			// and would read as a second scale inside one column, so they are
+			// hidden here and reappear with the next Window toggle.
+			if (row.type !== "category" || this.usage.estimatedTokens <= 0) return "";
+			return formatPercent(tokens / this.usage.estimatedTokens);
+		}
+		const contextWindow = this.usage.reported?.contextWindow;
+		if (contextWindow === undefined || contextWindow <= 0) return "";
+		return formatPercent(tokens / contextWindow);
+	}
+
+	/** Label naming the active percentage scale, undefined without a denominator. */
+	private percentageColumnLabel(): string | undefined {
+		if (this.percentageScale === "used") {
+			return this.usage.estimatedTokens > 0 ? "% Used" : undefined;
+		}
+		const contextWindow = this.usage.reported?.contextWindow;
+		return contextWindow !== undefined && contextWindow > 0 ? "% Window" : undefined;
 	}
 
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */

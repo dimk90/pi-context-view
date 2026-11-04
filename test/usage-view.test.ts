@@ -123,7 +123,7 @@ test("UsageView renders the 16x16 map and matching category legend with semantic
 	assert.ok(lines[2]?.includes(theme.fg("accent", theme.bold("Context Usage"))));
 	assert.ok(lines[2]?.includes(theme.getFgAnsi("muted") + "claude-opus-4-8"));
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
-	assert.match(plain[4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){15}\s+Category:$/);
+	assert.match(plain[4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){15}\s+Category:\s+% Window$/);
 	// The key trails the more important legend, separated by one empty detail row
 	const mapKeyIndex = plain.findIndex((line) => line.includes("Map:"));
 	assert.ok(mapKeyIndex > plain.findIndex((line) => line.includes("Free Space")));
@@ -303,14 +303,19 @@ test("UsageView switches legend percentages from window to current used context"
 	const view = createView(createTheme(), { usage: { ...usage(), autoCompactReserveTokens: 16_384 } }, () => {}, () => 80);
 	const windowPlain = view.render(100).map(stripSgr);
 	assert.ok(windowPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
+	assert.ok(windowPlain.some((line) => /Category:\s+% Window$/.test(line)));
 	assert.ok(windowPlain.some((line) => line.includes("P % Used")));
 
 	view.handleInput("p");
 	const usedPlain = view.render(100).map(stripSgr);
+	// Category shares norm to the estimated used total, so the categories add up to about 100%
 	assert.ok(usedPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+8\.4%/.test(line)));
 	assert.ok(usedPlain.some((line) => /Tool Output \.{2,}\s+5k\s+11%/.test(line)));
-	assert.ok(usedPlain.some((line) => /Auto-Compact Buffer \.{2,}\s+16\.4k\s+1\.6%/.test(line)));
-	assert.ok(usedPlain.some((line) => /Free Space \.{2,}\s+939\.8k\s+94%/.test(line)));
+	// Capacity rows keep their window tokens but hide percentages, keeping one scale per column
+	assert.ok(usedPlain.some((line) => /Auto-Compact Buffer \.{2,}\s+16\.4k/.test(line)));
+	assert.ok(usedPlain.some((line) => /Free Space \.{2,}\s+939\.8k/.test(line)));
+	assert.ok(!usedPlain.some((line) => /Auto-Compact Buffer|Free Space/.test(line) && line.includes("%")));
+	assert.ok(usedPlain.some((line) => /Category:\s+% Used$/.test(line)));
 	assert.ok(usedPlain.some((line) => line.includes("P % Window")));
 
 	view.handleInput("p");
@@ -1697,7 +1702,7 @@ test("UsageView respects width and height changes", () => {
 		}
 	}
 	const compactMap = view.render(60).map(stripSgr);
-	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{16}\s+Category:$/.test(line)));
+	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{16}\s+Category:\s+% Window$/.test(line)));
 	assert.ok(compactMap.some((line) => /\s+Map:$/.test(line)));
 	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size: 3.9k (0.4%)")));
 	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
