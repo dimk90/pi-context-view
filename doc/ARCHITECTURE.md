@@ -49,6 +49,42 @@ until the next capture.
 current session branch. [views.md](architecture/views.md) describes both and
 where they differ.
 
+## Hosts and Run Modes
+
+The views are not limited to Pi's TUI. They open in any host that renders
+`ctx.ui.custom()` components, such as Pi Web, which runs Pi in-process and
+reports the `rpc` run mode. `ctx.mode` therefore never decides; two checks do:
+
+- **`ctx.hasUI`.** Without a UI, capture skips every request and the command
+  refuses both views at once.
+- **The factory call.** With a UI, the command opens the view and refuses it
+  afterwards when the host returned from `ctx.ui.custom()` without calling the
+  view's factory.
+
+| Host                                     | `ctx.mode`      | `ctx.hasUI` | `ctx.ui.custom()`                   | Capture | Views                     |
+| ---------------------------------------- | --------------- | ----------- | ----------------------------------- | ------- | ------------------------- |
+| Pi's TUI                                 | `tui`           | true        | Calls the factory                   | Runs    | Open                      |
+| A host that renders components (Pi Web)  | `rpc`           | true        | Calls the factory                   | Runs    | Open                      |
+| Pi's `--mode rpc`                        | `rpc`           | true        | Returns without calling the factory | Runs    | Refused after the call    |
+| `--mode json`, `--print`                 | `json`, `print` | false       | Not called                          | Skips   | Refused at once           |
+
+`/context config` needs no UI and works in every run mode.
+
+Limits outside Pi's TUI:
+
+- **Plain RPC cost.** Pi's `--mode rpc` reports a UI, so capture runs on every
+  request although no view can show it, and the first `/context` may run one
+  [silent probe](architecture/probe.md) before the refusal. The probe still
+  makes no provider request.
+- **Mouse.** Wheel scrolling works only when the host forwards mouse events to
+  the component; Pi Web does not, so its views use the keyboard only.
+- **Terminal size.** Views read the height from the host's `tui.terminal.rows`
+  and the width from `render()`; a `100%` overlay gets whatever the host gives.
+- **Copy.** `c` runs Pi's `copyToClipboard()` in the Pi process, so it writes
+  to the clipboard of the machine that runs Pi. With a remote or headless Pi,
+  it falls back to OSC 52 on that process's output, which may not reach the
+  user.
+
 ## Layers
 
 Capture is split into layers with one-way dependencies. SnapshotStore is the
@@ -80,14 +116,11 @@ flowchart TD
   whether SilentProbe owns the current run, and the probe-message filter.
   ProbeFilter stays active even when no probe runs: sessions keep probe
   messages from earlier runtimes.
-- **Run modes.** Capture runs only where `ctx.hasUI` is true: without a UI, no
-  view can show a snapshot. The run mode does not decide, because a host such
-  as a web UI can render `ctx.ui.custom()` components while Pi reports `rpc`.
-  Capture does not wait for a consumer. The probe layer works in every run
-  mode: ProbeFilter keeps probe messages from earlier runtimes out of every
-  request. The command refuses both views without a UI, and after the fact
-  when the host never called the view's factory, as Pi's own RPC mode does;
-  ProbeTrigger has no guard.
+- **Run modes.** Capture runs only where `ctx.hasUI` is true and does not wait
+  for a consumer; the command applies both view checks
+  ([hosts and run modes](#hosts-and-run-modes)). The probe layer works in every
+  run mode: ProbeFilter keeps probe messages from earlier runtimes out of every
+  request. ProbeTrigger has no guard.
 - **Wiring.** Each layer's module exports its state and a `register*()`
   function with its Pi handlers. `src/index.ts` creates the layers, calls those
   functions, registers the command, and clears the store on `session_shutdown`.
