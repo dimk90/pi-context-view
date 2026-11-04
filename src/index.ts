@@ -19,8 +19,8 @@ import {
 	reportCommandMessage,
 	reportCompactionInProgress,
 	reportConfigCreation,
-	reportTuiOnly,
 	reportUnsupportedPi,
+	reportViewUnavailable,
 	type RequestSnapshotResult,
 	resolveRequestSnapshot,
 } from "./command.ts";
@@ -163,7 +163,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			// Pi's mode says nothing about hosts that render custom components outside
 			// its TUI; without any UI, no view can open
 			if (!ctx.hasUI) {
-				reportTuiOnly(ctx, command.view);
+				reportViewUnavailable(ctx, command.view);
 				return;
 			}
 			if (compaction.isActive) {
@@ -182,7 +182,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				? await openInjections(ctx, latest, loadedConfig)
 				: await openUsage(ctx, latest, loadedConfig);
 			// Pi's RPC mode has a UI but returns from `custom()` without calling the factory
-			if (!opened) reportTuiOnly(ctx, command.view);
+			if (!opened) reportViewUnavailable(ctx, command.view);
 		},
 	});
 

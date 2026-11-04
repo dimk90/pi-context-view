@@ -218,13 +218,14 @@ suite("structured capture calibration", { concurrency: true }, () => {
 	});
 
 	for (const view of ["usage", "injections"] satisfies ContextView[]) {
-		test(`/context ${view} reports TUI only when the host never calls the factory`, async (t) => {
+		test(`/context ${view} refuses the view when the host never calls the factory`, async (t) => {
 			const provider = await startProvider(t);
 			// As Pi's own RPC mode: `custom()` resolves without a view
 			const runtime = await createRuntime(t, provider, { factories: [], mode: "rpc", custom: async () => undefined });
 			await runtime.session.prompt(`/context ${view}`);
 			assert.equal(runtime.notices.length, 1, "one refusal replaces the view");
 			assert.ok(runtime.notices[0].startsWith(`/context ${view} `), "the refusal names the form typed");
+			assert.equal(provider.requests.length, 0, "the probe before the refusal makes no provider request");
 			assert.deepEqual(runtime.errors, []);
 		});
 	}

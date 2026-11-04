@@ -10,8 +10,8 @@ import {
 	reportCommandMessage,
 	reportCompactionInProgress,
 	reportConfigCreation,
-	reportTuiOnly,
 	reportUnsupportedPi,
+	reportViewUnavailable,
 	resolveRequestSnapshot,
 } from "../src/command.ts";
 import { CompactionState } from "../src/compaction.ts";
@@ -84,16 +84,16 @@ test("reportCommandMessage sanitizes and caps untrusted message text", () => {
 	assert.ok(notified[1]?.message.endsWith("\u2026"));
 });
 
-test("reportTuiOnly names the refused view instead of the whole command", () => {
+test("reportViewUnavailable names the refused view instead of the whole command", () => {
 	const { context, notified } = createNotifyingContext();
 
-	reportTuiOnly(context, "usage");
-	reportTuiOnly(context, "injections");
+	reportViewUnavailable(context, "usage");
+	reportViewUnavailable(context, "injections");
 
 	// Only views are refused; /context config needs no UI and runs in every mode
 	assert.deepEqual(notified, [
-		{ message: "/context usage is available in TUI mode only.", type: "warning" },
-		{ message: "/context injections is available in TUI mode only.", type: "warning" },
+		{ message: "/context usage needs a UI that can show custom views.", type: "warning" },
+		{ message: "/context injections needs a UI that can show custom views.", type: "warning" },
 	]);
 });
 

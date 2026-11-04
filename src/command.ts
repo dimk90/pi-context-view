@@ -118,8 +118,8 @@ export function reportCommandMessage(
 }
 
 /** Refuse a view the host cannot show, naming the form the user typed. */
-export function reportTuiOnly(context: ExtensionCommandContext, view: ContextView): void {
-	reportCommandMessage(context, `/context ${view} is available in TUI mode only.`, "warning");
+export function reportViewUnavailable(context: ExtensionCommandContext, view: ContextView): void {
+	reportCommandMessage(context, `/context ${view} needs a UI that can show custom views.`, "warning");
 }
 
 /**
