@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.8.3] - 04.11.2026
+## [0.8.3] - 05.11.2026
 
 Adds a toggle that shows category percentages of used context (thanks to @khoipm06),
 and opens the views in hosts like Pi Web (thanks to @agegr), plus maintenance for Pi 1.5.0.
