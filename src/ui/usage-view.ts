@@ -126,6 +126,7 @@ export interface UsageViewInput {
 
 /** View-local denominator selected for the context map. */
 type UsageMapScale = "window" | "fit";
+type PercentageScale = "window" | "used";
 
 interface CategoryLegendRow {
 	readonly type: "category";
@@ -256,6 +257,7 @@ export class UsageView {
 	private readonly blockNavigator = new BlockNavigator();
 	private readonly fitMapScale: number | undefined;
 	private mapScale: UsageMapScale = "window";
+	private percentageScale: PercentageScale = "window";
 	private currentWidth: number | undefined;
 	private previewRow: CategoryLegendRow | undefined;
 	private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
@@ -343,6 +345,9 @@ export class UsageView {
 		}
 		if (matchesKey(data, "z")) {
 			this.toggleMapScale();
+		} else if (matchesKey(data, "p")) {
+			this.percentageScale = this.percentageScale === "window" ? "used" : "window";
+			this.clearCache();
 		} else if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
@@ -507,6 +512,7 @@ export class UsageView {
 		];
 		if (this.legendRows[this.navigator.selected]?.type === "category") hints.push(COPY_HINT);
 		if (this.canToggleMapScale(width)) hints.push(["Z", "Zoom"]);
+		if (width >= 64) hints.push(["P", this.percentageScale === "window" ? "% Used" : "% Window"]);
 		hints.push(["Esc", "Close"]);
 		return hints;
 	}
@@ -584,8 +590,13 @@ export class UsageView {
 		const viewport = calculateViewport(this.legendRows.length, rows, reservedLineCount);
 		this.navigator.setVisibleCount(viewport.visibleCount);
 
-		const heading = theme.fg("mdHeading", theme.bold("Category:"));
 		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
+		const heading = theme.fg("mdHeading", theme.bold("Category:"));
+		// Name the active percentage scale above the shared column, since the hint names the other mode
+		const scaleLabel = this.percentageColumnLabel();
+		const headingRow = scaleLabel === undefined
+			? heading
+			: spreadLine(heading, theme.fg("muted", scaleLabel), rowWidth);
 		const columns = this.legendColumns(rowWidth);
 		const visibleRows: string[] = [];
 		const start = this.navigator.offset;
@@ -604,7 +615,7 @@ export class UsageView {
 			)]
 			: [];
 		return [
-			heading,
+			headingRow,
 			...visibleRows,
 			...counterLines,
 			...(keyLines.length === 0 ? [] : ["", ...keyLines]),
@@ -725,7 +736,7 @@ export class UsageView {
 		const rows = this.legendRows;
 		const labelWidth = Math.max(1, ...rows.map((row) => this.plainLegendLabel(row).length));
 		const tokenWidth = Math.max(1, ...rows.map((row) => formatTokens(legendTokens(row)).length));
-		const percentWidth = Math.max(0, ...rows.map((row) => this.plainLegendPercent(legendTokens(row)).length));
+		const percentWidth = Math.max(0, ...rows.map((row) => this.plainLegendPercent(row, legendTokens(row)).length));
 		const rightWidth = tokenWidth + (percentWidth > 0 ? LEGEND_VALUE_GAP + percentWidth : 0);
 		const idealValue = Math.min(MAX_LEGEND_VALUE_COLUMN, labelWidth + LEGEND_LEADER_GAP);
 		return {
@@ -742,7 +753,7 @@ export class UsageView {
 		const tokens = formatTokens(legendTokens(row));
 		const valueColor = selected ? "accent" : row.type === "category" && row.depth > 1 ? "dim" : "muted";
 		const tokenPadding = " ".repeat(Math.max(0, columns.tokenWidth - tokens.length));
-		const percent = this.plainLegendPercent(legendTokens(row));
+		const percent = this.plainLegendPercent(row, legendTokens(row));
 		const percentPart = percent === ""
 			? ""
 			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "dim", percent)}`;
@@ -784,10 +795,27 @@ export class UsageView {
 	}
 
 	/** Percentage text used by the independently aligned rightmost column. */
-	private plainLegendPercent(tokens: number): string {
+	private plainLegendPercent(row: LegendRow, tokens: number): string {
+		if (this.percentageScale === "used") {
+			// Used mode norms category shares to the estimated used total, so the
+			// categories add up to about 100%. Capacity shares stay window-relative
+			// and would read as a second scale inside one column, so they are
+			// hidden here and reappear with the next Window toggle.
+			if (row.type !== "category" || this.usage.estimatedTokens <= 0) return "";
+			return formatPercent(tokens / this.usage.estimatedTokens);
+		}
 		const contextWindow = this.usage.reported?.contextWindow;
 		if (contextWindow === undefined || contextWindow <= 0) return "";
 		return formatPercent(tokens / contextWindow);
+	}
+
+	/** Label naming the active percentage scale, undefined without a denominator. */
+	private percentageColumnLabel(): string | undefined {
+		if (this.percentageScale === "used") {
+			return this.usage.estimatedTokens > 0 ? "% Used" : undefined;
+		}
+		const contextWindow = this.usage.reported?.contextWindow;
+		return contextWindow !== undefined && contextWindow > 0 ? "% Window" : undefined;
 	}
 
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */
@@ -1131,7 +1159,7 @@ export class UsageView {
 	private categoryHeaderLine(row: CategoryLegendRow, width: number): string {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(row.category.label)));
-		const percent = this.plainLegendPercent(row.category.tokens);
+		const percent = this.plainLegendPercent(row, row.category.tokens);
 		const meta = theme.fg("muted", `${formatTokens(row.category.tokens)}${percent === "" ? "" : ` · ${percent}`}`);
 		const forced = this.previewEntries(row).some((entry) => entry.change === "forced");
 		const marker = forced ? forcedMarker(theme) : "";
