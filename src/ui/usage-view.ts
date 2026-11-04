@@ -461,8 +461,18 @@ export class UsageView {
 
 	/** Toggle the view-local percentage denominator between the window and the used total. */
 	private togglePercentageScale(): void {
+		if (!this.canTogglePercentageScale()) return;
 		this.percentageScale = this.percentageScale === "window" ? "used" : "window";
 		this.clearCache();
+	}
+
+	/**
+	 * Whether either percentage scale has a denominator. Without one, both modes
+	 * show an empty column, so the hint and binding go away together.
+	 */
+	private canTogglePercentageScale(): boolean {
+		const contextWindow = this.usage.reported?.contextWindow;
+		return this.usage.estimatedTokens > 0 || (contextWindow !== undefined && contextWindow > 0);
 	}
 
 	/** Whether zoom can help and its binding is visible at this width. */
@@ -498,7 +508,8 @@ export class UsageView {
 		];
 		if (this.legendRows[this.navigator.selected]?.type === "category") hints.push(COPY_HINT);
 		if (this.canToggleMapScale(width)) hints.push(["Z", "Zoom"]);
-		if (width >= 64) hints.push(["P", "%"]);
+		// Optional, so it drops out first on narrow rows; the binding stays active and the header names the scale
+		if (this.canTogglePercentageScale()) hints.push(["P", "%", true]);
 		hints.push(["Esc", "Close"]);
 		return hints;
 	}

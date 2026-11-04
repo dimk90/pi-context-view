@@ -65,7 +65,10 @@ Used norms category shares to the estimated used total, so the categories read
 as parts of one whole; capacity rows hide their percentages there, since a
 window-relative share inside the same column would read as more than a whole.
 The `p` toggle is local to the open view and starts at Window. The header label
-names the active mode; the hint only names the toggle.
+names the active mode; the hint only names the toggle. Unlike `z`, the hint is
+optional and drops out first on narrow rows while the binding stays active,
+since the label always shows the scale. Hide both when neither scale has a
+denominator.
 
 Favor a compact top-level composition. Tool Output exposes its per-tool
 breakdown for direct inspection; other aggregate breakdowns stay collapsed.

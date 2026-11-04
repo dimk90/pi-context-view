@@ -340,6 +340,39 @@ test("UsageView switches legend percentages from window to current used context"
 	assert.ok(previewPlain.some((line) => /System Prompt\s+3\.7k · 8\.4%/.test(line)));
 });
 
+test("UsageView keeps the percentage binding when its optional hint drops out", () => {
+	// A nearly full window offers no Zoom, so the whole hint row fits in 60 columns
+	const fullUsage: ContextUsageSnapshot = {
+		...usage(900_000),
+		categories: [{ id: "user-messages", label: "User Messages", tokens: 900_000 }],
+		estimatedTokens: 900_000,
+	};
+	const view = createView(createTheme(), { usage: fullUsage }, () => {}, () => 80);
+	assert.ok(view.render(60).map(stripSgr).some((line) => line.includes("P % · Esc Close")));
+
+	const narrow = view.render(40).map(stripSgr);
+	assert.ok(!narrow.some((line) => line.includes("P %")));
+	assert.ok(narrow.some((line) => /Category:\s+Window %$/.test(line)));
+
+	view.handleInput("p");
+	assert.ok(view.render(40).map(stripSgr).some((line) => /Category:\s+Used %$/.test(line)));
+});
+
+test("UsageView hides the percentage hint and binding without any denominator", () => {
+	const empty: ContextUsageSnapshot = {
+		computedAt: new Date("2026-07-11T12:00:00Z"),
+		modelLabel: "claude-opus-4-8",
+		categories: [{ id: "context-files", label: "Instruction Files", tokens: 0 }],
+		estimatedTokens: 0,
+	};
+	const view = createView(createTheme(), { usage: empty }, () => {}, () => 30);
+	const frame = view.render(100);
+	assert.ok(!frame.map(stripSgr).some((line) => line.includes("P %")));
+
+	view.handleInput("p");
+	assert.deepEqual(view.render(100), frame);
+});
+
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {
 	const zoomUsage: ContextUsageSnapshot = { ...usage(), autoCompactReserveTokens: 16_384 };
 	const view = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
