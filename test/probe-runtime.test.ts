@@ -12,7 +12,6 @@ import {
 	DefaultResourceLoader,
 	type ExtensionContext,
 	type ExtensionFactory,
-	type ExtensionUIContext,
 	ModelRuntime,
 	type SessionBoundaryDraft,
 	type SessionEntry,
@@ -27,6 +26,7 @@ import forcedPrompt from "./fixtures/forced-prompt.ts";
 import inputTransform from "./fixtures/input-transform.ts";
 import marker from "./fixtures/marker.ts";
 import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
+import { createUiContext, createView, type ViewFactory } from "./harness/ui.ts";
 
 /** The extension under test, independent of the developer's own configuration file. */
 const registerExtension: ExtensionFactory = (pi) =>
@@ -152,10 +152,13 @@ for (const position of ["before", "after"] as const) {
 		await session.bindExtensions({
 			mode: "tui",
 			onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-			uiContext: {
+			uiContext: createUiContext({
 				setWorkingVisible: (visible: boolean) => { visibility.push(visible); },
-				custom: async () => { observed.overlays++; },
-			} as unknown as ExtensionUIContext,
+				custom: async (factory: ViewFactory) => {
+					await createView(factory);
+					observed.overlays++;
+				},
+			}),
 		});
 		await session.prompt("/context injections");
 		assert.deepEqual(errors, []);
@@ -297,10 +300,12 @@ test("a nested custom-message run fails the attempt and the probe still claims i
 	await session.bindExtensions({
 		mode: "tui",
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-		uiContext: {
-			setWorkingVisible: () => undefined,
-			custom: async () => { events.push("view"); },
-		} as unknown as ExtensionUIContext,
+		uiContext: createUiContext({
+			custom: async (factory: ViewFactory) => {
+				await createView(factory);
+				events.push("view");
+			},
+		}),
 	});
 
 	await session.prompt("/context injections");
@@ -505,14 +510,16 @@ async function probeWithNestedUserSend(t: TestContext, position: "before" | "aft
 	await session.bindExtensions({
 		mode: "tui",
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-		uiContext: {
-			setWorkingVisible: () => undefined,
+		uiContext: createUiContext({
 			notify: (message: string, type: string) => {
 				events.push(`notify: ${type}`);
 				warnings.push(message);
 			},
-			custom: async () => { events.push("view"); },
-		} as unknown as ExtensionUIContext,
+			custom: async (factory: ViewFactory) => {
+				await createView(factory);
+				events.push("view");
+			},
+		}),
 	});
 	await session.prompt("/context injections");
 	await bothSettled;
@@ -528,10 +535,7 @@ async function bindTui(session: AgentSession): Promise<string[]> {
 	await session.bindExtensions({
 		mode: "tui",
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-		uiContext: {
-			setWorkingVisible: () => undefined,
-			custom: async () => undefined,
-		} as unknown as ExtensionUIContext,
+		uiContext: createUiContext(),
 	});
 	return errors;
 }

@@ -111,7 +111,7 @@ changes.
 atomic `O_EXCL` create and never overwrites or modifies an existing path. It
 works in every run mode on a
 [supported Pi](pi-requests.md#supported-pi-versions). Only the views require
-`ctx.mode === "tui"`.
+a UI that calls the `ctx.ui.custom()` factory.
 
 Any later action that updates an existing file must debounce writes and merge
 over a fresh read, preserving concurrent edits and unknown keys.

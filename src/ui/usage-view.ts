@@ -206,10 +206,15 @@ interface ContentSearchLines {
 	readonly lines: readonly string[];
 }
 
-/** Open the Usage view as a fullscreen overlay. */
-export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<void> {
+/**
+ * Open the Usage view as a fullscreen overlay. Resolves `false` when the host
+ * never called the factory: Pi's RPC mode returns from `custom()` without a view.
+ */
+export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<boolean> {
+	let opened = false;
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
+			opened = true;
 			const view = new UsageView(theme, input, done, () => tui.terminal.rows, {
 				refresh: () => tui.requestRender(),
 			});
@@ -229,6 +234,7 @@ export async function showUsageView(context: ExtensionCommandContext, input: Usa
 			overlayOptions: { width: "100%", maxHeight: "100%", margin: 0 },
 		},
 	);
+	return opened;
 }
 
 /** Exported for direct render/input tests; use showUsageView from pi code. */

@@ -4,8 +4,8 @@
  * provider payload in `before_provider_request`, and confirms
  * the dispatch from assistant message events. Observe only:
  * handlers return nothing and never change provider-bound data. Captures only
- * in TUI mode, where the views can show snapshots, but without waiting for a
- * consumer; imports no trigger or consumer code.
+ * where Pi has a UI, which the views need, but without waiting for a consumer;
+ * imports no trigger or consumer code.
  */
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -59,9 +59,10 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 	});
 
 	pi.on("context_with_system", (event, ctx) => {
-		// No view can show a snapshot in other modes. Without a tracked capture, the
-		// payload, dispatch, and settle handlers have nothing to do.
-		if (ctx.mode !== "tui") return;
+		// Without a UI, no view can show a snapshot. A host may render custom
+		// components outside TUI mode, so the run mode does not decide. Without a
+		// tracked capture, the payload, dispatch, and settle handlers have nothing to do.
+		if (!ctx.hasUI) return;
 		settleUnpaired();
 		let request: CapturedRequest;
 		try {

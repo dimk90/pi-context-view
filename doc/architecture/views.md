@@ -19,8 +19,11 @@ A failed or skipped probe leaves the store empty: the view opens on Pi's
 current data with a degraded reason, and the fallback never enters the store.
 While compaction is active, both views refuse to open; the command checks
 before and after resolving ([preconditions](probe.md#preconditions-failures-and-fallback)).
-The command also keeps the TUI-only guard. `openInjections()` and
-`openUsage()` receive the same resolution result.
+The command also refuses both views without a UI (`ctx.hasUI`). With one, it
+opens the view and reports the refusal afterwards when the host never called
+the factory: Pi's RPC mode returns from `ctx.ui.custom()` without a view, so a
+probe may already have run. `openInjections()` and `openUsage()` receive the
+same resolution result and resolve whether the view opened.
 
 ## Injections
 

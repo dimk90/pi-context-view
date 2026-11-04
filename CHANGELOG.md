@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+* `[views]` Open the views in hosts that render `ctx.ui.custom()` outside TUI mode.
+
+
 ## `[v0.8.2]` - 31.10.2026
 
 Adds clipboard copy and fixes mouse and trackpad wheel scrolling.

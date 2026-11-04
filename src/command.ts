@@ -117,7 +117,7 @@ export function reportCommandMessage(
 	process.stderr.write(`${safeMessage}\n`);
 }
 
-/** Refuse a view outside TUI mode, naming the form the user typed. */
+/** Refuse a view the host cannot show, naming the form the user typed. */
 export function reportTuiOnly(context: ExtensionCommandContext, view: ContextView): void {
 	reportCommandMessage(context, `/context ${view} is available in TUI mode only.`, "warning");
 }
