@@ -300,7 +300,9 @@ test("UsageView explains disabled probing in its description, not as a notice", 
 });
 
 test("UsageView switches legend percentages from window to current used context", () => {
-	const view = createView(createTheme(), { usage: { ...usage(), autoCompactReserveTokens: 16_384 } }, () => {}, () => 80);
+	// The reported total differs from the 43.8k category sum, so Used must divide by the estimate
+	const usedUsage = { ...usage(50_000), autoCompactReserveTokens: 16_384 };
+	const view = createView(createTheme(), { usage: usedUsage }, () => {}, () => 80);
 	const windowPlain = view.render(100).map(stripSgr);
 	assert.ok(windowPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
 	assert.ok(windowPlain.some((line) => /Category:\s+Window %$/.test(line)));
@@ -330,6 +332,12 @@ test("UsageView switches legend percentages from window to current used context"
 
 	view.handleInput("p");
 	assert.deepEqual(view.render(100).map(stripSgr), windowPlain);
+
+	// The preview header follows the same scale as the legend
+	view.handleInput("p");
+	view.handleInput("\r");
+	const previewPlain = view.render(100).map(stripSgr);
+	assert.ok(previewPlain.some((line) => /System Prompt\s+3\.7k · 8\.4%/.test(line)));
 });
 
 test("UsageView toggles a view-local Fit map and clears its cached frame", () => {

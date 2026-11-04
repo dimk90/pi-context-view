@@ -127,6 +127,7 @@ export interface UsageViewInput {
 
 /** View-local denominator selected for the context map. */
 type UsageMapScale = "window" | "fit";
+/** View-local denominator selected for legend and preview-header percentages. */
 type PercentageScale = "window" | "used";
 
 interface CategoryLegendRow {
@@ -326,8 +327,7 @@ export class UsageView {
 		if (matchesKey(data, "z")) {
 			this.toggleMapScale();
 		} else if (matchesKey(data, "p")) {
-			this.percentageScale = this.percentageScale === "window" ? "used" : "window";
-			this.clearCache();
+			this.togglePercentageScale();
 		} else if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
@@ -456,6 +456,12 @@ export class UsageView {
 	private toggleMapScale(): void {
 		if (!this.canToggleMapScale(this.currentWidth)) return;
 		this.mapScale = this.mapScale === "window" ? "fit" : "window";
+		this.clearCache();
+	}
+
+	/** Toggle the view-local percentage denominator between the window and the used total. */
+	private togglePercentageScale(): void {
+		this.percentageScale = this.percentageScale === "window" ? "used" : "window";
 		this.clearCache();
 	}
 
