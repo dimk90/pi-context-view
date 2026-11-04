@@ -1,18 +1,19 @@
 # Changelog
 
-## [v0.8.3] - 04.11.2026
+## [0.8.3] - 04.11.2026
 
 Adds a toggle that shows category percentages of used context (thanks to @khoipm06),
-and opens the views in hosts like Pi Web (thanks to @agegr).
+and opens the views in hosts like Pi Web (thanks to @agegr), plus maintenance for Pi 1.5.0.
 
 ### New
 * `[usage]` Add `p` to switch category percentages between context window and used context ([#19](https://github.com/dimk90/pi-context-view/pull/19) by @khoipm06).
+* `[package]` Show these release notes in Pi's "Extension Updates" after an update.
 
 ### Changed
 * `[views]` Open the views in hosts that render `ctx.ui.custom()` outside TUI mode, like Pi Web ([#21](https://github.com/dimk90/pi-context-view/pull/21) by @agegr).
 
 
-## `[v0.8.2]` - 31.10.2026
+## [0.8.2] - 31.10.2026
 
 Adds clipboard copy and fixes mouse and trackpad wheel scrolling.
 
@@ -24,7 +25,7 @@ Adds clipboard copy and fixes mouse and trackpad wheel scrolling.
 * `[capture]` Capture requests only in TUI mode, where the views can show them.
 
 
-## `[v0.8.1]` - 26.10.2026
+## [0.8.1] - 26.10.2026
 
 Maintenance release with support for Pi 1.4.0 and a few small fixes.
 
@@ -35,7 +36,7 @@ Maintenance release with support for Pi 1.4.0 and a few small fixes.
 * `[capture]` Match Pi 1.4's Responses `additional_tools` declarations and tool notices.
 * `[injections]` Keep the selected group when clearing a filter, even if labels repeat.
 
-## `[v0.8.0]` - 24.10.2026
+## [0.8.0] - 24.10.2026
 
 Adds filtering and search feature (thanks to @ohlulu), plus a few optimizations
 that reduce capture overhead.
@@ -58,7 +59,7 @@ that reduce capture overhead.
 <img alt="v0.8.0 filtering demo" width="800" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/8bab7e944082d6aa4ab039c3b934a6855921590f/doc/images/filtering.gif" />
 
 
-## `[v0.7.2]` - 17.10.2026
+## [0.7.2] - 17.10.2026
 
 Maintenance release for Pi 1.3.0, which is now required, with fixes for its removal of thinking from other models.
 
@@ -78,7 +79,7 @@ Maintenance release for Pi 1.3.0, which is now required, with fixes for its remo
 * `[capture]` Don't fail when Pi sends no `hiddenTools` ([#15](https://github.com/dimk90/pi-context-view/issues/15)).
 
 
-## `[v0.7.1]` - 13.10.2026
+## [0.7.1] - 13.10.2026
 
 Support for Pi 1.2.0, which is now required, with fixes for its breaking changes.
 
@@ -87,7 +88,7 @@ Support for Pi 1.2.0, which is now required, with fixes for its breaking changes
 * `[probe]` Stop aborting custom-message runs that other extensions start during a probe.
 
 
-## `[v0.7.0]` - 12.10.2026
+## [0.7.0] - 12.10.2026
 
 Injection capture has been redesigned for Pi 1.1. Instead of freezing the first request (Initial),
 it now captures every request and compares it with the saved session. This shows request-only
@@ -119,7 +120,7 @@ forced prompts, and tools Pi hides.
 * `[views]` Group and label path-loaded extensions by file, not as one `cli` or `local` source.
 
 
-## `[v0.6.0]` - 20.09.2026
+## [0.6.0] - 20.09.2026
 
 ### New
 * `[config]` Add `mapCols` and `mapRows` to size the `Context Usage` map.
@@ -139,13 +140,13 @@ forced prompts, and tools Pi hides.
 * `[capture]` Omit text-block signatures, including Gemini reasoning envelopes, from previews.
 
 
-## `[v0.5.2]` - 08.09.2026
+## [0.5.2] - 08.09.2026
 
 ### Fixed
 * `[injections]` Recover and mark relocated Available Tools and Guidelines blocks.
 
 
-## `[v0.5.1]` - 08.09.2026
+## [0.5.1] - 08.09.2026
 
 ### Changed
 * `[context]` Align category ordering and naming with Pi terminology - [#2](https://github.com/dimk90/pi-context-view/issues/2).
@@ -161,7 +162,7 @@ forced prompts, and tools Pi hides.
 * `[context]` Count tokens for `Current working directory`.
 
 
-## `[v0.5.0]` - 30.08.2026
+## [0.5.0] - 30.08.2026
 
 ### New
 * `[config]` Add an global config for `Usage` category colors, see [customization](https://github.com/dimk90/pi-context-view#customization).
@@ -179,7 +180,7 @@ forced prompts, and tools Pi hides.
 * `[ui]` Collapse view descriptions on short terminals before map, legend, or list rows.
 
 
-## `[v0.4.3]` - 19.08.2026
+## [0.4.3] - 19.08.2026
 
 ### Changed
 * `[usage]` Add a full-content view for collapsed blocks.
@@ -188,13 +189,13 @@ forced prompts, and tools Pi hides.
 * `[ui]` Add `Ctrl+U`/`Ctrl+D` aliases for page navigation.
 
 
-## `[v0.4.2]` - 14.08.2026
+## [0.4.2] - 14.08.2026
 
 ### Fixed
 * `[ui]` Drop the `fullscreen` paging workaround (Pi 0.84.2 delivers `PgUp/PgDn` to the view in both TUI modes).
 
 
-## `[v0.4.1]` - 10.08.2026
+## [0.4.1] - 10.08.2026
 
 ### Changed
 * `[usage]` Add a "Block Size" row with the tokens and map share.
@@ -205,7 +206,7 @@ forced prompts, and tools Pi hides.
 * `[ui]` Add workaround for `PgUp/PgDn` keys in `fullscreen` mode -> map to `Ctrl+U/Ctrl+D`.
 
 
-## `[v0.4.0]` - 06.08.2026
+## [0.4.0] - 06.08.2026
 
 ### New
 * `[usage]` Zoom context map with `z`.
@@ -218,13 +219,13 @@ forced prompts, and tools Pi hides.
 * `[probe]` Skip silent probe during compaction.
 
 
-## `[v0.3.1]` - 28.07.2026
+## [0.3.1] - 28.07.2026
 
 ### Changed
 * `[ui]` Scroll lists and previews with `↑↓` and the vim-style `j`/`k` keys.
 
 
-## `[v0.3.0]` - 26.07.2026
+## [0.3.0] - 26.07.2026
 
 ### New
 * `[usage]` Show the auto-compaction reserve as "Auto-Compact Buffer" row (`⛝`).
@@ -240,18 +241,18 @@ forced prompts, and tools Pi hides.
 * `[package]` Exclude demo images and GIFs from the npm package.
 
 
-## `[v0.2.4]` - 22.07.2026
+## [0.2.4] - 22.07.2026
 
 ### Fixed
 * `[measure]` Fix base-prompt boundary detection for the Pi 0.81.
 
 
-## `[v0.2.3]` - 20.07.2026
+## [0.2.3] - 20.07.2026
 
 ### Fixed
 * `[doc]` Update broken links in README.
 
-## `[v0.2.2]` - 20.07.2026
+## [0.2.2] - 20.07.2026
 
 ### Changed
 * `[usage]` Skip the preview-less "Free Space" row during category navigation in the Usage view.
@@ -260,7 +261,7 @@ forced prompts, and tools Pi hides.
 * `[context]` Persist silent-probe message identities as a session custom entry
               so probe entries stay excluded from model contexts across resume, reload, and fork.
 
-## `[v0.2.1]` - 13.07.2026
+## [0.2.1] - 13.07.2026
 
 ### Changed
 * `[usage]` Compact complete attached-skill expansions into pi-themed badges in User Message previews.
@@ -271,7 +272,7 @@ forced prompts, and tools Pi hides.
 * `[usage]` Add fallback (`≈`) calculation of context usage after compaction and pi estimation is not available.
 * `[ui]` Wrap dialog descriptions onto indented continuation lines instead of truncating them in narrow terminals.
 
-## `[v0.2.0]` - 13.07.2026
+## [0.2.0] - 13.07.2026
 
 ### New
 * `[usage]` Add `/context` and `/context usage` fullscreen views with estimated token usage by context category.
@@ -285,7 +286,7 @@ forced prompts, and tools Pi hides.
 * `[context]` Replace the v0.1 `--context-inspect` print-and-exit workflow with focused interactive `/context` views.
 * `[measure]` Improve prompt decomposition, tool ownership, skill measurement, and context-file attribution.
 
-## `[v0.1.0]` - 10.07.2026
+## [0.1.0] - 10.07.2026
 
 ### New
 * `[context]` Add the initial `--context-inspect` CLI workflow for measuring startup prompt, tool, and extension injections.

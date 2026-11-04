@@ -27,7 +27,8 @@
 	},
 	"files": [
 		"src",
-		"README.md"
+		"README.md",
+		"CHANGELOG.md"
 	],
 	"scripts": {
 		"test": "node test/run.ts",
