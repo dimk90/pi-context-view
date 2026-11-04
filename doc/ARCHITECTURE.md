@@ -80,11 +80,14 @@ flowchart TD
   whether SilentProbe owns the current run, and the probe-message filter.
   ProbeFilter stays active even when no probe runs: sessions keep probe
   messages from earlier runtimes.
-- **Run modes.** Capture runs only in TUI mode: no view can show a snapshot
-  in other modes. It does not wait for a consumer. The probe layer works in
-  every run mode: ProbeFilter keeps probe messages from earlier runtimes out
-  of every request. The command applies the TUI-only guard of both views;
-  ProbeTrigger has none.
+- **Run modes.** Capture runs only where `ctx.hasUI` is true: without a UI, no
+  view can show a snapshot. The run mode does not decide, because a host such
+  as a web UI can render `ctx.ui.custom()` components while Pi reports `rpc`.
+  Capture does not wait for a consumer. The probe layer works in every run
+  mode: ProbeFilter keeps probe messages from earlier runtimes out of every
+  request. The command refuses both views without a UI, and after the fact
+  when the host never called the view's factory, as Pi's own RPC mode does;
+  ProbeTrigger has no guard.
 - **Wiring.** Each layer's module exports its state and a `register*()`
   function with its Pi handlers. `src/index.ts` creates the layers, calls those
   functions, registers the command, and clears the store on `session_shutdown`.

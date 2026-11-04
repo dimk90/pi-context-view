@@ -8,7 +8,7 @@ import { test, type TestContext } from "node:test";
 import {
 	type AgentSession, createAgentSession, createCodemodeExtension, DefaultResourceLoader, type ExtensionAPI,
 	type ExtensionContext,
-	type ExtensionFactory, type ExtensionUIContext, ModelRuntime, SessionManager, SettingsManager,
+	type ExtensionFactory, ModelRuntime, SessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
 import registerExtension from "../src/index.ts";
@@ -21,6 +21,7 @@ import { computeUsage } from "../src/usage.ts";
 import forcedPrompt, { FORCED_SYSTEM_PROMPT } from "./fixtures/forced-prompt.ts";
 import { type MockApi, startMockProvider } from "./harness/mock-provider.ts";
 import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
+import { createUiContext } from "./harness/ui.ts";
 
 const ACTIVE = ["read", "bash", "edit", "write", "codemode"];
 const HIDDEN = ["read", "bash", "edit", "write"];
@@ -208,7 +209,7 @@ async function createRuntime(t: TestContext, api: MockApi, extra: ExtraExtension
 	const errors: string[] = [];
 	await session.bindExtensions({
 		mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-		uiContext: { setWorkingVisible: () => undefined, custom: async () => undefined } as unknown as ExtensionUIContext,
+		uiContext: createUiContext(),
 	});
 	return { session, store, provider, errors, observed };
 }

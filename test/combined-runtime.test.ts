@@ -41,6 +41,7 @@ import { SECTION_MODIFY_SECTIONS } from "./fixtures/section-modify.ts";
 import { SECTION_PATCH_SECTIONS } from "./fixtures/section-patch.ts";
 import { type MockApi, startMockProvider } from "./harness/mock-provider.ts";
 import { createIsolatedConfigStore } from "./harness/settings.ts";
+import { createUiContext } from "./harness/ui.ts";
 
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
 /** One fixture per change kind, plus a saved message and an attributed tool. */
@@ -239,7 +240,9 @@ async function createRuntime(t: TestContext, api: MockApi, position: Position): 
 	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
-	await session.bindExtensions({ mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); } });
+	await session.bindExtensions({
+		mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); }, uiContext: createUiContext(),
+	});
 	return {
 		session, errors,
 		latest: async () => {

@@ -80,7 +80,7 @@ test("only context_with_system observes requests: the filter returns a result, c
 	];
 	let sessionReads = 0;
 	const ctx = {
-		mode: "tui",
+		hasUI: true,
 		getSystemPrompt: () => "system prompt",
 		sessionManager: {
 			getEntries: () => {
@@ -123,7 +123,7 @@ test("#9: capture handlers return nothing and leave event.messages and the paylo
 	];
 	const model = { provider: "mock", api: "openai-completions", id: "text", input: ["text"] };
 	const ctx = {
-		mode: "tui",
+		hasUI: true,
 		getSystemPrompt: () => "system prompt",
 		model,
 		modelRegistry: { find: () => model },

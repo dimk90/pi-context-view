@@ -122,13 +122,18 @@ interface InjectionColumns {
 	readonly removedWidth: number;
 }
 
-/** Open the Injections view as a fullscreen overlay. */
+/**
+ * Open the Injections view as a fullscreen overlay. Resolves `false` when the host
+ * never called the factory: Pi's RPC mode returns from `custom()` without a view.
+ */
 export async function showInjectionsView(
 	context: ExtensionCommandContext,
 	input: InjectionsViewInput,
-): Promise<void> {
+): Promise<boolean> {
+	let opened = false;
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
+			opened = true;
 			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows, {
 				refresh: () => tui.requestRender(),
 			});
@@ -148,6 +153,7 @@ export async function showInjectionsView(
 			overlayOptions: { width: "100%", maxHeight: "100%", margin: 0 },
 		},
 	);
+	return opened;
 }
 
 /** Exported for direct render/input tests; use showInjectionsView from pi code. */

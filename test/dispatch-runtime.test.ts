@@ -27,6 +27,7 @@ import {
 import { PAYLOAD_SHAPE_CHECKS, RESPONSES_TOOL_REMOVAL_NOTICE } from "../src/capture/payload.ts";
 import { type MockApi, type MockProvider, startMockProvider } from "./harness/mock-provider.ts";
 import { useSettings } from "./harness/settings.ts";
+import { createUiContext } from "./harness/ui.ts";
 
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const satisfies readonly MockApi[];
 
@@ -308,7 +309,9 @@ async function createRuntime(t: TestContext, options: RuntimeOptions): Promise<R
 	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
-	await session.bindExtensions({ mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); } });
+	await session.bindExtensions({
+		mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); }, uiContext: createUiContext(),
+	});
 	return {
 		session, provider, requests, errors,
 		model: (providerId, id) => {
