@@ -1688,7 +1688,7 @@ test("InjectionsView keeps the full wrapped bar when descriptions collapse or th
 	}
 });
 
-test("InjectionsView reserves only the selected bar's height, with an empty line on unchanged rows", () => {
+test("InjectionsView reserves the tallest bar's height, so the list keeps its size on every row", () => {
 	const data = snapshot(16);
 	const first = data.groups[0]?.items[0];
 	assert.ok(first !== undefined);
@@ -1704,16 +1704,15 @@ test("InjectionsView reserves only the selected bar's height, with an empty line
 	const unchanged = view.render(120).map(stripSgr);
 	assert.deepEqual(expectedStatus(modified, 2), [], "an unchanged row has no status text");
 	const hints = unchanged.findIndex((line) => line.includes("↑↓/jk Navigate"));
-	assert.deepEqual(unchanged.slice(hints - 3, hints), ["", "", ""], "one empty line between the bar's spacers");
+	assert.deepEqual(unchanged.slice(hints - 4, hints), ["", "", "", ""], "the bar's empty lines between its spacers");
 	const visibleCount = (lines: readonly string[]) =>
 		lines.filter((line) => /^(?:→ |  )(?:├─|└─|pi\b|npm:web\b)/.test(line)).length;
 	view.handleInput("k");
 	const changedFrame = view.render(120).map(stripSgr);
 	assert.equal(expectedStatus(modified, 1).length, 2);
 	assert.ok(containsBlock(changedFrame, expectedStatus(modified, 1)));
-	assert.equal(visibleCount(unchanged) - visibleCount(changedFrame), 1, "the extra field takes one list row");
-	view.handleInput("j");
-	assert.equal(visibleCount(view.render(120).map(stripSgr)), visibleCount(unchanged));
+	assert.equal(visibleCount(changedFrame), visibleCount(unchanged), "the selected bar never resizes the list");
+	assert.equal(changedFrame.length, unchanged.length);
 });
 
 test("InjectionsView explains saved and guessed editors, mixed changes, and diff-only accounting", () => {

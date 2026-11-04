@@ -12,6 +12,9 @@ and opens the views in hosts like Pi Web (thanks to @agegr), plus maintenance fo
 ### Changed
 * `[views]` Open the views in hosts that render `ctx.ui.custom()` outside TUI mode, like Pi Web ([#21](https://github.com/dimk90/pi-context-view/pull/21) by @agegr).
 
+### Fixed
+* `[injections]` Keep the list height fixed when the selected row's status bar changes size.
+
 
 ## [0.8.2] - 31.10.2026
 
