@@ -7,8 +7,8 @@
  *   before the monitor   own `attributed-tool.ts` group: the tool and its prompt lines in Tools and Rules
  *   after the monitor    same as before
  */
-import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 export const ATTRIBUTED_TOOL_NAME = "context_view_fixture_tool";
 

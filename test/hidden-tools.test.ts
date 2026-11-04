@@ -2,8 +2,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getCurrentSystemPrompt, Type, type Tool } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, type Tool } from "@earendil-works/pi-ai";
 import { SessionManager, type ToolInfo } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 import { SnapshotBuilder } from "../src/capture/builder.ts";
 import { PayloadGuard } from "../src/capture/guard.ts";

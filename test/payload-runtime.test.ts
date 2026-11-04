@@ -6,12 +6,13 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { type AssistantMessage, type ImageContent, type Message, type TextContent, Type } from "@earendil-works/pi-ai";
+import { type AssistantMessage, type ImageContent, type Message, type TextContent } from "@earendil-works/pi-ai";
 import {
 	type AgentSession, createAgentSession, createCodemodeExtension, createMcpExtension, createToolSearchExtension,
 	DefaultResourceLoader, type ExtensionContext, type ExtensionFactory, ModelRuntime, SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 import registerExtension from "../src/index.ts";
 import { type GuardFinding, type RequestSnapshot, SnapshotStore } from "../src/snapshot.ts";

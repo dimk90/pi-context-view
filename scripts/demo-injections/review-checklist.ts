@@ -3,8 +3,8 @@
  * known owner. Unlike custom sections and messages, its contribution appears
  * under `review-checklist.ts` in both extension load orders.
  */
-import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 export const REVIEW_CHECKLIST_TEXT = "- Check correctness.\n- Check error handling.\n- Check test coverage.";
 
