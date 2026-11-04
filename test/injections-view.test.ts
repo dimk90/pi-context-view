@@ -2053,7 +2053,7 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	const view = new InjectionsView(theme, { snapshot: searchSnapshot() }, () => {
 		closed = true;
 	}, () => 30);
-	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · c Copy · Esc Close/);
+	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · C Copy · Esc Close/);
 
 	view.handleInput("/");
 	let plain = plainFrame(view);
@@ -2079,7 +2079,7 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	view.handleInput("\u001b");
 	plain = plainFrame(view);
 	assert.match(plain[promptIndex] ?? "", /^ {2}◉ Name \| ○ Content > cym +1 match$/);
-	assert.match(plain.join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · c Copy · Esc Clear/);
+	assert.match(plain.join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · C Copy · Esc Clear/);
 
 	// Escape drops the filter but keeps the selected row, then closes the view
 	view.handleInput("\u001b");
@@ -2173,7 +2173,7 @@ test("InjectionsView content filter carries its query into the preview search", 
 	assert.ok(matchRow > 0);
 	assert.ok((lines[matchRow] ?? "").includes(SEARCH_MATCH_BG));
 	assert.ok(!plain.some((line) => line.includes("Navigate code.")), "scrolled to the match");
-	assert.match(plain.join("\n"), /↑↓\/jk Scroll · n\/N Next\/Prev · \/ Search · c Copy · Esc Back/);
+	assert.match(plain.join("\n"), /↑↓\/jk Scroll · n\/N Next\/Prev · \/ Search · C Copy · Esc Back/);
 
 	view.handleInput("n");
 	plain = plainFrame(view);
@@ -2215,7 +2215,7 @@ test("InjectionsView preview search types live, keeps the query on Enter, and dr
 	view.handleInput("\u001b");
 	plain = plainFrame(view);
 	assert.ok(!plain.some((line) => line.includes("Search:")));
-	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
+	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
 });
 
 test("InjectionsView search stays within the width and drops the filter hint before others", () => {
@@ -2272,7 +2272,7 @@ test("InjectionsView copies a highlighted group, item, and open preview", async 
 	const view = createView(8, undefined, () => 24, actions);
 
 	// The first highlighted row is the pi group; copy every item in it.
-	assert.match(plainFrame(view).find((line) => line.includes("Navigate")) ?? "", /c Copy/);
+	assert.match(plainFrame(view).find((line) => line.includes("Navigate")) ?? "", /C Copy/);
 	view.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[0]?.split("\n\n").length, 8);
@@ -2288,7 +2288,7 @@ test("InjectionsView copies a highlighted group, item, and open preview", async 
 
 	// Its open preview copies the same item text.
 	view.handleInput("\r");
-	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · c Copy · Esc Back/);
+	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
 	view.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[2], itemText);

@@ -151,6 +151,7 @@ type LegendRow = CategoryLegendRow | BufferLegendRow | FreeLegendRow;
 interface LegendColumns {
 	readonly value: number;
 	readonly tokenWidth: number;
+	readonly percentWidth: number;
 }
 
 /** One navigable preview block: an entry header plus its capped content lines. */
@@ -491,7 +492,7 @@ export class UsageView {
 		];
 		if (this.legendRows[this.navigator.selected]?.type === "category") hints.push(COPY_HINT);
 		if (this.canToggleMapScale(width)) hints.push(["Z", "Zoom"]);
-		if (width >= 64) hints.push(["P", this.percentageScale === "window" ? "% Used" : "% Window"]);
+		if (width >= 64) hints.push(["P", "%"]);
 		hints.push(["Esc", "Close"]);
 		return hints;
 	}
@@ -570,13 +571,8 @@ export class UsageView {
 		this.navigator.setVisibleCount(viewport.visibleCount);
 
 		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
-		const heading = theme.fg("mdHeading", theme.bold("Category:"));
-		// Name the active percentage scale above the shared column, since the hint names the other mode
-		const scaleLabel = this.percentageColumnLabel();
-		const headingRow = scaleLabel === undefined
-			? heading
-			: spreadLine(heading, theme.fg("muted", scaleLabel), rowWidth);
 		const columns = this.legendColumns(rowWidth);
+		const headingRow = this.legendHeadingRow(columns, width);
 		const visibleRows: string[] = [];
 		const start = this.navigator.offset;
 		for (let index = start; index < start + this.navigator.windowSize; index++) {
@@ -721,6 +717,7 @@ export class UsageView {
 		return {
 			value: Math.max(1, Math.min(idealValue, width - rightWidth)),
 			tokenWidth,
+			percentWidth,
 		};
 	}
 
@@ -735,7 +732,7 @@ export class UsageView {
 		const percent = this.plainLegendPercent(row, legendTokens(row));
 		const percentPart = percent === ""
 			? ""
-			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "dim", percent)}`;
+			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "muted", percent)}`;
 		return fitLine(
 			`${left}${leader}${this.theme.fg(valueColor, tokens)}${tokenPadding}${percentPart}`,
 			width,
@@ -788,13 +785,26 @@ export class UsageView {
 		return formatPercent(tokens / contextWindow);
 	}
 
+	/** Category heading with the active percentage scale named above the percentage column. */
+	private legendHeadingRow(columns: LegendColumns, width: number): string {
+		const heading = this.theme.fg("mdHeading", this.theme.bold("Category:"));
+		const scaleLabel = this.percentageColumnLabel();
+		if (scaleLabel === undefined) return heading;
+
+		// Legend rows start after the cursor column; center the label over the percentage column
+		const percentStart = CURSOR_COLUMN_WIDTH + columns.value + columns.tokenWidth + LEGEND_VALUE_GAP;
+		const labelStart = percentStart + Math.floor((columns.percentWidth - visibleWidth(scaleLabel)) / 2);
+		const labelEnd = labelStart + visibleWidth(scaleLabel);
+		return spreadLine(heading, this.theme.fg("dim", scaleLabel), Math.min(width, labelEnd));
+	}
+
 	/** Label naming the active percentage scale, undefined without a denominator. */
 	private percentageColumnLabel(): string | undefined {
 		if (this.percentageScale === "used") {
-			return this.usage.estimatedTokens > 0 ? "% Used" : undefined;
+			return this.usage.estimatedTokens > 0 ? "Used %" : undefined;
 		}
 		const contextWindow = this.usage.reported?.contextWindow;
-		return contextWindow !== undefined && contextWindow > 0 ? "% Window" : undefined;
+		return contextWindow !== undefined && contextWindow > 0 ? "Window %" : undefined;
 	}
 
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */

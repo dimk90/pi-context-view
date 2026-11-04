@@ -11,7 +11,7 @@ import { normalizeInlineText, normalizeMultilineText } from "../text.ts";
 import { fitLine, type Hint } from "./layout.ts";
 
 /** Hint-row entry advertising the copy action; it is optional, so narrow rows drop it whole. */
-export const COPY_HINT: Hint = ["c", "Copy", true];
+export const COPY_HINT: Hint = ["C", "Copy", true];
 /** Splits copied text into graphemes, the characters a user sees. */
 const SEGMENTER = new Intl.Segmenter();
 /** How long a notice stays on the top border, by kind; errors stay longer to be read. */
