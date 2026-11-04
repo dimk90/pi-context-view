@@ -59,6 +59,7 @@ import {
 	stateMarkers,
 } from "./markers.ts";
 import { descriptionNoteLines, findingNotes, injectionsNotes, requestOriginLabel } from "./notes.ts";
+import { showOverlayView } from "./overlay.ts";
 import {
 	findMatches,
 	highlightLine,
@@ -122,32 +123,13 @@ interface InjectionColumns {
 	readonly removedWidth: number;
 }
 
-/** Open the Injections view as a fullscreen overlay. */
-export async function showInjectionsView(
-	context: ExtensionCommandContext,
-	input: InjectionsViewInput,
-): Promise<void> {
-	await context.ui.custom<void>(
-		(tui, theme, _keybindings, done) => {
-			const view = new InjectionsView(theme, input, done, () => tui.terminal.rows, {
-				refresh: () => tui.requestRender(),
-			});
-			return {
-				render: (width: number) => view.render(width),
-				invalidate: () => view.invalidate(),
-				dispose: () => view.dispose(),
-				handleInput: (data: string) => {
-					view.handleInput(data);
-					tui.requestRender();
-				},
-				handleMouse: (event: TuiMouseEvent) => view.handleMouse(event),
-			};
-		},
-		{
-			overlay: true,
-			overlayOptions: { width: "100%", maxHeight: "100%", margin: 0 },
-		},
-	);
+/**
+ * Open the Injections view as a fullscreen overlay. Resolves `false` when the host
+ * never called the factory: Pi's RPC mode returns from `custom()` without a view.
+ */
+export function showInjectionsView(context: ExtensionCommandContext, input: InjectionsViewInput): Promise<boolean> {
+	return showOverlayView(context, (theme, done, getTerminalRows, actions) =>
+		new InjectionsView(theme, input, done, getTerminalRows, actions));
 }
 
 /** Exported for direct render/input tests; use showInjectionsView from pi code. */
@@ -285,9 +267,10 @@ export class InjectionsView {
 		const warningLines = this.degradedWarningLines(width);
 		// A blank row separates warnings from the list; the emergency frame drops it with the other spacing
 		const warningRows = warningLines.length === 0 ? 0 : warningLines.length + 1;
-		// The status bar never collapses: the list and the description give way to it
+		// The status bar never collapses: the list and the description give way to it. It reserves the tallest
+		// row's height, so moving the selection never resizes the list.
 		const statusLines = this.statusLines(width);
-		const statusRows = descriptionBlockRows(statusLines);
+		const statusRows = 1 + this.statusBarHeight(width);
 		const prefixRows = headerLines.length - 1 + filterLines.length + warningRows;
 		const availableRows = Math.max(1, terminalRows - LIST_FIXED_LINE_COUNT - prefixRows - statusRows);
 		const descriptionLines = this.fittedDescriptionLines(width, availableRows);
@@ -880,6 +863,11 @@ export class InjectionsView {
 		const row = this.navigator.selectableCount === 0 ? undefined : this.rows[this.navigator.selected];
 		const lines = row === undefined ? [] : statusBarLines(this.theme, row, width);
 		return lines.length > 0 ? lines : [""];
+	}
+
+	/** Rows the tallest bar of any row takes at this width, filtered out or not; at least the one reserved line. */
+	private statusBarHeight(width: number): number {
+		return Math.max(1, ...this.allRows.map((row) => statusBarLines(this.theme, row, width).length));
 	}
 
 	/**

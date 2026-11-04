@@ -230,6 +230,18 @@ supported.
   **Goal:** show Pi's usage in the header and scale the map against the model's
   context window, without replacing the category estimates.
 
+- `ctx.hasUI` reports whether the session was bound with a UI context. Pi's
+  TUI and RPC modes have one; `json` and `print` do not. `ctx.mode` is not a
+  capability check: a host that renders components, such as Pi Web, reports
+  `rpc`.
+  **Goal:** skip capture and refuse the views where no view can open.
+
+- `ctx.ui.custom()` shows a view as a fullscreen overlay. Pi's TUI and hosts
+  such as Pi Web call the factory; Pi's `--mode rpc` returns without calling
+  it. The call itself is the only signal that a view opened.
+  **Goal:** open both views, and refuse a view when its factory was never
+  called ([hosts and run modes](../ARCHITECTURE.md#hosts-and-run-modes)).
+
 ## Why Preparing a Request Can Have Side Effects
 
 Before Pi sends a request to the model, other extensions can change its system

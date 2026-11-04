@@ -32,7 +32,9 @@ section as the GitHub release notes.
 
 1. Finalize the release documentation:
    - replace `Unreleased` for the version in `CHANGELOG.md` with the release
-     date in `DD.MM.YYYY` format;
+     date in `DD.MM.YYYY` format. Keep the heading form `## [X.Y.Z] - DD.MM.YYYY`,
+     without a `v` prefix or backticks: Pi parses it to show the notes under
+     "Extension Updates", and the release workflow and `scripts/release.sh` match it;
    - make the changelog entries match the user-visible release notes;
    - remove the completed version section from `doc/PLAN.md`, leaving future work
      in the roadmap;

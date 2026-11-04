@@ -202,8 +202,8 @@ test("CopyNotices refuses a copy after dispose", () => {
 test("COPY_HINT is optional, so a narrow hint row keeps the required hints", () => {
 	const theme = createTheme();
 	const hints = searchHints(new SearchPrompt(), "Scroll", COPY_HINT);
-	assert.match(stripSgr(fitHintRow(theme, hints, 120)), /c Copy/);
+	assert.match(stripSgr(fitHintRow(theme, hints, 120)), /C Copy/);
 	const narrow = stripSgr(fitHintRow(theme, hints, 55));
 	assert.match(narrow, /Esc Back/);
-	assert.doesNotMatch(narrow, /c Copy/);
+	assert.doesNotMatch(narrow, /C Copy/);
 });

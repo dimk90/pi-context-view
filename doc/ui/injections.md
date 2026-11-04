@@ -85,7 +85,8 @@ never raw content or an editor guessed from the source group.
 
 Parents summarize the contributions they count rather than claiming a single
 editor. Unknown attribution must remain explicit. Selecting another row updates
-the explanation; returning from a preview restores it.
+the explanation; returning from a preview restores it. The area keeps the height
+of the tallest row's details, so moving the selection never resizes the tree.
 
 This area and the total take priority over optional descriptions. On short
 terminals, reduce decoration before sacrificing capture status, the degraded

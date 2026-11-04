@@ -47,7 +47,7 @@ extensions' handlers ([side effects](#side-effects)).
 - **ProbeTrigger** decides when to probe. The automatic policy allows at most
   one attempt per extension runtime; concurrent and later callers share its
   result. The command asks it only while the store holds no snapshot.
-  ProbeTrigger has no run-mode guard; the command keeps the TUI-only check.
+  ProbeTrigger has no run-mode guard; the command keeps the UI check.
 
 ## Probe Lifecycle
 

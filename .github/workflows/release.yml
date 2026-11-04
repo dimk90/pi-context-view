@@ -69,7 +69,7 @@ jobs:
               .toString("utf8")
               .replace(/\r\n/g, "\n");
             const lines = changelog.split("\n");
-            const headingPrefix = `## \`[${releaseTag}]\` - `;
+            const headingPrefix = `## [${releaseTag.slice(1)}] - `;
             const matchingHeadingIndexes = [];
 
             for (let index = 0; index < lines.length; index += 1) {

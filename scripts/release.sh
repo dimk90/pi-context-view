@@ -479,8 +479,8 @@ _release_check_changelog() {
 
     # Literal regex: $ anchors the heading and must not expand
     # shellcheck disable=SC2016
-    changelog_pattern='^## `\[v([0-9]+\.[0-9]+\.[0-9]+)\]` - (.+)$'
-    changelog_heading="$(grep -m 1 -E '^## `\[v[0-9]' CHANGELOG.md)"
+    changelog_pattern='^## \[([0-9]+\.[0-9]+\.[0-9]+)\] - (.+)$'
+    changelog_heading="$(grep -m 1 -E '^## \[[0-9]' CHANGELOG.md)"
     if [[ ! $changelog_heading =~ $changelog_pattern ]]; then
         _release_block 'unable to parse the latest CHANGELOG.md version heading' \
                        "${changelog_heading:-no version heading found}"

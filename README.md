@@ -48,7 +48,6 @@ See what fills your context, for example, what survives compaction:
 Inspect hidden parts of the context, such as tool definitions:
 
 ![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/0ee9a806e9c23bea642edabacfd6830755f3122d/doc/images/context-injections.gif)  
-➥ Pi theme in this demo: [`dark-legacy`](https://github.com/dimk90/pi-context-view/blob/master/doc/dark-legacy.json).
 
 ## Demo: Zoom
 
@@ -96,7 +95,6 @@ for color names that follow the current theme.
 You can configure the number of rows and columns in the `Context Usage` map:
 
 ![Map size demo](https://media.githubusercontent.com/media/dimk90/pi-context-view/2bc280f758d88fc0ac6396e921c7e697c9016086/doc/images/map-sizes.png)  
-➥ Pi theme in this demo: [`dark-legacy`](https://github.com/dimk90/pi-context-view/blob/master/doc/dark-legacy.json).
 
 
 ## Context Footprint

@@ -45,9 +45,9 @@ estimated occupied content; zoom changes the denominator, not the category
 order, classification, or totals.
 
 Make an active Fit scale clear so it cannot be mistaken for context-window
-fullness. Category percentages always use the true context window, while cell
-resolution uses the displayed range. Keep the auto-compaction reserve in the
-legend even when it lies outside Fit's range.
+fullness. Cell resolution uses the displayed range; legend percentages follow
+the separate view-local percentage scale below. Keep the auto-compaction
+reserve in the legend even when it lies outside Fit's range.
 
 The `z` toggle is local to the open view, which starts at Window. Hide its hint,
 label, and binding together when the map is absent or Fit would offer no useful
@@ -58,6 +58,17 @@ change.
 Use pi's terminology and request-assembly order, with consistent names across
 both views. Keep estimates and percentages aligned. Category colors identify
 markers and map cells, not selected labels or values.
+
+Legend percentages share one scale, named in the Category header right above
+the percentage column: Window or Used. Window gives each row's share of the context window.
+Used norms category shares to the estimated used total, so the categories read
+as parts of one whole; capacity rows hide their percentages there, since a
+window-relative share inside the same column would read as more than a whole.
+The `p` toggle is local to the open view and starts at Window. The header label
+names the active mode; the hint only names the toggle. Unlike `z`, the hint is
+optional and drops out first on narrow rows while the binding stays active,
+since the label always shows the scale. Hide both when neither scale has a
+denominator.
 
 Favor a compact top-level composition. Tool Output exposes its per-tool
 breakdown for direct inspection; other aggregate breakdowns stay collapsed.

@@ -1,7 +1,7 @@
 /**
  * pi-context-view - inspect what occupies the model context.
  *
- * In TUI mode, structured capture publishes a snapshot of every request to
+ * Wherever Pi has a UI, structured capture publishes a snapshot of every request to
  * SnapshotStore, which keeps the latest one. Injections shows that request as it was sent;
  * Usage applies it to the current branch. Either view runs one on-demand
  * silent probe when opened before any request, unless configuration disables it. On a Pi version older than the
@@ -19,8 +19,8 @@ import {
 	reportCommandMessage,
 	reportCompactionInProgress,
 	reportConfigCreation,
-	reportTuiOnly,
 	reportUnsupportedPi,
+	reportViewUnavailable,
 	type RequestSnapshotResult,
 	resolveRequestSnapshot,
 } from "./command.ts";
@@ -56,14 +56,17 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 	const trigger = new ProbeTrigger({ pi, probe, snapshots, compaction });
 	const supported = isSupportedPiVersion(VERSION);
 
-	/** Open Injections on the latest request snapshot, or on the pi-native fallback without one. */
+	/**
+	 * Open Injections on the latest request snapshot, or on the pi-native fallback
+	 * without one. Resolves `false` when the host showed no view.
+	 */
 	async function openInjections(
 		ctx: ExtensionCommandContext,
 		latest: RequestSnapshotResult,
 		loadedConfig: ConfigLoadResult,
-	): Promise<void> {
+	): Promise<boolean> {
 		if (latest.type !== "snapshot") {
-			await showInjectionsView(ctx, {
+			return showInjectionsView(ctx, {
 				snapshot: buildFallbackInjectionsSnapshot({
 					systemPrompt: ctx.getSystemPrompt(),
 					options: ctx.getSystemPromptOptions(),
@@ -75,10 +78,9 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				probingDisabled: latest.type === "unprobed",
 				notices: loadedConfig.warnings,
 			});
-			return;
 		}
 		const snapshot = latest.snapshot;
-		await showInjectionsView(ctx, {
+		return showInjectionsView(ctx, {
 			snapshot: buildInjectionsSnapshot({
 				snapshot,
 				entries: ctx.sessionManager.getEntries(),
@@ -95,12 +97,15 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 		});
 	}
 
-	/** Open Usage on the current branch with the latest request snapshot's changes applied. */
+	/**
+	 * Open Usage on the current branch with the latest request snapshot's changes
+	 * applied. Resolves `false` when the host showed no view.
+	 */
 	async function openUsage(
 		ctx: ExtensionCommandContext,
 		latest: RequestSnapshotResult,
 		loadedConfig: ConfigLoadResult,
-	): Promise<void> {
+	): Promise<boolean> {
 		const { messages, branchMessages, systemChanges, forcedPrompt } = applyRequestSnapshot({
 			snapshot: latest.type === "snapshot" ? latest.snapshot : undefined,
 			entries: ctx.sessionManager.getEntries(),
@@ -117,7 +122,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			activeToolNames: pi.getActiveTools(),
 			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 		});
-		await showUsageView(ctx, {
+		return showUsageView(ctx, {
 			usage: computeUsage({
 				snapshot: current,
 				messages,
@@ -155,8 +160,10 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportConfigCreation(ctx, createDefaultConfigFile());
 				return;
 			}
-			if (ctx.mode !== "tui") {
-				reportTuiOnly(ctx, command.view);
+			// Pi's mode says nothing about hosts that render custom components outside
+			// its TUI; without any UI, no view can open
+			if (!ctx.hasUI) {
+				reportViewUnavailable(ctx, command.view);
 				return;
 			}
 			if (compaction.isActive) {
@@ -171,8 +178,11 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportCompactionInProgress(ctx, command.view);
 				return;
 			}
-			if (command.view === "injections") await openInjections(ctx, latest, loadedConfig);
-			else await openUsage(ctx, latest, loadedConfig);
+			const opened = command.view === "injections"
+				? await openInjections(ctx, latest, loadedConfig)
+				: await openUsage(ctx, latest, loadedConfig);
+			// Pi's RPC mode has a UI but returns from `custom()` without calling the factory
+			if (!opened) reportViewUnavailable(ctx, command.view);
 		},
 	});
 

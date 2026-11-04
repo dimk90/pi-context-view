@@ -6,12 +6,13 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { type AssistantMessage, type ImageContent, type Message, type TextContent, Type } from "@earendil-works/pi-ai";
+import { type AssistantMessage, type ImageContent, type Message, type TextContent } from "@earendil-works/pi-ai";
 import {
 	type AgentSession, createAgentSession, createCodemodeExtension, createMcpExtension, createToolSearchExtension,
-	DefaultResourceLoader, type ExtensionContext, type ExtensionFactory, type ExtensionUIContext, ModelRuntime, SessionManager,
+	DefaultResourceLoader, type ExtensionContext, type ExtensionFactory, ModelRuntime, SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 import registerExtension from "../src/index.ts";
 import { type GuardFinding, type RequestSnapshot, SnapshotStore } from "../src/snapshot.ts";
@@ -25,6 +26,7 @@ import payloadChanges, {
 } from "./fixtures/payload-changes.ts";
 import { type MockApi, type MockProvider, type MockReply, startMockProvider } from "./harness/mock-provider.ts";
 import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
+import { createUiContext } from "./harness/ui.ts";
 
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
 const MCP_SERVER = fileURLToPath(new URL("./fixtures/mcp-server.ts", import.meta.url));
@@ -141,7 +143,7 @@ for (const order of ["before", "after"] as const) {
 		});
 		await runtime.session.bindExtensions({
 			mode: "tui",
-			uiContext: { setWorkingVisible: () => undefined, custom: async () => undefined } as unknown as ExtensionUIContext,
+			uiContext: createUiContext(),
 		});
 		await runtime.session.prompt("/context injections");
 		await runtime.session.prompt("/context injections");
@@ -672,7 +674,9 @@ async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Prom
 	};
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
-	await session.bindExtensions({ mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); } });
+	await session.bindExtensions({
+		mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); }, uiContext: createUiContext(),
+	});
 	return {
 		session, provider, store, published,
 		model: (api, id = "vision") => {

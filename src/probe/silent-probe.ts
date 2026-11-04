@@ -335,7 +335,7 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 
 	pi.on("agent_settled", (_event, ctx) => {
 		if (!probe.isCurrentRun) return;
-		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
+		if (ctx.hasUI) ctx.ui.setWorkingVisible(true);
 		probe.settle();
 		persistIdentities();
 	});

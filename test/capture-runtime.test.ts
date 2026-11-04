@@ -14,13 +14,12 @@ import {
 	DefaultResourceLoader,
 	type ExtensionContext,
 	type ExtensionFactory,
-	type ExtensionUIContext,
 	ModelRuntime,
 	SessionManager,
 	SettingsManager,
-	type Theme,
 } from "@earendil-works/pi-coding-agent";
 
+import type { ContextView } from "../src/command.ts";
 import registerExtension from "../src/index.ts";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import { applyRequestSnapshot } from "../src/projection.ts";
@@ -30,6 +29,7 @@ import { SnapshotStore } from "../src/snapshot.ts";
 import { injectionsNotes, requestOriginLabel, type DescriptionNote } from "../src/ui/notes.ts";
 import { collectPreviewEntries, computeUsage } from "../src/usage.ts";
 import { containsBlock, createTheme, frameText, stripSgr } from "./harness/frame.ts";
+import { createUiContext, createView, type ViewFactory } from "./harness/ui.ts";
 import agentStartMessage, {
 	AGENT_START_MESSAGE_TEXT, AGENT_START_MESSAGE_TYPE,
 } from "./fixtures/agent-start-message.ts";
@@ -60,18 +60,15 @@ import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
 
 const PROVIDER = "capture-test";
 const NO_PAYLOAD = { status: "incomplete", reason: "No provider payload was observed for this request." };
-/** Leaves text unstyled, so rendered views read as plain lines. */
-const PLAIN_THEME = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as unknown as Theme;
-
-/** What a command passes to `ctx.ui.custom()` to open a view. */
-type ViewFactory = Parameters<ExtensionUIContext["custom"]>[0];
-
 /** Runtime options; defaults give one in-memory session on the `vision` model. */
 interface RuntimeOptions {
 	readonly factories: readonly ExtensionFactory[];
 	readonly sessionManager?: SessionManager;
 	readonly modelId?: "vision" | "text";
-	readonly mode?: "tui" | "rpc";
+	/** Pi's run mode; `print` binds no UI context, so `ctx.hasUI` is false. */
+	readonly mode?: "tui" | "rpc" | "print";
+	/** Replaces the view host's `custom()`; the default builds the view, as Pi's TUI does. */
+	readonly custom?: (factory: ViewFactory) => Promise<void>;
 	/** Enable automatic compaction, which also enables truncated-response recovery. */
 	readonly autoCompaction?: boolean;
 }
@@ -81,6 +78,8 @@ interface Runtime {
 	readonly session: AgentSession;
 	readonly published: RequestSnapshot[];
 	readonly errors: string[];
+	/** Messages the extension reported through `ctx.ui.notify()`. */
+	readonly notices: string[];
 	/**
 	 * Snapshots of captures after the deferred diff and guard settlement, latest
 	 * copy per ID. Real turns must compare completely without payload changes, unless
@@ -197,14 +196,39 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		}
 	});
 
-	test("capture publishes nothing outside TUI mode", async (t) => {
+	test("capture publishes nothing without a UI", async (t) => {
 		const provider = await startProvider(t);
-		const runtime = await createRuntime(t, provider, { factories: [contextAdd], mode: "rpc" });
+		const runtime = await createRuntime(t, provider, { factories: [contextAdd], mode: "print" });
 		await runtime.session.prompt("prompt");
 		assert.deepEqual(await runtime.settled(), []);
 		assert.deepEqual(runtime.errors, []);
 		assert.equal(provider.requests.length, 1, "the request proceeds");
 	});
+
+	test("in RPC mode, a host that renders custom components gets snapshots and views", async (t) => {
+		const provider = await startProvider(t);
+		const runtime = await createRuntime(t, provider, { factories: [contextAdd], mode: "rpc" });
+		await runtime.session.prompt("prompt");
+		const [snapshot] = await runtime.settled();
+		assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
+		await runtime.session.prompt("/context injections");
+		assert.ok(containsBlock(await runtime.renderView(), [requestOriginLabel()]));
+		assert.deepEqual(runtime.notices, []);
+		assert.deepEqual(runtime.errors, []);
+	});
+
+	for (const view of ["usage", "injections"] satisfies ContextView[]) {
+		test(`/context ${view} refuses the view when the host never calls the factory`, async (t) => {
+			const provider = await startProvider(t);
+			// As Pi's own RPC mode: `custom()` resolves without a view
+			const runtime = await createRuntime(t, provider, { factories: [], mode: "rpc", custom: async () => undefined });
+			await runtime.session.prompt(`/context ${view}`);
+			assert.equal(runtime.notices.length, 1, "one refusal replaces the view");
+			assert.ok(runtime.notices[0].startsWith(`/context ${view} `), "the refusal names the form typed");
+			assert.equal(provider.requests.length, 0, "the probe before the refusal makes no provider request");
+			assert.deepEqual(runtime.errors, []);
+		});
+	}
 });
 
 suite("structured edits", { concurrency: true }, () => {
@@ -632,26 +656,28 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
 	const errors: string[] = [];
+	const notices: string[] = [];
 	let viewFactory: ViewFactory | undefined;
 	await session.bindExtensions({
 		mode: options.mode ?? "tui",
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-		...(options.mode === "rpc" ? {} : {
-			uiContext: {
-				setWorkingVisible: () => undefined,
+		...(options.mode === "print" ? {} : {
+			uiContext: createUiContext({
+				notify: (message: string) => { notices.push(message); },
 				// Keep the view's factory for renderView(); the view closes at once
-				custom: async (factory: ViewFactory) => { viewFactory = factory; },
-				notify: () => undefined,
-			} as unknown as ExtensionUIContext,
+				custom: options.custom ?? (async (factory: ViewFactory) => {
+					viewFactory = factory;
+					await createView(factory);
+				}),
+			}),
 		}),
 	});
 	return {
-		session, published, errors,
+		session, published, errors, notices,
 		renderView: async () => {
 			const factory = viewFactory;
 			assert.ok(factory, "a view was opened");
-			const tui = { terminal: { rows: 60 }, requestRender: () => undefined } as unknown as Parameters<ViewFactory>[0];
-			const view = await factory(tui, PLAIN_THEME, undefined as unknown as Parameters<ViewFactory>[2], () => undefined);
+			const view = await createView(factory);
 			return view.render(120);
 		},
 		settled: async ({ payloadChanges = false } = {}) => {

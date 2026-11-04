@@ -12,7 +12,6 @@ import {
 	DefaultResourceLoader,
 	type ExtensionContext,
 	type ExtensionFactory,
-	type ExtensionUIContext,
 	ModelRuntime,
 	type SessionBoundaryDraft,
 	type SessionEntry,
@@ -27,6 +26,7 @@ import forcedPrompt from "./fixtures/forced-prompt.ts";
 import inputTransform from "./fixtures/input-transform.ts";
 import marker from "./fixtures/marker.ts";
 import { createIsolatedConfigStore, useSettings } from "./harness/settings.ts";
+import { createUiContext, createView, type ViewFactory } from "./harness/ui.ts";
 
 /** The extension under test, independent of the developer's own configuration file. */
 const registerExtension: ExtensionFactory = (pi) =>
@@ -110,9 +110,18 @@ async function createRuntime(t: TestContext, baseUrl: string, factories: Extensi
 	return session;
 }
 
-for (const position of ["before", "after"] as const) {
-	test(`the probe aborts, blanks and omits its entries with fixtures ${position}`, async (t) => {
+/**
+ * Hosts the probe runs under:
+ *   tui   Pi's TUI builds the view
+ *   rpc   Pi's RPC mode has a UI, but its `custom()` returns without calling the factory
+ */
+const PROBE_HOSTS = ["tui", "rpc"] as const;
+
+for (const [position, host] of ["before", "after"].flatMap((position) =>
+	PROBE_HOSTS.map((host) => [position, host] as const))) {
+	test(`the probe aborts, blanks and omits its entries with fixtures ${position} in ${host} mode`, async (t) => {
 		const provider = await startProvider(t);
+		const refusals: string[] = [];
 		const observed = { headers: 0, payloads: 0, responses: 0, contexts: 0, beforeSettle: 0, overlays: 0 };
 		const errors: string[] = [];
 		const stopReasons: Array<[string, string | undefined]> = [];
@@ -150,16 +159,22 @@ for (const position of ["before", "after"] as const) {
 		const ordered = position === "before" ? [...fixtures, registerExtension] : [registerExtension, ...fixtures];
 		const session = await createRuntime(t, provider.baseUrl, [sentinel, ...ordered]);
 		await session.bindExtensions({
-			mode: "tui",
+			mode: host,
 			onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-			uiContext: {
+			uiContext: createUiContext({
 				setWorkingVisible: (visible: boolean) => { visibility.push(visible); },
-				custom: async () => { observed.overlays++; },
-			} as unknown as ExtensionUIContext,
+				notify: (message: string) => { refusals.push(message); },
+				custom: async (factory: ViewFactory) => {
+					if (host === "tui")
+						await createView(factory);
+					observed.overlays++;
+				},
+			}),
 		});
 		await session.prompt("/context injections");
 		assert.deepEqual(errors, []);
 		assert.equal(observed.overlays, 1);
+		assert.equal(refusals.length, host === "tui" ? 0 : 1, "only a host that never builds the view refuses it");
 		assert.equal(observed.contexts, 1, "structured capture still runs after turn_start abort");
 		// The only abort form the probe blanks: Node.js AbortError text, before streaming
 		assert.deepEqual(stopReasons, [["error", "This operation was aborted"]],
@@ -297,10 +312,12 @@ test("a nested custom-message run fails the attempt and the probe still claims i
 	await session.bindExtensions({
 		mode: "tui",
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-		uiContext: {
-			setWorkingVisible: () => undefined,
-			custom: async () => { events.push("view"); },
-		} as unknown as ExtensionUIContext,
+		uiContext: createUiContext({
+			custom: async (factory: ViewFactory) => {
+				await createView(factory);
+				events.push("view");
+			},
+		}),
 	});
 
 	await session.prompt("/context injections");
@@ -505,14 +522,16 @@ async function probeWithNestedUserSend(t: TestContext, position: "before" | "aft
 	await session.bindExtensions({
 		mode: "tui",
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-		uiContext: {
-			setWorkingVisible: () => undefined,
+		uiContext: createUiContext({
 			notify: (message: string, type: string) => {
 				events.push(`notify: ${type}`);
 				warnings.push(message);
 			},
-			custom: async () => { events.push("view"); },
-		} as unknown as ExtensionUIContext,
+			custom: async (factory: ViewFactory) => {
+				await createView(factory);
+				events.push("view");
+			},
+		}),
 	});
 	await session.prompt("/context injections");
 	await bothSettled;
@@ -528,10 +547,7 @@ async function bindTui(session: AgentSession): Promise<string[]> {
 	await session.bindExtensions({
 		mode: "tui",
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
-		uiContext: {
-			setWorkingVisible: () => undefined,
-			custom: async () => undefined,
-		} as unknown as ExtensionUIContext,
+		uiContext: createUiContext(),
 	});
 	return errors;
 }
