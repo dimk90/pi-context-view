@@ -1,9 +1,15 @@
 # Changelog
 
-## Unreleased
+## [v0.8.3] - 04.11.2026
+
+Adds a toggle that shows category percentages of used context (thanks to @khoipm06),
+and opens the views in hosts like Pi Web (thanks to @agegr).
+
+### New
+* `[usage]` Add `p` to switch category percentages between context window and used context ([#19](https://github.com/dimk90/pi-context-view/pull/19) by @khoipm06).
 
 ### Changed
-* `[views]` Open the views in hosts that render `ctx.ui.custom()` outside TUI mode.
+* `[views]` Open the views in hosts that render `ctx.ui.custom()` outside TUI mode, like Pi Web ([#21](https://github.com/dimk90/pi-context-view/pull/21) by @agegr).
 
 
 ## `[v0.8.2]` - 31.10.2026
