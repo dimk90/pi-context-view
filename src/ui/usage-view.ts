@@ -56,6 +56,7 @@ import {
 } from "./layout.ts";
 import { forcedMarker } from "./markers.ts";
 import { descriptionNoteLines, emptyPreviewNote, probingDisabledNote, thinkingNote, usageNote } from "./notes.ts";
+import { showOverlayView } from "./overlay.ts";
 import {
 	isSearchNavigationKey,
 	matchStepDirection,
@@ -211,31 +212,9 @@ interface ContentSearchLines {
  * Open the Usage view as a fullscreen overlay. Resolves `false` when the host
  * never called the factory: Pi's RPC mode returns from `custom()` without a view.
  */
-export async function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<boolean> {
-	let opened = false;
-	await context.ui.custom<void>(
-		(tui, theme, _keybindings, done) => {
-			opened = true;
-			const view = new UsageView(theme, input, done, () => tui.terminal.rows, {
-				refresh: () => tui.requestRender(),
-			});
-			return {
-				render: (width: number) => view.render(width),
-				invalidate: () => view.invalidate(),
-				dispose: () => view.dispose(),
-				handleInput: (data: string) => {
-					view.handleInput(data);
-					tui.requestRender();
-				},
-				handleMouse: (event: TuiMouseEvent) => view.handleMouse(event),
-			};
-		},
-		{
-			overlay: true,
-			overlayOptions: { width: "100%", maxHeight: "100%", margin: 0 },
-		},
-	);
-	return opened;
+export function showUsageView(context: ExtensionCommandContext, input: UsageViewInput): Promise<boolean> {
+	return showOverlayView(context, (theme, done, getTerminalRows, actions) =>
+		new UsageView(theme, input, done, getTerminalRows, actions));
 }
 
 /** Exported for direct render/input tests; use showUsageView from pi code. */
