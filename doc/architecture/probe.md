@@ -330,7 +330,8 @@ Before starting or consuming an attempt, use the fallback when:
 - compaction is active or `ctx.hasPendingMessages()` reports queued input;
 - the selected model is virtual (`api: "pi-virtual"`), since routing can make
   classifier calls or fail before capture;
-- idle cache warming is enabled, since its refresh uses a separate abort signal;
+- idle cache warming may still be warming an earlier request
+  ([idle warming](#idle-cache-warming));
 - known context usage exceeds `contextWindow - reserveTokens` while automatic
   compaction is enabled, using Pi's `shouldCompact()` and per-model settings;
 - Pi settings cannot be checked safely.
@@ -339,18 +340,42 @@ Compaction settings come from `pi.getSettings()`, so runtime changes apply; the
 Usage map's auto-compaction reserve reads the same source. The warming check
 also reads global settings with project settings disabled: Pi's warming mode is
 global-only, but the merged API can hide it under an ignored project override.
-An idle value in either source triggers fallback. Extensions cannot see an SDK
-host's custom agent directory, so this file read uses Pi's default directory,
-which honors `PI_CODING_AGENT_DIR`; an unsaved runtime warming change hidden by
-a project override is also missed. Never write or change Pi settings to make a
+An idle value in either source enables the live-run check of
+[idle warming](#idle-cache-warming). Extensions cannot see an SDK host's custom
+agent directory, so this file read uses Pi's default directory, which honors
+`PI_CODING_AGENT_DIR`; an unsaved runtime warming change hidden by a project
+override is also missed. Never write or change Pi settings to make a
 probe possible.
+
+### Idle Cache Warming
+
+Idle warming is Pi's default since 1.5.1. Pi's stream function starts a warm
+run for every session request, the probe's included, and that replaces the
+warm run of the last real request. The warm run has its own abort signal, so
+aborting the probe does not stop it:
+
+- **The probe's own warm run** ends at once. Pi refreshes only while the
+  current messages still start with the request's messages, and omitting the
+  probe at `turn_end` breaks that. Pi reports "conversation context changed"
+  and never sends the refresh.
+- **A live warm run of a real request** is cancelled, and its cache can then
+  expire. The next real request may pay a full cache write. This happens when
+  the store is empty while the session still warms, for example after
+  `/reload`, which keeps the session and its warmer.
+
+Extensions cannot read the warmer's state, so with idle warming the trigger
+falls back while a warm run may be live: the selected model has `promptCache`
+lifetimes and the newest assistant message on the branch is younger than Pi's
+idle limit `CACHE_WARMING_MAX_IDLE_AGE_MS` (30 minutes). That message never
+precedes its request's warm run. The check is conservative: it also falls back
+after a restart or session switch, whose warmer starts empty, and when Pi has
+already stopped warming for cost reasons.
 
 These are conservative checks, not a lock on Pi or other extensions. Unknown
 usage does not block probing; pre-prompt overflow recovery, hidden `nextTurn`
 messages (not reported by `hasPendingMessages()`), later model or settings
-changes, and arbitrary extension side effects remain possible. Default
-`streaming` warming remains enabled in Pi and stops on settlement; slow
-handlers or other extensions can still affect it. The nested-send ownership
+changes, and arbitrary extension side effects remain possible. Slow handlers
+or other extensions can still affect cache warming. The nested-send ownership
 limitation also remains. Strict zero-provider-request guarantees require
 passive capture.
 
@@ -396,10 +421,10 @@ Usage repeatedly:
 - Pi's pre-prompt compaction check runs before `before_agent_start` and can
   start auto-compaction, which sends a summary request. The context-usage
   precondition approximates Pi's threshold check; it cannot predict every case.
-- The agent stream function starts warming bookkeeping and cancels the warm run
-  of the last real request. Default `streaming` warming stops at settlement;
-  the trigger skips idle warming. Slow handlers, later settings changes, and
-  other extensions can still affect this path.
+- The agent stream function starts a warm run for the probe's request and
+  cancels the warm run of the last real request. The probe's own warm run
+  never sends a refresh ([idle warming](#idle-cache-warming)). Slow handlers,
+  later settings changes, and other extensions can still affect this path.
 - A `context_edit` makes Pi distrust earlier reported usage, so its next
   pre-prompt compaction check and `getContextUsage()` estimate the context size
   until a later response reports usage again.

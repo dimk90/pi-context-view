@@ -210,8 +210,8 @@ relaxation of those goals.
   and only its own prompt and aborts are blanked. Every other run and message
   proceeds untouched, because it may belong to the user or another extension.
 - Active compaction refuses both views. Reported pending messages, virtual
-  models, idle warming, excessive known context usage, or unreadable settings
-  use fallback. Neither consumes the probe attempt.
+  models, an idle warm run that may still be live, excessive known context
+  usage, or unreadable settings use fallback. Neither consumes the probe attempt.
 - Genuine messages and genuine aborts remain visible.
 - Synthetic probe entries never reach later model contexts or Usage, including
   after resume, reload, or fork.

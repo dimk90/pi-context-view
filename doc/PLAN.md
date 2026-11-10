@@ -20,10 +20,15 @@
     - `test/probe-runtime.test.ts`: "messages sent while the probe run starts stay visible with the sender
       before/after" (2).
 
-- [ ] **Idle cache warming is now Pi's default** (`cacheWarming: "idle"` since Pi 1.5.1):
+- [x] **Idle cache warming is now Pi's default** (`cacheWarming: "idle"` since Pi 1.5.1):
   - The probe is refused with `idle-warming` on a default Pi install, so the fallback is now the normal path.
   - Revisit whether the probe can run safely with idle warming on (its refresh uses a separate abort signal).
   - If not, decide how the views and README explain the fallback.
+  - Found: the probe's own warm run ends at once (the omission changes the context) and sends nothing,
+    but the probe cancels a live warm run of the last real request, for example after `/reload`.
+  - Decided: fall back only while a warm run may be live: the model has `promptCache` and the newest
+    assistant message is younger than Pi's 30-minute idle limit. "Idle Cache Warming" in
+    `doc/architecture/probe.md`.
   - Fix the tests that relied on the old `"streaming"` default; they now get `idle-warming` from empty
     settings or from the global settings read. Failing tests (15):
     - `test/command.test.ts`: "resolveRequestSnapshot sends the synthetic prompt inside the probe token scope".

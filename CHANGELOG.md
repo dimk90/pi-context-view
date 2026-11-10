@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+* `[probe]` Probe under Pi's default idle cache warming unless a warm run may be live.
+
 ### Fixed
 * `[probe]` Hide the "Operation aborted" row the probe left after `/context` since Pi 1.5.1.
 

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
-import { type ExtensionAPI, type ExtensionCommandContext, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { CACHE_WARMING_MAX_IDLE_AGE_MS } from "@earendil-works/pi-ai";
+import {
+	type ExtensionAPI, type ExtensionCommandContext, type SessionEntry, SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 
 import { CompactionState } from "../src/compaction.ts";
 import type { ProbeFailureCause } from "../src/probe/failure.ts";
@@ -15,7 +18,11 @@ import { useSettings } from "./harness/settings.ts";
 /** Settings accepted by Pi's in-memory manager. */
 type Settings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
 
-/** A safe idle command context; a send ends immediately instead of running an agent. */
+/**
+ * A safe idle command context; a send ends immediately instead of running an
+ * agent. Its model has no prompt-cache lifetimes and its branch is empty, so
+ * Pi's default idle warming cannot have a live warm run.
+ */
 function createHarness(settings: Settings = {}) {
 	const probe = new SilentProbe(new ProbeFilter());
 	const sent: string[] = [];
@@ -32,6 +39,7 @@ function createHarness(settings: Settings = {}) {
 		cwd: `/probe-guards/${randomUUID()}`,
 		model: { provider: "test", id: "model", api: "openai-completions", contextWindow: 100_000 },
 		modelRegistry: { hasConfiguredAuth: () => true },
+		sessionManager: { getBranch: () => [] },
 		hasPendingMessages: () => false,
 		getContextUsage: () => ({ tokens: 0, contextWindow: 100_000, percent: 0 }),
 		waitForIdle: async () => undefined,
@@ -39,6 +47,17 @@ function createHarness(settings: Settings = {}) {
 	} as unknown as ExtensionCommandContext;
 	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction: new CompactionState() });
 	return { context, probe, trigger, sent, visibility };
+}
+
+/**
+ * Let Pi's idle warming have a live warm run: the model gets prompt-cache
+ * lifetimes, and the branch ends with an assistant message `ageMs` old.
+ */
+function allowLiveWarmRun(harness: ReturnType<typeof createHarness>, ageMs = 0): void {
+	assert.ok(harness.context.model);
+	harness.context.model.promptCache = { short: 300 };
+	const branch = [{ type: "message", message: { role: "assistant", timestamp: Date.now() - ageMs } }];
+	harness.context.sessionManager.getBranch = () => branch as unknown as SessionEntry[];
 }
 
 /** Ask the trigger for a probe as a consumer would. */
@@ -84,11 +103,14 @@ test("probe guards distinguish a missing model from missing authentication", asy
 });
 
 test("probe guards reject idle warming from the live settings snapshot", async () => {
-	await assertSkipped(createHarness({ cacheWarming: "idle" }), "idle-warming");
+	const harness = createHarness({ cacheWarming: "idle" });
+	allowLiveWarmRun(harness, CACHE_WARMING_MAX_IDLE_AGE_MS - 60_000);
+	await assertSkipped(harness, "idle-warming");
 });
 
 test("a project warming override cannot hide the global idle setting", async (t) => {
 	const harness = createHarness({ cacheWarming: "off" });
+	allowLiveWarmRun(harness);
 	useSettings(t, harness.context.cwd, (_cwd, _agentDir, options) => {
 		assert.equal(options?.projectTrusted, false);
 		return SettingsManager.inMemory({ cacheWarming: "idle" });
@@ -116,7 +138,8 @@ test("probe guards fail closed on invalid compaction settings", async () => {
 });
 
 test("probe guards fail closed on unreadable global warming settings without exposing the error", async (t) => {
-	const harness = createHarness();
+	// A live idle value would make reading the global file unnecessary
+	const harness = createHarness({ cacheWarming: "off" });
 	useSettings(t, harness.context.cwd, () => { throw new Error("sensitive file contents"); });
 	await assertSkipped(harness, "settings");
 });
@@ -137,12 +160,30 @@ for (const scenario of [
 	});
 }
 
+for (const scenario of [
+	{ name: "a model without prompt-cache lifetimes", promptCache: undefined, branch: "recent" },
+	{ name: "a branch without assistant messages", promptCache: { short: 300 }, branch: "empty" },
+	{ name: "a last request past Pi's idle warming limit", promptCache: { short: 300 }, branch: "expired" },
+] as const) {
+	test(`probe guards allow idle warming with ${scenario.name}`, async () => {
+		const harness = createHarness({ cacheWarming: "idle" });
+		if (scenario.branch !== "empty") {
+			allowLiveWarmRun(harness, scenario.branch === "expired" ? CACHE_WARMING_MAX_IDLE_AGE_MS : 0);
+		}
+		assert.ok(harness.context.model);
+		harness.context.model.promptCache = scenario.promptCache;
+		await resolve(harness);
+		assert.deepEqual(harness.sent, [""]);
+	});
+}
+
 test("clearing a guard allows the still-unused probe attempt", async () => {
-	const settings: Settings = { cacheWarming: "idle" };
-	const harness = createHarness(settings);
+	const harness = createHarness({ cacheWarming: "idle" });
+	allowLiveWarmRun(harness);
 	await resolve(harness);
 	assert.deepEqual(harness.sent, []);
-	settings.cacheWarming = "off";
+	assert.ok(harness.context.model);
+	harness.context.model.promptCache = undefined;
 	await resolve(harness);
 	assert.deepEqual(harness.sent, [""]);
 });

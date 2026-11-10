@@ -352,6 +352,16 @@ for (const api of ["openai-completions", "openai-responses"] as const) {
 	});
 }
 
+test("idle warming: a probe without a live warm run ends its own warm run and stays provider-free", async (t) => {
+	const runtime = await createRuntime(t, { warming: true, before: [cacheWarm], settings: { cacheWarming: "idle" } });
+	await runtime.session.prompt("/context injections");
+	const [snapshot] = await runtime.snapshots();
+	assert.equal(snapshot.origin, "synthetic-probe");
+	// Omitting the probe changes the context, so Pi never refreshes the probe's request
+	assert.deepEqual(runtime.session.cacheWarmingStatus, { state: "inactive", reason: "conversation context changed" });
+	assert.equal(runtime.provider.requests.length, 0);
+});
+
 // ============================================================================
 // Message channel
 // ============================================================================
