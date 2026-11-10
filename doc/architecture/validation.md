@@ -150,7 +150,7 @@ rules in [UI.md](../UI.md) without freezing incidental copy or layout values:
 - Navigation through overflow, previews, and tall blocks; selection and viewport
   restoration on return; keyboard aliases and fullscreen wheel behavior.
 - Whole-block description collapse and restoration, with essential capture
-  status, degraded reasons, totals, and selected-row details still available.
+  status, configuration notices, totals, and selected-row details still available.
 - Both map scales, unavailable denominators, oversized configured geometry,
   legend accessibility, and controls that disappear with their unavailable action.
 - Theme and view-state invalidation, safe text rendering, and no raw content

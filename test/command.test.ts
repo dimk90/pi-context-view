@@ -16,7 +16,6 @@ import {
 } from "../src/command.ts";
 import { CompactionState } from "../src/compaction.ts";
 import { MIN_PI_VERSION } from "../src/pi-version.ts";
-import { probeFailure } from "../src/probe/failure.ts";
 import { ProbeFilter } from "../src/probe/filter.ts";
 import { SilentProbe } from "../src/probe/silent-probe.ts";
 import { ProbeTrigger } from "../src/probe/trigger.ts";
@@ -168,7 +167,6 @@ test("resolveRequestSnapshot sends the synthetic prompt inside the probe token s
 		"the send must carry this attempt's token");
 	assert.equal(readProbeToken(), undefined, "the token must not outlive the send");
 	assert.equal(result.type, "missing");
-	assert.ok(result.type === "missing" && result.degradedReason.includes("No agent run in this harness."));
 });
 
 test("resolveRequestSnapshot skips the probe when compaction starts while waiting for idle", async () => {
@@ -196,7 +194,6 @@ test("resolveRequestSnapshot skips the probe when compaction starts while waitin
 	assert.equal(waitedForIdle, true);
 	assert.equal(sentUserMessages, 0);
 	assert.equal(result.type, "missing");
-	assert.ok(result.type === "missing" && result.degradedReason.includes(probeFailure("compaction").reason));
 
 	const unusedAttempt = probe.start(1_000);
 	assert.equal(unusedAttempt.started, true, "skipping compaction must not consume the runtime's probe attempt");
@@ -255,7 +252,6 @@ test("resolveRequestSnapshot asks ProbeTrigger once the store is empty and repor
 	const missing = await resolveRequestSnapshot(store, failing, context, true);
 	assert.equal(probed, 1);
 	assert.equal(missing.type, "missing");
-	assert.ok(missing.type === "missing" && missing.degradedReason.includes("fixture-probe-failure"));
 
 	const capturing = {
 		request: async () => {

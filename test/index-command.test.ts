@@ -99,7 +99,7 @@ for (const view of ["usage", "injections"] satisfies ContextView[]) {
 
 		await extension.runCommand(view, context);
 
-		assert.deepEqual(notified, [refusal], "the refusal replaces the degraded fallback");
+		assert.deepEqual(notified, [refusal], "the refusal replaces the fallback");
 		assert.equal(opened(), false);
 		assert.equal(extension.sentUserMessages(), 0, "no probe starts during compaction");
 	});

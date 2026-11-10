@@ -26,8 +26,7 @@ If the store holds a snapshot, neither view needs a probe. Either view can
 request the shared one automatic attempt when the store is empty, unless the
 `autoProbing` setting is `false`: then the command resolves to `unprobed`
 without asking ProbeTrigger. Both views open the fallback with a description
-note instead of a degraded reason, because nothing failed; a captured real
-request still replaces it. Never probe
+note, because nothing failed; a captured real request still replaces it. Never probe
 in the background or repeat it on every view open: a probe runs other
 extensions' handlers ([side effects](#side-effects)).
 
@@ -357,11 +356,11 @@ passive capture.
 
 Any skipped precondition above, a missing model, missing authentication, a
 startup failure, a timeout, a nested send, or a probe that settles without a
-request snapshot reports a precise reason that extension additions were not
-observed. Each failure also carries a typed cause from `src/probe/failure.ts`;
-callers and tests branch on the cause, while the reason is display text.
-Injections then shows a current prompt/tool snapshot; Usage counts the current
-branch without request changes. Neither fallback enters the store.
+request snapshot reports a precise reason. Each failure also carries a typed cause from `src/probe/failure.ts`;
+callers and tests branch on the cause, while the reason is diagnostic text
+that neither view shows.
+Injections then shows a current prompt/tool snapshot with a description note;
+Usage counts the current branch without request changes and shows nothing. Neither fallback enters the store.
 
 Pi does not tell the probe that its run never started. `pi.sendUserMessage()`
 returns nothing: Pi catches a rejected send and reports it as an extension

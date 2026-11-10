@@ -36,6 +36,8 @@
       "shares one attempt between concurrent and later callers", "fails when the probe settles without a
       snapshot", "reports the probe's own failure" (4).
 
+# v0.8.5
+
 - [ ] **Recheck `doc/architecture/pi-requests.md` against Pi 1.5.2**:
   - The page says it was last checked in full against Pi `1.3.0`.
   - Follow "After a Pi Upgrade" in `doc/architecture/validation.md`, then update the version in that note.
@@ -61,7 +63,6 @@
     aborted and sanitized.
   - Add a failure cause of its own, for example `no-run`, so the reason is not `timeout`.
   - Upstream: ask Pi to return the send's promise or result from `pi.sendUserMessage()`.
-
 
 # v0.9.0
 

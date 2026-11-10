@@ -16,7 +16,7 @@ snapshot without another run. ProbeTrigger resolves with a status only; the
 command then reads the store again ([probe lifecycle](probe.md#probe-lifecycle)).
 
 A failed or skipped probe leaves the store empty: the view opens on Pi's
-current data with a degraded reason, and the fallback never enters the store.
+current data without showing the reason, and the fallback never enters the store.
 While compaction is active, both views refuse to open; the command checks
 before and after resolving ([preconditions](probe.md#preconditions-failures-and-fallback)).
 The command also refuses both views without a UI (`ctx.hasUI`). With one, it
@@ -99,7 +99,7 @@ base, from a word-level comparison in `src/token-diff.ts`:
 - **Payload changes.** A finding compares the lines the payload added with
   the lines it removed.
 
-A branch without recorded system state and the degraded fallback compare the
+A branch without recorded system state and the fallback compare the
 live prompt with itself, so only extension text shows.
 [Measurement](measurement.md#token-diffs) owns diff reconciliation and limits.
 
@@ -298,7 +298,7 @@ the changes only until the first real request's snapshot replaces it.
   Usage, just as other payload changes do not.
 
 Without a snapshot, after a failed or skipped probe, Usage counts the current
-branch alone and shows the degraded reason. Session-backed custom messages
+branch alone and shows no notice. Session-backed custom messages
 count from the current branch once. `computeUsage()` skips system messages
 because the prompt/tool snapshot already accounts for them.
 

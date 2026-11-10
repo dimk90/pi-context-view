@@ -112,7 +112,7 @@ export function buildInjectionsSnapshot(input: InjectionsInput): InjectionSnapsh
 }
 
 /**
- * The degraded fallback without a request snapshot: the live prompt and tools,
+ * The fallback without a request snapshot: the live prompt and tools,
  * compared with pi's default prompt like a captured request.
  */
 export function buildFallbackInjectionsSnapshot(input: NativeSnapshotInput): InjectionSnapshot {

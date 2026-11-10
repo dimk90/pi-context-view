@@ -63,7 +63,7 @@ or ellipsize it. Restore the block when space returns. Long lists and previews
 must still be able to show explanations without requiring all content to fit.
 
 Do not collapse important status with these descriptions. Capture limitations,
-degraded reasons, configuration problems, and the Injections total and selected
+configuration problems, and the Injections total and selected
 row's status must remain discoverable. Per-view pages define what stays visible
 and what can yield on small terminals. Notices belong inside an open overlay,
 not in notifications it would hide.

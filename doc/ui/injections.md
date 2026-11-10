@@ -15,11 +15,12 @@ origin recognizable even when optional explanations collapse.
 Distinguish pending, unchecked, and partially checked payload comparisons from
 a completed comparison. No findings from an incomplete check must never imply
 that the payload matched. Explain an incomplete check and its reason only as a
-description note; the header shows no payload status. A degraded fallback also
-needs its precise reason visible, not only a generic warning. Configuration
-problems follow it in a bounded notice block that makes omitted notices
-apparent; the degraded reason itself is never cut. Disabled probing is an expected state, not a degradation:
-explain it only as a description note.
+description note; the header shows no payload status. Configuration
+problems appear in a bounded notice block that makes omitted notices apparent.
+A fallback without a request, after a failed or skipped probe or with probing
+disabled, is not a problem to warn about: explain only as a description note
+that request-only injections are not visible. Do not show the probe's failure
+reason.
 
 The view describes one request, not the whole session or necessarily the last
 user prompt. Do not blur this distinction with Usage's current-branch estimate.
@@ -89,8 +90,8 @@ the explanation; returning from a preview restores it. The area keeps the height
 of the tallest row's details, so moving the selection never resizes the tree.
 
 This area and the total take priority over optional descriptions. On short
-terminals, reduce decoration before sacrificing capture status, the degraded
-reason, the selected row, the total, or its explanation. Restore the normal
+terminals, reduce decoration before sacrificing capture status, configuration
+notices, the selected row, the total, or its explanation. Restore the normal
 frame when space returns. If narrow rows omit diff columns or markers, the
 selected-row explanation must still make their meaning available.
 

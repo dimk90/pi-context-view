@@ -13,9 +13,10 @@ indication when the total is estimated or unavailable.
 
 Model identity is secondary to the summary and active map scale. Narrow layouts
 may omit it or stack metadata rather than abbreviating it ambiguously. Show
-degraded-capture and configuration problems inside the overlay; bounded notice
-blocks must make omitted notices apparent. Disabled probing is not a problem:
-explain it in the description, not as a notice.
+configuration problems inside the overlay; bounded notice blocks must make
+omitted notices apparent. A failed or skipped probe needs no notice or note.
+Disabled probing is not a problem: explain it in the description, not as a
+notice.
 
 ## Context map
 

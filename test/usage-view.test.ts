@@ -262,8 +262,8 @@ test("UsageView renders sanitized notices above the dashboard and caps the block
 		createTheme(),
 		{
 			usage: usage(),
-			degradedReason: "Silent probe unavailable: no model is selected.",
 			notices: [
+				"Ignoring unknown pi-context-view.json key \"mapSize\".",
 				"Ignoring unknown pi-context-view.json key \u001b[31m\"evil\"\u001b[0m.",
 				"Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.",
 				"Ignoring unknown pi-context-view.json key \"mapColor\".",
@@ -276,7 +276,7 @@ test("UsageView renders sanitized notices above the dashboard and caps the block
 	const plain = lines.map(stripSgr);
 
 	assert.equal(lines.length, 34);
-	assert.equal(plain[4], "  Silent probe unavailable: no model is selected.");
+	assert.equal(plain[4], "  Ignoring unknown pi-context-view.json key \"mapSize\".");
 	assert.equal(plain[5], "  Ignoring unknown pi-context-view.json key \"evil\".");
 	assert.equal(plain[6], "  … +2 more");
 	assert.equal(plain[7], "", "a blank row separates the notices from the dashboard");
@@ -1744,8 +1744,8 @@ test("UsageView hides model metadata instead of abbreviating it", () => {
 test("UsageView respects width and height changes", () => {
 	// Tall enough for the detailed map key to survive beside the complete legend at width 60
 	let rows = 36;
-	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
-	const view = createView(createTheme(), { usage: usage(), degradedReason: reason }, () => {}, () => rows);
+	const notice = "Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.";
+	const view = createView(createTheme(), { usage: usage(), notices: [notice] }, () => {}, () => rows);
 
 	for (const width of [24, 40, 60, 80, 120]) {
 		for (const line of view.render(width)) {

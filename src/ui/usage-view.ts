@@ -114,7 +114,6 @@ const MAP_KEY_COMPACT_SPARE_ROWS = 2;
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
 	readonly usage: ContextUsageSnapshot;
-	readonly degradedReason?: string;
 	/** True when no request was captured yet and configuration disables the silent probe. */
 	readonly probingDisabled?: boolean;
 	/** Non-fatal problems shown under the header, such as ignored configuration entries. */
@@ -847,13 +846,11 @@ export class UsageView {
 	}
 
 	/**
-	 * Wrapped notices placed above the dashboard: the degraded-capture reason
-	 * first, then configuration problems. Capped so a broken configuration file
-	 * cannot push the map and legend off the frame.
+	 * Wrapped configuration problems placed above the dashboard. Capped so a
+	 * broken configuration file cannot push the map and legend off the frame.
 	 */
 	private noticeLines(width: number): string[] {
-		const degraded = this.input.degradedReason === undefined ? [] : [this.input.degradedReason];
-		const blocks = [...degraded, ...this.input.notices ?? []]
+		const blocks = (this.input.notices ?? [])
 			.map((notice) => this.wrapNotice(notice, width));
 		return capNoticeLines(blocks, MAX_NOTICE_LINES, (notice) => this.wrapNotice(notice, width));
 	}

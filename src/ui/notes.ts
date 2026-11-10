@@ -12,13 +12,14 @@ export type PayloadCheck = "pending" | "unchecked" | "partial";
 
 /** A note's identity survives copy changes; text may contain theme styling, never raw content. */
 export interface DescriptionNote {
-	readonly kind: "overview" | "degraded" | "probe" | "probing-disabled" | "payload-check" | "hidden-tools" | "payload-changes" | "thinking" | "empty";
+	readonly kind: "overview" | "request-missing" | "probe" | "probing-disabled" | "payload-check" | "hidden-tools" | "payload-changes" | "thinking" | "empty";
 	readonly text: string;
 }
 
 /** Capture metadata that can be explained without opening raw content. */
 export interface InjectionsNotesInput {
-	readonly degradedReason?: string;
+	/** True when no request was captured yet because the silent probe was skipped or failed. */
+	readonly requestMissing?: boolean;
 	readonly probe?: boolean;
 	/** True when no request was captured yet and configuration disables the silent probe. */
 	readonly probingDisabled?: boolean;
@@ -42,9 +43,7 @@ export function requestOriginLabel(probe = false): string {
 /** Build optional notes in presentation order, with dynamic metadata sanitized before styling. */
 export function injectionsNotes(theme: Theme, input: InjectionsNotesInput): DescriptionNote[] {
 	const notes: DescriptionNote[] = [{ kind: "overview", text: "Injections into the model context, with token estimates." }];
-	if (input.degradedReason !== undefined) {
-		notes.push({ kind: "degraded", text: theme.fg("warning", "Degraded") + theme.fg("dim", ": pi-native fallback used") });
-	}
+	if (input.requestMissing === true) notes.push(requestMissingNote(theme));
 	if (input.probingDisabled === true) notes.push(probingDisabledNote(theme));
 	if (input.probe === true) {
 		notes.push({ kind: "probe", text: `Captured by a ${theme.fg("warning", "request probe")}` + theme.fg(
@@ -75,6 +74,13 @@ export function findingNotes(items: readonly InjectionItem[]): DescriptionNote[]
 		: [];
 }
 
+/** Explain what Injections misses when it opens before any request was captured. */
+function requestMissingNote(theme: Theme): DescriptionNote {
+	return { kind: "request-missing", text: `${theme.fg("warning", "No request")}` + theme.fg(
+		"dim", " is observed yet. Request-only injections are not visible before the first prompt.",
+	) };
+}
+
 /** Explain what a view opened before the first request misses while the silent probe is disabled. */
 export function probingDisabledNote(theme: Theme): DescriptionNote {
 	return { kind: "probing-disabled", text: `${theme.fg("warning", "Request probing")}` + theme.fg(
@@ -103,7 +109,7 @@ export function emptyPreviewNote(): DescriptionNote {
 
 /** Wrap a complete note; the caller decides whether the whole block fits. */
 export function descriptionNoteLines(theme: Theme, note: DescriptionNote, width: number): string[] {
-	return note.kind === "overview" || note.kind === "degraded" || note.kind === "thinking" || note.kind === "empty"
+	return note.kind === "overview" || note.kind === "thinking" || note.kind === "empty"
 		? wrapDescriptionLines(theme, note.text, "dim", width)
 		: noteBulletLines(theme, note.text, width);
 }
