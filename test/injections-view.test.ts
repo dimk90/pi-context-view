@@ -74,13 +74,13 @@ function snapshot(itemsPerGroup: number): InjectionSnapshot {
 
 function createView(
 	itemsPerGroup = 8,
-	degradedReason?: string,
+	notice?: string,
 	getTerminalRows: () => number = () => 24,
 	actions?: CopyActions,
 ): InjectionsView {
 	return new InjectionsView(
 		createTheme(),
-		{ snapshot: snapshot(itemsPerGroup), degradedReason },
+		{ snapshot: snapshot(itemsPerGroup), notices: notice === undefined ? undefined : [notice] },
 		() => {},
 		getTerminalRows,
 		actions,
@@ -443,27 +443,24 @@ test("InjectionsView wraps complete descriptions and restores them after collaps
 	}
 });
 
-test("InjectionsView keeps the precise degraded reason and wraps its optional explanation", () => {
-	const reason = "fixture-degraded-reason with enough words to wrap";
-	const view = createView(4, `${reason}\u001b[2J`, () => 100);
+test("InjectionsView explains a missing request only as a description note, without top warnings", () => {
+	const view = new InjectionsView(createTheme(), { snapshot: snapshot(4), requestMissing: true }, () => {}, () => 100);
+	const unwarned = createView(4, undefined, () => 100);
 	for (const width of [24, 40, 80, 120]) {
 		const lines = view.render(width);
 		assertFrame(lines, width, 100);
-		assert.ok(containsBlock(lines, [reason]));
-		assert.ok(containsBlock(lines, noteLines("degraded", width, { degradedReason: reason })));
-		assert.doesNotMatch(lines.join("\n"), /\u001b\[2J/);
+		assert.ok(containsBlock(lines, noteLines("request-missing", width, { requestMissing: true })));
+		// No warning block: the list starts right after the header's blank row
+		assert.deepEqual(lines.slice(0, 6), unwarned.render(width).slice(0, 6));
 	}
-	assert.ok(!containsBlock(createView(4, undefined, () => 100).render(120),
-		noteLines("degraded", 120, { degradedReason: reason })));
+	assert.ok(!containsBlock(unwarned.render(120), noteLines("request-missing", 120, { requestMissing: true })));
 });
 
-test("InjectionsView shows sanitized configuration notices after the degraded reason and caps them", () => {
-	const reason = "fixture-degraded-reason";
+test("InjectionsView shows sanitized configuration notices and caps them", () => {
 	const view = new InjectionsView(
 		createTheme(),
 		{
 			snapshot: snapshot(4),
-			degradedReason: reason,
 			notices: [
 				"fixture-notice-1 \u001b[31mred\u001b[0m",
 				"fixture-notice-2",
@@ -478,20 +475,20 @@ test("InjectionsView shows sanitized configuration notices after the degraded re
 	const plain = lines.map((line) => stripSgr(line).trim());
 	assertFrame(lines, 80, 40);
 
-	const reasonIndex = plain.indexOf(reason);
-	assert.notEqual(reasonIndex, -1);
-	assert.deepEqual(plain.slice(reasonIndex + 1, reasonIndex + 3), ["fixture-notice-1 red", "fixture-notice-2"]);
+	const noticeIndex = plain.indexOf("fixture-notice-1 red");
+	assert.notEqual(noticeIndex, -1);
+	assert.equal(plain[noticeIndex + 1], "fixture-notice-2");
 	// The third notice row reports the overflow instead of a notice; a blank row closes the block
-	assert.notEqual(plain[reasonIndex + 3], "");
+	assert.notEqual(plain[noticeIndex + 2], "");
 	assert.ok(!plain.some((line) => line.includes("fixture-notice-3") || line.includes("fixture-notice-4")));
-	assert.equal(plain[reasonIndex + 4], "");
+	assert.equal(plain[noticeIndex + 3], "");
 	assert.doesNotMatch(lines.join("\n"), /\u001b\[31m/);
 });
 
 test("InjectionsView separates top warnings from the list with a blank row", () => {
-	const view = createView(4, "fixture-degraded-reason", () => 40);
+	const view = createView(4, "fixture-notice", () => 40);
 	const plain = view.render(80).map((line) => stripSgr(line).trim());
-	const reasonIndex = plain.indexOf("fixture-degraded-reason");
+	const reasonIndex = plain.indexOf("fixture-notice");
 	assert.notEqual(reasonIndex, -1);
 	assert.equal(plain[reasonIndex + 1], "");
 	assert.notEqual(plain[reasonIndex + 2], "");
@@ -530,7 +527,7 @@ test("InjectionsView preserves the request origin as its header reflows", () => 
 
 test("InjectionsView keeps every rendered line within the width", () => {
 	for (const width of [24, 40, 60, 80, 120]) {
-		const view = createView(8, "Silent probe unavailable: no model is selected. Extension additions were not observed.");
+		const view = createView(8, "Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.");
 		const listLines = view.render(width);
 		for (const line of listLines) {
 			assert.ok(visibleWidth(line) <= width, `line exceeds width ${width}: ${JSON.stringify(line)}`);
@@ -546,12 +543,12 @@ test("InjectionsView keeps every rendered line within the width", () => {
 
 test("InjectionsView reflows on height-only resize and bounds very short output", () => {
 	let terminalRows = 30;
-	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
-	const view = createView(30, reason, () => terminalRows);
+	const notice = "Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.";
+	const view = createView(30, notice, () => terminalRows);
 
 	const tall = view.render(40);
 	assert.equal(tall.length, 30);
-	assert.ok(tall.some((line) => stripSgr(line).includes("Silent probe unavailable")));
+	assert.ok(tall.some((line) => stripSgr(line).includes("Ignoring invalid color")));
 
 	terminalRows = 18;
 	const resized = view.render(40);
@@ -1963,9 +1960,9 @@ test("InjectionsView keeps compact capture status and the selected bar when the 
 	}
 });
 
-test("InjectionsView retains the sanitized degraded reason in a compact descriptionless frame", () => {
+test("InjectionsView retains a sanitized configuration notice in a compact descriptionless frame", () => {
 	let height = 60;
-	const reason = "Silent probe unavailable: no model is selected. Extension additions were not observed.";
+	const reason = "fixture-notice with enough words to wrap";
 	const view = createView(16, `${reason}\u001b[2J`, () => height);
 	for (const width of [24, 60, 80, 120]) {
 		for (height of [12, 16, 24]) {

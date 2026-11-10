@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.4] - 10.11.2026
+
+### Changed
+* `[probe]` Probe under Pi's default idle cache warming unless a warm run may be live.
+
+### Fixed
+* `[probe]` Hide the "Operation aborted" row the probe left after `/context` since Pi 1.5.1.
+
+
 ## [0.8.3] - 05.11.2026
 
 Adds a toggle that shows category percentages of used context (thanks to @khoipm06),

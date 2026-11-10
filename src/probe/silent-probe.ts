@@ -264,12 +264,13 @@ export class SilentProbe {
 	/**
 	 * Replace a recorded probe abort with an empty successful message so pi does
 	 * not render an abort transcript row. Pi reports the `turn_start` abort,
-	 * which authentication rejects before streaming, as an error.
+	 * which authentication rejects before streaming, as `aborted` since 1.5.1
+	 * and as `error` before.
 	 */
 	private blankProbeAbort(
 		message: Extract<ContextEvent["messages"][number], { role: "assistant" }>,
 	): ContextEvent["messages"][number] | undefined {
-		const isProbeAbort = message.stopReason === "error"
+		const isProbeAbort = (message.stopReason === "aborted" || message.stopReason === "error")
 			&& message.errorMessage !== undefined
 			&& SETUP_ABORT_ERROR_MESSAGES.has(message.errorMessage);
 		if (!isProbeAbort || !this.filter.has(message)) return undefined;

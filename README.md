@@ -22,8 +22,7 @@ injected by other extensions.
   category (tools, skills, messages, and more).
 
 - **Context injections** - explore the hidden parts of the context: the
-  system prompt, tool definitions, and extension injections, including
-  changes that extensions make only to the request sent to the model.
+  system prompt, tool definitions, and extension injections.
 
 ## Commands
 

@@ -26,8 +26,7 @@ If the store holds a snapshot, neither view needs a probe. Either view can
 request the shared one automatic attempt when the store is empty, unless the
 `autoProbing` setting is `false`: then the command resolves to `unprobed`
 without asking ProbeTrigger. Both views open the fallback with a description
-note instead of a degraded reason, because nothing failed; a captured real
-request still replaces it. Never probe
+note, because nothing failed; a captured real request still replaces it. Never probe
 in the background or repeat it on every view open: a probe runs other
 extensions' handlers ([side effects](#side-effects)).
 
@@ -115,7 +114,8 @@ For a physical model on Pi's standard runtime, the aborted run still:
 - fails authentication resolution on the already-aborted signal, before
   `before_provider_headers`, `before_provider_request`, or the provider stream
   implementation;
-- ends with an assistant error naming the physical provider, API, and model.
+- ends with an aborted assistant message naming the physical provider, API, and
+  model.
   `after_provider_response` and `provider_stream_event` do not fire.
 
 A probe therefore gets the structured capture, but normally no payload. Its
@@ -282,19 +282,19 @@ The blank-content check has a trade-off. If a later `message_end` handler adds
 content to the blank prompt, neither requests nor omission recognize it. If a
 `context_edit` replacement adds content, requests no longer filter it.
 
-Pi reports the probe's `turn_start` abort with an `error` stop reason:
-authentication rejects the already-aborted signal before streaming. Its error
-message is the `AbortError` text of the JavaScript runtime that runs Pi:
+Authentication rejects the probe's already-aborted signal before streaming. Pi
+reports this `turn_start` abort with an `aborted` stop reason since 1.5.1, and
+with `error` before. Its error message is the `AbortError` text of the JavaScript runtime that runs Pi:
 
 | Runtime                    | Error message                |
 | -------------------------- | ---------------------------- |
 | Node.js                    | `This operation was aborted` |
 | Bun (standalone pi binary) | `The operation was aborted.` |
 
-Blank such an error only for a recorded probe assistant with one of these exact
-messages. Any other stop reason, including `aborted`, provider errors, and
-cancellations of runs the probe does not own, remains visible. A runtime with
-other wording leaves the error row visible: add its exact message instead of
+Blank an `aborted` or `error` message only for a recorded probe assistant with
+one of these exact messages. Any other stop reason, provider errors, and
+cancellations of runs the probe does not own remain visible. A runtime with
+other wording leaves the abort row visible: add its exact message instead of
 matching abort text loosely.
 
 Blanking cleans agent state, later model contexts, and the saved session, but
@@ -330,7 +330,8 @@ Before starting or consuming an attempt, use the fallback when:
 - compaction is active or `ctx.hasPendingMessages()` reports queued input;
 - the selected model is virtual (`api: "pi-virtual"`), since routing can make
   classifier calls or fail before capture;
-- idle cache warming is enabled, since its refresh uses a separate abort signal;
+- idle cache warming may still be warming an earlier request
+  ([idle warming](#idle-cache-warming));
 - known context usage exceeds `contextWindow - reserveTokens` while automatic
   compaction is enabled, using Pi's `shouldCompact()` and per-model settings;
 - Pi settings cannot be checked safely.
@@ -339,28 +340,64 @@ Compaction settings come from `pi.getSettings()`, so runtime changes apply; the
 Usage map's auto-compaction reserve reads the same source. The warming check
 also reads global settings with project settings disabled: Pi's warming mode is
 global-only, but the merged API can hide it under an ignored project override.
-An idle value in either source triggers fallback. Extensions cannot see an SDK
-host's custom agent directory, so this file read uses Pi's default directory,
-which honors `PI_CODING_AGENT_DIR`; an unsaved runtime warming change hidden by
-a project override is also missed. Never write or change Pi settings to make a
+An idle value in either source enables the live-run check of
+[idle warming](#idle-cache-warming). Extensions cannot see an SDK host's custom
+agent directory, so this file read uses Pi's default directory, which honors
+`PI_CODING_AGENT_DIR`; an unsaved runtime warming change hidden by a project
+override is also missed. Never write or change Pi settings to make a
 probe possible.
+
+### Idle Cache Warming
+
+Idle warming is Pi's default since 1.5.1. Pi's stream function starts a warm
+run for every session request, the probe's included, and that replaces the
+warm run of the last real request. The warm run has its own abort signal, so
+aborting the probe does not stop it:
+
+- **The probe's own warm run** ends at once. Pi refreshes only while the
+  current messages still start with the request's messages, and omitting the
+  probe at `turn_end` breaks that. Pi reports "conversation context changed"
+  and never sends the refresh.
+- **A live warm run of a real request** is cancelled, and its cache can then
+  expire. The next real request may pay a full cache write. This happens when
+  the store is empty while the session still warms, for example after
+  `/reload`, which keeps the session and its warmer.
+
+Extensions cannot read the warmer's state, so with idle warming the trigger
+falls back while a warm run may be live: the selected model has `promptCache`
+lifetimes and the newest assistant message on the branch is younger than Pi's
+idle limit `CACHE_WARMING_MAX_IDLE_AGE_MS` (30 minutes). That message never
+precedes its request's warm run. The check is conservative: it also falls back
+after a restart or session switch, whose warmer starts empty, and when Pi has
+already stopped warming for cost reasons.
 
 These are conservative checks, not a lock on Pi or other extensions. Unknown
 usage does not block probing; pre-prompt overflow recovery, hidden `nextTurn`
 messages (not reported by `hasPendingMessages()`), later model or settings
-changes, and arbitrary extension side effects remain possible. Default
-`streaming` warming remains enabled in Pi and stops on settlement; slow
-handlers or other extensions can still affect it. The nested-send ownership
+changes, and arbitrary extension side effects remain possible. Slow handlers
+or other extensions can still affect cache warming. The nested-send ownership
 limitation also remains. Strict zero-provider-request guarantees require
 passive capture.
 
 Any skipped precondition above, a missing model, missing authentication, a
 startup failure, a timeout, a nested send, or a probe that settles without a
-request snapshot reports a precise reason that extension additions were not
-observed. Each failure also carries a typed cause from `src/probe/failure.ts`;
-callers and tests branch on the cause, while the reason is display text.
-Injections then shows a current prompt/tool snapshot; Usage counts the current
-branch without request changes. Neither fallback enters the store.
+request snapshot reports a precise reason. Each failure also carries a typed cause from `src/probe/failure.ts`;
+callers and tests branch on the cause, while the reason is diagnostic text
+that neither view shows.
+Injections then shows a current prompt/tool snapshot with a description note;
+Usage counts the current branch without request changes and shows nothing. Neither fallback enters the store.
+
+Pi does not tell the probe that its run never started. `pi.sendUserMessage()`
+returns nothing: Pi catches a rejected send and reports it as an extension
+error of its own. The `startup` cause therefore covers only a synchronous
+throw. No run starts, and no event reports it, when:
+
+- another extension's `input` handler returns `handled`;
+- Pi rejects the prompt, for example because compaction or another run started
+  after the preconditions passed, or authentication stopped resolving.
+
+The attempt then waits for its full 5-second timeout and reports `timeout`,
+without the real reason.
 
 Always restore the working-row state in `finally`. If the probe times out,
 keep tracking its run until it settles: delayed synthetic messages must still
@@ -384,10 +421,10 @@ Usage repeatedly:
 - Pi's pre-prompt compaction check runs before `before_agent_start` and can
   start auto-compaction, which sends a summary request. The context-usage
   precondition approximates Pi's threshold check; it cannot predict every case.
-- The agent stream function starts warming bookkeeping and cancels the warm run
-  of the last real request. Default `streaming` warming stops at settlement;
-  the trigger skips idle warming. Slow handlers, later settings changes, and
-  other extensions can still affect this path.
+- The agent stream function starts a warm run for the probe's request and
+  cancels the warm run of the last real request. The probe's own warm run
+  never sends a refresh ([idle warming](#idle-cache-warming)). Slow handlers,
+  later settings changes, and other extensions can still affect this path.
 - A `context_edit` makes Pi distrust earlier reported usage, so its next
   pre-prompt compaction check and `getContextUsage()` estimate the context size
   until a later response reports usage again.

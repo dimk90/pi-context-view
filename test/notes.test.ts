@@ -35,11 +35,11 @@ test("notes select only applicable capture metadata and sanitize dynamic values"
 		chars: 0, tokens: 0, text: "private-payload-content",
 	};
 	const notes = injectionsNotes(createTheme(), {
-		items: [item], probe: true, degradedReason: "fixture-degraded",
+		items: [item], probe: true, requestMissing: true,
 		guard: { status: "incomplete", reason: "fixture-reason\u001b[2J\ncontinued" }, hiddenTools,
 	});
 	assert.deepEqual(notes.map((note) => note.kind),
-		["overview", "degraded", "probe", "payload-check", "hidden-tools", "payload-changes"]);
+		["overview", "request-missing", "probe", "payload-check", "hidden-tools", "payload-changes"]);
 	const text = frameText(notes.map((note) => note.text));
 	assert.ok(text.includes("fixture-reason continued"));
 	assert.ok(text.includes("alpha name, zebra"));
@@ -49,7 +49,7 @@ test("notes select only applicable capture metadata and sanitize dynamic values"
 	assert.deepEqual(injectionsNotes(createTheme(), { items: [], hiddenTools: [] }).map((note) => note.kind), ["overview"]);
 });
 
-test("disabled probing replaces the degraded note instead of adding to it", () => {
+test("disabled probing replaces the missing-request note instead of adding to it", () => {
 	const kinds = injectionsNotes(createTheme(), { items: [], probingDisabled: true }).map((note) => note.kind);
 	assert.deepEqual(kinds, ["overview", "probing-disabled"]);
 });

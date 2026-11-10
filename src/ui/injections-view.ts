@@ -101,14 +101,15 @@ const EMPTY_FILTER_MESSAGE = "No injections match the filter.";
 /** Everything the Injections view renders. */
 export interface InjectionsViewInput {
 	readonly snapshot: InjectionSnapshot;
-	readonly degradedReason?: string;
+	/** True when no request was captured yet because the silent probe was skipped or failed. */
+	readonly requestMissing?: boolean;
 	/** Non-fatal problems shown under the header, such as ignored configuration entries. */
 	readonly notices?: readonly string[];
 	/** True when no request was captured yet and configuration disables the silent probe. */
 	readonly probingDisabled?: boolean;
 	/** True when a silent probe captured the request, not a real turn. */
 	readonly probe?: boolean;
-	/** Payload comparison of the request; absent for the degraded fallback, which has no request. */
+	/** Payload comparison of the request; absent for the fallback, which has no request. */
 	readonly guard?: GuardResult;
 }
 
@@ -264,7 +265,7 @@ export class InjectionsView {
 		const topBorder = this.copy.topBorder(theme, width);
 		const headerLines = this.headerLines(width);
 		const filterLines = this.filterLines(width);
-		const warningLines = this.degradedWarningLines(width);
+		const warningLines = this.noticeLines(width);
 		// A blank row separates warnings from the list; the emergency frame drops it with the other spacing
 		const warningRows = warningLines.length === 0 ? 0 : warningLines.length + 1;
 		// The status bar never collapses: the list and the description give way to it. It reserves the tallest
@@ -871,14 +872,12 @@ export class InjectionsView {
 	}
 
 	/**
-	 * Wrapped degraded-capture reason, then configuration problems, placed below
-	 * the dialog header. Only the notices are capped: the precise degraded
-	 * reason always stays whole.
+	 * Wrapped configuration problems placed below the dialog header. Capped so
+	 * a broken configuration file cannot push the list off the frame.
 	 */
-	private degradedWarningLines(width: number): string[] {
-		const degraded = this.input.degradedReason === undefined ? [] : this.wrapWarning(this.input.degradedReason, width);
+	private noticeLines(width: number): string[] {
 		const notices = (this.input.notices ?? []).map((notice) => this.wrapWarning(notice, width));
-		return [...degraded, ...capNoticeLines(notices, MAX_NOTICE_LINES, (notice) => this.wrapWarning(notice, width))];
+		return capNoticeLines(notices, MAX_NOTICE_LINES, (notice) => this.wrapWarning(notice, width));
 	}
 
 	/** One sanitized warning wrapped to the available width, indented on its first line. */
@@ -902,8 +901,8 @@ export class InjectionsView {
 	}
 
 	/**
-	 * Wrapped dialog description: the list sentence, the degraded-capture
-	 * indicator, request notes, and the note that explains payload changes
+	 * Wrapped dialog description: the list sentence, the missing-request
+	 * note, request notes, and the note that explains payload changes
 	 * further. The status bar, not a legend, explains the selected row's markers.
 	 */
 	private descriptionLines(width: number): string[] {
@@ -962,7 +961,7 @@ interface CompactListInput {
 
 /**
  * When even a one-row list cannot fit, remove spare spacing and the title.
- * Keep capture status, the filter prompt, degraded reasons, the selected row,
+ * Keep capture status, the filter prompt, configuration notices, the selected row,
  * the total, and the bar between borders; add hints only if they fit, after
  * empty rows that fill the remaining height. Below that physical minimum, clip content.
  */

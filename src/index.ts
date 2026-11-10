@@ -74,7 +74,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 					activeToolNames: pi.getActiveTools(),
 					promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 				}),
-				degradedReason: latest.type === "missing" ? latest.degradedReason : undefined,
+				requestMissing: latest.type === "missing",
 				probingDisabled: latest.type === "unprobed",
 				notices: loadedConfig.warnings,
 			});
@@ -132,7 +132,6 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				nextRequestModel: resolveNextRequestModel(ctx.model, branchMessages),
 				autoCompactReserveTokens: readAutoCompactReserveTokens(pi, ctx.model),
 			}),
-			degradedReason: latest.type === "missing" ? latest.degradedReason : undefined,
 			probingDisabled: latest.type === "unprobed",
 			// Reported inside the view: a notification would stay hidden behind the fullscreen overlay
 			notices: loadedConfig.warnings,

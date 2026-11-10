@@ -19,7 +19,7 @@ export function probeFailure(cause: ProbeFailureCause, detail = ""): ProbeFailur
 		"missing-model": "Silent probe unavailable: no model is selected.",
 		"virtual-model": "Silent probe unavailable: a virtual model is selected.",
 		"missing-auth": `Silent probe unavailable: ${detail} has no configured authentication.`,
-		"idle-warming": "Silent probe unavailable: idle cache warming is enabled.",
+		"idle-warming": "Silent probe unavailable: idle cache warming may still refresh the last request.",
 		"context-limit": "Silent probe unavailable: context exceeds the auto-compaction threshold.",
 		settings: "Silent probe unavailable: Pi settings could not be checked.",
 		timeout: "Silent probe timed out.",

@@ -3,7 +3,11 @@
 Part of the [architecture](../ARCHITECTURE.md). This page describes the Pi
 behavior that capture and the probe rely on: the request flow, handler order,
 the supported Pi versions, the Pi APIs this extension reads, and why running
-request preparation has side effects. Checked against Pi `1.3.0`.
+request preparation has side effects.
+
+Last checked in full against Pi `1.3.0`. Behavior of a later Pi is named with
+its version. [validation.md](validation.md#after-a-pi-upgrade) lists what to
+recheck after an upgrade.
 
 ## Request Flow
 

@@ -660,7 +660,7 @@ test("system prompt rows hold guessed additions, and an unchanged prompt has non
 	assert.deepEqual(rows.map((row) => [row.source.label, row.diff, row.requestOnly]), [
 		["npm:web", { added: 9, removed: 0 }, undefined],
 		["unattributed", { added: (additions?.diff?.added ?? 0) - 9, removed: 0 }, undefined],
-	], "the degraded fallback compares the live prompt with itself, so nothing is request-only");
+	], "the fallback compares the live prompt with itself, so nothing is request-only");
 	assert.deepEqual(rows[0]?.sections?.map((section) => [section.label, section.text.trim(), section.attribution]), [
 		["Extension Additions", "Search tips live in npm:web docs.", "guess"],
 	]);
@@ -838,7 +838,7 @@ test("a forced prompt without sections compares with pi's whole default prompt",
 	assert.deepEqual(prompt?.diff, { added: prompt?.tokens, removed: Math.ceil(defaultText.length / 4) });
 });
 
-test("a branch with no recorded system state and the degraded fallback compare with pi's default prompt", () => {
+test("a branch with no recorded system state and the fallback compare with pi's default prompt", () => {
 	const session = SessionManager.inMemory("/tmp/project");
 	session.appendMessage({ role: "user", content: "first prompt", timestamp: 1 });
 	const live = [

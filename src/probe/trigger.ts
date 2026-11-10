@@ -4,6 +4,7 @@
  * and waits for its snapshot in SnapshotStore. It imports no capture module and
  * applies no run-mode guard; consumers decide when to ask for a probe.
  */
+import { CACHE_WARMING_MAX_IDLE_AGE_MS } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, type ExtensionCommandContext, shouldCompact } from "@earendil-works/pi-coding-agent";
 
 import type { CompactionState } from "../compaction.ts";
@@ -163,9 +164,9 @@ function getProbeSettingsUnavailableFailure(
 	try {
 		const settings = readLiveSettings(pi);
 		// The merged snapshot can mask global idle warming with an ignored project override
-		if (settings.getCacheWarmingMode() === "idle" || readGlobalCacheWarmingMode(context.cwd) === "idle") {
-			return probeFailure("idle-warming");
-		}
+		const isIdleWarming = settings.getCacheWarmingMode() === "idle"
+			|| readGlobalCacheWarmingMode(context.cwd) === "idle";
+		if (isIdleWarming && mayHaveLiveWarmRun(context)) return probeFailure("idle-warming");
 		const compaction = settings.getCompactionSettings(context.model);
 		const usage = context.getContextUsage();
 		if (usage?.tokens != null && shouldCompact(usage.tokens, usage.contextWindow, compaction)) {
@@ -175,4 +176,24 @@ function getProbeSettingsUnavailableFailure(
 		return probeFailure("settings");
 	}
 	return undefined;
+}
+
+/**
+ * Whether Pi may still be idle-warming the cache of an earlier real request.
+ * The probe's request replaces that warm run, so the cache would then expire
+ * unrefreshed; the probe's own warm run ends at once because omitting the probe
+ * changes the context. Extensions cannot read the warmer's state, so this is
+ * conservative: warming needs a selected model with prompt-cache lifetimes and
+ * ends Pi's idle age limit after its request at the latest, which the newest
+ * assistant message does not precede. A request of an earlier process also
+ * counts, although its warm run ended with that process.
+ */
+function mayHaveLiveWarmRun(context: ExtensionCommandContext): boolean {
+	if (context.model?.promptCache === undefined) return false;
+
+	const lastAssistant = context.sessionManager.getBranch().findLast((entry) =>
+		entry.type === "message" && entry.message.role === "assistant");
+	if (lastAssistant?.type !== "message") return false;
+
+	return Date.now() - lastAssistant.message.timestamp < CACHE_WARMING_MAX_IDLE_AGE_MS;
 }

@@ -177,7 +177,7 @@ for (const [position, host] of ["before", "after"].flatMap((position) =>
 		assert.equal(refusals.length, host === "tui" ? 0 : 1, "only a host that never builds the view refuses it");
 		assert.equal(observed.contexts, 1, "structured capture still runs after turn_start abort");
 		// The only abort form the probe blanks: Node.js AbortError text, before streaming
-		assert.deepEqual(stopReasons, [["error", "This operation was aborted"]],
+		assert.deepEqual(stopReasons, [["aborted", "This operation was aborted"]],
 			"auth rejects the aborted signal before streaming");
 		assert.equal(observed.headers, 0);
 		assert.equal(observed.payloads, 0);
@@ -334,7 +334,7 @@ test("a nested custom-message run fails the attempt and the probe still claims i
 		"agent_settled",
 	]);
 	assert.equal(provider.requests(), 1, "only the nested run reaches the provider");
-	assert.deepEqual(stopReasons, [["stop", undefined], ["error", "This operation was aborted"]]);
+	assert.deepEqual(stopReasons, [["stop", undefined], ["aborted", "This operation was aborted"]]);
 	const branch = session.sessionManager.getBranch();
 	const [reply, ...probeEntries] = branch.flatMap((entry) => entry.type === "message"
 		&& (entry.message.role === "user" || entry.message.role === "assistant")
@@ -371,7 +371,7 @@ test("a nested user send before this extension's input handler takes the probe's
 	// Known limitation: the nested message is erased and aborted in the probe's place, the probe prompt is sent
 	assert.equal(provider.requests(), 1);
 	assert.deepEqual(userTexts(provider.bodies[0]), [], "the nested text is lost and the probe prompt is empty");
-	assert.deepEqual(stopReasons, [["error", "This operation was aborted"], ["stop", undefined]]);
+	assert.deepEqual(stopReasons, [["aborted", "This operation was aborted"], ["stop", undefined]]);
 	const branch = session.sessionManager.getBranch();
 	const conversation = conversationEntries(branch);
 	assert.deepEqual(conversation.map(({ message }) => [message.role, message.content]), [
@@ -448,7 +448,7 @@ for (const position of ["before", "after"] as const) {
 		assert.equal(provider.requests(), 0, "the probe makes no provider request");
 		assert.equal(responses, 0);
 		// Pi delivers one queued message per turn: the custom one with the prompt, the steered one in an extra turn
-		assert.deepEqual(stopReasons, [["error", "This operation was aborted"], ["error", "This operation was aborted"]]);
+		assert.deepEqual(stopReasons, [["aborted", "This operation was aborted"], ["aborted", "This operation was aborted"]]);
 		const branch = session.sessionManager.getBranch();
 		const conversation = branch.flatMap((entry) => entry.type === "message"
 			&& (entry.message.role === "user" || entry.message.role === "assistant")

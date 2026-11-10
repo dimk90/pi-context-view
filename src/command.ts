@@ -38,12 +38,12 @@ export type ContextCommand =
 
 /**
  * The latest request snapshot, or why the view opens without one:
- *   missing    a probe was skipped or failed; the view must explain why it degraded
+ *   missing    a probe was skipped or failed; the reason stays out of the views
  *   unprobed   none was captured yet and `autoProbing` is off, an expected state
  */
 export type RequestSnapshotResult =
 	| { readonly type: "snapshot"; readonly snapshot: RequestSnapshot }
-	| { readonly type: "missing"; readonly degradedReason: string }
+	| { readonly type: "missing" }
 	| { readonly type: "unprobed" };
 
 /** Parse the complete, intentionally small `/context` argument grammar. */
@@ -92,11 +92,9 @@ export async function resolveRequestSnapshot(
 
 	if (!autoProbing) return { type: "unprobed" };
 
-	const result = await trigger.request(context);
+	await trigger.request(context);
 	const probed = snapshots.latest();
-	if (probed !== undefined) return { type: "snapshot", snapshot: probed };
-	const reason = result.status === "failed" ? result.reason : "Silent probe did not capture a request.";
-	return { type: "missing", degradedReason: `${reason} Extension additions were not observed.` };
+	return probed === undefined ? { type: "missing" } : { type: "snapshot", snapshot: probed };
 }
 
 /**
