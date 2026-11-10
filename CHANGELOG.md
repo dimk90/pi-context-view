@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.8.4] - 10.11.2026
 
 ### Changed
 * `[probe]` Probe under Pi's default idle cache warming unless a warm run may be live.
