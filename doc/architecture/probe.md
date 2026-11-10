@@ -362,6 +362,18 @@ callers and tests branch on the cause, while the reason is display text.
 Injections then shows a current prompt/tool snapshot; Usage counts the current
 branch without request changes. Neither fallback enters the store.
 
+Pi does not tell the probe that its run never started. `pi.sendUserMessage()`
+returns nothing: Pi catches a rejected send and reports it as an extension
+error of its own. The `startup` cause therefore covers only a synchronous
+throw. No run starts, and no event reports it, when:
+
+- another extension's `input` handler returns `handled`;
+- Pi rejects the prompt, for example because compaction or another run started
+  after the preconditions passed, or authentication stopped resolving.
+
+The attempt then waits for its full 5-second timeout and reports `timeout`,
+without the real reason.
+
 Always restore the working-row state in `finally`. If the probe times out,
 keep tracking its run until it settles: delayed synthetic messages must still
 be sanitized and filtered.
