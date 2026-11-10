@@ -281,22 +281,26 @@ for (const errorMessage of ["This operation was aborted", "The operation was abo
 		const setupAbort = assistantMessage("error", 20, errorMessage);
 		const providerError = assistantMessage("error", 21, "Authentication failed");
 		const unrecordedSetupAbort = assistantMessage("error", 22, errorMessage);
-		// Pi reports the probe's abort only as an error, so another stop reason is not the probe's
+		// Pi reports the probe's abort as `aborted` since 1.5.1
 		const abortedStop = assistantMessage("aborted", 23, errorMessage);
+		const userAbort = assistantMessage("aborted", 24, "Request was aborted");
 		probe.recordMessage(setupAbort);
 		probe.recordMessage(providerError);
 		probe.recordMessage(abortedStop);
+		probe.recordMessage(userAbort);
 
-		const sanitized = probe.sanitizeMessage(setupAbort);
-		assert.equal(sanitized?.role, "assistant");
-		if (sanitized?.role === "assistant") {
-			assert.equal(sanitized.stopReason, "stop");
-			assert.equal(sanitized.errorMessage, undefined);
-			assert.deepEqual(sanitized.content, []);
+		for (const probeAbort of [setupAbort, abortedStop]) {
+			const sanitized = probe.sanitizeMessage(probeAbort);
+			assert.equal(sanitized?.role, "assistant");
+			if (sanitized?.role === "assistant") {
+				assert.equal(sanitized.stopReason, "stop");
+				assert.equal(sanitized.errorMessage, undefined);
+				assert.deepEqual(sanitized.content, []);
+			}
 		}
 		assert.equal(probe.sanitizeMessage(providerError), undefined);
 		assert.equal(probe.sanitizeMessage(unrecordedSetupAbort), undefined);
-		assert.equal(probe.sanitizeMessage(abortedStop), undefined);
+		assert.equal(probe.sanitizeMessage(userAbort), undefined);
 		probe.settle();
 	});
 }

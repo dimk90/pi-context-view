@@ -1,13 +1,13 @@
 # v0.8.4
 
-- [ ] **Fix: "Operation aborted" is visible after `/context`** (seen with `cacheWarming: "streaming"`):
+- [x] **Fix: "Operation aborted" is visible after `/context`** (seen with `cacheWarming: "streaming"`):
   - Cause: since Pi 1.5.1 (#8635) the probe's `turn_start` abort has the stop reason `aborted`, not `error`
     (`handleRunFailure` in `pi-agent-core/dist/agent.js`).
   - `blankProbeAbort()` in `src/probe/silent-probe.ts` blanks only `error`, so the abort row stays visible and saved.
   - The unblanked abort also ends the run early: a message steered into the probe run gets no extra turn.
   - Tried: accepting `aborted` as well, for a recorded probe assistant with the exact abort text, makes
     all 10 tests below pass once they expect `aborted`.
-  - Decide: accept both stop reasons (the peer dependency is `"*"`) or only `aborted`.
+  - Decided: accept both stop reasons (the peer dependency is `"*"`).
   - Update `doc/architecture/probe.md`, which says an `aborted` stop reason remains visible.
   - Failing tests (10):
     - `test/payload-runtime.test.ts`: "verification fixtures before/after the monitor keep probes provider-free" (2).

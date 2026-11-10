@@ -115,7 +115,8 @@ For a physical model on Pi's standard runtime, the aborted run still:
 - fails authentication resolution on the already-aborted signal, before
   `before_provider_headers`, `before_provider_request`, or the provider stream
   implementation;
-- ends with an assistant error naming the physical provider, API, and model.
+- ends with an aborted assistant message naming the physical provider, API, and
+  model.
   `after_provider_response` and `provider_stream_event` do not fire.
 
 A probe therefore gets the structured capture, but normally no payload. Its
@@ -282,19 +283,19 @@ The blank-content check has a trade-off. If a later `message_end` handler adds
 content to the blank prompt, neither requests nor omission recognize it. If a
 `context_edit` replacement adds content, requests no longer filter it.
 
-Pi reports the probe's `turn_start` abort with an `error` stop reason:
-authentication rejects the already-aborted signal before streaming. Its error
-message is the `AbortError` text of the JavaScript runtime that runs Pi:
+Authentication rejects the probe's already-aborted signal before streaming. Pi
+reports this `turn_start` abort with an `aborted` stop reason since 1.5.1, and
+with `error` before. Its error message is the `AbortError` text of the JavaScript runtime that runs Pi:
 
 | Runtime                    | Error message                |
 | -------------------------- | ---------------------------- |
 | Node.js                    | `This operation was aborted` |
 | Bun (standalone pi binary) | `The operation was aborted.` |
 
-Blank such an error only for a recorded probe assistant with one of these exact
-messages. Any other stop reason, including `aborted`, provider errors, and
-cancellations of runs the probe does not own, remains visible. A runtime with
-other wording leaves the error row visible: add its exact message instead of
+Blank an `aborted` or `error` message only for a recorded probe assistant with
+one of these exact messages. Any other stop reason, provider errors, and
+cancellations of runs the probe does not own remain visible. A runtime with
+other wording leaves the abort row visible: add its exact message instead of
 matching abort text loosely.
 
 Blanking cleans agent state, later model contexts, and the saved session, but
