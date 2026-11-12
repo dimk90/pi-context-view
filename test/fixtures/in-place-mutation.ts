@@ -15,8 +15,11 @@ export const IN_PLACE_SUFFIX = "XYZZY_IN_PLACE: appended by in-place mutation.";
 export default function (pi: ExtensionAPI): void {
 	pi.on("context_with_system", (event) => {
 		const target = event.messages.findLast((message) => message.role === "user");
-		if (target?.role !== "user") return;
-		if (typeof target.content === "string") target.content = `${target.content}\n${IN_PLACE_SUFFIX}`;
-		else target.content.push({ type: "text", text: IN_PLACE_SUFFIX });
+		if (target?.role !== "user")
+			return;
+		if (typeof target.content === "string")
+			target.content = `${target.content}\n${IN_PLACE_SUFFIX}`;
+		else
+			target.content.push({ type: "text", text: IN_PLACE_SUFFIX });
 	});
 }

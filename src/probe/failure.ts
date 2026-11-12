@@ -30,5 +30,6 @@ export function probeFailure(cause: ProbeFailureCause, detail = ""): ProbeFailur
 		startup: detail,
 		"missing-snapshot": "Silent probe settled without a request snapshot.",
 	};
+
 	return { status: "failed", cause, reason: reasons[cause] };
 }

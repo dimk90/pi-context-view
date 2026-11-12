@@ -24,6 +24,7 @@ function item(id: string, sourceId: string, native: boolean, tokens: number): In
 	};
 }
 
+/** A pi group with nested built-in tools and one extension group. */
 function snapshot(): InjectionSnapshot {
 	const builtinTools: InjectionItem = {
 		...item("tool:builtin", "pi", true, 60),
@@ -31,6 +32,7 @@ function snapshot(): InjectionSnapshot {
 	};
 	const piItems = [item("base-prompt", "pi", true, 100), builtinTools, item("skills", "pi", true, 40)];
 	const extensionItems = [item("web_search", "npm:web", false, 30)];
+
 	return {
 		groups: [
 			{ source: { id: "pi", label: "pi", native: true }, items: piItems, totalTokens: 200 },
@@ -64,21 +66,25 @@ test("buildInjectionRows flattens groups and separates the snapshot total", () =
 		assert.equal(basePromptRow.itemId, "base-prompt");
 		assert.equal(basePromptRow.isLast, false);
 	}
+
 	const firstToolChild = rows[3];
 	assert.equal(firstToolChild?.kind, "item");
 	if (firstToolChild?.kind === "item") {
 		assert.equal(firstToolChild.isLast, false);
 		assert.equal(firstToolChild.parentContinues, true);
 	}
+
 	const finalToolChild = rows[4];
 	assert.equal(finalToolChild?.kind, "item");
 	if (finalToolChild?.kind === "item") {
 		assert.equal(finalToolChild.isLast, true);
 		assert.equal(finalToolChild.parentContinues, true);
 	}
+
 	const finalPiItem = rows[5];
 	assert.equal(finalPiItem?.kind, "item");
-	if (finalPiItem?.kind === "item") assert.equal(finalPiItem.isLast, true);
+	if (finalPiItem?.kind === "item")
+		assert.equal(finalPiItem.isLast, true);
 	assert.equal(rows.at(-1)?.tokens, 230);
 });
 
@@ -166,6 +172,7 @@ test("row status distinguishes saved changes from request-only additions, edits,
 		diff: prompt.diff }], totalTokens: 30 });
 	assert.deepEqual(rows.filter((row) => row.kind === "group" || row.kind === "item").map((row) => row.scope),
 		["partly", "partly", "saved", "saved-and-edit", "request-new", "request-edit"]);
+
 	const itemRows = rows.filter((row) => row.kind === "item");
 	assert.equal(itemRows[0]?.editors, undefined, "parents do not repeat their children's editors");
 	assert.deepEqual(itemRows[1]?.editors, saved.editors);
@@ -234,6 +241,7 @@ test("unattributed message and payload rows are leaves with unknown editors, and
 	for (const row of rows.slice(-2)) {
 		assert.deepEqual(row.kind === "item" ? row.editors : undefined, [{ type: "unknown" }]);
 	}
+
 	const unchanged = buildInjectionRows({ groups: [
 		{ source: unattributed, items: [saved], totalTokens: 9 },
 	], totalTokens: 9 });
@@ -335,7 +343,8 @@ test("filterInjections leaves estimates, diffs, change scopes, and the snapshot 
 	const unfiltered = new Map(scopes(buildInjectionRows(changed)).map(([label, ...rest]) => [label, rest]));
 	const kept = scopes(buildInjectionRows(changed, filtered("name", "saved", undefined, changed).result));
 	assert.deepEqual(kept.map(([label]) => label), ["pi", "parent", "saved"]);
-	for (const [label, ...rest] of kept) assert.deepEqual(rest, unfiltered.get(label), `${String(label)} keeps its status`);
+	for (const [label, ...rest] of kept)
+		assert.deepEqual(rest, unfiltered.get(label), `${String(label)} keeps its status`);
 });
 
 test("PreviewScroller.reveal leaves visible lines alone and scrolls hidden ones into context", () => {

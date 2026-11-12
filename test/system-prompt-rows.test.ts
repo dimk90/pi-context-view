@@ -71,6 +71,7 @@ test("the unattributed prompt row includes instruction files and skills without 
 	assert.deepEqual(rows[0]?.sections?.map((section) => [section.label, section.text, section.diffOnly]), [
 		[file.label, file.text, true], [skill.label, skill.text, true],
 	]);
+
 	const snapshot = buildSnapshot([...records, ...rows]);
 	assert.equal(snapshot.totalTokens, file.tokens + skill.tokens);
 	assert.equal(snapshot.groups.at(-1)?.totalTokens, 0);
@@ -107,6 +108,7 @@ test("an unregistered recorded tool and its prompt lines belong to unattributed"
 		"the tool joins the unattributed group instead of forming its own");
 	assert.deepEqual(tools.injectedReferences?.map((reference) => [reference.source, reference.tool]),
 		[[AGGREGATE_SOURCE, "old_tool"]]);
+
 	const part = { ...tools, diff: { added: 6, removed: 0 } };
 	const rows = buildSystemPromptRows([prompt([part])], [prompt([part])]);
 	assert.deepEqual(rows.map((row) => [row.source, row.diff]), [
@@ -117,7 +119,9 @@ test("an unregistered recorded tool and its prompt lines belong to unattributed"
 test("a removed session-only child stays in the unattributed preview and marks the row request-only", () => {
 	const kept = { ...item("skill:kept", "Kept skill"), kind: "skills" as const };
 	const removed = { ...item("skill:removed", "Removed skill"), kind: "skills" as const };
-	const session: InjectionItem = { ...item("skills", kept.text + removed.text), kind: "skills", children: [kept, removed] };
+	const session: InjectionItem = {
+		...item("skills", kept.text + removed.text), kind: "skills", children: [kept, removed],
+	};
 	const request: InjectionItem = { ...session, children: [kept], diff: { added: 0, removed: removed.tokens } };
 	const rows = buildSystemPromptRows([request], [session]);
 	assert.deepEqual(rows.map((row) => [row.diff, row.requestOnly]), [[request.diff, true]]);

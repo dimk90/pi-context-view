@@ -15,8 +15,11 @@ export const CONTEXT_IN_PLACE_SUFFIX = "XYZZY_CONTEXT_IN_PLACE: appended by in-p
 export default function (pi: ExtensionAPI): void {
 	pi.on("context", (event) => {
 		const target = event.messages.findLast((message) => message.role === "user");
-		if (target?.role !== "user") return;
-		if (typeof target.content === "string") target.content = `${target.content}\n${CONTEXT_IN_PLACE_SUFFIX}`;
-		else target.content.push({ type: "text", text: CONTEXT_IN_PLACE_SUFFIX });
+		if (target?.role !== "user")
+			return;
+		if (typeof target.content === "string")
+			target.content = `${target.content}\n${CONTEXT_IN_PLACE_SUFFIX}`;
+		else
+			target.content.push({ type: "text", text: CONTEXT_IN_PLACE_SUFFIX });
 	});
 }

@@ -38,6 +38,7 @@ function createSnapshot(nativeLineCount = 16, withSnippet = false): InjectionSna
 		snippet: withSnippet ? SNIPPET : undefined,
 		guidelines: [GUIDELINE], source: SOURCE,
 	}]);
+
 	return buildSnapshot(items);
 }
 
@@ -67,8 +68,10 @@ function assertAttribution(lines: readonly string[], theme: Theme, text = GUIDEL
 function assertLegendBullets(lines: readonly string[], theme: Theme, markers: readonly ContextMarker[]): number {
 	const expected = markerLegendLines(theme, markers, visibleWidth(lines[0] ?? ""), "default-prompt");
 	assert.ok(containsBlock(lines, expected), "the selected marker explanations are complete and ordered");
+
 	const start = lines.findIndex((line) => plain([line]).trim() === plain([expected[0] ?? ""]).trim());
 	assert.ok(start > 0);
+
 	return start;
 }
 
@@ -127,6 +130,7 @@ function addedMessageSnapshot(message: RequestMessage): InjectionSnapshot {
 		activeToolNames: [],
 	});
 	const items = full.groups.flatMap((group) => group.items).filter((item) => item.kind === "message");
+
 	return buildSnapshot(items);
 }
 
@@ -142,8 +146,13 @@ test("request summaries and bash text reach both previews without envelope metad
 	for (const message of messages) {
 		let height = 40;
 		const theme = createTheme();
-		const injections = new InjectionsView(theme, { snapshot: addedMessageSnapshot(message) }, () => {}, () => height);
+		const injections = new InjectionsView(theme,
+			{ snapshot: addedMessageSnapshot(message) },
+			() => {},
+			() => height,
+		);
 		injections.handleInput("j"); // Select the message below its source group
+
 		const usage = new UsageView(theme, {
 			usage: computeUsage({ snapshot: buildSnapshot([]), messages: [message] }),
 			categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE,
@@ -152,6 +161,7 @@ test("request summaries and bash text reach both previews without envelope metad
 			const overview = view.render(120);
 			assert.doesNotMatch(plain(overview), /CAPTURE_VISIBLE/);
 			view.handleInput("\r");
+
 			const preview = plain(view.render(120));
 			assert.match(preview, /CAPTURE_VISIBLE/);
 			assert.doesNotMatch(preview, /"role"|"summary"|tokensBefore|fromId|timestamp|exitCode|INTERNAL_BRANCH_ID/);
@@ -161,7 +171,8 @@ test("request summaries and bash text reach both previews without envelope metad
 				assert.match(preview, /Command exited with code 2/);
 			}
 			for (const width of [30, 60, 80, 120]) {
-				for (height of [12, 40]) assertFrame(view.render(width), width, height);
+				for (height of [12, 40])
+					assertFrame(view.render(width), width, height);
 			}
 			view.handleInput("\u001b");
 			assert.deepEqual(view.render(120), overview);
@@ -176,6 +187,7 @@ test("Injections shows attributed guidelines only after Enter, for parent and ch
 	assert.doesNotMatch(plain(view.render(120)), /verify claims/);
 	assert.ok(!hasHighlightLegend(view.render(120)));
 	view.handleInput("j"); // System Prompt
+
 	const list = view.render(120);
 	view.handleInput("\r");
 	assertAttribution(view.render(120), theme);
@@ -206,9 +218,11 @@ test("Injections shows attributed guidelines only after Enter, for parent and ch
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[F"); // Last tool
 	view.handleInput("\r");
+
 	// The tool counts only its definition; it shows its guideline as counted in System Prompt
 	const tool = view.render(120);
 	assert.match(plain(tool), /Definition · \d+ tokens/);
+
 	const counted = plain([stateMarkers(theme, { countedInSystemPrompt: true })]);
 	assert.ok(plain(tool).replace(/\s+/g, " ").includes(`Rules · 0 tokens${counted} - ${GUIDELINE}`));
 	assert.doesNotMatch(plain(tool), /<-\u00A0npm:web/);
@@ -221,6 +235,7 @@ test("Injections attributes Available Tools snippets in the parent and standalon
 	const view = new InjectionsView(theme, { snapshot: createSnapshot(16, true) }, () => {}, () => 40);
 	view.handleInput("j"); // System Prompt
 	view.handleInput("\r");
+
 	const parent = view.render(120);
 	assertAttribution(parent, theme, SNIPPET_LINE);
 	assertAttribution(parent, theme);
@@ -231,6 +246,7 @@ test("Injections attributes Available Tools snippets in the parent and standalon
 	view.handleInput("j"); // Preamble
 	view.handleInput("j"); // Available Tools
 	view.handleInput("\r");
+
 	const child = view.render(120);
 	assertAttribution(child, theme, SNIPPET_LINE);
 	assert.doesNotMatch(plain(child), /verify claims/);
@@ -250,6 +266,7 @@ test("Usage opens System Prompt sections directly and retains attribution withou
 	assert.doesNotMatch(plain(dashboard), /verify claims/);
 	assert.ok(!hasHighlightLegend(dashboard));
 	view.handleInput("\r");
+
 	const content = view.render(120);
 	assertAttribution(content, theme);
 	assert.doesNotMatch(plain(content), /┃|… \+|Enter - View Content/);
@@ -258,10 +275,13 @@ test("Usage opens System Prompt sections directly and retains attribution withou
 	assert.equal(content[3], "");
 	assert.match(plain([content[4] ?? ""]), /^\s+Preamble · \d+ tokens$/);
 	assert.match(plain(content), /Native rule 15/);
+
 	const category = usage.categories.find((category) => category.id === "system-prompt");
 	assert.ok(category);
+
 	const entry = collectPreviewEntries(category)[0];
 	assert.ok(entry);
+
 	const body = previewBodyLines(theme, entry, 115, (text) => text.split("\n"), "System Prompt");
 	assert.ok(!hasHighlightLegend(body));
 	view.handleInput("\r");
@@ -275,6 +295,7 @@ test("Usage opens System Prompt sections directly and retains attribution withou
 	assert.match(plain(view.render(120)), /Native rule 15/);
 	view.handleInput("\u001b[H");
 	assertAttribution(view.render(120), theme);
+
 	const originalFg = theme.fg.bind(theme);
 	theme.fg = (color, text) => originalFg(color === "mdLink" ? "success" : color, text);
 	view.invalidate();
@@ -300,6 +321,7 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 
 	const parent = view.render(120);
 	assert.ok(plain(parent).includes(`${addition.trim()}${ARROW}npm:web (guess)`));
+
 	const rendered = parent.find((line) => line.includes("(guess)"));
 	assert.ok(rendered?.includes(theme.fg("mdLink", "npm:web")));
 	// One marker covers a guessed extension and any tool guessed inside it
@@ -307,8 +329,10 @@ test("prompt additions render as guessed attributions with their own caveat", ()
 	assertLegend(parent, theme, ["highlighted", "guess"]);
 
 	view.handleInput("\u001b");
-	for (let step = 0; step < 4; step++) view.handleInput("j"); // Extension Additions
+	for (let step = 0; step < 4; step++)
+		view.handleInput("j"); // Extension Additions
 	view.handleInput("\r");
+
 	const child = view.render(120);
 	assert.ok(plain(child).includes(`${addition.trim()}${ARROW}npm:web (guess)`));
 	assertLegend(child, theme, ["highlighted", "guess"]);
@@ -332,6 +356,7 @@ test("a guessed addition names the extension tool its text mentions", () => {
 
 	const parent = view.render(120);
 	assert.ok(plain(parent).includes(`${addition.trim()}${ARROW}npm:web:web_search (guess)`));
+
 	const rendered = parent.find((line) => line.includes("(guess)"));
 	assert.ok(rendered?.includes(theme.fg("mdLinkUrl", ":web_search")));
 });
@@ -352,6 +377,7 @@ test("reference text and source are sanitized before coloring and wrapping", () 
 	assert.match(plain(lines), /- AB/);
 	assert.match(plain(lines), /npm:web owner:search/);
 	assert.ok(lines.every((line) => visibleWidth(line) <= 30));
+
 	const continuation = lines.find((line) => line.includes("continuation"));
 	assert.ok(continuation?.includes(theme.getFgAnsi("syntaxNumber")), "multiline references keep their color");
 	assert.ok(!hasHighlightLegend(lines));
@@ -384,6 +410,7 @@ test("attribution wraps the preceding word and label together unless wider than 
 			`wrapped content and both non-breaking spaces survive at width ${width}`,
 		);
 	}
+
 	const narrow = plain(previewBodyLines(theme, content, 13, () => [])).split("\n");
 	assert.ok(narrow.some((line) => line.endsWith("directions\u00A0<-")), "oversized suffix may split after the arrow");
 });
@@ -402,10 +429,12 @@ function createPreview(
 	if (target === "injections-parent" || target === "injections-child") {
 		const view = new InjectionsView(theme, { snapshot }, () => {}, getRows);
 		view.render(120);
-		for (let step = 0; step < (target === "injections-child" ? 3 : 1); step++) view.handleInput("j");
+		for (let step = 0; step < (target === "injections-child" ? 3 : 1); step++)
+			view.handleInput("j");
 		view.handleInput("\r");
 		return view;
 	}
+
 	const usage = computeUsage({ snapshot, messages: [] });
 	// Multi-entry fixtures keep coverage of capped and full-block attribution alongside the direct path
 	const categories = target === "usage-single" ? usage.categories : usage.categories.map((category) =>
@@ -422,7 +451,9 @@ function createPreview(
 	view.render(120);
 	view.handleInput("\r");
 	view.render(120);
-	if (target === "usage-full") view.handleInput("\r");
+	if (target === "usage-full")
+		view.handleInput("\r");
+
 	return view;
 }
 
@@ -433,10 +464,13 @@ for (const target of ["injections-parent", "injections-child", "usage-single", "
 		const view = createPreview(target, theme, () => height);
 		const initial = view.render(120);
 		assertAttribution(initial, theme);
+
 		const legendStart = assertLegendBullets(initial, theme, ["highlighted"]);
 		for (const input of ["j", "\u001b[6~", "\u001b[F", wheelEvent(1), "\u001b[5~", "\u001b[H"]) {
-			if (typeof input === "string") view.handleInput(input);
-			else view.handleMouse(input);
+			if (typeof input === "string")
+				view.handleInput(input);
+			else
+				view.handleMouse(input);
 			assert.deepEqual(view.render(120).slice(legendStart), initial.slice(legendStart));
 		}
 		for (const width of [30, 51, 60, 80, 120]) {
@@ -450,7 +484,8 @@ for (const target of ["injections-parent", "injections-child", "usage-single", "
 					sawVisible = true;
 				} else {
 					sawCollapsed = true;
-					if (height >= 12 && width >= 60) assert.match(plain(lines), /Esc Back/);
+					if (height >= 12 && width >= 60)
+						assert.match(plain(lines), /Esc Back/);
 				}
 			}
 			assert.ok(sawCollapsed && sawVisible, `collapse and restoration at width ${width}`);
@@ -497,6 +532,7 @@ function createReplacedSnapshot(): InjectionSnapshot {
 		name: "search", description: "Search", parametersJson: "{}",
 		snippet: SNIPPET, guidelines: [GUIDELINE], source: SOURCE,
 	}], { sources: [{ source: SOURCE, path: "/pkgs/web/index.ts" }] });
+
 	return buildSnapshot(items);
 }
 
@@ -510,11 +546,14 @@ test("a replaced prompt marks its dropped blocks in the tree and in previews", (
 	for (const label of ["Tools", "Rules", "Docs"]) {
 		assert.match(plain(list).replace(/\.{2,}/g, "\u2026"), new RegExp(`${label} \u2026 +0 · Dropped`));
 	}
+
 	const row = list.find((line) => plain([line]).includes("Docs"));
 	assert.ok(row?.includes(styledMarker(theme, "dropped")), "a dim separator carries the keyword's fixed color");
 	// The status bar explains the marker of the selected row
-	for (let step = 0; step < 3; step++) view.handleInput("j"); // Available Tools
+	for (let step = 0; step < 3; step++)
+		view.handleInput("j"); // Available Tools
 	assertStatusMarker(view.render(120), theme, "dropped");
+
 	// A marker that no longer fits is dropped whole rather than truncated, while the bar still explains it
 	const narrow = view.render(25);
 	assert.match(rowLine(narrow, "Docs"), /Docs/);
@@ -541,7 +580,8 @@ test("a replaced prompt marks its dropped blocks in the tree and in previews", (
 	assertLegend(view.render(120), theme, ["highlighted", "dropped"]);
 
 	for (const width of [30, 60, 80, 120]) {
-		for (height of [12, 24, 40]) assertFrame(view.render(width), width, height);
+		for (height of [12, 24, 40])
+			assertFrame(view.render(width), width, height);
 	}
 });
 
@@ -579,6 +619,7 @@ function createRelocatedSnapshot(): InjectionSnapshot {
 			snippet: "Read files", guidelines: [], source: "builtin",
 		},
 	]);
+
 	return buildSnapshot(items);
 }
 
@@ -595,10 +636,13 @@ test("a relocated block stays a counted System Prompt part, marked where it now 
 			.filter((row) => /^(Current Dir|Tools|Rules) …/.test(row)),
 		["Current Dir \u2026  2", "Tools \u2026 11 · Moved", "Rules \u2026 16 · Moved"],
 	);
+
 	const row = list.find((line) => plain([line]).includes("Rules"));
 	assert.ok(row?.includes(styledMarker(theme, "moved")), "a dim separator carries the keyword's fixed color");
-	for (let step = 0; step < 5; step++) view.handleInput("j"); // Guidelines
+	for (let step = 0; step < 5; step++)
+		view.handleInput("j"); // Guidelines
 	assertStatusMarker(view.render(120), theme, "moved");
+
 	// A marker that no longer fits is dropped whole rather than truncated, while the bar still explains it
 	const narrow = view.render(27);
 	assert.match(rowLine(narrow, "Rules"), /Rules/);
@@ -614,13 +658,15 @@ test("a relocated block stays a counted System Prompt part, marked where it now 
 	assert.ok(parent.includes(`- ${SNIPPET_LINE}${ARROW}${SOURCE}:${TOOL}`));
 
 	view.handleInput("\u001b");
-	for (let step = 0; step < 4; step++) view.handleInput("j"); // Available Tools
+	for (let step = 0; step < 4; step++)
+		view.handleInput("j"); // Available Tools
 	view.handleInput("\r");
 	assert.match(plain(view.render(120)), /Tools\s+pi · 11 tokens · Moved/);
 	assert.ok(plain(view.render(120)).includes(`- ${SNIPPET_LINE}${ARROW}${SOURCE}:${TOOL}`));
 
 	for (const width of [30, 60, 80, 120]) {
-		for (height of [12, 24, 40]) assertFrame(view.render(width), width, height);
+		for (height of [12, 24, 40])
+			assertFrame(view.render(width), width, height);
 	}
 });
 
@@ -636,11 +682,13 @@ test("Usage preserves moved parts, their estimates, and their marker across them
 	const dashboard = view.render(120);
 	assert.doesNotMatch(plain(dashboard), /Read files|Moved/);
 	view.handleInput("\r");
+
 	const preview = view.render(120);
 	assert.match(plain(preview), /Tools · 11 tokens · Moved/);
 	assert.match(plain(preview), /Rules · 16 tokens · Moved/);
 	assertLegend(preview, theme, ["highlighted", "moved"]);
 	assert.ok(preview.some((line) => line.includes(styledMarker(theme, "moved"))));
+
 	const originalFg = theme.fg.bind(theme);
 	theme.fg = (color, text) => originalFg(color === "warning" ? "success" : color, text);
 	view.invalidate();
@@ -655,6 +703,7 @@ test("a tool preview shows its dropped prompt lines without claiming their token
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
 	view.handleInput("\u001b[F"); // last selectable row: the extension tool
 	view.handleInput("\r");
+
 	const preview = plain(view.render(120)).replace(/\s+/g, " ");
 	assert.match(preview, new RegExp(`Tools · 0 tokens · Dropped - search: ${SNIPPET}`));
 	assert.match(preview, new RegExp(`Rules · 0 tokens · Dropped - ${GUIDELINE}`));
@@ -677,6 +726,7 @@ test("Usage explains markers in categories beyond the System Prompt, at both pre
 	const usage = computeUsage({ snapshot: createReplacedSnapshot(), messages: [] });
 	const tools = usage.categories.find((category) => category.id === "custom-tools");
 	assert.ok(tools !== undefined);
+
 	const open = (categories: typeof usage.categories): readonly string[] => {
 		const view = new UsageView(theme, {
 			usage: { ...usage, categories },
@@ -685,6 +735,7 @@ test("Usage explains markers in categories beyond the System Prompt, at both pre
 		}, () => {}, () => 40);
 		view.render(120);
 		view.handleInput("\r");
+
 		return view.render(120);
 	};
 
@@ -739,6 +790,7 @@ test("Usage keeps the Forced marker out of previews other than System Prompt", (
 	assert.doesNotMatch(plain(view.render(120)), /Forced/);
 	view.handleInput("j"); // Custom Tools
 	view.handleInput("\r");
+
 	const preview = plain(view.render(120));
 	assert.match(preview, /Custom Tools/);
 	assert.doesNotMatch(preview, /Forced/);
@@ -776,21 +828,28 @@ test("native-only System Prompt and sibling previews do not claim extension inje
 
 test("replaced edits preview as diffs with the Forced marker and its own legend", () => {
 	const theme = createTheme();
-	const sent = { label: "review", text: "Review the change.", tokens: 5, forcedEdit: { text: "Review the tests.", sent: true } };
+	const sent = {
+		label: "review", text: "Review the change.", tokens: 5, forcedEdit: { text: "Review the tests.", sent: true },
+	};
 	const unsent = { label: "checklist", text: "", tokens: 0, forcedEdit: { text: "Run the tests.", sent: false } };
 	const content = { text: sent.text, sections: [sent, unsent] };
 	const body = previewBodyLines(theme, content, 100, () => { throw new Error("A replaced edit renders its diff"); });
 	assert.ok(containsBlock(body, forcedEditDiffLines(theme, sent.text, sent.forcedEdit, 100)));
 	assert.ok(containsBlock(body, forcedEditDiffLines(theme, unsent.text, unsent.forcedEdit, 100)));
 	assert.equal(body.filter((line) => line.includes(stateMarkers(theme, { forcedEdit: { sent: true } }))).length, 2);
+
 	const standalone = previewBodyLines(theme, sent, 100, () => []);
 	assert.deepEqual(standalone, forcedEditDiffLines(theme, sent.text, sent.forcedEdit, 100));
-	const legend = previewLegendLines(theme, [content], { width: 100, availableRows: 100, contentLineCount: body.length });
+
+	const legend = previewLegendLines(theme, [content], {
+		width: 100, availableRows: 100, contentLineCount: body.length,
+	});
 	assert.ok(containsBlock(legend, markerLegendLines(theme, ["forced-edit"], 100)));
 	// The legend names diff signs in the colors their lines open with
 	assert.ok(legend.some((line) => line.includes(theme.fg("toolDiffAdded", "+"))));
 	assert.ok(legend.some((line) => line.includes(theme.fg("toolDiffRemoved", "-"))));
-	assert.ok(!containsBlock(legend, markerLegendLines(theme, ["forced"], 100)), "only a whole forced prompt explains Forced prompts");
+	assert.ok(!containsBlock(legend, markerLegendLines(theme, ["forced"], 100)),
+		"only a whole forced prompt explains Forced prompts");
 });
 
 test("changed prompt parts preview their text diff, standalone and as parts", () => {
@@ -802,6 +861,7 @@ test("changed prompt parts preview their text diff, standalone and as parts", ()
 	assert.ok(containsBlock(body, textDiffLines(theme, removed.textDiff, 100)));
 	assert.deepEqual(previewBodyLines(theme, removed, 100, () => []), textDiffLines(theme, removed.textDiff, 100));
 	assert.match(plain(textDiffLines(theme, removed.textDiff, 100)), /^ {2}- Legacy note\.$/);
+
 	// Without a base the whole part is added: plain text, as before diff bodies
 	const added = { label: "notes", text: "New note.", tokens: 3, diff: { added: 3, removed: 0 },
 		textDiff: { base: "", request: "New note." } };

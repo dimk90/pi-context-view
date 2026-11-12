@@ -29,7 +29,8 @@ export interface MockConfigOptions {
 /** Keep startup model selection and session storage inside the mock run. */
 export function validateArgs(args: string[]): void {
 	for (const arg of args) {
-		if (arg === "--") break;
+		if (arg === "--")
+			break;
 		if (CONFLICTING_ARGS.has(arg.split("=", 1)[0])) {
 			throw new Error(`--mock cannot be combined with ${arg}; it uses its own model and an in-memory session.`);
 		}
@@ -41,13 +42,16 @@ export async function writeMockConfig({
 	agentDir, sourceDir, baseUrl, codemodeOnly, localExtensions,
 }: MockConfigOptions): Promise<void> {
 	const inherited = await readDisplaySettings(sourceDir);
-	const resources = localExtensions ? await resolveMockResources({ agentDir, sourceDir, settings: inherited }) : undefined;
+	const resources = localExtensions
+		? await resolveMockResources({ agentDir, sourceDir, settings: inherited })
+		: undefined;
 	const appearance = Object.fromEntries(APPEARANCE_SETTINGS.filter((key) => key in inherited)
 		.map((key) => [key, inherited[key]]));
 	const settings = {
 		...appearance, defaultProvider: MOCK_PROVIDER, defaultModel: MOCK_MODEL, enabledModels: [MODEL],
 		defaultThinkingLevel: "off", defaultProjectTrust: "never", cacheWarming: "off",
-		compaction: { enabled: false }, retry: { enabled: false }, enableInstallTelemetry: false, enableAnalytics: false,
+		compaction: { enabled: false }, retry: { enabled: false },
+		enableInstallTelemetry: false, enableAnalytics: false,
 		...(resources ? { extensions: getMockExtensionPaths(resources) } : {}),
 		...(codemodeOnly ? { codemode: { mode: "only" }, defaultTools: ["+codemode"] } : {}),
 	};
@@ -74,10 +78,12 @@ export async function writeMockConfig({
 async function readDisplaySettings(sourceDir: string): Promise<Record<string, unknown>> {
 	try {
 		const parsed: unknown = JSON.parse(await readFile(join(sourceDir, "settings.json"), "utf8"));
-		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("Invalid settings");
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+			throw new Error("Invalid settings");
 		return parsed as Record<string, unknown>;
 	} catch (error) {
-		if (isMissingFile(error)) return {};
+		if (isMissingFile(error))
+			return {};
 		throw new Error(`Cannot read Pi display settings from ${join(sourceDir, "settings.json")}.`);
 	}
 }
@@ -87,7 +93,8 @@ async function copyAppearanceFile(sourceDir: string, agentDir: string, name: str
 	try {
 		await cp(join(sourceDir, name), join(agentDir, name), { recursive: true, dereference: true });
 	} catch (error) {
-		if (!isMissingFile(error)) throw error;
+		if (!isMissingFile(error))
+			throw error;
 	}
 }
 

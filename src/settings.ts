@@ -25,7 +25,9 @@ export function readLiveSettings(pi: ExtensionAPI): SettingsManager {
  */
 export function readGlobalCacheWarmingMode(cwd: string): CacheWarmingMode {
 	const settings = SettingsManager.create(cwd, undefined, { projectTrusted: false });
-	if (settings.drainErrors().length > 0) throw new Error("Pi settings could not be read.");
+	if (settings.drainErrors().length > 0)
+		throw new Error("Pi settings could not be read.");
+
 	return settings.getCacheWarmingMode();
 }
 
@@ -53,7 +55,8 @@ export function resolveAutoCompactReserveTokens(
 	model?: CompactionModel,
 ): number | undefined {
 	try {
-		if (!settings.getCompactionEnabled()) return undefined;
+		if (!settings.getCompactionEnabled())
+			return undefined;
 		return settings.getCompactionReserveTokens(model);
 	} catch {
 		// Pi rejects invalid reserve values; show no buffer rather than a wrong one

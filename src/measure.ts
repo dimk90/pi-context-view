@@ -145,13 +145,16 @@ export function analyzeSystemPrompt(
 	const sections = (changes.replayed === undefined
 		? findPromptSections(systemPrompt)
 		: locateReplayedSections(changes.replayed)).filter((section) => {
-		if (names.has(section.name)) return false;
+		if (names.has(section.name))
+			return false;
 		names.add(section.name);
+
 		return true;
 	});
 	if (sections.length === 0 && changes.replayed === undefined) {
 		return analyzeForcedPrompt(systemPrompt, tools, additions.sources ?? []);
 	}
+
 	return analyzePromptSections(systemPrompt, sections, options, tools, additions, changes);
 }
 
@@ -164,21 +167,28 @@ function locateReplayedSections(state: NonNullable<PromptChanges["replayed"]>): 
 	const located: PromptSection[] = [];
 	let offset = state.content.length;
 	for (const [name, text] of Object.entries(state.sections)) {
-		if (text === null) continue;
+		if (text === null)
+			continue;
+
 		const start = offset + (offset > 0 && text.length > 0 ? 2 : 0);
 		const end = start + text.length;
 		offset = end;
-		if (name === "preamble") continue;
+		if (name === "preamble")
+			continue;
+
 		const open = `<${name}>`;
 		const close = `</${name}>`;
 		const wrapped = text.startsWith(open) && text.endsWith(close);
 		let bodyStart = wrapped ? start + open.length : start;
 		let bodyEnd = wrapped ? end - close.length : end;
-		if (wrapped && text[open.length] === "\n") bodyStart++;
-		if (wrapped && text[text.length - close.length - 1] === "\n") bodyEnd--;
+		if (wrapped && text[open.length] === "\n")
+			bodyStart++;
+		if (wrapped && text[text.length - close.length - 1] === "\n")
+			bodyEnd--;
 		// PromptSection includes the character before its body for tool bullet attribution
 		located.push({ name, start, end, body: { start: bodyStart - 1, end: Math.max(bodyStart, bodyEnd) } });
 	}
+
 	return located;
 }
 
@@ -195,6 +205,7 @@ function analyzeForcedPrompt(
 	const items: InjectionItem[] = [];
 	measureTools(prompt, tools, items, [], [], roster);
 	items.unshift(createSystemPromptItem([{ ...PREAMBLE_BLOCK, kind: "base-prompt", text: prompt }]));
+
 	return items;
 }
 
@@ -229,7 +240,8 @@ function analyzePromptSections(
 	for (const section of sections) {
 		const body = prompt.slice(section.body.start + 1, section.body.end);
 		const change = changes.sections?.get(section.name);
-		if (measureGeneratedSection(section.name, body, options, items, change)) continue;
+		if (measureGeneratedSection(section.name, body, options, items, change))
+			continue;
 		parts.push({
 			...measureSectionPart(prompt, section, lines.rendered,
 				blocks.find((candidate) => candidate.start === section.body.start)?.moved),
@@ -239,8 +251,10 @@ function analyzePromptSections(
 	for (const deleted of changes.deleted ?? []) {
 		const part = deletedSectionPart(deleted);
 		// A dropped part already stands for a block the request lacks
-		if (!parts.some((existing) => existing.id === part.id)) parts.push(part);
+		if (!parts.some((existing) => existing.id === part.id))
+			parts.push(part);
 	}
+
 	// Only unwrapped gaps are additions. Sections after cwd still belong to the
 	// prompt, even when an earlier handler never saw them or cwd was removed.
 	const extensionAdditions = measurePromptAdditions(prompt, preambleEnd, { ...additions, excluded: sections });
@@ -248,6 +262,7 @@ function analyzePromptSections(
 		parts.push({ ...EXTENSION_ADDITIONS_BLOCK, kind: "prompt-addition", ...extensionAdditions });
 	}
 	items.unshift(createSystemPromptItem(parts));
+
 	return items;
 }
 
@@ -266,6 +281,7 @@ function measureSectionPart(
 		&& line.end <= section.body.end).sort((a, b) => a.start - b.start).map((line): InjectedReference => ({
 			start: line.start - start, end: line.end - start, source: line.source, tool: line.tool,
 		}));
+
 	return {
 		id: block.id, label: block.label, text: prompt.slice(start, section.body.end),
 		kind: section.name === "addendum" ? "append-prompt" : "base-prompt", moved,
@@ -278,16 +294,20 @@ function measureSectionPart(
  * without its XML wrapper for the preview.
  */
 function deletedSectionPart(section: DeletedSection): PromptPart {
-	const block = SECTION_PARTS[section.name] ??
-		(section.name === "preamble" ? PREAMBLE_BLOCK : { id: `base-prompt:section:${section.name}`, label: section.name });
+	const block = SECTION_PARTS[section.name] ?? (section.name === "preamble"
+		? PREAMBLE_BLOCK
+		: { id: `base-prompt:section:${section.name}`, label: section.name });
 	const open = `<${section.name}>`;
 	const close = `</${section.name}>`;
 	const wrapped = section.text.startsWith(open) && section.text.endsWith(close);
+
 	return {
 		id: block.id,
 		kind: section.name === "addendum" ? "append-prompt" : "base-prompt",
 		label: block.label,
-		text: wrapped ? section.text.slice(open.length, section.text.length - close.length).replace(/^\n|\n$/g, "") : section.text,
+		text: wrapped
+			? section.text.slice(open.length, section.text.length - close.length).replace(/^\n|\n$/g, "")
+			: section.text,
 		change: "deleted",
 	};
 }
@@ -300,11 +320,13 @@ function measureGeneratedSection(
 	items: InjectionItem[],
 	change: RequestChange | undefined,
 ): boolean {
-	if (options.sections?.[name]) return false;
+	if (options.sections?.[name])
+		return false;
 	if (name === "project_context" && body.includes("<project_instructions path=")) {
 		const before = items.length;
 		measureContextFiles(body, options.homeDir, items);
-		if (change !== undefined && items.length > before) items[items.length - 1] = { ...items[items.length - 1], change };
+		if (change !== undefined && items.length > before)
+			items[items.length - 1] = { ...items[items.length - 1], change };
 		return true;
 	}
 	if (name === "skills" && body.includes("<available_skills>")) {
@@ -314,13 +336,17 @@ function measureGeneratedSection(
 		const skills = [...body.matchAll(record)].map((match) => ({
 			name: decodeXml(match[1]), description: decodeXml(match[2]), filePath: decodeXml(match[3]),
 		}));
-		if (skills.length === 0) return false;
+		if (skills.length === 0)
+			return false;
+
 		const children = skills.map((skill) => createItem(`skill:${skill.name}`, "skills", PI_SOURCE, skill.name,
 			[skill.name, skill.description, skill.filePath].join("\n"))).sort((a, b) => b.tokens - a.tokens);
-		const aggregate = createAggregateItem("skills", "skills", PI_SOURCE, `${SKILLS_LABEL} (${children.length})`, children);
+		const label = `${SKILLS_LABEL} (${children.length})`;
+		const aggregate = createAggregateItem("skills", "skills", PI_SOURCE, label, children);
 		items.push(change === undefined ? aggregate : { ...aggregate, change });
 		return true;
 	}
+
 	return false;
 }
 
@@ -341,11 +367,14 @@ function measurePromptAdditions(
 	start: number,
 	options: PromptAdditionOptions,
 ): AnnotatedLines | undefined {
-	if (systemPrompt.slice(start).trim().length === 0) return undefined;
+	if (systemPrompt.slice(start).trim().length === 0)
+		return undefined;
+
 	const additions: AnnotatedLines = { text: "", injectedReferences: [] };
 	for (const run of splitPromptAdditions(systemPrompt, start, options)) {
 		appendAnnotatedLine(additions, run.text, { source: run.source, tool: run.tool, attribution: run.attribution });
 	}
+
 	return additions.injectedReferences.length > 0 ? additions : undefined;
 }
 
@@ -407,10 +436,13 @@ function measureTools(
 	for (const tool of tools) {
 		if (tool.change === "deleted") {
 			const deleted = createDeletedToolItem(tool, toolSource(tool, roster));
-			if (tool.source === "builtin") builtinChildren.push(deleted);
-			else items.push(deleted);
+			if (tool.source === "builtin")
+				builtinChildren.push(deleted);
+			else
+				items.push(deleted);
 			continue;
 		}
+
 		// Built-in tools claim their bullets without annotating them, so a later
 		// extension tool repeating one cannot take a line pi already renders for
 		// pi itself or for a built-in tool
@@ -426,6 +458,7 @@ function measureTools(
 				tool.change));
 			continue;
 		}
+
 		const owner: InjectedOwner = { source: toolSource(tool, roster), tool: tool.name };
 		collectDroppedLines(dropped, droppedLines, owner);
 		rendered.push(...renderedLines.map(({ line, span }) => ({ ...span, ...owner, partId: line.partId })));
@@ -439,6 +472,7 @@ function measureTools(
 		const label = `${BUILT_IN_TOOLS_LABEL} (${declared})`;
 		items.push(createAggregateItem("tool:builtin", "tool", PI_SOURCE, label, builtinChildren));
 	}
+
 	return { rendered, dropped };
 }
 
@@ -449,6 +483,7 @@ function measureTools(
 function createDeletedToolItem(tool: ToolSlice, source: InjectionSource): InjectionItem {
 	const id = tool.source === "builtin" ? `tool:builtin:${tool.name}` : `tool:${tool.source}:${tool.name}`;
 	const definition: SectionDraft = { ...createDefinitionSection(tool), change: "deleted" };
+
 	return { ...createToolItem(id, source, tool.name, [definition]), change: "deleted" };
 }
 
@@ -457,8 +492,11 @@ function createDeletedToolItem(tool: ToolSlice, source: InjectionSource): Inject
  * tool, otherwise its extension labelled against the roster.
  */
 function toolSource(tool: ToolSlice, roster: readonly ExtensionProvenance[]): InjectionSource {
-	if (tool.source === "builtin") return PI_SOURCE;
-	if (tool.source === UNREGISTERED_TOOL_SOURCE) return AGGREGATE_SOURCE;
+	if (tool.source === "builtin")
+		return PI_SOURCE;
+	if (tool.source === UNREGISTERED_TOOL_SOURCE)
+		return AGGREGATE_SOURCE;
+
 	return extensionSource({ source: tool.source, path: tool.sourcePath }, roster);
 }
 
@@ -494,6 +532,7 @@ function toolPromptLines(tool: ToolSlice, ownedGuidelines: string[]): ToolPrompt
 	for (const guideline of ownedGuidelines) {
 		lines.push({ partId: GUIDELINES_BLOCK.id, label: GUIDELINES_LABEL, text: `\n- ${guideline}` });
 	}
+
 	return lines;
 }
 
@@ -512,16 +551,20 @@ function promptLineSections(
 	const sections: SectionDraft[] = [];
 	for (const line of lines) {
 		const dropped = droppedLines.includes(line);
-		if (!dropped && !renderedLines.some((rendered) => rendered.line === line)) continue;
+		if (!dropped && !renderedLines.some((rendered) => rendered.line === line))
+			continue;
+
 		const last = sections.length - 1;
 		const current = sections[last];
 		if (current !== undefined && current.label === line.label && (current.dropped === true) === dropped) {
 			sections[last] = { ...current, text: current.text + line.text };
 			continue;
 		}
+
 		const state = dropped ? { dropped: true } : { countedInSystemPrompt: true };
 		sections.push({ label: line.label, text: line.text, ...state });
 	}
+
 	return sections;
 }
 
@@ -565,6 +608,7 @@ interface SectionDraft {
 /** The payload one tool sends with every request: its name, description, and parameter schema. */
 function createDefinitionSection(tool: ToolSlice): SectionDraft {
 	const heading = `${tool.name}: ${tool.description}\n`;
+
 	return {
 		label: "Definition",
 		text: `${heading}${tool.parametersJson}`,
@@ -607,13 +651,17 @@ function locateRenderedLines(
 
 /** Find one complete prompt bullet inside its block, never a prefix of another bullet. */
 function findBlockLine(prompt: string, block: Span | undefined, line: string): Span | undefined {
-	if (block === undefined) return undefined;
+	if (block === undefined)
+		return undefined;
+
 	let start = prompt.indexOf(line, block.start);
 	while (start !== -1 && start + line.length <= block.end) {
 		const end = start + line.length;
-		if (end === block.end || prompt[end] === "\n") return { start, end };
+		if (end === block.end || prompt[end] === "\n")
+			return { start, end };
 		start = prompt.indexOf(line, end);
 	}
+
 	return undefined;
 }
 
@@ -629,13 +677,15 @@ function piOwnedGuidelines(tools: ToolSlice[]): string[] {
 	const names = new Set(tools.map((tool) => tool.name));
 	const shellOnly = (names.has("bash") || names.has("powershell")) &&
 		!names.has("grep") && !names.has("find") && !names.has("ls");
-	if (!shellOnly) return [];
+	if (!shellOnly)
+		return [];
 	if (names.has("bash") && names.has("powershell")) {
 		return ["Use bash or PowerShell for file operations like listing, searching, and finding files"];
 	}
 	if (names.has("powershell")) {
 		return ["Use PowerShell for file operations like listing, searching, and finding files"];
 	}
+
 	return ["Use bash for file operations like ls, rg, find"];
 }
 
@@ -648,10 +698,12 @@ function claimGuidelines(tool: ToolSlice, claimed: Set<string>): string[] {
 	const owned: string[] = [];
 	for (const guideline of tool.guidelines) {
 		const text = guideline.trim();
-		if (text.length === 0 || claimed.has(text)) continue;
+		if (text.length === 0 || claimed.has(text))
+			continue;
 		claimed.add(text);
 		owned.push(text);
 	}
+
 	return owned;
 }
 
@@ -665,7 +717,8 @@ function measureContextFiles(body: string, homeDir: string | undefined, items: I
 	for (const match of body.matchAll(/<project_instructions path="([^"]+)">/g)) {
 		const filePath = match[1];
 		const content = findContextFileContent(body, filePath);
-		if (content === undefined) continue;
+		if (content === undefined)
+			continue;
 		children.push(createItem(
 			`context-file:${filePath}`,
 			"context-file",
@@ -675,7 +728,8 @@ function measureContextFiles(body: string, homeDir: string | undefined, items: I
 		));
 	}
 	children.sort((a, b) => b.tokens - a.tokens);
-	if (children.length === 0) return;
+	if (children.length === 0)
+		return;
 
 	const label = `${INSTRUCTION_FILES_LABEL} (${children.length})`;
 	items.push(createAggregateItem("context-files", "context-file", PI_SOURCE, label, children));
@@ -706,7 +760,8 @@ function appendPromptPart(
 	block: Pick<PromptPart, "id" | "label" | "moved" | "change">,
 	text: string,
 ): void {
-	if (text.length === 0 && block.change === undefined) return;
+	if (text.length === 0 && block.change === undefined)
+		return;
 	parts.push({ id: block.id, kind: "base-prompt", label: block.label, text, moved: block.moved,
 		...changeField(block.change) });
 }
@@ -719,10 +774,12 @@ function appendPromptPart(
 function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 	const text = countedText(parts);
 	const item = createItem(SYSTEM_PROMPT_ITEM_ID, "base-prompt", PI_SOURCE, SYSTEM_PROMPT_LABEL, text);
-	if (parts.length === 0) return item;
+	if (parts.length === 0)
+		return item;
 	if (parts.length === 1 && parts[0].id === PREAMBLE_BLOCK.id && parts[0].change !== "deleted") {
 		return withChange(item, parts[0].change);
 	}
+
 	const sections = allocateSectionTokens(parts.map((part) => ({
 		label: part.label,
 		text: part.text,
@@ -731,6 +788,7 @@ function createSystemPromptItem(parts: readonly PromptPart[]): InjectionItem {
 		...changeField(part.change),
 		injectedReferences: part.injectedReferences,
 	})));
+
 	return {
 		...item,
 		sections,
@@ -806,12 +864,16 @@ function isUncounted(part: UncountablePart): boolean {
 function allocateSectionTokens(sections: SectionDraft[]): InjectionSection[] {
 	let chars = 0;
 	let allocated = 0;
+
 	return sections.map((section) => {
-		if (isUncounted(section)) return { ...section, tokens: 0 };
+		if (isUncounted(section))
+			return { ...section, tokens: 0 };
 		chars += section.text.length;
+
 		const cumulative = charTokens(chars);
 		const tokens = cumulative - allocated;
 		allocated = cumulative;
+
 		return { ...section, tokens };
 	});
 }
@@ -849,6 +911,7 @@ function createAggregateItem(
 function childSection(child: InjectionItem, separator: string): InjectionSection {
 	const span = childJsonSpan(child);
 	const text = child.change === "deleted" ? child.sections?.[0]?.text ?? child.text : child.text;
+
 	return {
 		label: child.label,
 		text: `${separator}${text}`,
@@ -867,16 +930,23 @@ function childSection(child: InjectionItem, separator: string): InjectionSection
  * covers its text and the aggregate part expands nothing.
  */
 function childJsonSpan(child: InjectionItem): JsonSpan | undefined {
-	if (child.sections === undefined) return child.jsonSpan;
+	if (child.sections === undefined)
+		return child.jsonSpan;
+
 	const counted = child.change === "deleted" ? child.sections : child.sections.filter((part) => !isUncounted(part));
+
 	return counted.length === 1 ? counted[0]?.jsonSpan : undefined;
 }
 
 /** Replace a leading home-directory prefix with `~` for compact path labels. */
 function abbreviateHome(path: string, homeDir: string | undefined): string {
-	if (homeDir === undefined || homeDir.length === 0) return path;
-	if (path === homeDir) return "~";
-	if (path.startsWith(`${homeDir}/`)) return `~${path.slice(homeDir.length)}`;
+	if (homeDir === undefined || homeDir.length === 0)
+		return path;
+	if (path === homeDir)
+		return "~";
+	if (path.startsWith(`${homeDir}/`))
+		return `~${path.slice(homeDir.length)}`;
+
 	return path;
 }
 
@@ -891,20 +961,30 @@ function findContextFileContent(systemPrompt: string, filePath: string): string 
 	const open = `<project_instructions path="${filePath}">`;
 	const close = "</project_instructions>";
 	const wrapper = findDelimitedSpan(systemPrompt, open, close);
-	if (wrapper === undefined) return undefined;
+	if (wrapper === undefined)
+		return undefined;
+
 	let start = wrapper.start + open.length;
 	let end = wrapper.end - close.length;
-	if (systemPrompt.startsWith("\r\n", start)) start += 2;
-	else if (systemPrompt[start] === "\n") start++;
-	if (systemPrompt.slice(Math.max(start, end - 2), end) === "\r\n") end -= 2;
-	else if (systemPrompt[end - 1] === "\n") end--;
+	if (systemPrompt.startsWith("\r\n", start))
+		start += 2;
+	else if (systemPrompt[start] === "\n")
+		start++;
+	if (systemPrompt.slice(Math.max(start, end - 2), end) === "\r\n")
+		end -= 2;
+	else if (systemPrompt[end - 1] === "\n")
+		end--;
+
 	return systemPrompt.slice(start, end);
 }
 
 /** Locate a complete delimited transport wrapper. */
 function findDelimitedSpan(text: string, open: string, close: string): Span | undefined {
 	const start = text.indexOf(open);
-	if (start === -1) return undefined;
+	if (start === -1)
+		return undefined;
+
 	const closeStart = text.indexOf(close, start + open.length);
+
 	return closeStart === -1 ? undefined : { start, end: closeStart + close.length };
 }

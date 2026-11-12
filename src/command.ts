@@ -61,6 +61,7 @@ export function parseContextCommand(argumentsText: string): ContextCommand {
 	if (words.length === 1 && words[0] === "config") {
 		return { type: "config" };
 	}
+
 	return { type: "invalid", message: COMMAND_USAGE };
 }
 
@@ -68,6 +69,7 @@ export function parseContextCommand(argumentsText: string): ContextCommand {
 export function getContextArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
 	const normalizedPrefix = argumentPrefix.trimStart().toLowerCase();
 	const matches = ARGUMENT_OPTIONS.filter((option) => option.value.startsWith(normalizedPrefix));
+
 	return matches.length > 0 ? matches.map((option) => ({ ...option })) : null;
 }
 
@@ -85,15 +87,20 @@ export async function resolveRequestSnapshot(
 	autoProbing: boolean,
 ): Promise<RequestSnapshotResult> {
 	const existing = snapshots.latest();
-	if (existing !== undefined) return { type: "snapshot", snapshot: existing };
+	if (existing !== undefined)
+		return { type: "snapshot", snapshot: existing };
 	await context.waitForIdle();
-	const afterIdle = snapshots.latest();
-	if (afterIdle !== undefined) return { type: "snapshot", snapshot: afterIdle };
 
-	if (!autoProbing) return { type: "unprobed" };
+	const afterIdle = snapshots.latest();
+	if (afterIdle !== undefined)
+		return { type: "snapshot", snapshot: afterIdle };
+
+	if (!autoProbing)
+		return { type: "unprobed" };
 
 	await trigger.request(context);
 	const probed = snapshots.latest();
+
 	return probed === undefined ? { type: "missing" } : { type: "snapshot", snapshot: probed };
 }
 
@@ -143,10 +150,16 @@ export function reportConfigCreation(context: ExtensionCommandContext, result: C
 			reportCommandMessage(context, `Created default configuration: ${result.filePath}`, "info");
 			break;
 		case "exists":
-			reportCommandMessage(context, `Configuration already exists; left unchanged: ${result.filePath}`, "warning");
+			reportCommandMessage(context,
+				`Configuration already exists; left unchanged: ${result.filePath}`,
+				"warning",
+			);
 			break;
 		case "failed":
-			reportCommandMessage(context, `Cannot create configuration at ${result.filePath}: ${result.reason}`, "error");
+			reportCommandMessage(context,
+				`Cannot create configuration at ${result.filePath}: ${result.reason}`,
+				"error",
+			);
 			break;
 		default: {
 			// Compile-time proof that every result variant is reported

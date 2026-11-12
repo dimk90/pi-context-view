@@ -160,6 +160,7 @@ export class InjectionsView {
 	private cachedTerminalRows: number | undefined;
 	private cachedLines: string[] | undefined;
 
+	/** Create a view over one injections snapshot, with the first row selected. */
 	public constructor(
 		theme: Theme,
 		input: InjectionsViewInput,
@@ -191,14 +192,19 @@ export class InjectionsView {
 	 * event falls through to pi.
 	 */
 	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
+		if (event.type !== "wheel" || !event.wheelDelta)
+			return undefined;
+
 		const moved = this.previewItem !== undefined
 			? this.previewScroller.scrollBy(event.wheelDelta)
 			: this.navigator.moveBy(Math.sign(event.wheelDelta));
-		if (moved) this.clearCache();
+		if (moved)
+			this.clearCache();
+
 		return { handled: true, render: moved };
 	}
 
+	/** Route a key to the open preview, the filter prompt, or the list. */
 	public handleInput(data: string): void {
 		if (this.previewItem !== undefined) {
 			this.handlePreviewInput(data);
@@ -214,7 +220,8 @@ export class InjectionsView {
 			return;
 		}
 		if (matchesKey(data, Key.escape) || data === "q") {
-			if (this.filter.active) this.clearFilter();
+			if (this.filter.active)
+				this.clearFilter();
 			else {
 				this.dispose();
 				this.done(undefined);
@@ -222,7 +229,8 @@ export class InjectionsView {
 			return;
 		}
 		if (data === SEARCH_KEY) {
-			if (!this.filter.active) this.unfilteredNavigator = this.navigator;
+			if (!this.filter.active)
+				this.unfilteredNavigator = this.navigator;
 			this.filter.edit();
 			this.clearCache();
 			return;
@@ -230,20 +238,27 @@ export class InjectionsView {
 		if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
-			if (this.navigator.moveBy(-1)) this.clearCache();
+			if (this.navigator.moveBy(-1))
+				this.clearCache();
 		} else if (isStepForwardKey(data)) {
-			if (this.navigator.moveBy(1)) this.clearCache();
+			if (this.navigator.moveBy(1))
+				this.clearCache();
 		} else if (isPageBackKey(data)) {
-			if (this.navigator.page(-1)) this.clearCache();
+			if (this.navigator.page(-1))
+				this.clearCache();
 		} else if (isPageForwardKey(data)) {
-			if (this.navigator.page(1)) this.clearCache();
+			if (this.navigator.page(1))
+				this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
-			if (this.navigator.moveTo(0)) this.clearCache();
+			if (this.navigator.moveTo(0))
+				this.clearCache();
 		} else if (matchesKey(data, Key.end)) {
-			if (this.navigator.moveTo(this.navigator.selectableCount - 1)) this.clearCache();
+			if (this.navigator.moveTo(this.navigator.selectableCount - 1))
+				this.clearCache();
 		}
 	}
 
+	/** Render a cached fullscreen frame for the current width and terminal height. */
 	public render(width: number): string[] {
 		const terminalRows = normalizeTerminalRows(this.getTerminalRows());
 		if (
@@ -260,6 +275,7 @@ export class InjectionsView {
 			this.cachedLines = lines;
 			return lines;
 		}
+
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const topBorder = this.copy.topBorder(theme, width);
@@ -280,6 +296,7 @@ export class InjectionsView {
 			this.navigator.selectableCount, terminalRows, LIST_FIXED_LINE_COUNT, extraLineCount,
 		);
 		this.navigator.setVisibleCount(viewport.visibleCount);
+
 		const lines: string[] = [
 			topBorder, "", ...headerLines, "", ...filterLines, ...warningLines, ...(warningRows > 0 ? [""] : []),
 		];
@@ -287,10 +304,14 @@ export class InjectionsView {
 			? [this.fit(theme.fg("muted", `${BODY_INDENT}${EMPTY_FILTER_MESSAGE}`), width)]
 			: this.listLines(width);
 		lines.push(...listLines);
-		if (viewport.showScroll) lines.push(this.scrollLine(width));
+		if (viewport.showScroll)
+			lines.push(this.scrollLine(width));
+
 		const total = this.totalLine(width);
 		lines.push("", total);
-		if (statusLines.length > 0) lines.push("", ...statusLines);
+		if (statusLines.length > 0)
+			lines.push("", ...statusLines);
+
 		const hints = fitHintRow(theme, this.listHints(), width);
 		const tail = [
 			...(descriptionLines.length > 0 ? ["", ...descriptionLines] : []),
@@ -300,20 +321,24 @@ export class InjectionsView {
 			border,
 		];
 		// Fill the terminal so the overlay hides the chat, keeping the list, total, and bar together
-		while (lines.length + tail.length < terminalRows) lines.push("");
+		while (lines.length + tail.length < terminalRows)
+			lines.push("");
 		lines.push(...tail);
 
 		const fittedLines = lines.length <= terminalRows ? lines : compactListLines({
-			topBorder, border, header: this.headerLines(width, true), filter: filterLines.slice(0, 1), warnings: warningLines,
+			topBorder, border, header: this.headerLines(width, true),
+			filter: filterLines.slice(0, 1), warnings: warningLines,
 			selected: listLines[this.navigator.selected - this.navigator.offset],
 			total, status: statusLines, hints, terminalRows,
 		});
 		this.cachedWidth = width;
 		this.cachedTerminalRows = terminalRows;
 		this.cachedLines = fittedLines;
+
 		return fittedLines;
 	}
 
+	/** Invalidate theme-dependent rendered output. */
 	public invalidate(): void {
 		this.clearPreviewContent();
 		this.clearCache();
@@ -366,6 +391,7 @@ export class InjectionsView {
 			this.restoreUnfilteredRows();
 			return;
 		}
+
 		const filtered = filterInjections(this.input.snapshot, {
 			mode: this.filterMode,
 			nameMatches: (label) => labelMatches(label, pattern),
@@ -414,8 +440,11 @@ export class InjectionsView {
 
 	/** Key of the selected row, or undefined when a filter leaves no rows. */
 	private selectedRowKey(): string | undefined {
-		if (this.navigator.selectableCount === 0) return undefined;
+		if (this.navigator.selectableCount === 0)
+			return undefined;
+
 		const row = this.rows[this.navigator.selected];
+
 		return row === undefined ? undefined : rowKey(row);
 	}
 
@@ -431,14 +460,18 @@ export class InjectionsView {
 			content = searchableContent(parts.map((part) => expandJsonSpan(part.text, part.jsonSpan)).join(""));
 			this.contentById.set(item.id, content);
 		}
+
 		return content;
 	}
 
 	/** Prompt row and its trailing blank row, shown while a filter is typed or kept. */
 	private filterLines(width: number): string[] {
-		if (!this.filter.shown) return [];
+		if (!this.filter.shown)
+			return [];
+
 		const count = this.rows.filter(isMatchedRow).length;
 		const status = matchStatus(this.filter.active, count, undefined);
+
 		return [this.filter.renderAfter(this.theme, width, this.filterModeSwitcher(), status), ""];
 	}
 
@@ -450,6 +483,7 @@ export class InjectionsView {
 		const theme = this.theme;
 		const mode = (value: InjectionFilterMode, label: string): string =>
 			value === this.filterMode ? theme.bold(theme.fg("accent", `◉ ${label}`)) : theme.fg("dim", `○ ${label}`);
+
 		return `${mode("name", "Name")}${theme.fg("dim", " | ")}${mode("content", "Content")}${theme.fg("dim", " > ")}`;
 	}
 
@@ -464,6 +498,7 @@ export class InjectionsView {
 				["Esc", "Clear"],
 			];
 		}
+
 		return [
 			[STEP_KEY_HINT, "Navigate"],
 			["Enter", "Preview"],
@@ -475,6 +510,7 @@ export class InjectionsView {
 
 	// === Preview mode ===
 
+	/** Handle a key while the preview is open: search, scrolling, copy, and close. */
 	private handlePreviewInput(data: string): void {
 		// Navigation keys still scroll while the search prompt is open
 		if (this.previewSearch.prompt.editing && !isSearchNavigationKey(data)) {
@@ -495,23 +531,31 @@ export class InjectionsView {
 			this.clearCache();
 			return;
 		}
+
 		const matchStep = matchStepDirection(data);
 		if (matchStep !== undefined) {
-			if (this.previewSearch.step(matchStep)) this.clearCache();
+			if (this.previewSearch.step(matchStep))
+				this.clearCache();
 			return;
 		}
 		if (isStepBackKey(data)) {
-			if (this.previewScroller.scrollBy(-1)) this.clearCache();
+			if (this.previewScroller.scrollBy(-1))
+				this.clearCache();
 		} else if (isStepForwardKey(data)) {
-			if (this.previewScroller.scrollBy(1)) this.clearCache();
+			if (this.previewScroller.scrollBy(1))
+				this.clearCache();
 		} else if (isPageBackKey(data)) {
-			if (this.previewScroller.page(-1)) this.clearCache();
+			if (this.previewScroller.page(-1))
+				this.clearCache();
 		} else if (isPageForwardKey(data)) {
-			if (this.previewScroller.page(1)) this.clearCache();
+			if (this.previewScroller.page(1))
+				this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
-			if (this.previewScroller.scrollTo(0)) this.clearCache();
+			if (this.previewScroller.scrollTo(0))
+				this.clearCache();
 		} else if (matchesKey(data, Key.end)) {
-			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
+			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset))
+				this.clearCache();
 		}
 	}
 
@@ -520,10 +564,13 @@ export class InjectionsView {
 		const row = this.rows[this.navigator.selected];
 		if (row?.kind === "item") {
 			const item = this.itemsById.get(row.itemId);
-			if (item !== undefined) this.copy.copy(copyableText(item.text));
+			if (item !== undefined)
+				this.copy.copy(copyableText(item.text));
 		} else if (row?.kind === "group") {
 			const group = this.input.snapshot.groups.find((entry) => groupKey(entry) === row.groupKey);
-			if (group === undefined) return;
+			if (group === undefined)
+				return;
+
 			// The group row counts the whole snapshot; copy only the items the filter keeps
 			const visible = new Set(this.rows.flatMap((entry) => (entry.kind === "item" ? [entry.itemId] : [])));
 			this.copy.copy(copyableJoin(
@@ -534,15 +581,19 @@ export class InjectionsView {
 
 	/** Copy the item open in the preview. */
 	private copyPreviewItem(): void {
-		if (this.previewItem !== undefined) this.copy.copy(copyableText(this.previewItem.text));
+		if (this.previewItem !== undefined)
+			this.copy.copy(copyableText(this.previewItem.text));
 	}
 
 	/** Open the selected item; a content filter carries its query into the preview search. */
 	private openPreview(): void {
 		const row = this.rows[this.navigator.selected];
-		if (row?.kind !== "item") return;
+		if (row?.kind !== "item")
+			return;
+
 		const item = this.itemsById.get(row.itemId);
-		if (item === undefined) return;
+		if (item === undefined)
+			return;
 		this.previewItem = item;
 		this.clearPreviewContent();
 		this.previewScroller.reset();
@@ -554,6 +605,7 @@ export class InjectionsView {
 		this.clearCache();
 	}
 
+	/** Return to the list, dropping the preview's search and rendered content. */
 	private closePreview(): void {
 		this.previewItem = undefined;
 		this.previewSearch.clear();
@@ -567,6 +619,7 @@ export class InjectionsView {
 		this.previewWrapWidth = undefined;
 	}
 
+	/** Render the fullscreen preview frame for one item. */
 	private renderPreview(width: number, terminalRows: number, item: InjectionItem): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
@@ -585,8 +638,11 @@ export class InjectionsView {
 			searchRowCount + descriptionBlockRows(descriptionLines),
 		);
 		this.previewScroller.setExtent(wrapped.length, viewport.visibleCount);
+
 		const revealLine = search.sync(wrapped);
-		if (revealLine !== undefined) this.previewScroller.reveal(revealLine, SEARCH_CONTEXT_LINES);
+		if (revealLine !== undefined)
+			this.previewScroller.reveal(revealLine, SEARCH_CONTEXT_LINES);
+
 		const searchLines = search.promptLines(theme, width);
 
 		const lines: string[] = [this.copy.topBorder(theme, width), ""];
@@ -605,8 +661,9 @@ export class InjectionsView {
 		// Drop the marker first when space runs out, then the accounting note, then the diff
 		const headerWidth = visibleWidth(title) + visibleWidth(meta) + 2;
 		const fitsDiff = headerWidth + visibleWidth(diff) <= width;
-		const fitsNote = fitsDiff && headerWidth + visibleWidth(diff) + visibleWidth(note) <= width;
-		const fitsMarker = fitsNote && headerWidth + visibleWidth(diff) + visibleWidth(note) + visibleWidth(marker) <= width;
+		const noteWidth = headerWidth + visibleWidth(diff) + visibleWidth(note);
+		const fitsNote = fitsDiff && noteWidth <= width;
+		const fitsMarker = fitsNote && noteWidth + visibleWidth(marker) <= width;
 		lines.push(this.spread(title,
 			`${meta}${fitsDiff ? diff : ""}${fitsNote ? note : ""}${fitsMarker ? marker : ""} `, width));
 		lines.push("", ...searchLines);
@@ -616,17 +673,23 @@ export class InjectionsView {
 			lines.push(search.highlight(theme, wrapped[index] ?? "", index));
 		}
 
-		if (viewport.showScroll) lines.push(this.previewScrollLine(width, wrapped.length));
-		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
+		if (viewport.showScroll)
+			lines.push(this.previewScrollLine(width, wrapped.length));
+		if (descriptionLines.length > 0)
+			lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(fitHintRow(this.theme, searchHints(search.prompt, "Scroll", COPY_HINT), width));
 		lines.push("", border);
+
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
+	/** The item's wrapped preview body, cached until the wrap width changes. */
 	private getPreviewLines(width: number, item: InjectionItem): string[] {
 		const wrapWidth = Math.max(10, width - BODY_INDENT.length - 1);
-		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
+		if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth)
+			return this.previewLines;
+
 		// The item preview is the full-content level, so marked JSON expands here
 		const lines = previewBodyLines(
 			this.theme,
@@ -637,6 +700,7 @@ export class InjectionsView {
 		);
 		this.previewLines = lines;
 		this.previewWrapWidth = wrapWidth;
+
 		return lines;
 	}
 
@@ -649,13 +713,18 @@ export class InjectionsView {
 				lines.push("");
 				continue;
 			}
-			for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
+			for (const line of wrapped)
+				lines.push(`${BODY_INDENT}${line}`);
 		}
+
 		return lines;
 	}
 
+	/** The preview's `(end/total)` counter, or a blank line when everything fits. */
 	private previewScrollLine(width: number, totalLines: number): string {
-		if (!this.previewScroller.hasOverflow) return this.fit("", width);
+		if (!this.previewScroller.hasOverflow)
+			return this.fit("", width);
+
 		return this.fit(
 			this.theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${totalLines})`),
 			width,
@@ -668,9 +737,12 @@ export class InjectionsView {
 		const probe = this.input.probe === true;
 		const label = theme.fg("mdHeading", theme.bold(requestOriginLabel(probe)));
 		// An emergency frame drops the title, never the origin
-		if (compact) return wrapTextWithAnsi(label, Math.max(1, width));
+		if (compact)
+			return wrapTextWithAnsi(label, Math.max(1, width));
+
 		const title = theme.fg("accent", theme.bold("Context Injections"));
 		const combined = `${title}${theme.fg("dim", " · ")}${label}`;
+
 		return visibleWidth(combined) <= width
 			? [combined]
 			: [this.fit(title, width), "", ...wrapTextWithAnsi(label, Math.max(1, width))];
@@ -686,35 +758,44 @@ export class InjectionsView {
 		const end = start + this.navigator.windowSize;
 		for (let index = start; index < end; index++) {
 			const row = this.rows[index];
-			if (row === undefined) break;
+			if (row === undefined)
+				break;
 			if (row.kind === "separator") {
 				lines.push("");
 				continue;
 			}
+
 			const selected = row.kind !== "total" && index === this.navigator.selected;
 			const cursor = selected ? theme.fg("accent", "→ ") : BODY_INDENT;
 			const content = this.injectionLine(row, columns, contentWidth, selected);
 			lines.push(this.fit(`${cursor}${content}`, width));
 		}
+
 		return lines;
 	}
 
 	/** Render the fixed snapshot total with the hierarchy's shared value column and no cursor. */
 	private totalLine(width: number): string {
 		const row = this.rows.at(-1);
-		if (row?.kind !== "total") return "";
+		if (row?.kind !== "total")
+			return "";
+
 		const contentWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
 		const content = this.injectionLine(row, this.injectionColumns(contentWidth), contentWidth, false);
+
 		return this.fit(`${BODY_INDENT}${content}`, width);
 	}
 
 	/** Mark a name filter's query inside the rendered label of a row it matched. */
 	private highlightLabel(row: InjectionRow, label: string): string {
 		const pattern = this.filter.pattern;
-		if (pattern === undefined || this.filterMode !== "name" || !isMatchedRow(row)) return label;
+		if (pattern === undefined || this.filterMode !== "name" || !isMatchedRow(row))
+			return label;
+
 		const ranges = findMatches([label], pattern)
 			.flatMap((match) => match.segments)
 			.map((segment) => ({ start: segment.start, end: segment.end, current: false }));
+
 		return ranges.length === 0 ? label : highlightLine(this.theme, label, ranges);
 	}
 
@@ -732,6 +813,7 @@ export class InjectionsView {
 		);
 		const diffs = contentRows.map(rowDiff);
 		const idealValue = Math.min(MAX_TOKEN_VALUE_COLUMN, labelWidth + TOKEN_LEADER_GAP);
+
 		return {
 			value: Math.max(1, Math.min(idealValue, width - tokenWidth)),
 			valueWidth: tokenWidth,
@@ -775,7 +857,9 @@ export class InjectionsView {
 			diffs = this.diffColumns(diff, columns, marker.length > 0);
 			lineWidth += diffWidth;
 		}
+
 		const fittedMarker = lineWidth + visibleWidth(marker) <= width ? marker : "";
+
 		return fitLine(`${left}${leader}${tokens}${diffs}${fittedMarker}`, width);
 	}
 
@@ -789,12 +873,15 @@ export class InjectionsView {
 		let text = "";
 		if (columns.addedWidth > 0 && (added.length > 0 || removed.length > 0 || followed)) {
 			text += " ".repeat(DIFF_COLUMN_GAP + columns.addedWidth - added.length);
-			if (added.length > 0) text += this.theme.fg("toolDiffAdded", added);
+			if (added.length > 0)
+				text += this.theme.fg("toolDiffAdded", added);
 		}
 		if (columns.removedWidth > 0 && (removed.length > 0 || followed)) {
 			text += " ".repeat(DIFF_COLUMN_GAP + columns.removedWidth - removed.length);
-			if (removed.length > 0) text += this.theme.fg("toolDiffRemoved", removed);
+			if (removed.length > 0)
+				text += this.theme.fg("toolDiffRemoved", removed);
 		}
+
 		return text;
 	}
 
@@ -809,7 +896,9 @@ export class InjectionsView {
 
 	/** Fill a label/value gap with dim dots, omitting the trailing space for an empty value. */
 	private tokenLeader(width: number, trailingSpace = true): string {
-		if (width < 3) return " ".repeat(Math.max(0, width));
+		if (width < 3)
+			return " ".repeat(Math.max(0, width));
+
 		return ` ${this.theme.fg("dim", ".".repeat(width - (trailingSpace ? 2 : 1)))}${trailingSpace ? " " : ""}`;
 	}
 
@@ -830,25 +919,33 @@ export class InjectionsView {
 		if (row.kind === "group" || row.kind === "total") {
 			return theme.bold(theme.fg(selected ? "accent" : "text", label));
 		}
+
 		// The tool prefix stays dim on selection, like the connectors
 		const prefix = theme.fg("dim", `${this.treePrefix(row)}${row.labelPrefix ?? ""}`);
 		const item = this.itemsById.get(row.itemId);
 		if (item?.kind === "context-file" && item.children === undefined) {
 			label = shortenInstructionPath(label, Math.max(0, width - visibleWidth(prefix)));
 		}
+
 		const color = selected ? "accent" : row.depth === 1 ? "muted" : "dim";
+
 		return `${prefix}${theme.fg(color, label)}`;
 	}
 
 	/** Tree branch and ancestor continuation prefix for one item row. */
 	private treePrefix(row: Extract<InjectionRow, { readonly kind: "item" }>): string {
 		const branch = row.isLast ? "└─ " : "├─ ";
-		if (row.depth === 1) return branch;
+		if (row.depth === 1)
+			return branch;
+
 		return `${row.parentContinues === true ? "│  " : "   "}${branch}`;
 	}
 
+	/** The list's scroll counter, or a blank line when every row fits. */
 	private scrollLine(width: number): string {
-		if (!this.navigator.hasOverflow) return this.fit("", width);
+		if (!this.navigator.hasOverflow)
+			return this.fit("", width);
+
 		return this.fit(
 			this.theme.fg(
 				"dim",
@@ -863,6 +960,7 @@ export class InjectionsView {
 		// An empty filter result selects nothing; its rows are only the footer
 		const row = this.navigator.selectableCount === 0 ? undefined : this.rows[this.navigator.selected];
 		const lines = row === undefined ? [] : statusBarLines(this.theme, row, width);
+
 		return lines.length > 0 ? lines : [""];
 	}
 
@@ -897,6 +995,7 @@ export class InjectionsView {
 		const rowCount = Math.max(1, this.navigator.selectableCount);
 		const floor = Math.min(LIST_DESCRIPTION_MIN_ROWS, rowCount);
 		const viewport = calculateViewport(rowCount, availableRows - descriptionBlockRows(lines), 0);
+
 		return viewport.visibleCount >= floor ? lines : [];
 	}
 
@@ -911,14 +1010,17 @@ export class InjectionsView {
 		}).flatMap((note) => descriptionNoteLines(this.theme, note, width));
 	}
 
+	/** Place `left` and `right` at the two ends of one line of the supplied width. */
 	private spread(left: string, right: string, width: number): string {
 		return spreadLine(left, right, width);
 	}
 
+	/** Truncate one rendered line to the supplied width. */
 	private fit(line: string, width: number): string {
 		return fitLine(line, width);
 	}
 
+	/** Clear render-cache keys after data, theme, or input changes. */
 	private clearCache(): void {
 		this.cachedWidth = undefined;
 		this.cachedTerminalRows = undefined;
@@ -938,8 +1040,11 @@ function isMatchedRow(row: InjectionRow): boolean {
 
 /** Identity that survives rebuilding rows for a different filter. */
 function rowKey(row: InjectionRow): string {
-	if (row.kind === "item") return `item:${row.itemId}`;
-	if (row.kind === "group") return row.groupKey;
+	if (row.kind === "item")
+		return `item:${row.itemId}`;
+	if (row.kind === "group")
+		return row.groupKey;
+
 	return `${row.kind}:${row.label}`;
 }
 
@@ -971,7 +1076,9 @@ function compactListLines(input: CompactListInput): string[] {
 		topBorder, ...header, ...filter, ...warnings, ...(selected === undefined ? [] : [selected]), total, ...status,
 	];
 	const tail = lines.length + 2 <= terminalRows ? [hints, border] : [border];
-	while (lines.length + tail.length < terminalRows) lines.push("");
+	while (lines.length + tail.length < terminalRows)
+		lines.push("");
+
 	return fitToTerminalHeight([...lines, ...tail], terminalRows, border);
 }
 
@@ -981,17 +1088,26 @@ function compactListLines(input: CompactListInput): string[] {
  * even the root and ellipsis leave too little room.
  */
 function shortenInstructionPath(path: string, width: number): string {
-	if (visibleWidth(path) <= width) return path;
+	if (visibleWidth(path) <= width)
+		return path;
+
 	const separators = [...path.matchAll(/[/\\]/g)];
 	const lastSeparator = separators.at(-1);
-	if (lastSeparator === undefined) return fitLine(path, width);
+	if (lastSeparator === undefined)
+		return fitLine(path, width);
+
 	const root = /^(?:~|[A-Za-z]:)?[/\\]/.exec(path)?.[0] ?? "";
 	for (const separator of separators) {
-		if (separator.index < root.length) continue;
+		if (separator.index < root.length)
+			continue;
+
 		const shortened = `${root}…${path.slice(separator.index)}`;
-		if (visibleWidth(shortened) <= width) return shortened;
+		if (visibleWidth(shortened) <= width)
+			return shortened;
 	}
+
 	const tail = `…${path.slice(lastSeparator.index)}`;
+
 	return visibleWidth(tail) <= width ? tail : fitLine(path.slice(lastSeparator.index + 1), width);
 }
 
@@ -1009,6 +1125,7 @@ function rowDiff(row: InjectionRow): TokenDiff | undefined {
 function diffColumnsWidth(columns: InjectionColumns): number {
 	const added = columns.addedWidth > 0 ? DIFF_COLUMN_GAP + columns.addedWidth : 0;
 	const removed = columns.removedWidth > 0 ? DIFF_COLUMN_GAP + columns.removedWidth : 0;
+
 	return added + removed;
 }
 
@@ -1018,7 +1135,9 @@ function diffColumnsWidth(columns: InjectionColumns): number {
  * change, and the session for everything else.
  */
 function previewDiffBase(item: InjectionItem): DiffBase {
-	if (item.kind === "payload-change") return "captured-request";
+	if (item.kind === "payload-change")
+		return "captured-request";
+
 	// A `system prompt` row splits pi's prompt changes by source
 	return item.source.native || item.diffOnly === true ? "default-prompt" : "session";
 }

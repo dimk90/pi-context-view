@@ -51,8 +51,15 @@ async function startProvider(t: TestContext) {
 			// No keep-alive: see the same header in test/harness/mock-provider.ts
 			response.writeHead(200, { "Content-Type": "text/event-stream", Connection: "close" });
 			response.end([
-				'data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":null}]}',
-				'data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}',
+				`data: ${JSON.stringify({
+					id: "test", object: "chat.completion.chunk",
+					choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: null }],
+				})}`,
+				`data: ${JSON.stringify({
+					id: "test", object: "chat.completion.chunk",
+					choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+					usage: { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 },
+				})}`,
 				"data: [DONE]",
 				"",
 			].join("\n\n"));
@@ -64,8 +71,10 @@ async function startProvider(t: TestContext) {
 		server.close((error) => error ? reject(error) : resolve());
 		server.closeAllConnections();
 	}));
+
 	const address = server.address();
 	assert.ok(address && typeof address !== "string");
+
 	return { baseUrl: `http://127.0.0.1:${address.port}/v1`, requests: () => requests, bodies };
 }
 
@@ -74,10 +83,13 @@ async function createRuntime(t: TestContext, baseUrl: string, factories: Extensi
 	// After hooks run in registration order: the session must stop before its directory is removed
 	let stopSession: (() => void) | undefined;
 	t.after(() => stopSession?.());
+
 	const directory = await mkdtemp(join(tmpdir(), "context-probe-test-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
+
 	const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", compaction: { enabled: false } });
 	useSettings(t, directory, () => settingsManager);
+
 	const runtime = await ModelRuntime.create({
 		authPath: join(directory, "auth.json"),
 		modelsPath: null,
@@ -101,12 +113,14 @@ async function createRuntime(t: TestContext, baseUrl: string, factories: Extensi
 		],
 	});
 	await resourceLoader.reload();
+
 	const { session, extensionsResult } = await createAgentSession({
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, model,
 		modelRuntime: runtime, sessionManager: SessionManager.inMemory(directory), tools: [], thinkingLevel: "off",
 	});
 	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
+
 	return session;
 }
 
@@ -152,6 +166,7 @@ for (const [position, host] of ["before", "after"].flatMap((position) =>
 					draftedEarlierOmission = true;
 					entries.push({ type: "context_edit", targetId: prompt.sourceEntry.id, replacement: null });
 				}
+
 				return { entries };
 			});
 		};
@@ -186,6 +201,7 @@ for (const [position, host] of ["before", "after"].flatMap((position) =>
 		assert.equal(observed.beforeSettle, 0, "abort skips agent_before_settle, not turn_end");
 		assert.equal(visibility[0], false);
 		assert.equal(visibility.at(-1), true);
+
 		const branch = session.sessionManager.getBranch();
 		const messages = branch.filter((entry) => entry.type === "message"
 			&& (entry.message.role === "user" || entry.message.role === "assistant"));
@@ -195,8 +211,10 @@ for (const [position, host] of ["before", "after"].flatMap((position) =>
 			assert.ok(entry.type === "message"
 				&& (entry.message.role === "user" || entry.message.role === "assistant"));
 			assert.deepEqual(entry.message.content, []);
-			if (entry.message.role === "assistant") assert.equal(entry.message.stopReason, "stop");
+			if (entry.message.role === "assistant")
+				assert.equal(entry.message.stopReason, "stop");
 		}
+
 		const edits = branch.filter((entry) => entry.type === "context_edit");
 		assert.ok(draftedEarlierOmission);
 		assert.deepEqual(edits.map((entry) => entry.targetId), messages.map((entry) => entry.id),
@@ -212,6 +230,7 @@ for (const [position, host] of ["before", "after"].flatMap((position) =>
 		const real = { role: "user", content: "real", timestamp: 2 } as const;
 		const patch = { role: "system", content: "later", timestamp: 3 } as const;
 		assert.deepEqual(await session.extensionRunner.emitContext([head, real, patch]), [head, real, patch]);
+
 		const probeUser = messages.find((entry) => entry.type === "message" && entry.message.role === "user");
 		assert.ok(probeUser?.type === "message");
 		assert.deepEqual(await session.extensionRunner.emitContext([head, real, probeUser.message, patch]),
@@ -239,7 +258,8 @@ test("filtering unomitted probe entries keeps mid-conversation system messages i
 	const earlier: ExtensionFactory = (pi) => {
 		pi.on("before_agent_start", (event) => {
 			// A prompt change between runs records a system message mid-conversation
-			if (addSection) event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, later: "later" };
+			if (addSection)
+				event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, later: "later" };
 		});
 		pi.on("context", (event) => { seen.context = event.messages.map((message) => message.role); });
 		pi.on("context_with_system", (event) => { seen.beforeFilter = event.messages.map((message) => message.role); });
@@ -289,7 +309,8 @@ test("a nested custom-message run fails the attempt and the probe still claims i
 		});
 		pi.on("agent_settled", () => {
 			events.push("agent_settled");
-			if (++settledRuns === 2) resolveBothSettled();
+			if (++settledRuns === 2)
+				resolveBothSettled();
 		});
 	};
 	// Another extension starts its own run from the probe's input, inheriting the token, and waits for it
@@ -297,14 +318,16 @@ test("a nested custom-message run fails the attempt and the probe still claims i
 	const nestedSettled = Promise.withResolvers<void>();
 	const nestedSender: ExtensionFactory = (pi) => {
 		pi.on("input", async (event) => {
-			if (nestedSent || event.source !== "extension") return;
+			if (nestedSent || event.source !== "extension")
+				return;
 			nestedSent = true;
 			pi.sendMessage({ customType: "nested-run", content: "nested", display: true }, { triggerTurn: true });
 			await nestedSettled.promise;
 		});
 		pi.on("agent_settled", () => {
 			// Pi is idle only once every agent_settled handler has returned; later resolves are no-ops
-			if (nestedSent) setImmediate(nestedSettled.resolve);
+			if (nestedSent)
+				setImmediate(nestedSettled.resolve);
 		});
 	};
 	const session = await createRuntime(t, provider.baseUrl, [sentinel, nestedSender, registerExtension]);
@@ -346,6 +369,7 @@ test("a nested custom-message run fails the attempt and the probe still claims i
 		"the probe prompt and its abort are blanked");
 	assert.deepEqual(branch.filter((entry) => entry.type === "context_edit").map((entry) => entry.targetId),
 		probeEntries.map(({ id }) => id), "and omitted");
+
 	const projected = session.sessionManager.buildSessionProjection().messages;
 	assert.deepEqual(projected.flatMap((message) => message.role === "custom" ? [message.customType] : []),
 		["nested-run"]);
@@ -382,7 +406,8 @@ test("a nested user send before this extension's input handler takes the probe's
 	], "the claimed nested run is blanked, the probe prompt's run is left untouched");
 	assert.deepEqual(branch.filter((entry) => entry.type === "context_edit").map((entry) => entry.targetId),
 		conversation.slice(0, 2).map(({ id }) => id));
-	assert.deepEqual(conversationRoles(session.sessionManager.buildSessionProjection().messages), ["user", "assistant"]);
+	assert.deepEqual(conversationRoles(session.sessionManager.buildSessionProjection().messages),
+		["user", "assistant"]);
 });
 
 test("a nested user send after this extension's input handler makes ownership ambiguous and both runs proceed", { timeout: 30_000 }, async (t) => {
@@ -403,6 +428,7 @@ test("a nested user send after this extension's input handler makes ownership am
 	assert.equal(provider.requests(), 2, "both runs reach the provider");
 	assert.deepEqual(userTexts(provider.bodies[0]), ["nested"], "the nested message keeps its text");
 	assert.deepEqual(stopReasons, [["stop", undefined], ["stop", undefined]]);
+
 	const branch = session.sessionManager.getBranch();
 	assert.deepEqual(conversationEntries(branch).map(({ message }) => [message.role, message.content]), [
 		["user", [{ type: "text", text: "nested" }]],
@@ -433,7 +459,8 @@ for (const position of ["before", "after"] as const) {
 		let sent = false;
 		const sender: ExtensionFactory = (pi) => {
 			pi.on("before_agent_start", () => {
-				if (sent) return;
+				if (sent)
+					return;
 				sent = true;
 				pi.sendUserMessage("steered", { deliverAs: "steer" });
 				pi.sendMessage({ customType: "plain", content: "plain", display: true });
@@ -448,7 +475,9 @@ for (const position of ["before", "after"] as const) {
 		assert.equal(provider.requests(), 0, "the probe makes no provider request");
 		assert.equal(responses, 0);
 		// Pi delivers one queued message per turn: the custom one with the prompt, the steered one in an extra turn
-		assert.deepEqual(stopReasons, [["aborted", "This operation was aborted"], ["aborted", "This operation was aborted"]]);
+		const aborted = ["aborted", "This operation was aborted"];
+		assert.deepEqual(stopReasons, [aborted, aborted]);
+
 		const branch = session.sessionManager.getBranch();
 		const conversation = branch.flatMap((entry) => entry.type === "message"
 			&& (entry.message.role === "user" || entry.message.role === "assistant")
@@ -461,9 +490,11 @@ for (const position of ["before", "after"] as const) {
 			["assistant", []],
 		], "the probe prompt and both aborts are blanked, the steered message keeps its text");
 		assert.ok(conversation.every(({ message }) => message.role === "user" || message.stopReason === "stop"));
+
 		const steered = conversation[2];
 		assert.deepEqual(branch.filter((entry) => entry.type === "context_edit").map((entry) => entry.targetId),
 			conversation.filter((entry) => entry !== steered).map(({ id }) => id), "only probe entries are omitted");
+
 		const projected = session.sessionManager.buildSessionProjection().messages;
 		assert.deepEqual(projected.flatMap((message) => message.role === "custom" ? [message.customType] : []),
 			["plain"]);
@@ -499,21 +530,24 @@ async function probeWithNestedUserSend(t: TestContext, position: "before" | "aft
 		});
 		pi.on("agent_settled", () => {
 			events.push("agent_settled");
-			if (++settledRuns === 2) resolveBothSettled();
+			if (++settledRuns === 2)
+				resolveBothSettled();
 		});
 	};
 	let nestedSent = false;
 	const nestedSettled = Promise.withResolvers<void>();
 	const nestedSender: ExtensionFactory = (pi) => {
 		pi.on("input", async (event) => {
-			if (nestedSent || event.source !== "extension") return;
+			if (nestedSent || event.source !== "extension")
+				return;
 			nestedSent = true;
 			pi.sendUserMessage("nested");
 			await nestedSettled.promise;
 		});
 		pi.on("agent_settled", () => {
 			// Pi is idle only once every agent_settled handler has returned; later resolves are no-ops
-			if (nestedSent) setImmediate(nestedSettled.resolve);
+			if (nestedSent)
+				setImmediate(nestedSettled.resolve);
 		});
 	};
 	const ordered = position === "before" ? [nestedSender, registerExtension] : [registerExtension, nestedSender];
@@ -535,6 +569,7 @@ async function probeWithNestedUserSend(t: TestContext, position: "before" | "aft
 	});
 	await session.prompt("/context injections");
 	await bothSettled;
+
 	return { session, provider, events, warnings, errors, stopReasons };
 }
 
@@ -549,13 +584,16 @@ async function bindTui(session: AgentSession): Promise<string[]> {
 		onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
 		uiContext: createUiContext(),
 	});
+
 	return errors;
 }
 
 /** Text of each user message in a request body; Pi sends custom messages as user messages. */
 function userTexts(body: RequestBody): string[] {
 	return body.messages.flatMap((message) => {
-		if (message.role !== "user") return [];
+		if (message.role !== "user")
+			return [];
+
 		return typeof message.content === "string"
 			? [message.content]
 			: [message.content.map((part) => part.text ?? "").join("")];

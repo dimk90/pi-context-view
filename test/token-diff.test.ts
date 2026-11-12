@@ -18,8 +18,11 @@ test("countWordChanges counts only the characters one side has", () => {
 	assert.deepEqual(countWordChanges("", "added"), { addedChars: 5, removedChars: 0 });
 	assert.deepEqual(countWordChanges("removed", ""), { addedChars: 0, removedChars: 7 });
 	const line = "\n- search: Search the web";
-	assert.deepEqual(countWordChanges("- read: Read files\n- write: Write", `- read: Read files${line}\n- write: Write`),
-		{ addedChars: line.length, removedChars: 0 }, "an inserted line counts exactly");
+	assert.deepEqual(
+		countWordChanges("- read: Read files\n- write: Write", `- read: Read files${line}\n- write: Write`),
+		{ addedChars: line.length, removedChars: 0 },
+		"an inserted line counts exactly",
+	);
 	assert.deepEqual(countWordChanges("Summarize the latest test results.", "Summarize XYZZY_PAYLOAD results."),
 		{ addedChars: "XYZZY_PAYLOAD".length, removedChars: "the latest test".length });
 });
@@ -46,8 +49,12 @@ test("diffWords reconstructs both sides on the same alignment as counts", () => 
 			assert.equal(parts.filter((part) => part.type !== "added").map((part) => part.text).join(""), before);
 			assert.equal(parts.filter((part) => part.type !== "removed").map((part) => part.text).join(""), after);
 			assert.deepEqual({
-				addedChars: parts.filter((part) => part.type === "added").reduce((sum, part) => sum + part.text.length, 0),
-				removedChars: parts.filter((part) => part.type === "removed").reduce((sum, part) => sum + part.text.length, 0),
+				addedChars: parts
+					.filter((part) => part.type === "added")
+					.reduce((sum, part) => sum + part.text.length, 0),
+				removedChars: parts
+					.filter((part) => part.type === "removed")
+					.reduce((sum, part) => sum + part.text.length, 0),
 			}, countWordChanges(before, after));
 		}
 	}
@@ -91,10 +98,12 @@ test("measureTokenDiff reconciles exactly with the base and request estimates", 
 	}
 	assert.deepEqual(measureTokenDiff({ text: "with [image]", tokens: 1_203 }, { text: "with text", tokens: 3 }),
 		{ added: 1, removed: 1_201 }, "a removed image counts as removed, not as a smaller addition");
+
 	const json = '[{"type":"text","text":"XYZZY_CONTEXT_DELETE: reply with one word: ok"}]';
 	const replacement = { text: "A replacement note for the request.", tokens: 9 };
 	assert.deepEqual(measureTokenDiff({ text: json, tokens: 12 }, replacement), { added: 9, removed: 12 },
 		"text outside the estimates never removes more than the base has");
+
 	const insertion = measureTokenDiff(side("- read"), { text: "- read\n- search", tokens: 3 });
 	assert.deepEqual(insertion, { added: 1, removed: 0 }, "a pure insertion stays a pure addition");
 });

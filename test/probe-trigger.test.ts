@@ -49,6 +49,7 @@ function createHarness(simulateRun: (probe: SilentProbe, store: SnapshotStore) =
 	const trigger = new ProbeTrigger({
 		pi, probe, snapshots: store, compaction: new CompactionState(), snapshotGraceMs: 1,
 	});
+
 	return { context, trigger, store, visibility, sent: () => sent, run: () => run };
 }
 

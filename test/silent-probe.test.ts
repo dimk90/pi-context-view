@@ -78,6 +78,7 @@ test("SilentProbe omissions persist without the extension and retain branch-safe
 	const { filter, probe } = createProbe();
 	const attempt = probe.start(1_000);
 	probe.beginRun("user", attempt.token);
+
 	const manager = SessionManager.inMemory("/tmp");
 	const genuineUser = { role: "user", content: [], timestamp: 1 } satisfies ContextEvent["messages"][number];
 	const genuineAbort = assistantMessage("aborted", 2);
@@ -87,26 +88,33 @@ test("SilentProbe omissions persist without the extension and retain branch-safe
 	manager.appendMessage(genuineAbort);
 	probe.recordMessage(probeUser);
 	probe.recordMessage(probeAssistant);
+
 	const userId = manager.appendMessage(probeUser);
 	const sanitized = probe.sanitizeMessage(probeAssistant);
 	assert.ok(sanitized?.role === "assistant");
+
 	const assistantId = manager.appendMessage(sanitized);
 	manager.appendCustomMessageEntry("other-extension", "keep", false);
+
 	const beforeEdits = manager.getLeafId();
 	assert.ok(beforeEdits);
+
 	const projectedEntries = () => manager.buildSessionProjection().entries;
 	const drafts = probe.createContextEdits(projectedEntries());
 	assert.deepEqual(drafts, [
 		{ type: "context_edit", targetId: userId, replacement: null },
 		{ type: "context_edit", targetId: assistantId, replacement: null },
 	]);
-	for (const draft of drafts) manager.appendContextEdit(draft.targetId, draft.replacement);
+	for (const draft of drafts)
+		manager.appendContextEdit(draft.targetId, draft.replacement);
 	assert.deepEqual(manager.buildSessionProjection().messages.slice(0, 2), [genuineUser, genuineAbort]);
 	assert.equal(manager.buildSessionProjection().messages.length, 3, "only the two probe messages are omitted");
 	assert.deepEqual(probe.createContextEdits(projectedEntries()), [], "do not append duplicate omissions");
 	assert.equal(manager.getBranch().filter((entry) => entry.type === "message").length, 4, "raw history stays intact");
+
 	const header = manager.getHeader();
 	assert.ok(header);
+
 	const reloaded = SessionManager.inMemory("/tmp", undefined, [header, ...manager.getEntries()]);
 	assert.deepEqual(reloaded.buildSessionProjection().messages, manager.buildSessionProjection().messages);
 
@@ -136,7 +144,9 @@ test("SilentProbe claims its run by token when an input transform rewrites the p
 	assert.equal(probe.claimInput({ source: "extension" }, attempt.token), true);
 	assert.equal(probe.beginRun("user", attempt.token), "claimed", "rewritten text must not hide the probe run");
 
-	const probePrompt = { role: "user", content: transformed, timestamp: 30 } satisfies ContextEvent["messages"][number];
+	const probePrompt = {
+		role: "user", content: transformed, timestamp: 30,
+	} satisfies ContextEvent["messages"][number];
 	probe.recordMessage(probePrompt);
 
 	// Blanked for the transcript; Pi stores the blank prompt, which every later model context filters out
@@ -236,6 +246,7 @@ test("SilentProbe records only the first user message of its run and every abort
 		probe.recordMessage(message);
 		const sanitized = probe.sanitizeMessage(message) ?? message;
 		assert.ok(sanitized.role === "user" || sanitized.role === "assistant");
+
 		return sanitized;
 	});
 	const ids = stored.map((message) => manager.appendMessage(message));
@@ -309,6 +320,7 @@ test("SilentProbe filters restored identities without consuming the probe attemp
 	const previousRuntime = createProbe();
 	const previousAttempt = previousRuntime.probe.start(1_000);
 	assert.equal(previousRuntime.probe.beginRun("user", previousAttempt.token), "claimed");
+
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	previousRuntime.probe.recordMessage(probeUser);
 	previousRuntime.probe.settle();
@@ -337,6 +349,7 @@ test("SilentProbe persists every known identity only after recording new ones", 
 
 	const attempt = probe.start(1_000);
 	assert.equal(probe.beginRun("user", attempt.token), "claimed");
+
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	probe.recordMessage(probeUser);
 	probe.recordMessage(probeUser);

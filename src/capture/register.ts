@@ -39,16 +39,21 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 	/** Settle the latest unpaired capture: no payload reached the monitor for it. */
 	function settleUnpaired(): void {
 		const capture = tracker.takeUnpaired();
-		if (capture === undefined) return;
+		if (capture === undefined)
+			return;
 		builder.settleGuard(capture.id, { status: "incomplete", reason: NO_PAYLOAD_REASON });
 		builder.release(capture.id);
 	}
 
 	/** Hand the first assistant dispatch identity of the waiting request to the guard. */
 	function confirmDispatch(message: AgentMessage, ctx: ExtensionContext): void {
-		if (message.role !== "assistant") return;
+		if (message.role !== "assistant")
+			return;
+
 		const request = confirmer.take();
-		if (request === undefined) return;
+		if (request === undefined)
+			return;
+
 		const dispatch = { provider: message.provider, api: message.api, model: message.model };
 		guard.confirm(request, dispatch, (provider, modelId) => ctx.modelRegistry.find(provider, modelId));
 	}
@@ -62,8 +67,10 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 		// Without a UI, no view can show a snapshot. A host may render custom
 		// components outside TUI mode, so the run mode does not decide. Without a
 		// tracked capture, the payload, dispatch, and settle handlers have nothing to do.
-		if (!ctx.hasUI) return;
+		if (!ctx.hasUI)
+			return;
 		settleUnpaired();
+
 		let request: CapturedRequest;
 		try {
 			request = captureRequest({
@@ -90,11 +97,14 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 
 	pi.on("before_provider_request", (event) => {
 		const pairing = tracker.pair(event.payload);
-		if (pairing.type !== "paired") return;
+		if (pairing.type !== "paired")
+			return;
 		// Later handlers can edit the payload in place, so copy it now
 		guard.accept(pairing.capture, event.payload);
+
 		const previous = confirmer.expect(pairing.capture.id);
-		if (previous !== undefined) guard.finishUnconfirmed(previous);
+		if (previous !== undefined)
+			guard.finishUnconfirmed(previous);
 	});
 
 	// No provider_stream_event handler: Pi emits that event, with an awaited emit per chunk, only when one exists
@@ -109,7 +119,8 @@ export function registerCapture(pi: ExtensionAPI, probe: ProbeView, builder: Sna
 	pi.on("agent_settled", () => {
 		settleUnpaired();
 		const unconfirmed = confirmer.take();
-		if (unconfirmed !== undefined) guard.finishUnconfirmed(unconfirmed);
+		if (unconfirmed !== undefined)
+			guard.finishUnconfirmed(unconfirmed);
 	});
 
 	pi.on("session_shutdown", () => {

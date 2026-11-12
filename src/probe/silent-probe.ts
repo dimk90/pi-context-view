@@ -113,6 +113,7 @@ export class SilentProbe {
 			this.resolve(probeFailure("timeout"));
 		}, timeoutMs);
 		this.attempt = { started: true, token: createProbeToken(), completion };
+
 		return this.attempt;
 	}
 
@@ -134,13 +135,15 @@ export class SilentProbe {
 			&& input.source === "extension"
 			&& input.streamingBehavior === undefined
 			&& this.ownsToken(token);
-		if (!isIdleInputWithToken) return false;
+		if (!isIdleInputWithToken)
+			return false;
 		if (!this.inputClaimed) {
 			this.inputClaimed = true;
 			return true;
 		}
 		this.phase = "ambiguous";
 		this.fail("nested-send");
+
 		return false;
 	}
 
@@ -165,9 +168,12 @@ export class SilentProbe {
 			this.phase = "running";
 			return "claimed";
 		}
+
 		const hasClaimed = this.phase === "running" || this.phase === "settled";
-		if (!isUserRunWithToken || !hasClaimed || this.wrongClaimReported) return "foreign";
+		if (!isUserRunWithToken || !hasClaimed || this.wrongClaimReported)
+			return "foreign";
 		this.wrongClaimReported = true;
+
 		return "wrong-claim";
 	}
 
@@ -179,14 +185,17 @@ export class SilentProbe {
 	 * turn at `turn_start`, including the extra turns Pi runs for queued messages.
 	 */
 	public recordMessage(message: ContextEvent["messages"][number]): void {
-		if (!this.isCurrentRun) return;
+		if (!this.isCurrentRun)
+			return;
 		if (message.role === "user") {
-			if (this.promptProgress !== "pending") return;
+			if (this.promptProgress !== "pending")
+				return;
 			this.promptProgress = "started";
 		} else if (message.role !== "assistant") {
 			return;
 		}
-		if (this.filter.record({ role: message.role, timestamp: message.timestamp })) this.unpersistedCount++;
+		if (this.filter.record({ role: message.role, timestamp: message.timestamp }))
+			this.unpersistedCount++;
 	}
 
 	/**
@@ -197,9 +206,13 @@ export class SilentProbe {
 	public sanitizeMessage(
 		message: ContextEvent["messages"][number],
 	): ContextEvent["messages"][number] | undefined {
-		if (!this.isCurrentRun) return undefined;
-		if (message.role === "user") return this.blankProbePrompt(message);
-		if (message.role === "assistant") return this.blankProbeAbort(message);
+		if (!this.isCurrentRun)
+			return undefined;
+		if (message.role === "user")
+			return this.blankProbePrompt(message);
+		if (message.role === "assistant")
+			return this.blankProbeAbort(message);
+
 		return undefined;
 	}
 
@@ -210,21 +223,26 @@ export class SilentProbe {
 	 * entry is matched by its stored message, which a replacement does not change.
 	 */
 	public createContextEdits(contextEntries: readonly ProjectedSessionEntry[]): ContextEditEntryDraft[] {
-		if (!this.isCurrentRun) return [];
+		if (!this.isCurrentRun)
+			return [];
+
 		const edits: ContextEditEntryDraft[] = [];
 		for (const { sourceEntry, messages } of contextEntries) {
 			if (messages.length > 0 && sourceEntry.type === "message" && this.filter.matches(sourceEntry.message)) {
 				edits.push({ type: "context_edit", targetId: sourceEntry.id, replacement: null });
 			}
 		}
+
 		return edits;
 	}
 
 	/** Resolve a running attempt from `agent_settled`. */
 	public settle(): boolean {
-		if (!this.isCurrentRun) return false;
+		if (!this.isCurrentRun)
+			return false;
 		this.phase = "settled";
 		this.resolve({ status: "settled" });
+
 		return true;
 	}
 
@@ -233,7 +251,8 @@ export class SilentProbe {
 	 * Ownership is untouched: only the attempt's own completion is resolved.
 	 */
 	public fail(cause: ProbeFailureCause, detail?: string): void {
-		if (this.attempt === undefined) return;
+		if (this.attempt === undefined)
+			return;
 		this.resolve(probeFailure(cause, detail));
 	}
 
@@ -242,7 +261,8 @@ export class SilentProbe {
 	 * recorded new ones since its last write. Records never contain content.
 	 */
 	public persistIdentities(write: (data: PersistedIdentities) => void): void {
-		if (this.unpersistedCount === 0) return;
+		if (this.unpersistedCount === 0)
+			return;
 		write({ messages: this.filter.syntheticMessages });
 		this.unpersistedCount = 0;
 	}
@@ -255,9 +275,12 @@ export class SilentProbe {
 	private blankProbePrompt(
 		message: Extract<ContextEvent["messages"][number], { role: "user" }>,
 	): ContextEvent["messages"][number] | undefined {
-		if (this.promptProgress !== "started") return undefined;
+		if (this.promptProgress !== "started")
+			return undefined;
 		this.promptProgress = "ended";
-		if (message.content.length === 0 || !this.filter.has(message)) return undefined;
+		if (message.content.length === 0 || !this.filter.has(message))
+			return undefined;
+
 		return { ...message, content: [] };
 	}
 
@@ -273,7 +296,9 @@ export class SilentProbe {
 		const isProbeAbort = (message.stopReason === "aborted" || message.stopReason === "error")
 			&& message.errorMessage !== undefined
 			&& SETUP_ABORT_ERROR_MESSAGES.has(message.errorMessage);
-		if (!isProbeAbort || !this.filter.has(message)) return undefined;
+		if (!isProbeAbort || !this.filter.has(message))
+			return undefined;
+
 		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };
 	}
 
@@ -284,10 +309,13 @@ export class SilentProbe {
 
 	/** Settle the completion promise exactly once and clear the timeout. */
 	private resolve(outcome: ProbeOutcome): void {
-		if (this.outcome !== undefined) return;
-		if (this.timeout !== undefined) clearTimeout(this.timeout);
+		if (this.outcome !== undefined)
+			return;
+		if (this.timeout !== undefined)
+			clearTimeout(this.timeout);
 		this.timeout = undefined;
 		this.outcome = outcome;
+
 		const resolve = this.resolveCompletion;
 		this.resolveCompletion = undefined;
 		resolve?.(outcome);
@@ -305,7 +333,9 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 		// Reset text earlier input transforms added to our own synthetic prompt:
 		// the probe carries no instructions, and its run is identified by token.
 		// Claim an empty prompt too, so that a later nested send is recognized.
-		if (!probe.claimInput(event, readProbeToken()) || event.text === "") return undefined;
+		if (!probe.claimInput(event, readProbeToken()) || event.text === "")
+			return undefined;
+
 		return { action: "transform", text: "" } as const;
 	});
 
@@ -316,7 +346,8 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 	});
 
 	pi.on("turn_start", (_event, ctx) => {
-		if (probe.isCurrentRun) ctx.abort();
+		if (probe.isCurrentRun)
+			ctx.abort();
 	});
 
 	pi.on("message_start", (event) => {
@@ -329,14 +360,19 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 	});
 
 	pi.on("turn_end", (event) => {
-		if (!probe.isCurrentRun) return;
+		if (!probe.isCurrentRun)
+			return;
+
 		const entries = probe.createContextEdits(event.context.contextEntries);
+
 		return entries.length === 0 ? undefined : { entries: [...event.entries, ...entries] };
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
-		if (!probe.isCurrentRun) return;
-		if (ctx.hasUI) ctx.ui.setWorkingVisible(true);
+		if (!probe.isCurrentRun)
+			return;
+		if (ctx.hasUI)
+			ctx.ui.setWorkingVisible(true);
 		probe.settle();
 		persistIdentities();
 	});

@@ -34,6 +34,7 @@ function createNotifyingContext(): {
 		hasUI: true,
 		ui: { notify: (message: string, type: string) => notified.push({ message, type }) },
 	} as unknown as ExtensionCommandContext;
+
 	return { context, notified };
 }
 
@@ -198,6 +199,7 @@ test("resolveRequestSnapshot skips the probe when compaction starts while waitin
 	const unusedAttempt = probe.start(1_000);
 	assert.equal(unusedAttempt.started, true, "skipping compaction must not consume the runtime's probe attempt");
 	probe.fail("shutdown");
+
 	const outcome = await unusedAttempt.completion;
 	assert.equal(outcome.status === "failed" ? outcome.cause : undefined, "shutdown");
 });
@@ -220,6 +222,7 @@ test("resolveRequestSnapshot returns the latest snapshot without probing", async
 	store.publish(requestSnapshot(1, "synthetic-probe"));
 	const probe = await resolveRequestSnapshot(store, trigger, context, true);
 	store.publish(requestSnapshot(2, "real-turn"));
+
 	const real = await resolveRequestSnapshot(store, trigger, context, true);
 
 	assert.equal(probe.type === "snapshot" ? probe.snapshot.origin : undefined, "synthetic-probe");
@@ -228,7 +231,9 @@ test("resolveRequestSnapshot returns the latest snapshot without probing", async
 
 test("resolveRequestSnapshot takes a snapshot a running turn published before idle, without probing", async () => {
 	const store = new SnapshotStore();
-	const trigger = { request: async () => assert.fail("the running turn supplies the snapshot") } as unknown as ProbeTrigger;
+	const trigger = {
+		request: async () => assert.fail("the running turn supplies the snapshot"),
+	} as unknown as ProbeTrigger;
 	const context = {
 		waitForIdle: async () => store.publish(requestSnapshot(1, "real-turn")),
 	} as unknown as ExtensionCommandContext;

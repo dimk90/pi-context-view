@@ -51,6 +51,7 @@ export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
 		...classifyPromptCategories(inputs.snapshot),
 		...classifyMessages(inputs.messages, inputs.nextRequestModel),
 	].filter((category) => category.tokens > 0);
+
 	return {
 		computedAt: inputs.computedAt ?? new Date(),
 		modelLabel: inputs.modelLabel,
@@ -70,18 +71,22 @@ export function collectPreviewEntries(category: UsageCategory): UsagePreviewEntr
 	const entries: UsagePreviewEntry[] = [];
 	const visit = (node: UsageCategory): void => {
 		entries.push(...(node.entries ?? []));
-		for (const child of node.children ?? []) visit(child);
+		for (const child of node.children ?? [])
+			visit(child);
 	};
 	visit(category);
 	if (entries.length > 1 && entries.every((entry) => entry.timestamp !== undefined)) {
 		entries.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 	}
+
 	return entries;
 }
 
 /** Convert pi's nullable ContextUsage to the undefined-based model shape. */
 export function toReportedUsage(usage: ContextUsage | undefined): ReportedContextUsage | undefined {
-	if (usage === undefined) return undefined;
+	if (usage === undefined)
+		return undefined;
+
 	return {
 		tokens: usage.tokens ?? undefined,
 		contextWindow: usage.contextWindow,
@@ -108,9 +113,12 @@ function classifyPromptCategories(snapshot: InjectionSnapshot): UsageCategory[] 
 					systemPrompt.push(leafFromItem(item));
 					break;
 				case "tool":
-					if (item.source.native) builtInTools.push(...breakdownFromItem(item));
-					else if (isMcpTool(item)) mcpTools.push(leafFromItem(item));
-					else customTools.push(leafFromItem(item));
+					if (item.source.native)
+						builtInTools.push(...breakdownFromItem(item));
+					else if (isMcpTool(item))
+						mcpTools.push(leafFromItem(item));
+					else
+						customTools.push(leafFromItem(item));
 					break;
 				case "context-file":
 					contextFiles.push(...breakdownFromItem(item));
@@ -124,6 +132,7 @@ function classifyPromptCategories(snapshot: InjectionSnapshot): UsageCategory[] 
 			}
 		}
 	}
+
 	// Categories follow the order pi assembles them into a request: prompt text,
 	// context files, and skills first, then the tool definitions sent alongside
 	return withoutEmpty([
@@ -182,7 +191,9 @@ function classifyMessages(
 					assistantThinking.push(...thinkingEntries(message));
 				}
 				for (const block of message.content) {
-					if (block.type !== "toolCall") continue;
+					if (block.type !== "toolCall")
+						continue;
+
 					const args = JSON.stringify(block.arguments);
 					assistantToolCalls.push({
 						timestamp: message.timestamp,
@@ -237,6 +248,7 @@ function classifyMessages(
 		...leavesFromGroups("tool-result", Map.groupBy(toolResults, (message) => message.toolName)),
 		leaf("bash-executions", "Bash Executions", bashExecutions),
 	]));
+
 	return withoutEmpty([
 		leaf("user-messages", "User Messages", user),
 		leaf("assistant-messages", "Assistant Messages", assistantText),
@@ -301,14 +313,18 @@ function thinkingEntries(message: AssistantContextMessage): UsagePreviewEntry[] 
 	const reportedTokens = reportedReasoningTokens(message);
 	const countedTokens = Math.max(visibleTokens, reportedTokens ?? 0);
 	const signatureChars = message.content.reduce((sum, block) => {
-		if (block.type === "thinking") return sum + stringLength(block.thinkingSignature);
-		if (block.type === "toolCall") return sum + stringLength(block.thoughtSignature);
+		if (block.type === "thinking")
+			return sum + stringLength(block.thinkingSignature);
+		if (block.type === "toolCall")
+			return sum + stringLength(block.thoughtSignature);
+
 		return sum;
 	}, 0);
 	const invisibleReasoning = createInvisibleReasoningEstimate(signatureChars, visibleTokens, reportedTokens);
 
 	if (texts.length === 0) {
-		if (countedTokens === 0 && invisibleReasoning === undefined) return [];
+		if (countedTokens === 0 && invisibleReasoning === undefined)
+			return [];
 		return [{
 			timestamp: message.timestamp,
 			breadcrumb: ["assistant"],
@@ -338,6 +354,7 @@ function thinkingEntries(message: AssistantContextMessage): UsagePreviewEntry[] 
 				: { visibleTokens: first.tokens, invisibleReasoning }),
 		};
 	}
+
 	return entries;
 }
 
@@ -349,14 +366,17 @@ function createInvisibleReasoningEstimate(
 ): InvisibleReasoningEstimate | undefined {
 	if (reportedTokens !== undefined) {
 		const tokens = Math.max(0, reportedTokens - visibleTokens);
-		if (tokens === 0) return undefined;
+		if (tokens === 0)
+			return undefined;
 		return {
 			tokens,
 			basis: "provider-reported",
 			encoded: signatureChars > 0,
 		};
 	}
-	if (signatureChars === 0) return undefined;
+	if (signatureChars === 0)
+		return undefined;
+
 	// chars/4 over a signature is a rough proxy, not a bound: the server decrypts the
 	// envelope and counts the reconstructed thinking, at a model-dependent ratio that
 	// measured either side of 4. See doc/THINKING.md.
@@ -370,8 +390,11 @@ function createInvisibleReasoningEstimate(
 /** Accept only a finite, non-negative provider reasoning count from possibly old session data. */
 function reportedReasoningTokens(message: AssistantContextMessage): number | undefined {
 	const usage: unknown = message.usage;
-	if (typeof usage !== "object" || usage === null) return undefined;
+	if (typeof usage !== "object" || usage === null)
+		return undefined;
+
 	const reasoning = (usage as { reasoning?: unknown }).reasoning;
+
 	return typeof reasoning === "number" && Number.isFinite(reasoning) && reasoning >= 0
 		? reasoning
 		: undefined;
@@ -387,10 +410,12 @@ function allocateTextTokens(texts: readonly string[]): number[] {
 		.filter((candidate) => candidate.remainder > 0)
 		.sort((a, b) => b.remainder - a.remainder || a.index - b.index);
 	for (const candidate of rankedIndexes) {
-		if (remainder === 0) break;
+		if (remainder === 0)
+			break;
 		allocations[candidate.index] = (allocations[candidate.index] ?? 0) + 1;
 		remainder--;
 	}
+
 	return allocations;
 }
 
@@ -411,7 +436,9 @@ function blockEntries(timestamp: number, kind: string, texts: readonly string[])
 
 /** Text rendering of string-or-block message content; non-text blocks become placeholders. */
 function contentToText(content: string | ReadonlyArray<{ type: string; text?: string }>): string {
-	if (typeof content === "string") return content;
+	if (typeof content === "string")
+		return content;
+
 	return content
 		.map((block) => (block.type === "text" && block.text !== undefined ? block.text : `[${block.type}]`))
 		.join("\n");
@@ -419,13 +446,17 @@ function contentToText(content: string | ReadonlyArray<{ type: string; text?: st
 
 /** Expand an aggregate snapshot item into its children, or itself when it has none. */
 function breakdownFromItem(item: InjectionItem): UsageCategory[] {
-	if (item.children === undefined || item.children.length === 0) return [leafFromItem(item)];
+	if (item.children === undefined || item.children.length === 0)
+		return [leafFromItem(item)];
+
 	return item.children.map((child) => leafFromItem(child));
 }
 
 /** Parent category whose total is the exact sum of its children; undefined when empty. */
 function aggregate(id: string, label: string, children: UsageCategory[]): UsageCategory | undefined {
-	if (children.length === 0) return undefined;
+	if (children.length === 0)
+		return undefined;
+
 	return {
 		id,
 		label,
@@ -451,6 +482,7 @@ function leavesFromGroups(
 			tokens: estimateTokens(message),
 			text: contentToText(message.content),
 		}));
+
 		return leaf(`${idPrefix}:${label}`, label, entries);
 	});
 }

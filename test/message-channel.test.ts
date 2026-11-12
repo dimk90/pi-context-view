@@ -27,6 +27,7 @@ function unit(part: MessageUnit["part"], text: string, name?: string): MessageUn
 /** A capture of `messages` with no request-only change, as the monitor would copy it. */
 function capture(messages: readonly RequestMessage[], forcedPrompt?: string): ConvertibleCapture {
 	const baseline = messages.map((message, index) => ({ entryId: `e${index}`, message }));
+
 	return {
 		baseline: { messages: baseline }, ...copyRequest(baseline, messages),
 		...(forcedPrompt === undefined ? {} : { forcedPrompt }),
@@ -94,10 +95,13 @@ test("a moved unit is a deletion plus an addition, never a modification", () => 
 
 test("trimming exactly equal ends keeps the findings of the whole alignment", () => {
 	const [first, empty, last] = [unit("user", "one"), unit("assistant", " "), unit("tool-result", "done")];
-	assert.deepEqual(compareMessageUnits([first, empty, unit("user", "old"), last], [first, unit("user", "new"), last], EXACT), [{
+	const before = [first, empty, unit("user", "old"), last];
+	const after = [first, unit("user", "new"), last];
+	assert.deepEqual(compareMessageUnits(before, after, EXACT), [{
 		type: "payload-change", change: "modified", part: "user",
 		lines: [{ type: "removed", text: "old" }, { type: "added", text: "new" }],
 	}]);
+
 	// The leading key-equal unit matches first, so the exactly equal last unit is the added one
 	const spaced = unit("user", "a  b");
 	const plain = unit("user", "a b");
@@ -139,6 +143,7 @@ test("image placeholders are Pi's only for a model without image input", () => {
 		type: "payload-change", change: "modified", part: "user",
 		lines: [{ type: "added", text: "(image omitted: model does not support images)" }],
 	}]);
+
 	const converted = convertCapturedRequest(capture(messages), { blockImages: false });
 	assert.doesNotMatch(JSON.stringify(converted), /PRIVATE_IMAGE/);
 });
@@ -163,6 +168,7 @@ test("system messages render at their positions, collapse without support, and y
 	assert.deepEqual(expected(messages, VISION), [
 		unit("system", "Base.\n\n<cwd>/b</cwd>"), unit("user", "one"), unit("user", "two"),
 	]);
+
 	const converted = convertCapturedRequest(capture(messages, "Forced."), { blockImages: false });
 	const forced = renderExpectedUnits(converted, keeps);
 	assert.deepEqual(forced, [unit("system", "Forced."), unit("user", "one"), unit("user", "two")]);
@@ -191,7 +197,11 @@ test("Responses additional tools add Pi's incremental and removal notices only w
 	assert.match(systemTexts[4], /\nStill unavailable: read\.$/, "a redefinition makes only its own tool available");
 	assert.equal(systemTexts[5], "", "a redefinition announces no removal");
 
-	for (const compat of [{ supportsAdditionalTools: true }, { supportsMidConvoSystemMessages: true, supportsToolSearch: true }]) {
+	const compats = [
+		{ supportsAdditionalTools: true },
+		{ supportsMidConvoSystemMessages: true, supportsToolSearch: true },
+	];
+	for (const compat of compats) {
 		const notices = expected(messages, { ...model, compat }).filter((item) => item.part === "system"
 			&& (item.text.includes("incremental tools update") || item.text.includes(RESPONSES_TOOL_REMOVAL_NOTICE)));
 		assert.deepEqual(notices, [], `no notices with ${JSON.stringify(compat)}`);
@@ -224,7 +234,9 @@ for (const { model, sameText } of [
 				unit("user", "q"), unit("assistant", "Answer."),
 			]);
 		}
-		const same = expected([user("q"), assistant(model, content)], model).filter((item) => item.part === "assistant");
+
+		const same = expected([user("q"), assistant(model, content)], model)
+			.filter((item) => item.part === "assistant");
 		assert.deepEqual(same, [unit("assistant", sameText)]);
 	});
 }
@@ -241,7 +253,10 @@ for (const foreign of [false, true]) {
 			}))),
 			{ role: "toolResult", toolCallId: id, toolName: "read", isError: true, timestamp: 4,
 				content: [{ type: "text", text: "Error." }, IMAGE, IMAGE] },
-			{ role: "toolResult", toolCallId: "success", toolName: "read", isError: false, timestamp: 5, content: [IMAGE] },
+			{
+				role: "toolResult", toolCallId: "success", toolName: "read", isError: false, timestamp: 5,
+				content: [IMAGE],
+			},
 			{ role: "toolResult", toolCallId: "second", toolName: "read", isError: true, timestamp: 6,
 				content: [{ type: "text", text: "(image attached after the tool results)" }, IMAGE,
 					{ type: "text", text: "More." }, IMAGE] },
@@ -255,13 +270,15 @@ for (const foreign of [false, true]) {
 			...[id, "success", "second", "text-only"].map(() => unit("tool-call", "{}", "read")),
 			unit("tool-result", "Error.\n(image attached after the tool results)"),
 			unit("tool-result", "(see attached image)"),
-			unit("tool-result", "(image attached after the tool results)\nMore.\n(image attached after the tool results)"),
+			unit("tool-result",
+				"(image attached after the tool results)\nMore.\n(image attached after the tool results)"),
 			unit("tool-result", "No image."),
 			unit("user", `Images from the error result of tool call ${captionId} (read):\n`
 				+ "Images from the error result of tool call second (read):"),
 			unit("user", "Next."),
 		]);
 		assert.equal(JSON.stringify(messages), original, "rendering never changes the transcript");
+
 		const edited = rendered.map((item) => item.part === "user" && item.text.startsWith("Images from")
 			? { ...item, text: "Edited caption." } : item);
 		assert.equal(compareMessageUnits(rendered, edited, EXACT).length, 1, "caption edits remain payload findings");
@@ -279,7 +296,10 @@ test("Anthropic error-image relocation requires an error and images still enable
 		] as const) {
 			const messages: RequestMessage[] = [
 				assistant(model, [{ type: "toolCall", id: "call", name: "read", arguments: {} }]),
-				{ role: "toolResult", toolCallId: "call", toolName: "read", isError, timestamp: 4, content: [IMAGE, IMAGE] },
+				{
+					role: "toolResult", toolCallId: "call", toolName: "read", isError, timestamp: 4,
+					content: [IMAGE, IMAGE],
+				},
 			];
 			assert.deepEqual(expected(messages, model, blockImages), [
 				unit("tool-call", "{}", "read"), unit("tool-result", result),
@@ -293,7 +313,10 @@ test("Anthropic error-image relocation requires an error and images still enable
 test("Pi's own conversion runs on the rebuilt request: custom, bash, and summary messages become user text", () => {
 	const messages: RequestMessage[] = [
 		{ role: "custom", customType: "note", content: "Note.", display: true, timestamp: 1 },
-		{ role: "bashExecution", command: "ls", output: "", exitCode: 0, cancelled: false, truncated: false, timestamp: 2 },
+		{
+			role: "bashExecution", command: "ls", output: "", exitCode: 0, cancelled: false, truncated: false,
+			timestamp: 2,
+		},
 		{
 			role: "bashExecution", command: "env", output: "SECRET", exitCode: 0, cancelled: false, truncated: false,
 			excludeFromContext: true, timestamp: 3,

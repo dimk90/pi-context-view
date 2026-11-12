@@ -32,6 +32,7 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
 	test(`#11 ${api}: a first probe already leaves out the tools codemode-only hides`, async (t) => {
 		const { session, store, provider, errors, observed } = await createRuntime(t, api);
 		await session.prompt("/context");
+
 		const probe = store.latest();
 		assert.equal(probe?.origin, "synthetic-probe");
 		assert.deepEqual(probe?.hiddenTools, HIDDEN);
@@ -98,7 +99,8 @@ for (const placement of ["before", "after"] as const) {
 		await flush();
 		const custom = store.latest();
 		assert.equal(custom?.origin, "real-turn");
-		assert.deepEqual(custom?.hiddenTools, ["read", "bash"], "the custom run's before_agent_start reports the new set");
+		assert.deepEqual(custom?.hiddenTools, ["read", "bash"],
+			"the custom run's before_agent_start reports the new set");
 		assert.equal(custom?.forcedPrompt, FORCED_SYSTEM_PROMPT);
 		assert.equal(provider.requests.length, 2);
 		assert.equal(observed.responses, 2);
@@ -122,6 +124,7 @@ function usageToolNames(session: AgentSession, store: SnapshotStore): string[] {
 		...applied, systemPrompt: session.systemPrompt, options: liveOptions(session),
 		allTools: session.getAllTools(), activeToolNames: session.getActiveToolNames(),
 	});
+
 	return computeUsage({ snapshot, messages: applied.messages }).categories
 		.filter((category) => category.id === "built-in-tools" || category.id === "custom-tools")
 		.flatMap((category) => category.children ?? []).map((child) => child.label).sort();
@@ -134,6 +137,7 @@ function injectionTools(
 ): { listed: string[]; hidden: readonly string[] | undefined } {
 	const latest = store.latest();
 	assert.ok(latest !== undefined);
+
 	const snapshot = buildInjectionsSnapshot({
 		snapshot: latest, entries: session.sessionManager.getEntries(), filterMessages: (messages) => messages,
 		options: liveOptions(session), allTools: session.getAllTools(), systemPrompt: session.systemPrompt,
@@ -142,6 +146,7 @@ function injectionTools(
 	const flatten = (item: InjectionItem): InjectionItem[] => [item, ...(item.children ?? []).flatMap(flatten)];
 	const listed = snapshot.groups.flatMap((group) => group.items).flatMap(flatten)
 		.filter((item) => item.kind === "tool" && item.children === undefined).map((item) => item.label).sort();
+
 	return { listed, hidden: snapshot.hiddenTools };
 }
 
@@ -158,16 +163,20 @@ interface ExtraExtensions {
 async function createRuntime(t: TestContext, api: MockApi, extra: ExtraExtensions = {}) {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
+
 	// After hooks run in registration order: the session must stop before its directory is removed
 	let stopSession: (() => Promise<void>) | undefined;
 	t.after(() => stopSession?.());
+
 	const directory = await mkdtemp(join(tmpdir(), "context-hidden-tools-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
+
 	const settingsManager = SettingsManager.inMemory({
 		cacheWarming: "off", compaction: { enabled: false }, retry: { enabled: false },
 		defaultTools: ACTIVE, codemode: { mode: "only" },
 	});
 	useSettings(t, directory, () => settingsManager);
+
 	const modelRuntime = await ModelRuntime.create({
 		authPath: join(directory, "auth.json"), modelsPath: null, refreshOnCreate: false, allowModelNetwork: false,
 	});
@@ -191,11 +200,15 @@ async function createRuntime(t: TestContext, api: MockApi, extra: ExtraExtension
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 		extensionFactories: [
 			(pi) => pi.registerProvider("mock", { api, baseUrl: model.baseUrl, apiKey: "mock-key", models: [model] }),
-			createCodemodeExtension(), ...extra.before ?? [], (pi) => registerExtension(pi, store, createIsolatedConfigStore()), ...extra.after ?? [],
+			createCodemodeExtension(),
+			...extra.before ?? [],
+			(pi) => registerExtension(pi, store, createIsolatedConfigStore()),
+			...extra.after ?? [],
 			logger,
 		],
 	});
 	await resourceLoader.reload();
+
 	const { session, extensionsResult } = await createAgentSession({
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, modelRuntime, model,
 		sessionManager: SessionManager.inMemory(directory), thinkingLevel: "off",
@@ -206,11 +219,13 @@ async function createRuntime(t: TestContext, api: MockApi, extra: ExtraExtension
 	};
 	assert.deepEqual(extensionsResult.errors, []);
 	assert.deepEqual(session.getActiveToolNames(), ACTIVE);
+
 	const errors: string[] = [];
 	await session.bindExtensions({
 		mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); },
 		uiContext: createUiContext(),
 	});
+
 	return { session, store, provider, errors, observed };
 }
 

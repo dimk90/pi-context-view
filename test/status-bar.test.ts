@@ -17,7 +17,9 @@ function row(scope?: ChangeScope): Extract<InjectionRow, { kind: "item" }> {
 }
 
 test("every change scope has a distinct explanation with the same measured diff", () => {
-	const scopes: ChangeScope[] = ["saved", "saved-and-edit", "partly", "request", "request-edit", "request-new", "payload"];
+	const scopes: ChangeScope[] = [
+		"saved", "saved-and-edit", "partly", "request", "request-edit", "request-new", "payload",
+	];
 	const explanations = scopes.map((scope) => frameText(statusBarLines(createTheme(), row(scope), 200)));
 	assert.equal(new Set(explanations).size, scopes.length);
 	for (const explanation of explanations) {
@@ -49,7 +51,10 @@ test("status fields use semantic colors, not the selected row's accent", () => {
 test("editor names are sanitized and inferred attribution stays qualified", () => {
 	const entry: InjectionRow = {
 		...row("saved"), editors: [
-			{ type: "extension", source: { id: "ext:1", label: "npm:web\u001b[2J\n docs", native: false }, attribution: "guess" },
+			{
+				type: "extension", source: { id: "ext:1", label: "npm:web\u001b[2J\n docs", native: false },
+				attribution: "guess",
+			},
 			{ type: "extension", source: { id: "ext:2", label: "review.ts", native: false } },
 			{ type: "unknown" },
 		],
@@ -77,6 +82,7 @@ test("marker explanations follow change details with consistent semantic colors"
 		assert.ok(containsBlock(moved.slice(2), [markerStatusField(theme, marker)]));
 	}
 	assert.ok(moved.slice(2).every((line) => line.includes(theme.getFgAnsi("warning"))));
+
 	const dropped = statusBarLines(theme, { ...row(), dropped: true, moved: true }, 200);
 	assert.ok(containsBlock(dropped, [markerStatusField(theme, "dropped")]));
 	assert.equal(dropped.length, 1, "dropped takes precedence over moved");
@@ -107,7 +113,8 @@ test("status wrapping preserves the entire explanation, including Unicode metada
 		assert.equal(frameText(lines).replace(/\s/g, ""), whole);
 		assert.doesNotMatch(frameText(lines), /…/);
 	}
-	for (const width of [1, 2, 4, 6]) assertFrame(statusBarLines(theme, row("request-edit"), width), width, 500);
+	for (const width of [1, 2, 4, 6])
+		assertFrame(statusBarLines(theme, row("request-edit"), width), width, 500);
 });
 
 test("unchanged and non-selectable rows have no status text", () => {
@@ -116,5 +123,6 @@ test("unchanged and non-selectable rows have no status text", () => {
 		{ kind: "group", groupKey: "source:pi", label: "pi", tokens: 10, depth: 0 },
 		{ kind: "separator", label: "", tokens: 0, depth: 0 },
 		...buildInjectionRows({ groups: [], totalTokens: 10 }).filter((row) => row.kind === "total"),
-	] satisfies InjectionRow[]) assert.deepEqual(statusBarLines(theme, entry, 120), []);
+	] satisfies InjectionRow[])
+		assert.deepEqual(statusBarLines(theme, entry, 120), []);
 });

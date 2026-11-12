@@ -39,9 +39,11 @@ function currentStyle(text: string): string {
 	return sgrTheme.bold(sgrTheme.inverse(sgrTheme.bg("searchMatchBg", sgrTheme.fg("searchMatchText", text))));
 }
 
+/** The search pattern for a query that must produce one. */
 function pattern(query: string): RegExp {
 	const result = searchPattern(query);
 	assert.ok(result !== undefined);
+
 	return result;
 }
 
@@ -103,7 +105,8 @@ test("PreviewSearch selects from the anchor while typing, then wraps through mat
 	const lines = ["alpha", "beta needle", "gamma", "needle delta", "epsilon needle"];
 	const search = new PreviewSearch();
 	search.edit(2);
-	for (const key of "needle") search.type(key);
+	for (const key of "needle")
+		search.type(key);
 	assert.equal(search.sync(lines), 3, "the first match at or after the anchor row");
 	assert.equal(search.status, "2/3");
 
@@ -166,7 +169,8 @@ test("highlightLine closes every highlight and keeps the line's own trailing res
 		{ start: 0, end: 6, current: true },
 	]);
 	assert.equal(stripTerminalSequences(highlighted), "needle and needle");
-	assert.ok(highlighted.endsWith(`${matchStyle("needle")}\u001b[39m`), "the last match closes before the line's reset");
+	assert.ok(highlighted.endsWith(`${matchStyle("needle")}\u001b[39m`),
+		"the last match closes before the line's reset");
 	assert.equal(highlightLine(sgrTheme, line, []), line);
 });
 
@@ -175,6 +179,7 @@ test("searchHints closes with one Back hint, after an optional extra hint", () =
 	const backHints = (hints: ReturnType<typeof searchHints>) =>
 		hints.filter(([key, label]) => key === "Esc" && label === "Back");
 	assert.equal(backHints(searchHints(prompt, "Scroll")).length, 1);
+
 	const extra = ["c", "Copy", true] as const;
 	const withExtra = searchHints(prompt, "Scroll", extra);
 	assert.equal(backHints(withExtra).length, 1);

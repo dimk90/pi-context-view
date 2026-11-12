@@ -13,15 +13,21 @@ export const CONTEXT_MODIFY_SUFFIX = "Give recommendations only; do not edit fil
 /** Target the saved prompt, not a synthetic user note another demo added. */
 export default function (pi: ExtensionAPI): void {
 	pi.on("context", (event, ctx) => {
-		const original = ctx.sessionManager.buildSessionProjection().messages.findLast((message) => message.role === "user");
-		if (original?.role !== "user") return undefined;
+		const original = ctx.sessionManager.buildSessionProjection().messages
+			.findLast((message) => message.role === "user");
+		if (original?.role !== "user")
+			return undefined;
+
 		const text = contentText(original.content);
 		const index = event.messages.findLastIndex((message) => message.role === "user"
 			&& message.timestamp === original.timestamp && contentText(message.content) === text);
 		const target = event.messages[index];
-		if (target?.role !== "user") return undefined;
+		if (target?.role !== "user")
+			return undefined;
+
 		const messages = [...event.messages];
 		messages[index] = { ...target, content: `${text}\n${CONTEXT_MODIFY_SUFFIX}` };
+
 		return { messages };
 	});
 }

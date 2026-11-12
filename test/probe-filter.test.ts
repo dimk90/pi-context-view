@@ -16,6 +16,7 @@ test("ProbeFilter leaves unmatched message arrays unchanged", () => {
 test("ProbeFilter removes only exact role and timestamp matches", () => {
 	const filter = new ProbeFilter();
 	filter.restoreIdentities([{ role: "user", timestamp: 10 }]);
+
 	const probeUser = { role: "user", content: [], timestamp: 10 } satisfies ContextEvent["messages"][number];
 	const sameTimeCustom = {
 		role: "custom", customType: "other", content: "keep", display: false, timestamp: 10,
@@ -27,6 +28,7 @@ test("ProbeFilter removes only exact role and timestamp matches", () => {
 test("ProbeFilter matches a recorded user identity only for a blank message", () => {
 	const filter = new ProbeFilter();
 	filter.restoreIdentities([{ role: "user", timestamp: 10 }]);
+
 	// SilentProbe stores its prompt without parts; older versions kept Pi's one empty text part
 	const blankPrompts = [
 		{ role: "user", content: [], timestamp: 10 },

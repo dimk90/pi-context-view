@@ -33,7 +33,11 @@ import { CONTEXT_ADD_TYPE } from "./fixtures/context-add.ts";
 import { CONTEXT_DELETE_SAVED_TEXT, CONTEXT_DELETE_SAVED_TYPE } from "./fixtures/context-delete-saved.ts";
 import { CONTEXT_MODIFY_PREFIX } from "./fixtures/context-modify.ts";
 import {
-	PAYLOAD_CHANGE_ADDED, PAYLOAD_CHANGE_ANCHOR, PAYLOAD_CHANGE_DELETED, PAYLOAD_CHANGE_MODIFIED, PAYLOAD_CHANGE_ORIGINAL,
+	PAYLOAD_CHANGE_ADDED,
+	PAYLOAD_CHANGE_ANCHOR,
+	PAYLOAD_CHANGE_DELETED,
+	PAYLOAD_CHANGE_MODIFIED,
+	PAYLOAD_CHANGE_ORIGINAL,
 } from "./fixtures/payload-changes.ts";
 import { PAYLOAD_REMOVED_TOOL } from "./fixtures/payload-remove-tool.ts";
 import { SECTION_DELETE_NAME, SECTION_DELETE_SECTIONS } from "./fixtures/section-delete.ts";
@@ -70,19 +74,23 @@ for (const api of APIS) {
 			const runtime = await createRuntime(t, api, position);
 			await runtime.session.prompt(FIRST_PROMPT);
 			await runtime.session.prompt(LATEST_PROMPT);
+
 			const snapshot = await runtime.latest();
 			assert.deepEqual(runtime.errors, []);
+
 			const before = position === "before";
 
 			assert.deepEqual(snapshot.changes.conversation.map(describeChange).sort(), [
 				`added ${CONTEXT_ADD_TYPE}`,
 				// payload-changes seeds its request-only originals through `context` in both orders
-				...[PAYLOAD_CHANGE_ORIGINAL, PAYLOAD_CHANGE_ANCHOR, PAYLOAD_CHANGE_DELETED].map((text) => `added user: ${text}`),
+				...[PAYLOAD_CHANGE_ORIGINAL, PAYLOAD_CHANGE_ANCHOR, PAYLOAD_CHANGE_DELETED]
+					.map((text) => `added user: ${text}`),
 				"deleted",
 				`modified user: ${CONTEXT_MODIFY_PREFIX} ${LATEST_PROMPT}`,
 			].sort());
 			const deleted = snapshot.changes.conversation.find((change) => change.type === "deleted");
 			assert.ok(deleted?.type === "deleted");
+
 			const entry = runtime.session.sessionManager.getEntry(deleted.entryId);
 			assert.ok(entry?.type === "custom_message" && entry.customType === CONTEXT_DELETE_SAVED_TYPE);
 			assert.equal(runtime.session.sessionManager.getEntries().filter((saved) =>
@@ -90,8 +98,9 @@ for (const api of APIS) {
 			"the deleted note is saved once, not once per prompt");
 
 			// After the monitor, section edits reach only the payload
-			assert.deepEqual(snapshot.changes.system.map((change) => change.type === "section" ? change.name : change.type)
-				.sort(), before ? [
+			const systemChanges = snapshot.changes.system
+				.map((change) => change.type === "section" ? change.name : change.type);
+			assert.deepEqual(systemChanges.sort(), before ? [
 				"cwd", SECTION_DELETE_NAME, ...Object.keys(SECTION_DELETE_SECTIONS),
 				...SECTION_MODIFY_SECTIONS.map(({ name }) => name), ...Object.keys(SECTION_PATCH_SECTIONS),
 			].sort() : []);
@@ -103,8 +112,10 @@ for (const api of APIS) {
 				const modified = snapshot.guard.findings.find((finding) =>
 					finding.type === "payload-change" && finding.change === "modified");
 				assert.deepEqual(modified?.lines, [
-					{ type: "removed", text: PAYLOAD_CHANGE_ORIGINAL }, { type: "added", text: PAYLOAD_CHANGE_MODIFIED },
+					{ type: "removed", text: PAYLOAD_CHANGE_ORIGINAL },
+					{ type: "added", text: PAYLOAD_CHANGE_MODIFIED },
 				]);
+
 				const added = snapshot.guard.findings.find((finding) =>
 					finding.type === "payload-change" && finding.change === "added");
 				assert.deepEqual(added?.lines, [{ type: "added", text: PAYLOAD_CHANGE_ADDED }]);
@@ -119,13 +130,18 @@ for (const api of APIS) {
 
 /** One-line description of a conversation change; additions keep their text, except custom messages. */
 function describeChange(change: ConversationChange): string {
-	if (change.type === "deleted") return "deleted";
+	if (change.type === "deleted")
+		return "deleted";
+
 	const message = change.message;
-	if (message.role === "custom") return `${change.type} ${message.customType}`;
+	if (message.role === "custom")
+		return `${change.type} ${message.customType}`;
 	assert.ok(message.role === "user");
+
 	const text = typeof message.content === "string"
 		? message.content
 		: message.content.map((block) => block.type === "text" ? block.text : "").join("");
+
 	return `${change.type} user: ${text}`;
 }
 
@@ -144,10 +160,12 @@ function assertAttributedTool(snapshot: InjectionSnapshot): void {
 	const group = snapshot.groups.find((group) => group.source.label === "attributed-tool.ts");
 	assert.ok(group, "the path-loaded tool has its own extension group");
 	assert.ok(group.items.some((item) => item.kind === "tool" && item.label === ATTRIBUTED_TOOL_NAME));
+
 	const prompt = group.items.find((item) => item.diffOnly);
 	assert.ok(prompt?.diff && prompt.diff.added > 0);
 	assert.equal(prompt.requestOnly, undefined);
 	assert.deepEqual(prompt.sections?.map((part) => part.label), ["Tools", "Rules"]);
+
 	const piPrompt = snapshot.groups.find((group) => group.source.label === "pi")?.items
 		.find((item) => item.kind === "base-prompt");
 	for (const label of ["Tools", "Rules"]) {
@@ -172,10 +190,13 @@ function assertDeletedPreviews(snapshot: InjectionSnapshot, structuredSections: 
 	assert.equal(removed.length, 1);
 	assert.equal(removed[0]?.tokens, 0);
 	assert.equal(removed[0]?.text, CONTEXT_DELETE_SAVED_TEXT);
+
 	const saved = messages?.sections?.filter((part) => part.label === AGENT_START_MESSAGE_TYPE) ?? [];
 	assert.equal(saved.length, 2, "each prompt saves one copy");
-	for (const part of saved) assert.deepEqual([part.change, part.requestOnly], [undefined, undefined]);
-	if (!structuredSections) return;
+	for (const part of saved)
+		assert.deepEqual([part.change, part.requestOnly], [undefined, undefined]);
+	if (!structuredSections)
+		return;
 
 	const promptParts = items.find((item) => item.kind === "base-prompt")?.children ?? [];
 	for (const [name, text] of Object.entries(SECTION_DELETE_SECTIONS)) {
@@ -193,11 +214,14 @@ function assertDeletedPreviews(snapshot: InjectionSnapshot, structuredSections: 
 async function createRuntime(t: TestContext, api: MockApi, position: Position): Promise<Runtime> {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
+
 	// After hooks run in registration order: the session must stop before its directory is removed
 	let stopSession: (() => void) | undefined;
 	t.after(() => stopSession?.());
+
 	const directory = await mkdtemp(join(tmpdir(), "context-combined-test-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
+
 	const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", compaction: { enabled: false } });
 	const modelRuntime = await ModelRuntime.create({
 		authPath: join(directory, "auth.json"), modelsPath: null, refreshOnCreate: false, allowModelNetwork: false,
@@ -228,32 +252,43 @@ async function createRuntime(t: TestContext, api: MockApi, position: Position): 
 		extensionsOverride: (result) => {
 			const monitor = result.extensions.find((extension) => extension.commands.has("context"));
 			assert.ok(monitor);
+
 			const others = result.extensions.filter((extension) => extension !== monitor);
+
 			return { ...result, extensions: position === "after" ? [monitor, ...others] : [...others, monitor] };
 		},
 	});
 	await resourceLoader.reload();
+
 	const { session, extensionsResult } = await createAgentSession({
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, modelRuntime, model,
 		sessionManager: SessionManager.inMemory(directory), thinkingLevel: "off",
 	});
 	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
+
 	const errors: string[] = [];
 	await session.bindExtensions({
-		mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); }, uiContext: createUiContext(),
+		mode: "tui",
+		onError: (error) => {
+			errors.push(`${error.event}: ${error.error}`);
+		},
+		uiContext: createUiContext(),
 	});
+
 	return {
 		session, errors,
 		latest: async () => {
 			await new Promise((resolve) => setImmediate(resolve));
 			const latest = store.latest();
 			assert.ok(latest);
+
 			return latest;
 		},
 		compose: (snapshot) => {
 			assert.ok(monitorApi);
 			const allTools = monitorApi.getAllTools();
+
 			return buildInjectionsSnapshot({
 				snapshot, entries: session.sessionManager.getEntries(), filterMessages: (messages) => messages,
 				options, allTools, systemPrompt: session.systemPrompt, activeToolNames: session.getActiveToolNames(),

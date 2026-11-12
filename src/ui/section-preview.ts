@@ -83,7 +83,9 @@ export function previewLegendLines(
 	diffBase?: DiffBase,
 ): string[] {
 	const markers = previewMarkers(contents);
-	if (markers.length === 0 && notes.length === 0) return [];
+	if (markers.length === 0 && notes.length === 0)
+		return [];
+
 	const lines = [
 		...markerLegendLines(theme, markers, layout.width, diffBase),
 		...notes.flatMap((note) => noteBulletLines(theme, note, layout.width)),
@@ -91,6 +93,7 @@ export function previewLegendLines(
 	const availableRows = layout.availableRows - descriptionBlockRows(lines);
 	const viewport = calculateViewport(layout.contentLineCount, availableRows, 0);
 	const floor = Math.min(DESCRIPTION_MIN_CONTENT_ROWS, layout.contentLineCount);
+
 	return availableRows >= floor && viewport.visibleCount >= floor ? lines : [];
 }
 
@@ -113,25 +116,34 @@ export function previewBodyLines(
 ): string[] {
 	const sections = content.sections ?? [];
 	if (sections.length === 0) {
-		if (content.forcedEdit !== undefined) return forcedEditDiffLines(theme, content.text, content.forcedEdit, wrapWidth);
-		if (hasDiffBase(content.textDiff)) return textDiffLines(theme, content.textDiff, wrapWidth);
+		if (content.forcedEdit !== undefined)
+			return forcedEditDiffLines(theme, content.text, content.forcedEdit, wrapWidth);
+		if (hasDiffBase(content.textDiff))
+			return textDiffLines(theme, content.textDiff, wrapWidth);
 		return contentBodyLines(theme, content, wrapWidth, wrapText, heading);
 	}
+
 	const lines: string[] = [];
 	for (const section of sections) {
 		if (lines.length > 0) {
 			// Captured trailing whitespace must not add to the subsection separator
-			while (lines.length > 0 && normalizeInlineText(lines[lines.length - 1] ?? "") === "") lines.pop();
+			while (lines.length > 0 && normalizeInlineText(lines[lines.length - 1] ?? "") === "")
+				lines.pop();
 			lines.push("", "");
 		}
 		lines.push(...sectionHeaderLines(theme, section, wrapWidth));
-		if (section.message !== undefined) lines.push(...messageDiffLines(theme, section, wrapWidth));
-		else if (section.changedLines !== undefined) lines.push(...payloadDiffLines(theme, section.changedLines, wrapWidth));
+		if (section.message !== undefined)
+			lines.push(...messageDiffLines(theme, section, wrapWidth));
+		else if (section.changedLines !== undefined)
+			lines.push(...payloadDiffLines(theme, section.changedLines, wrapWidth));
 		else if (section.forcedEdit !== undefined) {
 			lines.push(...forcedEditDiffLines(theme, section.text, section.forcedEdit, wrapWidth));
-		} else if (hasDiffBase(section.textDiff)) lines.push(...textDiffLines(theme, section.textDiff, wrapWidth));
-		else lines.push(...contentBodyLines(theme, section, wrapWidth, wrapText, section.label));
+		} else if (hasDiffBase(section.textDiff))
+			lines.push(...textDiffLines(theme, section.textDiff, wrapWidth));
+		else
+			lines.push(...contentBodyLines(theme, section, wrapWidth, wrapText, section.label));
 	}
+
 	return lines;
 }
 
@@ -152,10 +164,13 @@ function previewMarkers(contents: readonly SectionedContent[]): ContextMarker[] 
 	const referenced = contents.flatMap((content) => referenceParts(content)).filter(hasInjectedReferences);
 	const marked = contents.flatMap((content) => [content, ...(content.sections ?? [])]);
 	const markers: ContextMarker[] = [];
-	if (referenced.length > 0) markers.push("highlighted");
-	if (referenced.some(hasGuessedReferences) || marked.some(isGuessedPart)) markers.push("guess");
+	if (referenced.length > 0)
+		markers.push("highlighted");
+	if (referenced.some(hasGuessedReferences) || marked.some(isGuessedPart))
+		markers.push("guess");
 	// The legend orders and deduplicates markers itself
 	markers.push(...marked.flatMap(partMarkers));
+
 	return markers;
 }
 
@@ -188,7 +203,9 @@ function contentBodyLines(
 	heading: string | undefined,
 ): string[] {
 	const references = content.injectedReferences ?? [];
-	if (references.length === 0) return bodyLines(content.text, content.jsonSpan, heading, wrapText);
+	if (references.length === 0)
+		return bodyLines(content.text, content.jsonSpan, heading, wrapText);
+
 	let text = "";
 	let offset = 0;
 	for (const reference of references) {
@@ -202,11 +219,14 @@ function contentBodyLines(
 		if (reference.tool !== undefined) {
 			text += theme.fg("mdLinkUrl", `:${normalizeInlineText(reference.tool)}`);
 		}
-		if (reference.attribution === "guess") text += guessMarker(theme);
+		if (reference.attribution === "guess")
+			text += guessMarker(theme);
 		offset = reference.end;
 	}
 	text += normalizePreviewText(content.text.slice(offset));
+
 	const body = withoutRepeatedHeading(text.replace(/^\n+/, ""), heading);
+
 	return wrapTextWithAnsi(body, wrapWidth)
 		.map((line) => line === "" ? "" : `${BODY_INDENT}${line}`);
 }
@@ -231,9 +251,13 @@ function bodyLines(
  * The dropped line stays part of the estimate; it is redundant on screen only.
  */
 function withoutRepeatedHeading(text: string, heading: string | undefined): string {
-	if (heading === undefined) return text;
+	if (heading === undefined)
+		return text;
+
 	const lineEnd = text.indexOf("\n");
-	if (lineEnd === -1 || headingKey(text.slice(0, lineEnd)) !== headingKey(heading)) return text;
+	if (lineEnd === -1 || headingKey(text.slice(0, lineEnd)) !== headingKey(heading))
+		return text;
+
 	return text.slice(lineEnd + 1);
 }
 
@@ -262,6 +286,8 @@ function sectionHeaderLines(theme: Theme, section: InjectionSection, wrapWidth: 
 		? ""
 		: theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
 	const guess = section.attribution === "guess" ? guessMarker(theme) : "";
-	const header = `${label}${number}${tokens}${diffMarker(theme, section.diff)}${guess}${stateMarkers(theme, section)}`;
+	const markers = `${diffMarker(theme, section.diff)}${guess}${stateMarkers(theme, section)}`;
+	const header = `${label}${number}${tokens}${markers}`;
+
 	return wrapTextWithAnsi(header, wrapWidth).map((line) => `${BODY_INDENT}${line}`);
 }

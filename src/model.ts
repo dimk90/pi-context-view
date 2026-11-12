@@ -50,9 +50,11 @@ export function extensionSource(
 	if (!PATH_SOURCE_KINDS.has(source) || path === undefined) {
 		return { id: `tool-source:${source}`, label: source, native: false };
 	}
+
 	const others = roster
 		.filter((entry) => PATH_SOURCE_KINDS.has(entry.source) && entry.path !== undefined && entry.path !== path)
 		.map((entry) => pathSegments(entry.path ?? ""));
+
 	return { id: `tool-source:${source}:${path}`, label: compactPathLabel(pathSegments(path), others), native: false };
 }
 
@@ -60,8 +62,10 @@ export function extensionSource(
 function compactPathLabel(segments: readonly string[], others: readonly string[][]): string {
 	for (let count = 1; count <= segments.length; count++) {
 		const tail = segments.slice(-count).join("/");
-		if (others.every((other) => other.slice(-count).join("/") !== tail)) return tail;
+		if (others.every((other) => other.slice(-count).join("/") !== tail))
+			return tail;
 	}
+
 	return segments.join("/");
 }
 
@@ -69,7 +73,9 @@ function compactPathLabel(segments: readonly string[], others: readonly string[]
 function pathSegments(path: string): string[] {
 	const segments = path.replaceAll("\\", "/").split("/").filter((segment) => segment.length > 0);
 	const last = segments.at(-1);
-	if (segments.length > 1 && (last === "index.ts" || last === "index.js")) segments.pop();
+	if (segments.length > 1 && (last === "index.ts" || last === "index.js"))
+		segments.pop();
+
 	return segments;
 }
 
@@ -438,12 +444,14 @@ export function sumTokenDiffs(diffs: Iterable<TokenDiff | undefined>): TokenDiff
 		added += diff?.added ?? 0;
 		removed += diff?.removed ?? 0;
 	}
+
 	return added === 0 && removed === 0 ? undefined : { added, removed };
 }
 
 /** Build an owned snapshot from measured items. */
 export function buildSnapshot(items: readonly InjectionItem[]): InjectionSnapshot {
 	const groups = groupInjections(items);
+
 	return {
 		groups,
 		totalTokens: groups.reduce((sum, group) => sum + group.totalTokens, 0),
@@ -454,6 +462,7 @@ export function buildSnapshot(items: readonly InjectionItem[]): InjectionSnapsho
 function createGroup(items: InjectionItem[]): InjectionGroup {
 	// A diff-only row repeats changes other rows already count
 	const counted = items.filter((item) => item.diffOnly !== true);
+
 	return {
 		source: items[0].source,
 		items: items.sort(compareItems),
@@ -514,7 +523,9 @@ function copyJsonSpan(span: JsonSpan | undefined): JsonSpan | undefined {
  */
 function compareItems(a: InjectionItem, b: InjectionItem): number {
 	const rankDelta = itemRank(a) - itemRank(b);
-	if (rankDelta !== 0) return rankDelta;
+	if (rankDelta !== 0)
+		return rankDelta;
+
 	return b.tokens - a.tokens;
 }
 
@@ -543,12 +554,16 @@ function itemRank(item: InjectionItem): number {
 /** Order groups: pi-native first, then extensions by size, and the aggregate last. */
 function compareGroups(a: InjectionGroup, b: InjectionGroup): number {
 	const rankDelta = groupRank(a.source) - groupRank(b.source);
-	if (rankDelta !== 0) return rankDelta;
+	if (rankDelta !== 0)
+		return rankDelta;
+
 	return b.totalTokens - a.totalTokens;
 }
 
 /** Fixed display rank by source kind; extension sources share one rank. */
 function groupRank(source: InjectionSource): number {
-	if (source.native) return 0;
+	if (source.native)
+		return 0;
+
 	return source.id === AGGREGATE_SOURCE_ID ? 2 : 1;
 }

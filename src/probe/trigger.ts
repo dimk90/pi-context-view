@@ -52,6 +52,7 @@ export class ProbeTrigger {
 	private readonly snapshotGraceMs: number;
 	private attempt: Promise<ProbeResult> | undefined;
 
+	/** Create a trigger that has not attempted a probe yet. */
 	public constructor(options: ProbeTriggerOptions) {
 		this.pi = options.pi;
 		this.probe = options.probe;
@@ -68,8 +69,10 @@ export class ProbeTrigger {
 	public async request(context: ExtensionCommandContext): Promise<ProbeResult> {
 		await context.waitForIdle();
 		const failure = getProbeUnavailableFailure(this.pi, context, this.compaction.isActive);
-		if (failure !== undefined) return failure;
+		if (failure !== undefined)
+			return failure;
 		this.attempt ??= this.run(context);
+
 		return this.attempt;
 	}
 
@@ -79,7 +82,8 @@ export class ProbeTrigger {
 		// Subscribe before sending, so no publication of this probe is missed
 		const result = waitForProbeResult(this.snapshots, attempt.completion, this.snapshotGraceMs);
 		// Only the attempt's starter sends: a repeated empty send would be a real turn
-		if (!attempt.started) return result;
+		if (!attempt.started)
+			return result;
 
 		context.ui.setWorkingVisible(false);
 		try {
@@ -121,15 +125,18 @@ function waitForProbeResult(
 
 		/** Resolve once, then stop listening and cancel the grace timer. */
 		function finish(result: ProbeResult): void {
-			if (finished) return;
+			if (finished)
+				return;
 			finished = true;
 			unsubscribe();
-			if (graceTimer !== undefined) clearTimeout(graceTimer);
+			if (graceTimer !== undefined)
+				clearTimeout(graceTimer);
 			resolve(result);
 		}
 
 		void completion.then((outcome) => {
-			if (finished) return;
+			if (finished)
+				return;
 			if (outcome.status === "failed") {
 				finish(outcome);
 				return;
@@ -145,14 +152,19 @@ function getProbeUnavailableFailure(
 	context: ExtensionCommandContext,
 	compactionInProgress: boolean,
 ): ProbeFailure | undefined {
-	if (compactionInProgress) return probeFailure("compaction");
-	if (context.hasPendingMessages()) return probeFailure("pending-messages");
-	if (context.model === undefined) return probeFailure("missing-model");
+	if (compactionInProgress)
+		return probeFailure("compaction");
+	if (context.hasPendingMessages())
+		return probeFailure("pending-messages");
+	if (context.model === undefined)
+		return probeFailure("missing-model");
 	// Pi's virtual-model discriminator is not exported from its package root
-	if (context.model.api === "pi-virtual") return probeFailure("virtual-model");
+	if (context.model.api === "pi-virtual")
+		return probeFailure("virtual-model");
 	if (!context.modelRegistry.hasConfiguredAuth(context.model)) {
 		return probeFailure("missing-auth", context.model.provider);
 	}
+
 	return getProbeSettingsUnavailableFailure(pi, context);
 }
 
@@ -166,7 +178,9 @@ function getProbeSettingsUnavailableFailure(
 		// The merged snapshot can mask global idle warming with an ignored project override
 		const isIdleWarming = settings.getCacheWarmingMode() === "idle"
 			|| readGlobalCacheWarmingMode(context.cwd) === "idle";
-		if (isIdleWarming && mayHaveLiveWarmRun(context)) return probeFailure("idle-warming");
+		if (isIdleWarming && mayHaveLiveWarmRun(context))
+			return probeFailure("idle-warming");
+
 		const compaction = settings.getCompactionSettings(context.model);
 		const usage = context.getContextUsage();
 		if (usage?.tokens != null && shouldCompact(usage.tokens, usage.contextWindow, compaction)) {
@@ -175,6 +189,7 @@ function getProbeSettingsUnavailableFailure(
 	} catch {
 		return probeFailure("settings");
 	}
+
 	return undefined;
 }
 
@@ -189,11 +204,13 @@ function getProbeSettingsUnavailableFailure(
  * counts, although its warm run ended with that process.
  */
 function mayHaveLiveWarmRun(context: ExtensionCommandContext): boolean {
-	if (context.model?.promptCache === undefined) return false;
+	if (context.model?.promptCache === undefined)
+		return false;
 
 	const lastAssistant = context.sessionManager.getBranch().findLast((entry) =>
 		entry.type === "message" && entry.message.role === "assistant");
-	if (lastAssistant?.type !== "message") return false;
+	if (lastAssistant?.type !== "message")
+		return false;
 
 	return Date.now() - lastAssistant.message.timestamp < CACHE_WARMING_MAX_IDLE_AGE_MS;
 }

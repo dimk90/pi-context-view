@@ -65,7 +65,9 @@ export interface HighlightRange {
 /** Case-insensitive pattern for a query, or undefined when it is blank. */
 export function searchPattern(query: string): RegExp | undefined {
 	const normalized = query.replace(/\s+/gu, " ").trim();
-	if (normalized === "") return undefined;
+	if (normalized === "")
+		return undefined;
+
 	return new RegExp(normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu");
 }
 
@@ -90,11 +92,16 @@ export function findMatches(lines: readonly string[], pattern: RegExp): SearchMa
 	for (const found of corpus.text.matchAll(new RegExp(pattern.source, "giu"))) {
 		const start = found.index;
 		const end = start + found[0].length;
-		if (end === start) continue;
-		while (spanIndex < corpus.spans.length && (corpus.spans[spanIndex]?.textEnd ?? 0) <= start) spanIndex++;
+		if (end === start)
+			continue;
+		while (spanIndex < corpus.spans.length && (corpus.spans[spanIndex]?.textEnd ?? 0) <= start)
+			spanIndex++;
+
 		const segments = matchSegments(corpus.spans, spanIndex, start, end);
-		if (segments.length > 0) matches.push({ segments });
+		if (segments.length > 0)
+			matches.push({ segments });
 	}
+
 	return matches;
 }
 
@@ -111,28 +118,39 @@ export function highlightLine(theme: Theme, line: string, ranges: readonly Highl
 	for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
 		const start = Math.max(column, Math.min(range.start, width));
 		const end = Math.min(range.end, width);
-		if (end <= start) continue;
+		if (end <= start)
+			continue;
 		result += sliceByColumn(line, column, start - column, true);
-		result += styleRuns(sliceByColumn(line, start, end - start, true), (text) => matchStyle(theme, text, range.current));
+		result += styleRuns(sliceByColumn(line, start, end - start, true),
+			(text) => matchStyle(theme, text, range.current));
 		column = end;
 	}
-	if (column === 0) return line;
+	if (column === 0)
+		return line;
+
 	// Slicing stops at the last visible column, so restore the resets that close the line
 	return `${result}${sliceByColumn(line, column, width - column, true)}${line.match(TRAILING_ANSI)?.[0] ?? ""}`;
 }
 
 /** Status text for a query: blank, `No matches`, a `current/total` ordinal, or a match count. */
 export function matchStatus(active: boolean, count: number, current: number | undefined): string {
-	if (!active) return "";
-	if (count === 0) return "No matches";
-	if (current !== undefined) return `${current + 1}/${count}`;
+	if (!active)
+		return "";
+	if (count === 0)
+		return "No matches";
+	if (current !== undefined)
+		return `${current + 1}/${count}`;
+
 	return `${count} ${count === 1 ? "match" : "matches"}`;
 }
 
 /** Match step a key requests: `n` for the next match, `N` for the previous one. */
 export function matchStepDirection(data: string): -1 | 1 | undefined {
-	if (data === "n") return 1;
-	if (data === "N") return -1;
+	if (data === "n")
+		return 1;
+	if (data === "N")
+		return -1;
+
 	return undefined;
 }
 
@@ -154,7 +172,8 @@ export function isSearchNavigationKey(data: string): boolean {
  */
 export function searchHints(prompt: SearchPrompt, stepLabel: string, extra?: Hint): Hint[] {
 	const close: Hint[] = extra === undefined ? [["Esc", "Back"]] : [extra, ["Esc", "Back"]];
-	if (prompt.editing) return [["↑↓", stepLabel], ["Enter", "Done"], ["Esc", "Clear"]];
+	if (prompt.editing)
+		return [["↑↓", stepLabel], ["Enter", "Done"], ["Esc", "Clear"]];
 	if (prompt.active) {
 		return [
 			[STEP_KEY_HINT, stepLabel],
@@ -163,6 +182,7 @@ export function searchHints(prompt: SearchPrompt, stepLabel: string, extra?: Hin
 			...close,
 		];
 	}
+
 	return [[STEP_KEY_HINT, stepLabel], ["PgUp/PgDn", "Page"], [SEARCH_KEY, "Search", true], ...close];
 }
 
@@ -212,8 +232,10 @@ export class PreviewSearch {
 
 	/** Feed one key to the open prompt; returns whether the query changed. */
 	public type(data: string): boolean {
-		if (!this.prompt.type(data)) return false;
+		if (!this.prompt.type(data))
+			return false;
 		this.pending = "first";
+
 		return true;
 	}
 
@@ -226,8 +248,10 @@ export class PreviewSearch {
 		if (matchesKey(data, Key.escape)) {
 			this.clear();
 		} else if (matchesKey(data, Key.enter)) {
-			if (this.prompt.active) this.prompt.submit();
-			else this.clear();
+			if (this.prompt.active)
+				this.prompt.submit();
+			else
+				this.clear();
 		} else {
 			this.type(data);
 		}
@@ -242,8 +266,10 @@ export class PreviewSearch {
 
 	/** Move to the next or previous match, wrapping around; false without a query. */
 	public step(direction: -1 | 1): boolean {
-		if (!this.prompt.active) return false;
+		if (!this.prompt.active)
+			return false;
 		this.pending = direction;
+
 		return true;
 	}
 
@@ -273,27 +299,35 @@ export class PreviewSearch {
 				this.currentIndex = this.matchList.length === 0 ? undefined : this.matchList.length - 1;
 			}
 		}
+
 		const pending = this.pending;
 		this.pending = undefined;
 		if (pending === undefined || this.matchList.length === 0) {
-			if (pending !== undefined) this.currentIndex = undefined;
+			if (pending !== undefined)
+				this.currentIndex = undefined;
 			return undefined;
 		}
 		this.currentIndex = this.resolve(pending);
+
 		return this.matchList[this.currentIndex]?.segments[0]?.row;
 	}
 
 	/** Prompt row and its trailing blank row while shown; render after `sync` so the status is current. */
 	public promptLines(theme: Theme, width: number): string[] {
-		if (!this.prompt.shown) return [];
+		if (!this.prompt.shown)
+			return [];
+
 		return [this.prompt.render(theme, width, "Search", this.status), ""];
 	}
 
 	/** Highlight every match segment on one rendered row. */
 	public highlight(theme: Theme, line: string, row: number): string {
 		const segments = this.matchRows.get(row);
-		if (segments === undefined) return line;
+		if (segments === undefined)
+			return line;
+
 		const ranges = segments.map(({ match, start, end }) => ({ start, end, current: match === this.currentIndex }));
+
 		return highlightLine(theme, line, ranges);
 	}
 
@@ -304,7 +338,9 @@ export class PreviewSearch {
 			const index = this.matchList.findIndex((match) => (match.segments[0]?.row ?? 0) >= this.anchor);
 			return index === -1 ? 0 : index;
 		}
-		if (this.currentIndex === undefined) return pending === 1 ? 0 : count - 1;
+		if (this.currentIndex === undefined)
+			return pending === 1 ? 0 : count - 1;
+
 		return (this.currentIndex + pending + count) % count;
 	}
 }
@@ -370,6 +406,7 @@ export class SearchPrompt {
 	public type(data: string): boolean {
 		const previous = this.query;
 		this.input.handleInput(data);
+
 		return this.query !== previous;
 	}
 
@@ -389,6 +426,7 @@ export class SearchPrompt {
 		const query = this.open
 			? truncateToWidth(this.input.render(queryWidth)[0] ?? "", queryWidth, "").trimEnd()
 			: theme.fg("text", truncateToWidth(normalizeInlineText(this.query), queryWidth, "…"));
+
 		return right === "" ? fitLine(`${prefix}${query}`, width) : spreadLine(`${prefix}${query}`, right, width);
 	}
 }
@@ -408,11 +446,14 @@ function styleRuns(text: string, style: (text: string) => string): string {
 	let result = "";
 	let offset = 0;
 	for (const sequence of text.matchAll(ANSI_SEQUENCE)) {
-		if (sequence.index > offset) result += style(text.slice(offset, sequence.index));
+		if (sequence.index > offset)
+			result += style(text.slice(offset, sequence.index));
 		result += sequence[0];
 		offset = sequence.index + sequence[0].length;
 	}
-	if (offset < text.length) result += style(text.slice(offset));
+	if (offset < text.length)
+		result += style(text.slice(offset));
+
 	return result;
 }
 
@@ -438,13 +479,17 @@ function buildCorpus(lines: readonly string[]): SearchCorpus {
 	let text = "";
 	const spans: CorpusSpan[] = [];
 	const append = (piece: string, row: number, start: number, width: number, linear: boolean): void => {
-		spans.push({ textStart: text.length, textEnd: text.length + piece.length, row, start, end: start + width, linear });
+		spans.push({
+			textStart: text.length, textEnd: text.length + piece.length, row, start, end: start + width, linear,
+		});
 		text += piece;
 	};
 	for (const [row, line] of lines.entries()) {
 		const plain = stripTerminalSequences(line);
 		for (const word of plain.matchAll(WORD)) {
-			if (text.length > 0) text += " ";
+			if (text.length > 0)
+				text += " ";
+
 			let column = visibleWidth(plain.slice(0, word.index));
 			if (PRINTABLE_ASCII.test(word[0])) {
 				append(word[0], row, column, word[0].length, true);
@@ -457,6 +502,7 @@ function buildCorpus(lines: readonly string[]): SearchCorpus {
 			}
 		}
 	}
+
 	return { text, spans };
 }
 
@@ -465,7 +511,9 @@ function matchSegments(spans: readonly CorpusSpan[], firstSpan: number, start: n
 	const segments: MatchSegment[] = [];
 	for (let index = firstSpan; index < spans.length; index++) {
 		const span = spans[index];
-		if (span === undefined || span.textStart >= end) break;
+		if (span === undefined || span.textStart >= end)
+			break;
+
 		const segmentStart = span.linear ? span.start + Math.max(start, span.textStart) - span.textStart : span.start;
 		const segmentEnd = span.linear ? span.start + Math.min(end, span.textEnd) - span.textStart : span.end;
 		const previous = segments.at(-1);
@@ -476,6 +524,7 @@ function matchSegments(spans: readonly CorpusSpan[], firstSpan: number, start: n
 			segments.push({ row: span.row, start: segmentStart, end: segmentEnd });
 		}
 	}
+
 	return segments;
 }
 
@@ -493,9 +542,12 @@ function segmentsByRow(matches: readonly SearchMatch[]): Map<number, RowSegment[
 		for (const segment of segments) {
 			const row = rows.get(segment.row);
 			const entry = { match, start: segment.start, end: segment.end };
-			if (row === undefined) rows.set(segment.row, [entry]);
-			else row.push(entry);
+			if (row === undefined)
+				rows.set(segment.row, [entry]);
+			else
+				row.push(entry);
 		}
 	}
+
 	return rows;
 }

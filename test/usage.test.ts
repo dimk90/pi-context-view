@@ -52,6 +52,7 @@ function snapshot(): InjectionSnapshot {
 		mcpTool,
 		item("initial-custom-message", "message", 99, false),
 	];
+
 	return {
 		groups: [
 			{
@@ -120,9 +121,12 @@ function sessionMessages(): ContextEvent["messages"] {
 /** Find one category recursively by stable id. */
 function category(categories: readonly UsageCategory[], id: string): UsageCategory {
 	for (const entry of categories) {
-		if (entry.id === id) return entry;
+		if (entry.id === id)
+			return entry;
+
 		const nested = findCategory(entry.children ?? [], id);
-		if (nested !== undefined) return nested;
+		if (nested !== undefined)
+			return nested;
 	}
 	assert.fail(`missing category: ${id}`);
 }
@@ -130,10 +134,14 @@ function category(categories: readonly UsageCategory[], id: string): UsageCatego
 /** Recursive worker for category(). */
 function findCategory(categories: readonly UsageCategory[], id: string): UsageCategory | undefined {
 	for (const entry of categories) {
-		if (entry.id === id) return entry;
+		if (entry.id === id)
+			return entry;
+
 		const nested = findCategory(entry.children ?? [], id);
-		if (nested !== undefined) return nested;
+		if (nested !== undefined)
+			return nested;
 	}
+
 	return undefined;
 }
 
@@ -249,6 +257,7 @@ test("computeUsage carries measured tool parts into tool preview entries", () =>
 
 	const builtinEntry = collectPreviewEntries(category(usage.categories, "item:read"))[0];
 	assert.deepEqual(builtinEntry?.sections?.map((section) => section.label), ["Definition"]);
+
 	const promptEntry = collectPreviewEntries(category(usage.categories, "system-prompt"))[0];
 	assert.equal(promptEntry?.sections, undefined);
 });
@@ -342,6 +351,7 @@ test("computeUsage estimates images while previews expose placeholders only", ()
 	const user = category(usage.categories, "user-messages");
 	assert.equal(user.tokens, 1_201);
 	assert.equal(user.entries?.[0]?.text, "abcd\n[image]");
+
 	const imageResult = category(usage.categories, "tool-result:read_image");
 	assert.equal(imageResult.tokens, 1_200);
 	assert.equal(imageResult.entries?.[0]?.text, "[image]");
@@ -351,6 +361,7 @@ test("computeUsage estimates images while previews expose placeholders only", ()
 test("computeUsage builds per-block preview entries with timestamps and breadcrumbs", () => {
 	const base = assistantMessage();
 	assert.equal(base.role, "assistant");
+
 	const multiBlock: ContextEvent["messages"][number] = {
 		...base,
 		content: [
@@ -392,10 +403,12 @@ test("computeUsage builds per-block preview entries with timestamps and breadcru
 		[20, ["assistant", "bash"]],
 	]);
 	assert.equal(callEntries[2]?.text, 'bash({"command":"ls"})');
+
 	// Arguments are marked where they were serialized, between the call parentheses
 	const argumentsSpan = callEntries[2]?.jsonSpan;
 	assert.ok(argumentsSpan !== undefined);
 	assert.equal(callEntries[2]?.text.slice(argumentsSpan.start, argumentsSpan.end), '{"command":"ls"}');
+
 	const callCategory = category(usage.categories, "tool-calls");
 	assert.equal(callCategory.tokens, callEntries.reduce((sum, entry) => sum + entry.tokens, 0));
 
@@ -459,6 +472,7 @@ test("computeUsage counts pi's LLM-transform text for bash executions and summar
 test("computeUsage uses provider reasoning per message and keeps signature estimates out of raw previews", () => {
 	const base = assistantMessage();
 	assert.equal(base.role, "assistant");
+
 	const messages: ContextEvent["messages"] = [
 		{
 			...base,
@@ -534,6 +548,7 @@ test("computeUsage uses provider reasoning per message and keeps signature estim
 test("computeUsage represents encoded-only reasoning without retaining its signature", () => {
 	const base = assistantMessage();
 	assert.equal(base.role, "assistant");
+
 	const messages: ContextEvent["messages"] = [{
 		...base,
 		content: [{
@@ -561,11 +576,15 @@ test("computeUsage represents encoded-only reasoning without retaining its signa
 test("computeUsage counts only the next request model's thinking", () => {
 	const base = assistantMessage();
 	assert.equal(base.role, "assistant");
+
 	const messages: ContextEvent["messages"] = [{
 		...base,
 		content: [
 			{ type: "thinking", thinking: "abcdefgh", thinkingSignature: "signature" },
-			{ type: "toolCall", id: "call", name: "read", arguments: { path: "x" }, thoughtSignature: "tool-signature" },
+			{
+				type: "toolCall", id: "call", name: "read", arguments: { path: "x" },
+				thoughtSignature: "tool-signature",
+			},
 		],
 		usage: { ...base.usage, reasoning: 7 },
 	}];
@@ -589,6 +608,7 @@ test("computeUsage counts only the next request model's thinking", () => {
 test("resolveNextRequestModel uses a physical selection or a virtual one's latest successful reply", () => {
 	const base = assistantMessage();
 	assert.equal(base.role, "assistant");
+
 	const physical: ModelIdentity = { provider: "openai", api: "openai-responses", id: "gpt" };
 	const virtual: ModelIdentity = { provider: "router", api: "pi-virtual", id: "auto" };
 	const replies: ContextEvent["messages"] = [

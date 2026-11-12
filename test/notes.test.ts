@@ -31,7 +31,8 @@ test("payload attention distinguishes pending, unchecked, partial, complete, and
 test("notes select only applicable capture metadata and sanitize dynamic values", () => {
 	const hiddenTools = ["zebra", "alpha\u001b[2J\nname"];
 	const item: InjectionItem = {
-		id: "payload", kind: "payload-change", label: "fixture", source: { id: "unknown", label: "unknown", native: false },
+		id: "payload", kind: "payload-change", label: "fixture",
+		source: { id: "unknown", label: "unknown", native: false },
 		chars: 0, tokens: 0, text: "private-payload-content",
 	};
 	const notes = injectionsNotes(createTheme(), {
@@ -40,13 +41,15 @@ test("notes select only applicable capture metadata and sanitize dynamic values"
 	});
 	assert.deepEqual(notes.map((note) => note.kind),
 		["overview", "request-missing", "probe", "payload-check", "hidden-tools", "payload-changes"]);
+
 	const text = frameText(notes.map((note) => note.text));
 	assert.ok(text.includes("fixture-reason continued"));
 	assert.ok(text.includes("alpha name, zebra"));
 	assert.match(notes.find((note) => note.kind === "hidden-tools")?.text ?? "", /2/);
 	assert.doesNotMatch(text, /\u001b\[2J|private-payload-content/);
 	assert.deepEqual(hiddenTools, ["zebra", "alpha\u001b[2J\nname"]);
-	assert.deepEqual(injectionsNotes(createTheme(), { items: [], hiddenTools: [] }).map((note) => note.kind), ["overview"]);
+	assert.deepEqual(injectionsNotes(createTheme(), { items: [], hiddenTools: [] }).map((note) => note.kind),
+		["overview"]);
 });
 
 test("disabled probing replaces the missing-request note instead of adding to it", () => {
@@ -65,6 +68,7 @@ test("each note wraps completely rather than freezing a sentence or line count",
 		for (const width of [24, 60, 80, 120]) {
 			const lines = descriptionNoteLines(theme, note, width);
 			assertFrame(lines, width, 100);
+
 			const expected = frameText(descriptionNoteLines(theme, note, 1_000)).replace(/\s/g, "");
 			assert.equal(frameText(lines).replace(/\s/g, ""), expected);
 		}
@@ -83,12 +87,15 @@ test("marker selection uses state, while every legend has distinct nonempty text
 		assert.ok(lines.join("").includes(theme.getFgAnsi(colors[index])));
 		assert.ok(frameText(lines).length > 5);
 		assert.deepEqual(markerLegendLines(theme, [marker, marker], 1_000), lines, "no duplicate legends");
+
 		return frameText(lines);
 	});
 	assert.equal(new Set(texts).size, markers.length);
 	assert.deepEqual(markerLegendLines(theme, [], 100), []);
+
 	const bases = (["default-prompt", "session", "captured-request"] as const)
 		.map((base) => frameText(markerLegendLines(theme, ["diff"], 1_000, base)));
 	assert.equal(new Set(bases).size, 3, "different comparison bases need different explanations");
-	for (const text of bases) assert.match(text, /\+N -N/);
+	for (const text of bases)
+		assert.match(text, /\+N -N/);
 });

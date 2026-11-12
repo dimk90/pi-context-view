@@ -29,6 +29,7 @@ function split(
 	const runs = splitPromptAdditions(prompt, CWD_SECTION.length, { sources });
 	// Runs must reconstruct the region exactly; no measured text is invented or lost
 	assert.equal(runs.map((run) => run.text).join(""), addition);
+
 	return runs.map((run) => [run.text, run.source.label, run.attribution]);
 }
 

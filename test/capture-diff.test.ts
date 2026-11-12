@@ -38,8 +38,11 @@ function baseline(...messages: RequestMessage[]): BaselineMessage[] {
 /** Compact description of edits for assertions. */
 function describe(edits: ReturnType<typeof diffConversation>): string[] {
 	return edits.map((edit) => {
-		if (edit.type === "added") return `added ${messageText(edit.message)}`;
-		if (edit.type === "deleted") return `deleted ${edit.baseline.entryId}`;
+		if (edit.type === "added")
+			return `added ${messageText(edit.message)}`;
+		if (edit.type === "deleted")
+			return `deleted ${edit.baseline.entryId}`;
+
 		return `modified ${edit.baseline.entryId} -> ${messageText(edit.message)}`;
 	});
 }
@@ -49,7 +52,9 @@ function messageText(message: RequestMessage): string {
 	if (message.role === "user" || message.role === "custom") {
 		return typeof message.content === "string" ? message.content : JSON.stringify(message.content);
 	}
-	if (message.role === "assistant") return message.content.map((block) => block.type === "text" ? block.text : "").join("");
+	if (message.role === "assistant")
+		return message.content.map((block) => block.type === "text" ? block.text : "").join("");
+
 	return message.role;
 }
 
@@ -123,9 +128,11 @@ test("comparing in place agrees with message keys", () => {
 	const bash = (output: string, timestamp: number): RequestMessage => ({
 		role: "bashExecution", command: "ls", output, exitCode: 0, cancelled: false, truncated: false, timestamp,
 	});
+	/** Class instance whose prototype makes it differ from an equal plain object. */
 	class Box {
 		public readonly value = 1;
 	}
+
 	const pairs: Array<[string, RequestMessage, RequestMessage]> = [
 		["key order", custom("n", [{ a: 1, b: "x" }]), custom("n", [{ b: "x", a: 1 }])],
 		["undefined property", custom("n", [{ a: 1, b: undefined }]), custom("n", [{ a: 1 }])],
@@ -197,12 +204,16 @@ test("diffing the unmatched rest gives the same edits as diffing both whole side
 		const after: RequestMessage[] = [system, ...Array.from({ length: next() % 10 }, () => user(`m${next() % 3}`))];
 		const unmatched = trimMatchedEnds(before, after);
 		assert.deepEqual(diffConversation(unmatched.baseline, unmatched.request), diffConversation(before, after));
+
 		// The payload guard rebuilds the request from the baseline ends around the copied rest
 		const conversation = before.map(({ message }) => message).filter((message) => message.role !== "system");
 		const suffixStart = unmatched.prefix + unmatched.baseline.length;
-		const rebuilt = [...conversation.slice(0, unmatched.prefix), ...unmatched.request, ...conversation.slice(suffixStart)];
+		const rebuilt = [
+			...conversation.slice(0, unmatched.prefix), ...unmatched.request, ...conversation.slice(suffixStart),
+		];
 		assert.deepEqual(rebuilt.map(messageKey), after.filter((message) => message.role !== "system").map(messageKey));
 	}
+
 	const unchanged = [user("one"), assistant("two")];
 	assert.deepEqual(trimMatchedEnds(baseline(system, ...unchanged), [system, ...unchanged]),
 		{ prefix: 2, baseline: [], request: [] });
@@ -210,7 +221,8 @@ test("diffing the unmatched rest gives the same edits as diffing both whole side
 
 test("a collapsed system message equals the sequence it replaced", () => {
 	const head: SystemMessage = {
-		role: "system", content: "", sections: { preamble: "Base", cwd: "<cwd>/a</cwd>" }, toolsAdded: [READ], timestamp: 1,
+		role: "system", content: "", sections: { preamble: "Base", cwd: "<cwd>/a</cwd>" }, toolsAdded: [READ],
+		timestamp: 1,
 	};
 	const patch: SystemMessage = {
 		role: "system", content: "", sections: { cwd: "<cwd>/b</cwd>" }, toolsAdded: [WRITE], timestamp: 3,
@@ -250,5 +262,6 @@ function lcsLength(a: readonly string[], b: readonly string[]): number {
 			table[i][j] = a[i - 1] === b[j - 1] ? table[i - 1][j - 1] + 1 : Math.max(table[i - 1][j], table[i][j - 1]);
 		}
 	}
+
 	return table[a.length][b.length];
 }

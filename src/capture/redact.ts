@@ -24,6 +24,7 @@ export function redactMessage(message: RequestMessage): RequestMessage {
 		&& Array.isArray(message.content)) {
 		return { ...message, content: message.content.map(redactImageBlock) } as RequestMessage;
 	}
+
 	return message;
 }
 
@@ -41,14 +42,19 @@ function redactAssistantBlock<Block extends Extract<RequestMessage, { role: "ass
 	if (block.type === "toolCall" && block.thoughtSignature !== undefined) {
 		return { ...block, thoughtSignature: maskSignature(block.thoughtSignature) };
 	}
+
 	return block;
 }
 
 /** Content block with an image payload replaced by its size marker. */
 function redactImageBlock<Block extends { readonly type: string }>(block: Block): Block {
-	if (block.type !== "image") return block;
+	if (block.type !== "image")
+		return block;
+
 	const data = (block as { readonly data?: unknown }).data;
-	if (typeof data !== "string") return block;
+	if (typeof data !== "string")
+		return block;
+
 	return { ...block, data: `<${formatSize(data.length)} omitted>` };
 }
 

@@ -5,7 +5,8 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-export default function (pi: ExtensionAPI) {
+/** Prepend the marker instructions to every user input. */
+export default function (pi: ExtensionAPI): void {
 	pi.on("input", (event) => ({
 		action: "transform",
 		text: `XYZZY_MARKER_TRANSFORM: prepended instructions\n${event.text}`,

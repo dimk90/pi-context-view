@@ -90,6 +90,7 @@ export class PayloadGuard {
 	private readonly options: PayloadGuardOptions;
 	private readonly open = new Map<number, PairedState>();
 
+	/** Create a guard with no open captures. */
 	public constructor(options: PayloadGuardOptions) {
 		this.options = options;
 	}
@@ -115,9 +116,11 @@ export class PayloadGuard {
 	 */
 	public confirm(id: number, dispatch: Dispatch, findModel: FindModel): void {
 		const state = this.open.get(id);
-		if (state === undefined || state.finished) return;
+		if (state === undefined || state.finished)
+			return;
 		state.finished = true;
 		state.dispatch = dispatch;
+
 		const model = state.requestModel;
 		if (model?.api === "pi-virtual") {
 			state.dispatchedModel = findModel(dispatch.provider, dispatch.model);
@@ -126,7 +129,9 @@ export class PayloadGuard {
 			}
 		} else if (model !== undefined && !sameDispatch(toDispatch(model), dispatch)) {
 			state.failure = {
-				status: "incomplete", reason: "The dispatched provider, API, or model differs from the captured selection.", dispatch,
+				status: "incomplete",
+				reason: "The dispatched provider, API, or model differs from the captured selection.",
+				dispatch,
 			};
 		}
 		this.schedule(state);
@@ -135,7 +140,8 @@ export class PayloadGuard {
 	/** A paired request ended without dispatch metadata; discard any provisional result. */
 	public finishUnconfirmed(id: number): void {
 		const state = this.open.get(id);
-		if (state === undefined || state.finished) return;
+		if (state === undefined || state.finished)
+			return;
 		state.finished = true;
 		state.failure = { status: "incomplete", reason: "No dispatch identity was observed for this request." };
 		this.schedule(state);
@@ -144,14 +150,16 @@ export class PayloadGuard {
 	/** Cancel scheduled work and release payloads and comparison inputs at shutdown. */
 	public clear(): void {
 		for (const state of this.open.values()) {
-			if (state.scheduled !== undefined) clearImmediate(state.scheduled);
+			if (state.scheduled !== undefined)
+				clearImmediate(state.scheduled);
 		}
 		this.open.clear();
 	}
 
 	/** Schedule at most one job per request; failures never escape into the host. */
 	private schedule(state: PairedState): void {
-		if (state.scheduled !== undefined) return;
+		if (state.scheduled !== undefined)
+			return;
 		state.scheduled = setImmediate(() => {
 			state.scheduled = undefined;
 			try {
@@ -181,13 +189,17 @@ export class PayloadGuard {
 			state.expected = reduceCapture(state.capture, state.blockImages);
 			state.capture = undefined;
 		}
+
 		const model = state.requestModel?.api === "pi-virtual" ? state.dispatchedModel : state.requestModel;
-		if (model === undefined && state.requestModel?.api === "pi-virtual") return;
+		if (model === undefined && state.requestModel?.api === "pi-virtual")
+			return;
+
 		const copy = state.payload;
 		const expected = state.expected;
 		state.payload = undefined;
 		state.expected = undefined;
-		if (copy === undefined || expected === undefined) return; // Already compared on the physical path
+		if (copy === undefined || expected === undefined)
+			return; // Already compared on the physical path
 		if (model === undefined) {
 			this.options.publisher.settleGuard(state.id, {
 				status: "incomplete", reason: "No model was selected for this request.",
@@ -207,10 +219,14 @@ export class PayloadGuard {
 			this.options.publisher.settleGuard(state.id, { status: "incomplete", reason: copy.reason, dispatch });
 			return;
 		}
+
 		const tools = compareToolChannel(copy.payload, expected, model);
 		const messages = compareMessageChannel(copy.payload, expected.transcript, model);
-		const compared = [tools, messages].flatMap((channel) => channel.status === "compared" ? [channel.findings] : []);
-		const failure = tools.status === "unsupported" ? tools : messages.status === "unsupported" ? messages : undefined;
+		const compared = [tools, messages]
+			.flatMap((channel) => channel.status === "compared" ? [channel.findings] : []);
+		const failure = tools.status === "unsupported"
+			? tools
+			: messages.status === "unsupported" ? messages : undefined;
 		const guard: GuardResult = failure === undefined
 			? { status: "complete", dispatch, findings: compared.flat() }
 			: {
@@ -245,12 +261,15 @@ function reduceCapture(capture: GuardCapture, blockImages: boolean): ExpectedReq
 /** Compare the payload's tool declarations with the expected ones. */
 function compareToolChannel(payload: unknown, expected: ExpectedRequest, model: GuardModel): ChannelResult {
 	const parsed = parsePayloadTools(model.api, payload);
-	if (parsed.status !== "parsed") return parsed;
+	if (parsed.status !== "parsed")
+		return parsed;
+
 	const findings = compareToolDeclarations({
 		expected: expected.declarations,
 		declarations: parsed.declarations,
 		ignoreNameCase: model.api === "anthropic-messages",
 	});
+
 	return { status: "compared", findings };
 }
 
@@ -263,8 +282,11 @@ function compareMessageChannel(
 	if (transcript === undefined) {
 		return { status: "unsupported", reason: "The captured request could not be converted for comparison." };
 	}
+
 	const parsed = parsePayloadMessages(model.api, payload);
-	if (parsed.status !== "parsed") return parsed;
+	if (parsed.status !== "parsed")
+		return parsed;
+
 	let expected;
 	try {
 		expected = renderExpectedUnits(transcript, model);
@@ -272,7 +294,11 @@ function compareMessageChannel(
 		// An unexpected message shape must not hide the tool channel's result
 		return { status: "unsupported", reason: "The captured request could not be normalized for this model." };
 	}
-	const findings = compareMessageUnits(expected, parsed.units, { ignoreNameCase: model.api === "anthropic-messages" });
+
+	const findings = compareMessageUnits(expected, parsed.units, {
+		ignoreNameCase: model.api === "anthropic-messages",
+	});
+
 	return { status: "compared", findings };
 }
 

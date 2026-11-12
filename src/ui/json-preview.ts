@@ -15,9 +15,13 @@ const JSON_INDENT = 2;
  * unchanged, so a stale marker degrades to the captured form.
  */
 export function expandJsonSpan(text: string, span: JsonSpan | undefined): string {
-	if (span === undefined) return text;
+	if (span === undefined)
+		return text;
+
 	const expanded = prettifyJson(text.slice(span.start, span.end));
-	if (expanded === undefined) return text;
+	if (expanded === undefined)
+		return text;
+
 	return `${text.slice(0, span.start)}${expanded}${text.slice(span.end)}`;
 }
 
@@ -26,8 +30,11 @@ export function expandJsonSpan(text: string, span: JsonSpan | undefined): string
  * its text; undefined once the removal reaches into the JSON run itself.
  */
 export function shiftJsonSpan(span: JsonSpan | undefined, removed: number): JsonSpan | undefined {
-	if (span === undefined || removed === 0) return span;
-	if (removed > span.start) return undefined;
+	if (span === undefined || removed === 0)
+		return span;
+	if (removed > span.start)
+		return undefined;
+
 	return { start: span.start - removed, end: span.end - removed };
 }
 

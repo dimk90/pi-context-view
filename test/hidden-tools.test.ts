@@ -47,12 +47,14 @@ function createSession(): SessionManager {
 		role: "system", content: "", sections: { cwd: "<cwd>\n/tmp/project\n</cwd>" }, toolsAdded: TOOLS, timestamp: 1,
 	});
 	session.appendMessage({ role: "user", content: "hi", timestamp: 2 });
+
 	return session;
 }
 
 /** Capture the unchanged structured request; Pi leaves out the hidden declarations afterward. */
 function capture(session: SessionManager, id: number, api: string, hiddenTools: readonly string[]) {
 	const messages = session.buildSessionProjection().messages;
+
 	return captureRequest({
 		id, origin: "real-turn", sessionManager: session, messages, effectivePrompt: getCurrentSystemPrompt(messages),
 		probe: { filterMessages: (projected) => projected }, hiddenTools,
@@ -65,10 +67,13 @@ function capture(session: SessionManager, id: number, api: string, hiddenTools: 
 function payload(session: SessionManager, api: string) {
 	const prompt = getCurrentSystemPrompt(session.buildSessionProjection().messages);
 	const declarations = [CODEMODE, { name: DEFERRED_PLACEHOLDER_NAME, description: "Never available." }];
+
 	return api === "openai-completions"
 		? { messages: [{ role: "system", content: prompt }, { role: "user", content: "hi" }],
 			tools: declarations.map((tool) => ({ type: "function", function: tool })) }
-		: { system: [{ type: "text", text: prompt }], messages: [{ role: "user", content: "hi" }], tools: declarations };
+		: {
+			system: [{ type: "text", text: prompt }], messages: [{ role: "user", content: "hi" }], tools: declarations,
+		};
 }
 
 /** Pair, compare, and confirm through the production builder and guard, then read the retained snapshot. */
@@ -86,8 +91,10 @@ async function publish(
 	guard.accept(request, body);
 	guard.confirm(request.id, { provider: "mock", api, model: "text" }, () => undefined);
 	await new Promise((resolve) => setImmediate(resolve));
+
 	const snapshot = store.latest();
 	assert.ok(snapshot);
+
 	return snapshot;
 }
 
@@ -97,6 +104,7 @@ function usage(session: SessionManager, store: SnapshotStore, hiddenTools?: read
 		snapshot: store.latest(), entries: session.getEntries(), leafId: session.getLeafId(),
 		filterMessages: (messages) => messages,
 	});
+
 	return computeUsage({
 		messages: applied.messages,
 		snapshot: buildUsageSnapshot({ ...viewInput(hiddenTools), ...applied }),
@@ -105,7 +113,8 @@ function usage(session: SessionManager, store: SnapshotStore, hiddenTools?: read
 
 /** Names listed in a Usage tool category, which drops entirely when it counts no tokens. */
 function listedTools(result: ReturnType<typeof usage>, id: string): string[] {
-	return (result.categories.find((category) => category.id === id)?.children ?? []).map((child) => child.label).sort();
+	const children = result.categories.find((category) => category.id === id)?.children ?? [];
+	return children.map((child) => child.label).sort();
 }
 
 /** The Injections tree of a snapshot, built with no live hidden tools so only the snapshot's apply. */
@@ -127,14 +136,18 @@ for (const api of ["openai-completions", "anthropic-messages"]) {
 		const store = new SnapshotStore();
 		const before = usage(session, store, []);
 		assert.deepEqual(listedTools(before, "built-in-tools"), [...BUILTIN_NAMES].sort());
+
 		const snapshot = await publish(session, store, api, payload(session, api));
 		assert.deepEqual(snapshot.hiddenTools, BUILTIN_NAMES);
-		assert.deepEqual(snapshot.guard, { status: "complete", dispatch: { provider: "mock", api, model: "text" }, findings: [] });
+		assert.deepEqual(snapshot.guard, {
+			status: "complete", dispatch: { provider: "mock", api, model: "text" }, findings: [],
+		});
 		assert.doesNotMatch(JSON.stringify(snapshot), /__pi_deferred_placeholder__/);
 
 		const observed = usage(session, store);
 		assert.equal(observed.categories.find((category) => category.id === "built-in-tools"), undefined);
 		assert.deepEqual(listedTools(observed, "custom-tools"), ["codemode"]);
+
 		const builtins = before.categories.find((category) => category.id === "built-in-tools");
 		assert.ok(builtins && builtins.tokens > 0);
 		assert.equal(observed.estimatedTokens, before.estimatedTokens - builtins.tokens, "no hidden definition counts");
@@ -146,6 +159,7 @@ for (const api of ["openai-completions", "anthropic-messages"]) {
 		assert.deepEqual(items.filter((item) => item.kind === "tool").map((item) => item.label), ["codemode"]);
 		assert.deepEqual(injections(session, snapshot).hiddenTools, BUILTIN_NAMES);
 		assert.doesNotMatch(JSON.stringify(items), /(read|bash|edit|write) description/);
+
 		const sent = items.find((item) => item.label === "codemode");
 		assert.ok(sent && sent.tokens > 0 && sent.change === undefined);
 		assert.doesNotMatch(JSON.stringify([observed, items]), /__pi_deferred_placeholder__/);
@@ -158,12 +172,15 @@ test("#11: a captured tool the payload drops that Pi did not hide is a deleted p
 	const snapshot = await publish(session, store, "openai-completions", payload(session, "openai-completions"),
 		["read", "bash", "edit"]);
 	assert.deepEqual(snapshot.guard.status === "complete" && snapshot.guard.findings, [{
-		type: "payload-tool-change", change: "deleted", name: "write", lines: [{ type: "removed", text: "write description" }],
+		type: "payload-tool-change", change: "deleted", name: "write",
+		lines: [{ type: "removed", text: "write description" }],
 	}]);
+
 	const items = injectionItems(session, snapshot);
 	const changes = items.find((item) => item.kind === "payload-change");
 	assert.deepEqual(changes?.sections?.map((part) => [part.label, part.toolDeclaration, part.tokens, part.diff]),
 		[["write", true, 0, { added: 0, removed: 5 }]], "the deletion removes the 5-token captured description");
+
 	const builtins = items.find((item) => item.id === "tool:builtin");
 	assert.equal(builtins?.label, "Built-in Tools (1)");
 	assert.deepEqual(builtins.children?.map((item) => [item.label, item.change]), [["write", undefined]]);
@@ -175,9 +192,13 @@ test("#11: a captured tool the payload drops that Pi did not hide is a deleted p
 test("#11: Usage leaves out Pi's live hidden tools without a snapshot or recorded system state", () => {
 	const session = createSession();
 	assert.deepEqual(listedTools(usage(session, new SnapshotStore()), "built-in-tools"), []);
-	assert.deepEqual(listedTools(usage(session, new SnapshotStore(), ["write"]), "built-in-tools"), ["bash", "edit", "read"]);
+	assert.deepEqual(listedTools(usage(session, new SnapshotStore(), ["write"]), "built-in-tools"),
+		["bash", "edit", "read"]);
+
 	// No recorded system message: the live prompt and tools
-	const fallback = computeUsage({ messages: [], snapshot: buildUsageSnapshot({ ...viewInput(["write"]), messages: [] }) });
+	const fallback = computeUsage({
+		messages: [], snapshot: buildUsageSnapshot({ ...viewInput(["write"]), messages: [] }),
+	});
 	assert.deepEqual(listedTools(fallback, "built-in-tools"), ["bash", "edit", "read"]);
 	assert.deepEqual(listedTools(fallback, "custom-tools"), ["codemode"]);
 });
@@ -211,10 +232,14 @@ test("#11: Anthropic inline additions, removals, and same-name redefinitions are
 		messages.push({ role: "system", content: [step === "removed"
 			? { type: "tool_removal", tool: { type: "tool_reference", name: "search" } }
 			: { type: "tool_addition", tool: { type: "tool_definition", definition } }] });
+
 		const request = { ...body, messages };
 		const parsed = parsePayloadTools("anthropic-messages", request);
-		assert.deepEqual(parsed, { status: "parsed", declarations: (step === "removed" ? [CODEMODE] : [CODEMODE, definition])
-			.map(({ name, description }) => ({ name, description })) });
+		const declared = step === "removed" ? [CODEMODE] : [CODEMODE, definition];
+		assert.deepEqual(parsed, {
+			status: "parsed", declarations: declared.map(({ name, description }) => ({ name, description })),
+		});
+
 		const snapshot = await publish(session, store, "anthropic-messages", request);
 		assert.equal(snapshot.guard.status, "complete");
 		assert.deepEqual(snapshot.guard.status === "complete" && snapshot.guard.findings, []);

@@ -86,6 +86,7 @@ export function compareMessageUnits(
 ): GuardFinding[] {
 	const key = (unit: MessageUnit) => unitKey(unit, options.ignoreNameCase);
 	const [before, after] = trimMatchedEnds(expected, sent, key);
+
 	return findGaps(before.filter(isSent), after.filter(isSent), key).flatMap(classifyGap);
 }
 
@@ -96,6 +97,7 @@ export function compareMessageUnits(
 export function diffLines(before: string, after: string): PayloadChangeLine[] {
 	const beforeLines = splitLines(before);
 	const afterLines = splitLines(after);
+
 	return findGaps(beforeLines, afterLines, normalizeText)
 		.flatMap((gap) => [...gap.deleted.map(removedLine), ...gap.added.map(addedLine)]);
 }
@@ -118,20 +120,30 @@ function trimMatchedEnds(
 	key: (unit: MessageUnit) => string,
 ): [readonly MessageUnit[], readonly MessageUnit[]] {
 	let start = 0;
-	while (start < expected.length && start < sent.length && unitsEqual(expected[start], sent[start])) start++;
+	while (start < expected.length && start < sent.length && unitsEqual(expected[start], sent[start]))
+		start++;
+
 	let expectedStart = start;
 	let sentStart = start;
 	for (;;) {
-		while (expectedStart < expected.length && !isSent(expected[expectedStart])) expectedStart++;
-		while (sentStart < sent.length && !isSent(sent[sentStart])) sentStart++;
-		if (expectedStart === expected.length || sentStart === sent.length) break;
-		if (key(expected[expectedStart]) !== key(sent[sentStart])) break;
+		while (expectedStart < expected.length && !isSent(expected[expectedStart]))
+			expectedStart++;
+		while (sentStart < sent.length && !isSent(sent[sentStart]))
+			sentStart++;
+		if (expectedStart === expected.length || sentStart === sent.length)
+			break;
+		if (key(expected[expectedStart]) !== key(sent[sentStart]))
+			break;
 		expectedStart++;
 		sentStart++;
 	}
+
 	let end = 0;
 	while (end < expected.length - expectedStart && end < sent.length - sentStart
-		&& unitsEqual(expected[expected.length - 1 - end], sent[sent.length - 1 - end])) end++;
+		&& unitsEqual(expected[expected.length - 1 - end], sent[sent.length - 1 - end])) {
+		end++;
+	}
+
 	return [expected.slice(expectedStart, expected.length - end), sent.slice(sentStart, sent.length - end)];
 }
 
@@ -156,6 +168,7 @@ function findGaps<Item>(before: readonly Item[], after: readonly Item[], key: (i
 			id = ids.size;
 			ids.set(text, id);
 		}
+
 		return id;
 	};
 	const matches = alignSequences(before.map(intern), after.map(intern));
@@ -165,10 +178,12 @@ function findGaps<Item>(before: readonly Item[], after: readonly Item[], key: (i
 	// A sentinel match after both ends closes the last gap
 	for (const match of [...matches, { before: before.length, after: after.length }]) {
 		const gap = { deleted: before.slice(beforeIndex, match.before), added: after.slice(afterIndex, match.after) };
-		if (gap.deleted.length > 0 || gap.added.length > 0) gaps.push(gap);
+		if (gap.deleted.length > 0 || gap.added.length > 0)
+			gaps.push(gap);
 		beforeIndex = match.before + 1;
 		afterIndex = match.after + 1;
 	}
+
 	return gaps;
 }
 
@@ -189,6 +204,7 @@ function classifyGap(gap: Gap<MessageUnit>): GuardFinding[] {
 		pairs.set(position, unit);
 		searchFrom = position + 1;
 	}
+
 	const findings: GuardFinding[] = unpaired.map((unit) =>
 		payloadChange("deleted", unit, unitLines(unit).map(removedLine)));
 	for (const [index, unit] of gap.added.entries()) {
@@ -197,6 +213,7 @@ function classifyGap(gap: Gap<MessageUnit>): GuardFinding[] {
 			? payloadChange("added", unit, unitLines(unit).map(addedLine))
 			: payloadChange("modified", unit, diffLines(displayText(original), displayText(unit))));
 	}
+
 	return findings;
 }
 

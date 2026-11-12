@@ -85,7 +85,9 @@ export function copyPayload(payload: unknown): PayloadCopy {
 
 /** Whether a payload carries a one-token output limit, as a cache-warm refresh does. */
 export function hasWarmOutputLimit(payload: unknown): boolean {
-	if (!isItem(payload)) return false;
+	if (!isItem(payload))
+		return false;
+
 	// OpenAI Responses raises the limit to its minimum of 16 output tokens
 	return payload.max_tokens === 1 || payload.max_completion_tokens === 1
 		|| payload.max_output_tokens === 1 || payload.max_output_tokens === 16;
@@ -103,7 +105,9 @@ export function parsePayloadTools(api: string, payload: unknown): ParsedTools {
 		case "openai-responses":
 			return isResponsesPayload(payload) ? parsed(responsesDeclarations(payload)) : mismatch(api);
 		case "anthropic-messages": {
-			if (!isAnthropicPayload(payload)) return mismatch(api);
+			if (!isAnthropicPayload(payload))
+				return mismatch(api);
+
 			const declarations = anthropicDeclarations(payload);
 			return declarations === undefined ? mismatch(api) : parsed(declarations);
 		}
@@ -121,20 +125,24 @@ export function parsePayloadMessages(api: string, payload: unknown): ParsedMessa
 	let units: MessageUnit[] | undefined;
 	switch (api) {
 		case "openai-completions":
-			if (!isCompletionsMessages(payload)) return messageMismatch(api);
+			if (!isCompletionsMessages(payload))
+				return messageMismatch(api);
 			units = completionsUnits(payload);
 			break;
 		case "openai-responses":
-			if (!isResponsesInput(payload)) return messageMismatch(api);
+			if (!isResponsesInput(payload))
+				return messageMismatch(api);
 			units = responsesUnits(payload);
 			break;
 		case "anthropic-messages":
-			if (!isAnthropicMessages(payload)) return messageMismatch(api);
+			if (!isAnthropicMessages(payload))
+				return messageMismatch(api);
 			units = anthropicUnits(payload);
 			break;
 		default:
 			return { status: "unsupported", reason: unsupportedApiReason(api) };
 	}
+
 	return units === undefined
 		? { status: "unsupported", reason: `A payload message has a shape the ${api} parser does not know.` }
 		: { status: "parsed", units };
@@ -163,18 +171,25 @@ function copyValue(value: unknown, depth: number): unknown {
 		}
 		return value;
 	}
-	if (depth >= MAX_COPY_DEPTH) throw new Error("The payload is nested too deeply.");
+	if (depth >= MAX_COPY_DEPTH)
+		throw new Error("The payload is nested too deeply.");
 	if (Array.isArray(value)) {
 		const copy: unknown[] = new Array(value.length);
-		for (let index = 0; index < value.length; index++) copy[index] = copyValue(value[index], depth + 1);
+		for (let index = 0; index < value.length; index++)
+			copy[index] = copyValue(value[index], depth + 1);
 		return copy;
 	}
+
 	const prototype: unknown = Object.getPrototypeOf(value);
-	if (prototype !== Object.prototype && prototype !== null) throw new Error("The payload holds a non-JSON object.");
+	if (prototype !== Object.prototype && prototype !== null)
+		throw new Error("The payload holds a non-JSON object.");
+
 	// Plain loops instead of entries() and fromEntries(): 3–6 times faster on large payloads
 	const copy: Record<string, unknown> = {};
 	for (const key in value) {
-		if (!Object.hasOwn(value, key)) continue;
+		if (!Object.hasOwn(value, key))
+			continue;
+
 		const nested = copyValue((value as Record<string, unknown>)[key], depth + 1);
 		// Assignment to __proto__ would set the prototype; keep it an own data property
 		if (key === "__proto__") {
@@ -183,6 +198,7 @@ function copyValue(value: unknown, depth: number): unknown {
 			copy[key] = nested;
 		}
 	}
+
 	return copy;
 }
 
@@ -220,10 +236,13 @@ function completionsDeclarations(payload: Item & { readonly messages: readonly I
 		const nested = (tool.type === "custom" ? tool.custom : tool.function) as Item;
 		addDeclaration(declared, nested.name as string, nested.description);
 	};
-	for (const tool of optionalItems(payload.tools) ?? []) declare(tool);
+	for (const tool of optionalItems(payload.tools) ?? [])
+		declare(tool);
 	for (const message of payload.messages) {
-		if (message.role === "system" && isItemList(message.tools)) message.tools.forEach(declare);
+		if (message.role === "system" && isItemList(message.tools))
+			message.tools.forEach(declare);
 	}
+
 	return [...declared.values()];
 }
 
@@ -240,23 +259,31 @@ function completionsUnits(payload: Item & { readonly messages: readonly Item[] }
 			case "system":
 			case "developer": {
 				// A message with only inline tool additions has no content
-				if (message.content === undefined && message.tools !== undefined) break;
+				if (message.content === undefined && message.tools !== undefined)
+					break;
+
 				const text = completionsText(message.content);
-				if (text === undefined) return undefined;
+				if (text === undefined)
+					return undefined;
 				units.text("system", text);
 				break;
 			}
 			case "user":
 			case "assistant": {
-				const text = message.role === "assistant" && message.content === null ? "" : completionsText(message.content);
-				if (text === undefined) return undefined;
+				const text = message.role === "assistant" && message.content === null
+					? ""
+					: completionsText(message.content);
+				if (text === undefined)
+					return undefined;
 				units.text(message.role, text);
-				if (message.role === "assistant" && !addCompletionsToolCalls(units, message.tool_calls)) return undefined;
+				if (message.role === "assistant" && !addCompletionsToolCalls(units, message.tool_calls))
+					return undefined;
 				break;
 			}
 			case "tool": {
 				const text = completionsText(message.content);
-				if (text === undefined) return undefined;
+				if (text === undefined)
+					return undefined;
 				units.toolResult(text);
 				break;
 			}
@@ -264,6 +291,7 @@ function completionsUnits(payload: Item & { readonly messages: readonly Item[] }
 				return undefined;
 		}
 	}
+
 	return units.result();
 }
 
@@ -274,15 +302,22 @@ function completionsText(content: unknown): string | undefined {
 
 /** Add function and grammar tool calls; false for an unknown shape. */
 function addCompletionsToolCalls(units: UnitCollector, toolCalls: unknown): boolean {
-	if (toolCalls === undefined || toolCalls === null) return true;
-	if (!isItemList(toolCalls)) return false;
+	if (toolCalls === undefined || toolCalls === null)
+		return true;
+	if (!isItemList(toolCalls))
+		return false;
 	for (const call of toolCalls) {
 		const nested = call.type === "custom" ? call.custom : call.function;
-		if (!isItem(nested) || typeof nested.name !== "string") return false;
-		if (call.type === "custom" && typeof nested.input === "string") units.toolCall(nested.name, nested.input);
-		else if (call.type === "function") units.toolCall(nested.name, argumentsText(nested.arguments));
-		else return false;
+		if (!isItem(nested) || typeof nested.name !== "string")
+			return false;
+		if (call.type === "custom" && typeof nested.input === "string")
+			units.toolCall(nested.name, nested.input);
+		else if (call.type === "function")
+			units.toolCall(nested.name, argumentsText(nested.arguments));
+		else
+			return false;
 	}
+
 	return true;
 }
 
@@ -320,13 +355,17 @@ function isInlineResponsesTools(item: Item): boolean {
 function responsesDeclarations(payload: Item & { readonly input: readonly Item[] }): PayloadDeclaration[] {
 	const declared = new Map<string, PayloadDeclaration>();
 	const declare = (tool: Item) => addDeclaration(declared, tool.name as string, tool.description);
-	for (const tool of optionalItems(payload.tools) ?? []) declare(tool);
+	for (const tool of optionalItems(payload.tools) ?? [])
+		declare(tool);
 	for (const item of payload.input) {
-		if (isInlineResponsesTools(item) && isItemList(item.tools)) item.tools.forEach(declare);
+		if (isInlineResponsesTools(item) && isItemList(item.tools))
+			item.tools.forEach(declare);
 		else if (responsesPart(item.role) === "system") {
-			for (const name of announcedRemovals(item.content)) declared.delete(name);
+			for (const name of announcedRemovals(item.content))
+				declared.delete(name);
 		}
 	}
+
 	return [...declared.values()];
 }
 
@@ -334,12 +373,16 @@ function responsesDeclarations(payload: Item & { readonly input: readonly Item[]
 function announcedRemovals(content: unknown): string[] {
 	const lines = (blockText(content, RESPONSES_CONTENT.system) ?? "").split("\n");
 	const start = lines.lastIndexOf(RESPONSES_TOOL_REMOVAL_NOTICE);
-	if (start < 0) return [];
+	if (start < 0)
+		return [];
+
 	const names: string[] = [];
 	for (const line of lines.slice(start + 1)) {
-		if (!line.startsWith("- ")) break;
+		if (!line.startsWith("- "))
+			break;
 		names.push(line.slice(2));
 	}
+
 	return names;
 }
 
@@ -359,28 +402,33 @@ function responsesUnits(payload: Item & { readonly input: readonly Item[] }): Me
 	const units = new UnitCollector();
 	for (const item of payload.input) {
 		units.boundary();
-		if (typeof item.type === "string" && RESPONSES_SKIPPED_ITEMS.has(item.type)) continue;
+		if (typeof item.type === "string" && RESPONSES_SKIPPED_ITEMS.has(item.type))
+			continue;
 		switch (item.type) {
 			case undefined:
 			case "message": {
 				const part = responsesPart(item.role);
 				const text = part === undefined ? undefined : blockText(item.content, RESPONSES_CONTENT[part]);
-				if (part === undefined || text === undefined) return undefined;
+				if (part === undefined || text === undefined)
+					return undefined;
 				units.text(part, text);
 				break;
 			}
 			case "function_call":
-				if (typeof item.name !== "string") return undefined;
+				if (typeof item.name !== "string")
+					return undefined;
 				units.toolCall(item.name, argumentsText(item.arguments));
 				break;
 			case "custom_tool_call":
-				if (typeof item.name !== "string" || typeof item.input !== "string") return undefined;
+				if (typeof item.name !== "string" || typeof item.input !== "string")
+					return undefined;
 				units.toolCall(item.name, item.input);
 				break;
 			case "function_call_output":
 			case "custom_tool_call_output": {
 				const text = blockText(item.output, { input_text: "text", input_image: "skip" });
-				if (text === undefined) return undefined;
+				if (text === undefined)
+					return undefined;
 				units.toolResult(text);
 				break;
 			}
@@ -388,6 +436,7 @@ function responsesUnits(payload: Item & { readonly input: readonly Item[] }): Me
 				return undefined;
 		}
 	}
+
 	return units.result();
 }
 
@@ -400,7 +449,9 @@ const RESPONSES_CONTENT: Readonly<Record<"system" | "user" | "assistant", BlockT
 
 /** The message part of a Responses role; undefined for unknown roles. */
 function responsesPart(role: unknown): "system" | "user" | "assistant" | undefined {
-	if (role === "system" || role === "developer") return "system";
+	if (role === "system" || role === "developer")
+		return "system";
+
 	return role === "user" || role === "assistant" ? role : undefined;
 }
 
@@ -429,17 +480,23 @@ function isAnthropicMessages(payload: unknown): payload is Item & { readonly mes
  * `tool_removal` and `tool_addition` blocks of system messages in order.
  * Undefined when an inline block is malformed.
  */
-function anthropicDeclarations(payload: Item & { readonly messages: readonly Item[] }): PayloadDeclaration[] | undefined {
+function anthropicDeclarations(
+	payload: Item & { readonly messages: readonly Item[] },
+): PayloadDeclaration[] | undefined {
 	const declared = new Map<string, PayloadDeclaration>();
 	for (const tool of optionalItems(payload.tools) ?? []) {
-		if (tool.name !== DEFERRED_PLACEHOLDER_NAME) addDeclaration(declared, tool.name as string, tool.description);
+		if (tool.name !== DEFERRED_PLACEHOLDER_NAME)
+			addDeclaration(declared, tool.name as string, tool.description);
 	}
 	for (const message of payload.messages) {
-		if (message.role !== "system" || !Array.isArray(message.content)) continue;
+		if (message.role !== "system" || !Array.isArray(message.content))
+			continue;
 		for (const block of message.content as unknown[]) {
-			if (!applyAnthropicToolChange(declared, block)) return undefined;
+			if (!applyAnthropicToolChange(declared, block))
+				return undefined;
 		}
 	}
+
 	return [...declared.values()];
 }
 
@@ -456,7 +513,8 @@ function anthropicUnits(payload: Item & { readonly messages: readonly Item[] }):
 		: payload.system;
 	if (system !== undefined) {
 		const text = blockText(system, { text: "text" });
-		if (text === undefined) return undefined;
+		if (text === undefined)
+			return undefined;
 		units.text("system", text);
 	}
 	for (const message of payload.messages) {
@@ -466,11 +524,14 @@ function anthropicUnits(payload: Item & { readonly messages: readonly Item[] }):
 			units.text(part, message.content);
 			continue;
 		}
-		if (!Array.isArray(message.content)) return undefined;
+		if (!Array.isArray(message.content))
+			return undefined;
 		for (const block of message.content as unknown[]) {
-			if (!isItem(block) || !addAnthropicBlock(units, part, block)) return undefined;
+			if (!isItem(block) || !addAnthropicBlock(units, part, block))
+				return undefined;
 		}
 	}
+
 	return units.result();
 }
 
@@ -483,7 +544,8 @@ const ANTHROPIC_SKIPPED_BLOCKS: Readonly<Record<"system" | "user" | "assistant",
 
 /** Add one content block of a message with role `part`; false for an unknown or malformed block. */
 function addAnthropicBlock(units: UnitCollector, part: "system" | "user" | "assistant", block: Item): boolean {
-	if (typeof block.type === "string" && ANTHROPIC_SKIPPED_BLOCKS[part].has(block.type)) return true;
+	if (typeof block.type === "string" && ANTHROPIC_SKIPPED_BLOCKS[part].has(block.type))
+		return true;
 	if (block.type === "text" && typeof block.text === "string") {
 		units.text(part, block.text);
 		return true;
@@ -494,10 +556,12 @@ function addAnthropicBlock(units: UnitCollector, part: "system" | "user" | "assi
 	}
 	if (part === "user" && block.type === "tool_result") {
 		const text = block.content === undefined ? "" : blockText(block.content, { text: "text", image: "skip" });
-		if (text === undefined) return false;
+		if (text === undefined)
+			return false;
 		units.toolResult(text);
 		return true;
 	}
+
 	return false;
 }
 
@@ -506,17 +570,23 @@ function addAnthropicBlock(units: UnitCollector, part: "system" | "user" | "assi
  * False when a tool change block is malformed.
  */
 function applyAnthropicToolChange(declared: Map<string, PayloadDeclaration>, block: unknown): boolean {
-	if (!isItem(block)) return true;
+	if (!isItem(block))
+		return true;
 	if (block.type === "tool_removal") {
 		const reference = block.tool;
-		if (!isItem(reference) || reference.type !== "tool_reference" || typeof reference.name !== "string") return false;
+		if (!isItem(reference) || reference.type !== "tool_reference" || typeof reference.name !== "string")
+			return false;
 		declared.delete(reference.name);
 		return true;
 	}
-	if (block.type !== "tool_addition") return true;
+	if (block.type !== "tool_addition")
+		return true;
+
 	const definition = isItem(block.tool) && block.tool.type === "tool_definition" ? block.tool.definition : undefined;
-	if (!isItem(definition) || !isDeclaration(definition)) return false;
+	if (!isItem(definition) || !isDeclaration(definition))
+		return false;
 	addDeclaration(declared, definition.name, definition.description);
+
 	return true;
 }
 
@@ -526,7 +596,8 @@ function applyAnthropicToolChange(declared: Map<string, PayloadDeclaration>, blo
 
 /** Record a declaration; a later one with the same name replaces it. */
 function addDeclaration(declared: Map<string, PayloadDeclaration>, name: string, description: unknown): void {
-	if (name !== DEFERRED_PLACEHOLDER_NAME) declared.set(name, typeof description === "string" ? { name, description } : { name });
+	if (name !== DEFERRED_PLACEHOLDER_NAME)
+		declared.set(name, typeof description === "string" ? { name, description } : { name });
 }
 
 /** A declared name and an optional description; do not silently drop malformed descriptions. */
@@ -546,21 +617,29 @@ type BlockTypes = Readonly<Record<string, "text" | "skip">>;
  * Undefined for another shape or an unknown part type.
  */
 function blockText(content: unknown, types: BlockTypes): string | undefined {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return undefined;
+	if (typeof content === "string")
+		return content;
+	if (!Array.isArray(content))
+		return undefined;
+
 	const texts: string[] = [];
 	for (const block of content as unknown[]) {
-		if (!isItem(block) || typeof block.type !== "string" || !Object.hasOwn(types, block.type)) return undefined;
-		if (types[block.type] === "skip") continue;
-		if (typeof block.text !== "string") return undefined;
+		if (!isItem(block) || typeof block.type !== "string" || !Object.hasOwn(types, block.type))
+			return undefined;
+		if (types[block.type] === "skip")
+			continue;
+		if (typeof block.text !== "string")
+			return undefined;
 		texts.push(block.text);
 	}
+
 	return texts.join("\n");
 }
 
 /** Tool-call arguments sent as a JSON string, in canonical form; text that is not JSON stays as sent. */
 function argumentsText(value: unknown): string {
-	if (typeof value !== "string") return canonicalJson(value);
+	if (typeof value !== "string")
+		return canonicalJson(value);
 	try {
 		return canonicalJson(JSON.parse(value));
 	} catch {
@@ -605,6 +684,8 @@ function isItemList(value: unknown): value is readonly Item[] {
 
 /** The items of an optional list: empty when absent, undefined when not a list of objects. */
 function optionalItems(value: unknown): readonly Item[] | undefined {
-	if (value === undefined) return [];
+	if (value === undefined)
+		return [];
+
 	return isItemList(value) ? value : undefined;
 }

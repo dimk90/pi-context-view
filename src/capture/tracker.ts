@@ -44,6 +44,7 @@ export class RequestTracker<Capture> {
 	public takeUnpaired(): Capture | undefined {
 		const capture = this.unpaired;
 		this.unpaired = undefined;
+
 		return capture;
 	}
 
@@ -58,8 +59,11 @@ export class RequestTracker<Capture> {
 	 * refresh. The refresh's one-token output limit confirms it.
 	 */
 	public pair(payload: unknown): PayloadPairing<Capture> {
-		if (this.warmDecisionSinceCapture && hasWarmOutputLimit(payload)) return { type: "warm-refresh" };
+		if (this.warmDecisionSinceCapture && hasWarmOutputLimit(payload))
+			return { type: "warm-refresh" };
+
 		const capture = this.takeUnpaired();
+
 		return capture === undefined ? { type: "unpaired" } : { type: "paired", capture };
 	}
 

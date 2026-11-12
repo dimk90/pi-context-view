@@ -20,7 +20,8 @@ export interface MessagePreview {
  * data already contains size markers rather than the original payload.
  */
 export function messagePreview(message: RequestMessage, redacted = false): MessagePreview {
-	if (message.role === "system") return { text: systemMessageText(message) };
+	if (message.role === "system")
+		return { text: systemMessageText(message) };
 	if (message.role === "branchSummary" || message.role === "compactionSummary") {
 		return { text: message.summary };
 	}
@@ -32,7 +33,8 @@ export function messagePreview(message: RequestMessage, redacted = false): Messa
 				: content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n"),
 		};
 	}
-	if (typeof message.content === "string") return { text: message.content };
+	if (typeof message.content === "string")
+		return { text: message.content };
 	if (message.role === "assistant") {
 		const content = message.content.map((block) => {
 			if (block.type === "text") {
@@ -47,10 +49,12 @@ export function messagePreview(message: RequestMessage, redacted = false): Messa
 				const { thoughtSignature, ...preview } = block;
 				return preview;
 			}
+
 			return block;
 		});
 		return serializedPreview(JSON.stringify(content));
 	}
+
 	return serializedPreview(JSON.stringify(redacted ? message.content : message.content.map(imagePreviewBlock)));
 }
 
@@ -60,9 +64,13 @@ export function messagePreview(message: RequestMessage, redacted = false): Messa
  * Sizes measure the base64 text as captured, not the decoded image.
  */
 function imagePreviewBlock<Block extends { readonly type: string }>(block: Block): Block {
-	if (block.type !== "image") return block;
+	if (block.type !== "image")
+		return block;
+
 	const data = (block as { readonly data?: unknown }).data;
-	if (typeof data !== "string") return block;
+	if (typeof data !== "string")
+		return block;
+
 	return { ...block, data: `<${formatSize(data.length)} omitted>` };
 }
 

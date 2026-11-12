@@ -32,6 +32,7 @@ export function calculateViewport(
 ): Viewport {
 	const available = Math.max(1, terminalRows - fixedLineCount - extraLineCount);
 	const showScroll = itemCount > available && available > 1;
+
 	return {
 		visibleCount: Math.max(1, available - (showScroll ? 1 : 0)),
 		showScroll,
@@ -40,8 +41,11 @@ export function calculateViewport(
 
 /** Keep emergency short-terminal output bounded while preserving both borders. */
 export function fitToTerminalHeight(lines: string[], terminalRows: number, border: string): string[] {
-	if (lines.length <= terminalRows) return lines;
-	if (terminalRows === 1) return [border];
+	if (lines.length <= terminalRows)
+		return lines;
+	if (terminalRows === 1)
+		return [border];
+
 	return [...lines.slice(0, terminalRows - 1), border];
 }
 
@@ -95,6 +99,7 @@ export function wrapDescriptionLines(
 	const indent = BODY_INDENT.slice(0, indentWidth);
 	const contentWidth = Math.max(1, width - indentWidth);
 	const wrapped = wrapTextWithAnsi(text, contentWidth);
+
 	return (wrapped.length === 0 ? [""] : wrapped).map((line) =>
 		truncateToWidth(theme.fg(color, `${indent}${line}`), width, "")
 	);
@@ -112,9 +117,12 @@ export function capNoticeLines(
 	wrapNotice: (notice: string) => string[],
 ): string[] {
 	const lines = blocks.flat();
-	if (lines.length <= maxLines) return lines;
+	if (lines.length <= maxLines)
+		return lines;
+
 	const kept = lines.slice(0, maxLines - 1);
 	const hidden = blocks.length - countWholeBlocks(blocks, kept.length);
+
 	return [...kept, ...wrapNotice(`… +${hidden} more`)];
 }
 
@@ -123,10 +131,12 @@ function countWholeBlocks(blocks: readonly (readonly string[])[], keptLines: num
 	let used = 0;
 	let whole = 0;
 	for (const block of blocks) {
-		if (used + block.length > keptLines) break;
+		if (used + block.length > keptLines)
+			break;
 		used += block.length;
 		whole += 1;
 	}
+
 	return whole;
 }
 
@@ -136,6 +146,7 @@ export function spreadLine(left: string, right: string, width: number): string {
 	if (gap < 1) {
 		return fitLine(`${truncateToWidth(left, Math.max(1, width - visibleWidth(right) - 2), "…")} ${right}`, width);
 	}
+
 	return `${left}${" ".repeat(gap)}${right}`;
 }
 
@@ -151,7 +162,9 @@ export function hintRow(theme: Theme, hints: readonly Hint[]): string {
  */
 export function fitHintRow(theme: Theme, hints: readonly Hint[], width: number): string {
 	const full = hintRow(theme, hints);
-	if (visibleWidth(full) <= width) return full;
+	if (visibleWidth(full) <= width)
+		return full;
+
 	return fitLine(hintRow(theme, hints.filter(([, , optional]) => optional !== true)), width);
 }
 

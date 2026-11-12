@@ -9,10 +9,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export function relocateToolSurface(prompt: string): string {
 	const surfaceStart = prompt.indexOf("\n<tools>\n");
 	const surfaceEnd = prompt.indexOf("\n<docs>\n");
-	if (surfaceStart === -1 || surfaceEnd <= surfaceStart) return prompt;
+	if (surfaceStart === -1 || surfaceEnd <= surfaceStart)
+		return prompt;
+
 	const surface = prompt.slice(surfaceStart + 1, surfaceEnd)
 		.replace(/\n\nIn addition to the tools above[^\n]*/, "")
 		.trimEnd();
+
 	return `${prompt.slice(0, surfaceStart)}${prompt.slice(surfaceEnd)}\n\n${surface}`;
 }
 

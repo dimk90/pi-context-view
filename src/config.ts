@@ -206,7 +206,8 @@ export function createDefaultConfigFile(filePath: string = getConfigFilePath()):
 		writeFileSync(filePath, serializeDefaultConfig(), { encoding: "utf8", flag: "wx" });
 		return { type: "created", filePath };
 	} catch (error) {
-		if (hasErrorCode(error, "EEXIST")) return { type: "exists", filePath };
+		if (hasErrorCode(error, "EEXIST"))
+			return { type: "exists", filePath };
 		return { type: "failed", filePath, reason: describeError(error) };
 	}
 }
@@ -242,8 +243,10 @@ export class ConfigStore {
 			this.cachedModifiedTime = modifiedTime;
 			this.loaded = true;
 		}
+
 		const warnings = this.pendingWarnings;
 		this.pendingWarnings = [];
+
 		return { config: this.cached, warnings };
 	}
 }
@@ -255,7 +258,8 @@ export function loadConfigFile(filePath: string): ConfigLoadResult {
 		text = readFileSync(filePath, "utf8");
 	} catch (error) {
 		// An absent file is the expected state for users who never configured anything
-		if (hasErrorCode(error, "ENOENT")) return { config: DEFAULT_CONFIG, warnings: [] };
+		if (hasErrorCode(error, "ENOENT"))
+			return { config: DEFAULT_CONFIG, warnings: [] };
 		return degraded(`Cannot read ${filePath}: ${describeError(error)}.`);
 	}
 	try {
@@ -267,7 +271,9 @@ export function loadConfigFile(filePath: string): ConfigLoadResult {
 
 /** Color of one usage category, falling back for categories without a configurable entry. */
 export function resolveCategoryColor(colors: CategoryColors, categoryId: string | undefined): CategoryColor {
-	if (categoryId === undefined) return FALLBACK_CATEGORY_COLOR;
+	if (categoryId === undefined)
+		return FALLBACK_CATEGORY_COLOR;
+
 	return colors.get(categoryId) ?? FALLBACK_CATEGORY_COLOR;
 }
 
@@ -285,8 +291,11 @@ function serializeDefaultConfig(): string {
 	];
 	// Written by hand: JSON.stringify cannot leave the blank lines that separate the groups
 	const body = groups
-		.map((entries) => entries.map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`).join(",\n"))
+		.map((entries) => entries
+			.map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`)
+			.join(",\n"))
 		.join(",\n\n");
+
 	return `{\n${body}\n}\n`;
 }
 
@@ -295,6 +304,7 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
 		return degraded(`${CONFIG_FILE_NAME} must contain a JSON object.`);
 	}
+
 	const config: ConfigDraft = {
 		categoryColors: new Map(DEFAULT_CATEGORY_COLORS),
 		mapSize: { ...DEFAULT_MAP_SIZE },
@@ -304,10 +314,14 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 	for (const [key, value] of Object.entries(raw)) {
 		const currentKey = RENAMED_CONFIG_KEYS.get(key);
 		// The current name always wins, so a file carrying both names loads order-independently
-		if (currentKey !== undefined && currentKey in raw) continue;
+		if (currentKey !== undefined && currentKey in raw)
+			continue;
+
 		const warning = applyOverride(currentKey ?? key, key, value, config);
-		if (warning !== undefined) warnings.push(warning);
+		if (warning !== undefined)
+			warnings.push(warning);
 	}
+
 	return { config, warnings };
 }
 
@@ -338,6 +352,7 @@ function applyOverride(
 		config.categoryColors.set(categoryId, color);
 		return undefined;
 	}
+
 	const field = CONFIG_KEY_MAP_FIELDS.get(resolvedKey);
 	if (field !== undefined) {
 		const cells = parseMapDimension(value);
@@ -349,10 +364,12 @@ function applyOverride(
 		return undefined;
 	}
 	if (resolvedKey === AUTO_PROBING_KEY) {
-		if (typeof value !== "boolean") return `Ignoring invalid value for "${configuredKey}"; expected true or false.`;
+		if (typeof value !== "boolean")
+			return `Ignoring invalid value for "${configuredKey}"; expected true or false.`;
 		config.autoProbing = value;
 		return undefined;
 	}
+
 	return `Ignoring unknown ${CONFIG_FILE_NAME} key "${configuredKey}".`;
 }
 
@@ -363,15 +380,21 @@ function degraded(reason: string): ConfigLoadResult {
 
 /** Normalize one configured color value, or reject it as unusable. */
 function parseColor(value: unknown): CategoryColor | undefined {
-	if (typeof value !== "string") return undefined;
-	if (isThemeColor(value)) return value;
+	if (typeof value !== "string")
+		return undefined;
+	if (isThemeColor(value))
+		return value;
+
 	return parseHexColor(value);
 }
 
 /** Accept only whole in-range cell counts; the viewport still clamps what it cannot render. */
 function parseMapDimension(value: unknown): number | undefined {
-	if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
-	if (value < MINIMUM_MAP_CELLS || value > MAXIMUM_MAP_CELLS) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value))
+		return undefined;
+	if (value < MINIMUM_MAP_CELLS || value > MAXIMUM_MAP_CELLS)
+		return undefined;
+
 	return value;
 }
 
@@ -382,9 +405,13 @@ function isThemeColor(value: unknown): value is ThemeColor {
 
 /** Expand shorthand and lowercase, so rendering always resolves six hex digits. */
 function parseHexColor(value: string): HexColor | undefined {
-	if (!HEX_COLOR_PATTERN.test(value)) return undefined;
+	if (!HEX_COLOR_PATTERN.test(value))
+		return undefined;
+
 	const digits = value.slice(1).toLowerCase();
-	if (digits.length === 6) return `#${digits}`;
+	if (digits.length === 6)
+		return `#${digits}`;
+
 	return `#${[...digits].map((digit) => `${digit}${digit}`).join("")}`;
 }
 

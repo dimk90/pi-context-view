@@ -13,10 +13,14 @@ const CWD = "/tmp/context-project";
 /** Find a measured item by id, including aggregate sub-items. */
 function findItem(items: readonly InjectionItem[], id: string): InjectionItem | undefined {
 	for (const item of items) {
-		if (item.id === id) return item;
+		if (item.id === id)
+			return item;
+
 		const child = findItem(item.children ?? [], id);
-		if (child !== undefined) return child;
+		if (child !== undefined)
+			return child;
 	}
+
 	return undefined;
 }
 
@@ -32,6 +36,7 @@ function annotatedLines(
 /** Skill in pi's loader shape; only its name, description, and path reach the prompt. */
 function loadedSkill(name: string, description: string) {
 	const filePath = `/skills/${name}/SKILL.md`;
+
 	return {
 		name, description, filePath, baseDir: `/skills/${name}`, disableModelInvocation: false,
 		sourceInfo: { path: filePath, source: "user", scope: "user", origin: "top-level" },
@@ -87,16 +92,20 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 		],
 	);
 	assert.equal(items.find((entry) => entry.id === "tool:npm:web:search")?.source.id, "tool-source:npm:web");
+
 	const base = items.find((entry) => entry.id === "base-prompt");
 	assert.equal(base?.label, "System Prompt");
 	assert.doesNotMatch(base?.text ?? "", /project_context|project_instructions|Project-specific instructions/);
 	assert.doesNotMatch(base?.text ?? "", /available_skills|The following skills/);
+
 	const instructions = items.find((entry) => entry.id === "context-files");
 	assert.equal(instructions?.label, "Instruction Files (1)");
+
 	const contextFile = findItem(items, "context-file:./AGENTS.md");
 	assert.equal(contextFile?.kind, "context-file");
 	assert.equal(contextFile?.text, "Project rules");
 	assert.equal(contextFile?.chars, "Project rules".length);
+
 	// System Prompt counts the addition in its own part, annotated with its source
 	const additionsPart = findItem(items, "base-prompt:additions");
 	assert.equal(additionsPart?.label, "Extension Additions");
@@ -127,6 +136,7 @@ test("analyzeSystemPrompt emits stable semantic ids and content-only measurement
 		builtin?.children?.map((child) => child.id),
 		["tool:builtin:bash", "tool:builtin:read"],
 	);
+
 	const childTokens = builtin?.children?.reduce((sum, child) => sum + child.tokens, 0) ?? 0;
 	assert.ok(childTokens > 0);
 	assert.equal(builtin?.tokens, childTokens);
@@ -168,6 +178,7 @@ test("analyzeSystemPrompt counts a tool's definition and leaves its prompt lines
 	);
 	assert.equal(search?.sections?.[1]?.text, `\n- ${guidelines[0]}\n- ${guidelines[1]}`);
 	assert.equal(search?.text, 'search: Search\n{"q":"string"}');
+
 	// The schema is marked where it was serialized, so previews expand it without detecting JSON
 	const definition = search?.sections?.[2];
 	const schemaSpan = definition?.jsonSpan;
@@ -177,9 +188,11 @@ test("analyzeSystemPrompt counts a tool's definition and leaves its prompt lines
 	const builtin = items.find((entry) => entry.id === "tool:builtin")?.children?.[0];
 	assert.deepEqual(builtin?.sections?.map((section) => [section.label, section.tokens]),
 		[["Tools", 0], ["Definition", builtin?.tokens]]);
+
 	// The aggregate part still marks the schema, since only the definition is in the child text
 	const part = items.find((entry) => entry.id === "tool:builtin")?.sections?.[0];
 	assert.equal(part?.text.slice(part.jsonSpan?.start, part.jsonSpan?.end), "{}");
+
 	// The lines pi renders for the extension tool count once, in System Prompt
 	const base = items.find((entry) => entry.id === "base-prompt");
 	for (const line of ["\n- search: Search the web", `\n- ${guidelines[0]}`, `\n- ${guidelines[1]}`]) {
@@ -391,13 +404,17 @@ test("Available Tools annotates extension snippets inside the text it counts", (
 	assert.ok(base !== undefined && availableTools !== undefined);
 	assert.deepEqual(annotatedLines(availableTools), [["\n- search: Search the web", "npm:web", "search"]]);
 	assert.deepEqual(
-		base.sections?.find((section) => section.text === findItem(items, "base-prompt:available-tools")?.text)?.injectedReferences,
+		base.sections
+			?.find((section) => section.text === findItem(items, "base-prompt:available-tools")?.text)
+			?.injectedReferences,
 		availableTools.injectedReferences,
 	);
+
 	// The part counts its whole body: pi's own bullets and the extension snippet alike
 	const start = prompt.indexOf("<tools>\n") + "<tools>".length;
 	assert.equal(availableTools.text, prompt.slice(start, prompt.indexOf("\n</tools>", start)));
 	assert.equal(availableTools.chars, availableTools.text.length);
+
 	// The snippet counts once, in System Prompt, never also on its tool
 	const search = findItem(items, "tool:npm:web:search");
 	assert.equal(search?.text.includes("Search the web"), false);
@@ -434,9 +451,12 @@ test("Guidelines annotates extension bullets in prompt order and counts them in 
 		[`\n- ${other}`, "npm:fetch", "fetch"],
 	]);
 	assert.deepEqual(
-		base.sections?.find((section) => section.text === findItem(items, "base-prompt:guidelines")?.text)?.injectedReferences,
+		base.sections
+			?.find((section) => section.text === findItem(items, "base-prompt:guidelines")?.text)
+			?.injectedReferences,
 		guidelines.injectedReferences,
 	);
+
 	const start = prompt.indexOf("<rules>\n") + "<rules>".length;
 	assert.equal(guidelines.text, prompt.slice(start, prompt.indexOf("\n</rules>", start)));
 	assert.equal(base.tokens, textTokens(base.text));
@@ -448,12 +468,15 @@ test("Guidelines annotates extension bullets in prompt order and counts them in 
 	const snapshot = buildSnapshot(items);
 	const usage = computeUsage({ snapshot, messages: [] });
 	assert.equal(usage.estimatedTokens, snapshot.totalTokens);
+
 	const category = usage.categories.find((category) => category.id === "system-prompt");
 	assert.ok(category !== undefined);
 	assert.equal(category.tokens, base.tokens);
 	assert.deepEqual(collectPreviewEntries(category)[0]?.sections, snapshot.groups[0]?.items[0]?.sections);
 	assert.equal(usage.categories.find((category) => category.id === "custom-tools")?.tokens,
-		items.filter((item) => item.kind === "tool" && !item.source.native).reduce((sum, item) => sum + item.tokens, 0));
+		items
+			.filter((item) => item.kind === "tool" && !item.source.native)
+			.reduce((sum, item) => sum + item.tokens, 0));
 });
 
 test("guideline attribution matches complete bullets rather than shorter prefixes", () => {
@@ -461,12 +484,15 @@ test("guideline attribution matches complete bullets rather than shorter prefixe
 		{ name: "short", description: "Short", parametersJson: "{}", guidelines: ["Cite"], source: "npm:short" },
 		{ name: "long", description: "Long", parametersJson: "{}", guidelines: ["Cite sources"], source: "npm:long" },
 	];
-	const prompt = buildSystemPrompt({ cwd: CWD, selectedTools: ["short", "long"], promptGuidelines: ["Cite sources", "Cite"] });
+	const prompt = buildSystemPrompt({
+		cwd: CWD, selectedTools: ["short", "long"], promptGuidelines: ["Cite sources", "Cite"],
+	});
 	const items = analyzeSystemPrompt(prompt, {}, tools);
 	assert.deepEqual(annotatedLines(findItem(items, "base-prompt:guidelines")), [
 		["\n- Cite sources", "npm:long", "long"],
 		["\n- Cite", "npm:short", "short"],
 	]);
+
 	const missing = analyzeSystemPrompt(prompt.replace("\n- Cite\n", "\n"), {}, tools);
 	assert.equal(findItem(missing, "base-prompt:guidelines")?.injectedReferences?.length, 1);
 });
@@ -511,6 +537,7 @@ test("analyzeSystemPrompt names no extension tool for pi's own and built-in tool
 	assert.deepEqual(annotatedLines(findItem(items, "base-prompt:available-tools")), [
 		["\n- search: Search the web", "npm:web", "search"],
 	]);
+
 	// Pi credits one bullet to the built-in tool that declared it first and adds
 	// the file-exploration bullet itself, so the extension tool is named on neither
 	const base = items.find((entry) => entry.id === "base-prompt");
@@ -615,7 +642,8 @@ test("analyzeSystemPrompt measures a replaced prompt as the content pi actually 
 	// The blocks the replacement gave up stay visible, at no cost, instead of vanishing
 	assert.deepEqual(
 		findItem(items, "base-prompt")?.children?.map((child) => child.id),
-		["preamble", "available-tools", "guidelines", "documentation", "appended", "current-dir"].map((id) => `base-prompt:${id}`),
+		["preamble", "available-tools", "guidelines", "documentation", "appended", "current-dir"]
+			.map((id) => `base-prompt:${id}`),
 	);
 	assert.equal(findItem(items, "context-file:./AGENTS.md")?.text, "Project rules");
 	assert.equal(findItem(items, "skills")?.children?.length, 1);
@@ -741,7 +769,8 @@ test("analyzeSystemPrompt marks the tool sections an extension relocated past cw
 	// The moved sections stay pi's parts, following the cwd section they now sit behind
 	assert.deepEqual(
 		basePrompt?.children?.map((child) => child.id),
-		["preamble", "documentation", "current-dir", "available-tools", "guidelines", "additions"].map((id) => `base-prompt:${id}`),
+		["preamble", "documentation", "current-dir", "available-tools", "guidelines", "additions"]
+			.map((id) => `base-prompt:${id}`),
 	);
 	assert.deepEqual(
 		basePrompt?.children?.filter((child) => child.moved === true).map((child) => child.id),
@@ -776,6 +805,7 @@ test("analyzeSystemPrompt marks the tool sections an extension relocated past cw
 test("moved section annotations cover whole parts when every tool line is extension-owned", () => {
 	const tool = RELOCATION_TOOLS[1];
 	assert.ok(tool);
+
 	const prompt = `Preamble\n\n<docs>\nManual\n</docs>\n\n<cwd>\n${CWD}\n</cwd>` +
 		"\n\n<tools>\n- search: Search the web\n</tools>\n\n<rules>\n- Cite sources\n</rules>";
 	const items = analyzeSystemPrompt(prompt, {}, [tool]);
@@ -799,7 +829,8 @@ test("rearranged sections and appended instructions retain their real order", ()
 	const items = analyzeSystemPrompt(prompt, {}, RELOCATION_TOOLS);
 	const base = findItem(items, "base-prompt");
 	assert.deepEqual(base?.children?.map((child) => child.id),
-		["preamble", "documentation", "appended", "available-tools", "guidelines", "current-dir"].map((id) => `base-prompt:${id}`));
+		["preamble", "documentation", "appended", "available-tools", "guidelines", "current-dir"]
+			.map((id) => `base-prompt:${id}`));
 	assert.equal(findItem(items, "base-prompt:available-tools")?.moved, true);
 	assert.equal(findItem(items, "base-prompt:guidelines")?.moved, true);
 	assert.equal(base?.text, base?.sections?.map((section) => section.text).join(""));
@@ -815,7 +846,8 @@ test("separated moved sections preserve additions on both sides and never recrea
 	assert.ok(addition);
 	assert.deepEqual(addition.injectedReferences?.map((reference) => reference.source.label),
 		["unattributed", "unattributed", "unattributed"]);
-	for (const word of ["First addition.", "Middle addition.", "Last addition."]) assert.ok(addition.text.includes(word));
+	for (const word of ["First addition.", "Middle addition.", "Last addition."])
+		assert.ok(addition.text.includes(word));
 	assert.doesNotMatch(addition.text, /<\/?tools>|<\/?rules>|Read files/);
 	assert.equal(findItem(items, "tool:npm:web:search"), undefined);
 	assert.equal(findItem(items, "base-prompt:available-tools")?.moved, true);

@@ -34,14 +34,17 @@ export class ProbeFilter {
 	 * probe messages stay excluded after resume, reload, or fork.
 	 */
 	public restoreIdentities(identities: readonly SyntheticMessageIdentity[]): void {
-		for (const identity of identities) this.record(identity);
+		for (const identity of identities)
+			this.record(identity);
 	}
 
 	/** Record one probe message identity; returns false when it was already known. */
 	public record(identity: SyntheticMessageIdentity): boolean {
 		const key = identityKey(identity);
-		if (this.identities.has(key)) return false;
+		if (this.identities.has(key))
+			return false;
 		this.identities.set(key, { role: identity.role, timestamp: identity.timestamp });
+
 		return true;
 	}
 
@@ -57,14 +60,19 @@ export class ProbeFilter {
 	 * can share the prompt's millisecond, but it keeps its content.
 	 */
 	public matches(message: ContextEvent["messages"][number]): boolean {
-		if (message.role === "assistant") return this.has(message);
+		if (message.role === "assistant")
+			return this.has(message);
+
 		return message.role === "user" && isBlankContent(message.content) && this.has(message);
 	}
 
 	/** Remove only probe messages, as `matches()` decides. Returns the same array when none matches. */
 	public filterMessages(messages: ContextEvent["messages"]): ContextEvent["messages"] {
-		if (this.identities.size === 0) return messages;
+		if (this.identities.size === 0)
+			return messages;
+
 		const filtered = messages.filter((message) => !this.matches(message));
+
 		return filtered.length === messages.length ? messages : filtered;
 	}
 }
@@ -97,17 +105,24 @@ export function registerProbeFilter(pi: ExtensionAPI, filter: ProbeFilter): void
  * records are ignored so a corrupt entry can never suppress genuine messages.
  */
 export function parsePersistedIdentities(data: unknown): SyntheticMessageIdentity[] {
-	if (typeof data !== "object" || data === null) return [];
+	if (typeof data !== "object" || data === null)
+		return [];
+
 	const messages = (data as { messages?: unknown }).messages;
-	if (!Array.isArray(messages)) return [];
+	if (!Array.isArray(messages))
+		return [];
+
 	const identities: SyntheticMessageIdentity[] = [];
 	for (const message of messages) {
-		if (typeof message !== "object" || message === null) continue;
+		if (typeof message !== "object" || message === null)
+			continue;
+
 		const { role, timestamp } = message as { role?: unknown; timestamp?: unknown };
 		if ((role === "user" || role === "assistant") && typeof timestamp === "number" && Number.isFinite(timestamp)) {
 			identities.push({ role, timestamp });
 		}
 	}
+
 	return identities;
 }
 
@@ -116,7 +131,9 @@ export function parsePersistedIdentities(data: unknown): SyntheticMessageIdentit
  * or only empty text, as older versions stored the empty prompt Pi created.
  */
 function isBlankContent(content: Extract<ContextEvent["messages"][number], { role: "user" }>["content"]): boolean {
-	if (typeof content === "string") return content === "";
+	if (typeof content === "string")
+		return content === "";
+
 	return content.every((part) => part.type === "text" && part.text === "");
 }
 

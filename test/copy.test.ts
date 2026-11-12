@@ -59,10 +59,12 @@ interface ManualTimers {
 function manualTimers(): ManualTimers {
 	const timers: Array<{ callback: () => void; milliseconds: number; cancelled: boolean }> = [];
 	const waiting = () => timers.filter((timer) => !timer.cancelled);
+
 	return {
 		schedule: (callback, milliseconds) => {
 			const timer = { callback, milliseconds, cancelled: false };
 			timers.push(timer);
+
 			return () => { timer.cancelled = true; };
 		},
 		pendingDurations: () => waiting().map((timer) => timer.milliseconds),
@@ -114,7 +116,8 @@ test("CopyNotices expires a success after 3 s and an error after 5 s", async () 
 	let refreshes = 0;
 	let fail = false;
 	const notices = new CopyNotices({
-		copyText: async () => { if (fail) throw new Error("no clipboard"); },
+		copyText: async () => { if (fail)
+			throw new Error("no clipboard"); },
 		refresh: () => { refreshes++; },
 		schedule: timers.schedule,
 	});
@@ -203,6 +206,7 @@ test("COPY_HINT is optional, so a narrow hint row keeps the required hints", () 
 	const theme = createTheme();
 	const hints = searchHints(new SearchPrompt(), "Scroll", COPY_HINT);
 	assert.match(stripSgr(fitHintRow(theme, hints, 120)), /C Copy/);
+
 	const narrow = stripSgr(fitHintRow(theme, hints, 55));
 	assert.match(narrow, /Esc Back/);
 	assert.doesNotMatch(narrow, /C Copy/);

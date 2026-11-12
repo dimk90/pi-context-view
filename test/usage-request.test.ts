@@ -32,6 +32,7 @@ function usage(session: SessionManager, snapshot?: RequestSnapshot): ReturnType<
 		snapshot, entries: session.getEntries(), leafId: session.getLeafId(),
 		filterMessages: (messages) => messages,
 	});
+
 	return computeUsage({
 		messages: applied.messages,
 		snapshot: buildUsageSnapshot({
@@ -50,6 +51,7 @@ test("#6: replacing a 40,000-character user message with bbbb counts 1 token, no
 		{ type: "modified", entryId, message: replacement, attribution: {} },
 	]);
 	assert.equal(usage(session).estimatedTokens, 10_000, "the session still holds the original");
+
 	const observed = usage(session, snapshot);
 	assert.equal(observed.estimatedTokens, 1);
 	assert.deepEqual(observed.categories.flatMap(collectPreviewEntries).map((entry) => entry.text), ["bbbb"]);
@@ -60,8 +62,10 @@ test("#6: a removed user message contributes neither tokens nor a preview", () =
 	const entryId = session.appendMessage(user("a".repeat(40_000)));
 	const kept = user("keep", 8);
 	session.appendMessage(kept);
+
 	const snapshot = capture(session, [kept]);
 	assert.deepEqual(snapshot.changes.conversation, [{ type: "deleted", entryId, attribution: {} }]);
+
 	const observed = usage(session, snapshot);
 	assert.equal(observed.estimatedTokens, 1);
 	assert.deepEqual(observed.categories.flatMap(collectPreviewEntries).map((entry) => entry.text), ["keep"]);
@@ -70,9 +74,12 @@ test("#6: a removed user message contributes neither tokens nor a preview", () =
 test("#6: a reorder is a deletion plus an addition and each message counts once", () => {
 	const session = SessionManager.inMemory("/tmp/project");
 	const messages = [user("a".repeat(40_000)), user("keep", 8), user("last", 9)];
-	for (const message of messages) session.appendMessage(message);
+	for (const message of messages)
+		session.appendMessage(message);
+
 	const snapshot = capture(session, [messages[1], messages[2], messages[0]]);
 	assert.deepEqual(snapshot.changes.conversation.map((change) => change.type).sort(), ["added", "deleted"]);
+
 	const observed = usage(session, snapshot);
 	assert.equal(observed.estimatedTokens, 10_002);
 	assert.deepEqual(observed.categories.flatMap(collectPreviewEntries).map((entry) => entry.text),
@@ -88,8 +95,10 @@ for (const navigation of ["branch", "compaction"] as const) {
 		const current = user("current message", 8);
 		const currentId = session.appendMessage(current);
 		const snapshot = capture(session, [user("root", 1), { ...original, content: "bbbb" }, current]);
-		assert.deepEqual(snapshot.changes.conversation.map((change) => [change.type, "entryId" in change && change.entryId]),
-			[["modified", entryId]]);
+		assert.deepEqual(
+			snapshot.changes.conversation.map((change) => [change.type, "entryId" in change && change.entryId]),
+			[["modified", entryId]],
+		);
 		if (navigation === "branch") {
 			session.branch(root);
 			// Identical text at a different entry must not inherit the old entry's replacement
@@ -97,11 +106,14 @@ for (const navigation of ["branch", "compaction"] as const) {
 		} else {
 			session.appendCompaction("Summary", currentId, 10_005);
 		}
+
 		const observed = usage(session, snapshot);
 		assert.deepEqual(observed.categories, usage(session).categories);
+
 		const texts = observed.categories.flatMap(collectPreviewEntries).map((entry) => entry.text);
 		assert.ok(!texts.includes("bbbb"));
 		assert.ok(texts.includes(navigation === "branch" ? original.content : current.content));
-		if (navigation === "branch") assert.equal(observed.estimatedTokens, 10_001);
+		if (navigation === "branch")
+			assert.equal(observed.estimatedTokens, 10_001);
 	});
 }

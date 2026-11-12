@@ -66,7 +66,9 @@ export function copiedNotice(text: string): CopyNotice {
 /** Count user-visible characters, so an emoji or a combined accent counts once. */
 function countCharacters(text: string): number {
 	let count = 0;
-	for (const _segment of SEGMENTER.segment(text)) count++;
+	for (const _segment of SEGMENTER.segment(text))
+		count++;
+
 	return count;
 }
 
@@ -80,6 +82,7 @@ export function copyFailureNotice(error: unknown): CopyNotice {
 function scheduleTimeout(callback: () => void, milliseconds: number): () => void {
 	const timer = setTimeout(callback, milliseconds);
 	timer.unref();
+
 	return () => clearTimeout(timer);
 }
 
@@ -98,6 +101,7 @@ export class CopyNotices {
 	private notice: CopyNotice | undefined;
 	private cancelExpiry: (() => void) | undefined;
 
+	/** Use the system clipboard, no redraw, and real timers unless `actions` overrides them. */
 	public constructor(actions: CopyActions = {}) {
 		this.copyText = actions.copyText ?? copyToClipboard;
 		this.refresh = actions.refresh ?? (() => {});
@@ -119,12 +123,15 @@ export class CopyNotices {
 
 	/** Write one payload; only the newest request may publish its result. */
 	public copy(text: string): void {
-		if (this.disposed) return;
+		if (this.disposed)
+			return;
+
 		const sequence = ++this.sequence;
 		if (text.length === 0) {
 			this.show({ text: "Nothing to copy", kind: "error" });
 			return;
 		}
+
 		let write: Promise<void>;
 		try {
 			write = this.copyText(text);
@@ -150,8 +157,10 @@ export class CopyNotices {
 		if (this.notice === undefined || textWidth < MIN_NOTICE_TEXT_WIDTH) {
 			return theme.fg("border", "─".repeat(borderWidth));
 		}
+
 		const text = fitLine(normalizeInlineText(this.notice.text), textWidth);
 		const leadWidth = borderWidth - visibleWidth(text) - NOTICE_FRAME_WIDTH + 1;
+
 		return theme.fg("border", `${"─".repeat(leadWidth)} [ `) +
 			theme.fg("dim", text) +
 			theme.fg("border", ` ] ${"─".repeat(NOTICE_TAIL_WIDTH)}`);
@@ -159,7 +168,8 @@ export class CopyNotices {
 
 	/** Publish a result only while its request is still the newest one. */
 	private settle(sequence: number, notice: CopyNotice): void {
-		if (sequence !== this.sequence) return;
+		if (sequence !== this.sequence)
+			return;
 		this.show(notice);
 	}
 
@@ -169,7 +179,8 @@ export class CopyNotices {
 		this.notice = notice;
 		this.cancelExpiry = this.schedule(() => {
 			this.cancelExpiry = undefined;
-			if (this.notice !== notice) return;
+			if (this.notice !== notice)
+				return;
 			this.notice = undefined;
 			this.refresh();
 		}, NOTICE_DURATION_MS[notice.kind]);

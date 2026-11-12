@@ -79,7 +79,9 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				notices: loadedConfig.warnings,
 			});
 		}
+
 		const snapshot = latest.snapshot;
+
 		return showInjectionsView(ctx, {
 			snapshot: buildInjectionsSnapshot({
 				snapshot,
@@ -122,6 +124,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			activeToolNames: pi.getActiveTools(),
 			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 		});
+
 		return showUsageView(ctx, {
 			usage: computeUsage({
 				snapshot: current,
@@ -149,6 +152,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportUnsupportedPi(ctx, VERSION);
 				return;
 			}
+
 			const command = parseContextCommand(args);
 			if (command.type === "invalid") {
 				reportCommandMessage(ctx, command.message, "error");
@@ -169,6 +173,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportCompactionInProgress(ctx, command.view);
 				return;
 			}
+
 			// Loaded only when a view opens: the factory also runs where no view can
 			const loadedConfig = configStore.load();
 			const latest = await resolveRequestSnapshot(snapshots, trigger, ctx, loadedConfig.config.autoProbing);
@@ -177,16 +182,19 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportCompactionInProgress(ctx, command.view);
 				return;
 			}
+
 			const opened = command.view === "injections"
 				? await openInjections(ctx, latest, loadedConfig)
 				: await openUsage(ctx, latest, loadedConfig);
 			// Pi's RPC mode has a UI but returns from `custom()` without calling the factory
-			if (!opened) reportViewUnavailable(ctx, command.view);
+			if (!opened)
+				reportViewUnavailable(ctx, command.view);
 		},
 	});
 
 	// Older Pi lacks events the capture and the probe rely on, so observe nothing there
-	if (!supported) return;
+	if (!supported)
+		return;
 
 	// Probe layer first: ProbeFilter's context_with_system handler must run before capture's
 	registerProbeFilter(pi, probeFilter);

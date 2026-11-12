@@ -24,6 +24,7 @@ test("XML sections after cwd remain named System Prompt parts, not guessed exten
 	for (const options of [{}, { sections }]) {
 		const items = analyzeSystemPrompt(prompt, options, [], { sources: [{ source: "npm:web", path: "/web.ts" }] });
 		assert.equal(additionsPart(items), undefined);
+
 		const base = items[0];
 		assert.deepEqual(base.children?.slice(-2).map((part) => [part.label, part.text]), Object.entries(sections));
 		assert.equal(base.sections?.reduce((sum, part) => sum + part.tokens, 0), base.tokens);
@@ -34,12 +35,14 @@ test("XML sections after cwd remain named System Prompt parts, not guessed exten
 test("custom overrides of every generated section retain their actual text", () => {
 	const sections = {
 		tools: "Tools are unavailable.", rules: "Follow the review checklist.", docs: "Read the project manual.",
-		addendum: "Changed addendum", project_context: "Replaced instructions", skills: "Replaced skills", cwd: "/remote",
+		addendum: "Changed addendum", project_context: "Replaced instructions", skills: "Replaced skills",
+		cwd: "/remote",
 	};
 	const prompt = buildSystemPrompt({ cwd: CWD, appendSystemPrompt: "OLD ADDENDUM", sections });
 	const items = analyzeSystemPrompt(prompt, { sections }, [TOOL]);
 	const parts = items[0].children ?? [];
-	for (const text of Object.values(sections)) assert.ok(parts.some((part) => part.text.trim() === text));
+	for (const text of Object.values(sections))
+		assert.ok(parts.some((part) => part.text.trim() === text));
 	assert.doesNotMatch(items[0].text, /OLD ADDENDUM|<\/?(?:tools|rules|skills|cwd)>/);
 	assert.equal(additionsPart(items), undefined);
 	assert.deepEqual(items.find((item) => item.kind === "tool")?.sections?.map((part) => part.label), ["Definition"]);
@@ -50,10 +53,17 @@ test("a custom prefix can restore selected native XML sections without marking t
 	const prompt = buildSystemPrompt({ cwd: CWD, customPrompt: "Custom prefix", sections });
 	const items = analyzeSystemPrompt(prompt, { customPrompt: "Custom prefix", sections }, [TOOL]);
 	assert.deepEqual(items[0].children?.filter((part) => part.dropped).map((part) => part.label), ["Rules"]);
+
 	const tool = items.find((item) => item.kind === "tool");
 	// The restored snippet counts in System Prompt, and the guideline stays dropped
-	assert.deepEqual(tool?.sections?.map((part) => [part.label, part.dropped, part.countedInSystemPrompt, part.tokens > 0]),
-		[["Tools", undefined, true, false], ["Rules", true, undefined, false], ["Definition", undefined, undefined, true]]);
+	assert.deepEqual(
+		tool?.sections?.map((part) => [part.label, part.dropped, part.countedInSystemPrompt, part.tokens > 0]),
+		[
+			["Tools", undefined, true, false],
+			["Rules", true, undefined, false],
+			["Definition", undefined, undefined, true],
+		],
+	);
 	assert.equal(items[0].sections?.find((part) => part.label === "Tools")?.injectedReferences?.length, 1);
 });
 
@@ -62,6 +72,7 @@ test("section discovery ignores nested and fenced examples, including unclosed f
 		"<addendum>\n<rules>\nNested example\n</rules>\n```\nUnclosed inner fence\n</addendum>\n\n" +
 		"<cwd>\n/fixture\n</cwd>\n\n<review>\nReal section\n</review>";
 	assert.deepEqual(findPromptSections(prompt).map((section) => section.name), ["addendum", "cwd", "review"]);
+
 	const parts = analyzeSystemPrompt(prompt, {})[0].children ?? [];
 	assert.equal(parts.find((part) => part.label === "Addendum")?.text,
 		"<rules>\nNested example\n</rules>\n```\nUnclosed inner fence");
@@ -88,6 +99,7 @@ test("a single custom section keeps its label and repeated tags remain additions
 	const prompt = "<review>\nFirst rule\n</review>";
 	const only = analyzeSystemPrompt(prompt, {});
 	assert.equal(only[0].sections?.[0]?.label, "review");
+
 	const repeated = analyzeSystemPrompt(`${prompt}\n\n<review>\nSecond rule\n</review>`, {});
 	assert.equal(repeated[0].children?.filter((part) => part.label === "review").length, 1);
 	assert.match(additionsPart(repeated)?.text ?? "", /Second rule/);
@@ -104,7 +116,8 @@ test("custom tool-surface prose and fenced examples are not annotated as tool bu
 
 test("instruction files and skill records are read from the captured prompt, not loader metadata", () => {
 	const prompt = "Preamble\n\n<project_context>\nProject-specific instructions and guidelines:\n\n" +
-		'<project_instructions path="/old/AGENTS.md">\nRecorded rules\n</project_instructions>\n</project_context>\n\n' +
+		'<project_instructions path="/old/AGENTS.md">\nRecorded rules\n</project_instructions>\n' +
+		"</project_context>\n\n" +
 		"<skills>\nThe following skills provide specialized instructions\n<available_skills>\n<skill>\n" +
 		"<name>test</name>\n<description>Test &amp; verify &lt;code&gt;</description>\n" +
 		"<location>/old/SKILL.md</location>\n</skill>\n</available_skills>\n</skills>\n\n<cwd>\n/old\n</cwd>";

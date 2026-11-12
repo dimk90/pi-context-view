@@ -12,7 +12,16 @@ export type PayloadCheck = "pending" | "unchecked" | "partial";
 
 /** A note's identity survives copy changes; text may contain theme styling, never raw content. */
 export interface DescriptionNote {
-	readonly kind: "overview" | "request-missing" | "probe" | "probing-disabled" | "payload-check" | "hidden-tools" | "payload-changes" | "thinking" | "empty";
+	readonly kind:
+		| "overview"
+		| "request-missing"
+		| "probe"
+		| "probing-disabled"
+		| "payload-check"
+		| "hidden-tools"
+		| "payload-changes"
+		| "thinking"
+		| "empty";
 	readonly text: string;
 }
 
@@ -30,8 +39,11 @@ export interface InjectionsNotesInput {
 
 /** A complete comparison and a fallback without a request need no attention state. */
 export function payloadCheck(guard: GuardResult | undefined): PayloadCheck | undefined {
-	if (guard?.status === "pending") return "pending";
-	if (guard?.status === "incomplete") return guard.findings === undefined ? "unchecked" : "partial";
+	if (guard?.status === "pending")
+		return "pending";
+	if (guard?.status === "incomplete")
+		return guard.findings === undefined ? "unchecked" : "partial";
+
 	return undefined;
 }
 
@@ -42,14 +54,19 @@ export function requestOriginLabel(probe = false): string {
 
 /** Build optional notes in presentation order, with dynamic metadata sanitized before styling. */
 export function injectionsNotes(theme: Theme, input: InjectionsNotesInput): DescriptionNote[] {
-	const notes: DescriptionNote[] = [{ kind: "overview", text: "Injections into the model context, with token estimates." }];
-	if (input.requestMissing === true) notes.push(requestMissingNote(theme));
-	if (input.probingDisabled === true) notes.push(probingDisabledNote(theme));
+	const notes: DescriptionNote[] = [
+		{ kind: "overview", text: "Injections into the model context, with token estimates." },
+	];
+	if (input.requestMissing === true)
+		notes.push(requestMissingNote(theme));
+	if (input.probingDisabled === true)
+		notes.push(probingDisabledNote(theme));
 	if (input.probe === true) {
 		notes.push({ kind: "probe", text: `Captured by a ${theme.fg("warning", "request probe")}` + theme.fg(
 			"dim", " with an empty prompt. Prompt-dependent injections may be missing.",
 		) });
 	}
+
 	const check = payloadCheck(input.guard);
 	if (check === "pending") {
 		notes.push({ kind: "payload-check", text: "Payload changes are not checked yet: the comparison is pending." });
@@ -59,18 +76,24 @@ export function injectionsNotes(theme: Theme, input: InjectionsNotesInput): Desc
 			? `Payload changes were not checked: ${reason}`
 			: `Payload changes were checked only in part: ${reason}` });
 	}
+
 	const tools = input.hiddenTools ?? [];
 	if (tools.length > 0) {
 		const names = [...tools].sort().map(normalizeInlineText).join(", ");
-		notes.push({ kind: "hidden-tools", text: `${tools.length} ${tools.length === 1 ? "tool" : "tools"} hidden by pi: ${names}.` });
+		const count = `${tools.length} ${tools.length === 1 ? "tool" : "tools"}`;
+		notes.push({ kind: "hidden-tools", text: `${count} hidden by pi: ${names}.` });
 	}
+
 	return [...notes, ...findingNotes(input.items)];
 }
 
 /** Payload findings explain a separate observation layer in the list and preview. */
 export function findingNotes(items: readonly InjectionItem[]): DescriptionNote[] {
 	return items.some((item) => item.kind === "payload-change")
-		? [{ kind: "payload-changes", text: "Payload changes appear only in the provider payload. Their sources are unknown." }]
+		? [{
+			kind: "payload-changes",
+			text: "Payload changes appear only in the provider payload. Their sources are unknown.",
+		}]
 		: [];
 }
 
@@ -96,7 +119,8 @@ export function usageNote(): DescriptionNote {
 
 /** Explain the different bases of thinking estimates, without retaining signatures. */
 export function thinkingNote(): DescriptionNote {
-	return { kind: "thinking", text: "Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
+	return { kind: "thinking", text:
+		"Entry headers read: [DD-MM-YYYY] [assistant] visible + Reasoning ≈invisible (≈total). " +
 		"≈ is a provider-reported count; ~ is a rough approximation when no breakdown " +
 		"is reported and excluded from category totals. " +
 		"Encoded replaces Reasoning when the provider replays encrypted reasoning with its message." };

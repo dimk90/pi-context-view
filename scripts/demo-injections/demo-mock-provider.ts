@@ -1,4 +1,7 @@
-/** Completions-only demo endpoint: discard request bodies and return a fixed reply, without logging or retaining them. */
+/**
+ * Completions-only demo endpoint: discard request bodies and return a fixed
+ * reply, without logging or retaining them.
+ */
 import { once } from "node:events";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
@@ -21,12 +24,16 @@ export async function startDemoMockProvider(): Promise<DemoMockProvider> {
 	});
 	server.listen(0, "127.0.0.1");
 	await once(server, "listening");
+
 	const address = server.address();
-	if (!address || typeof address === "string") throw new Error("Demo mock provider has no TCP address");
+	if (!address || typeof address === "string")
+		throw new Error("Demo mock provider has no TCP address");
+
 	return {
 		baseUrl: `http://127.0.0.1:${address.port}/v1`,
 		close: () => new Promise<void>((resolve, reject) => {
-			if (!server.listening) return resolve();
+			if (!server.listening)
+				return resolve();
 			server.close((error) => error ? reject(error) : resolve());
 			server.closeAllConnections();
 		}),
@@ -47,6 +54,7 @@ async function serveRequest(request: IncomingMessage, response: ServerResponse, 
 		const consumed = once(request, "end");
 		request.resume();
 		await consumed;
+
 		const chunk = {
 			id: `chatcmpl-demo-${sequence}`, object: "chat.completion.chunk", model: MOCK_MODEL,
 		};

@@ -44,7 +44,9 @@ const VIRTUAL = { provider: "router", id: "auto" } as const;
  */
 type ModelId = "vision" | "text";
 
+/** Physical model supplied by the runtime. */
 type Model = NonNullable<ExtensionContext["model"]>;
+/** One untyped provider payload object. */
 type Item = Record<string, unknown>;
 
 /** What one agent request showed the extensions; models and identities read `provider/api/model`. */
@@ -114,7 +116,8 @@ suite("request model on a physical selection", { concurrency: true }, () => {
 			for (const request of runtime.requests) {
 				assertDispatched(request, request.requestModel);
 				assert.equal(request.payloadModel, request.requestModel);
-				assert.deepEqual(request.found, request.requestCapabilities, "ctx.model has the dispatched model's capabilities");
+				assert.deepEqual(request.found, request.requestCapabilities,
+					"ctx.model has the dispatched model's capabilities");
 			}
 		});
 
@@ -141,7 +144,8 @@ suite("request model on a physical selection", { concurrency: true }, () => {
 			pi.on("context", async () => {
 				const model = switchTo;
 				switchTo = undefined;
-				if (model && !(await pi.setModel(model))) throw new Error("setModel failed");
+				if (model && !(await pi.setModel(model)))
+					throw new Error("setModel failed");
 			});
 		};
 		const runtime = await createRuntime(t, { model: ["openai-completions", "vision"], extensions: [switcher] });
@@ -171,7 +175,9 @@ test("virtual selection: ctx.model stays virtual and find() returns the model Pi
 			name: "Auto",
 			route(_request, ctx) {
 				const model = ctx.modelRegistry.find(`mock-${target}`, "text");
-				if (!model) throw new Error(`mock-${target}/text is not registered`);
+				if (!model)
+					throw new Error(`mock-${target}/text is not registered`);
+
 				// Claim image input: Pi dispatches the catalog model, which has none
 				return { model: { ...model, input: ["text", "image"] }, thinkingLevel: "off" };
 			},
@@ -181,7 +187,9 @@ test("virtual selection: ctx.model stays virtual and find() returns the model Pi
 	await runtime.session.setModel(runtime.model(VIRTUAL.provider, VIRTUAL.id));
 	for (const api of APIS) {
 		target = api;
-		await runtime.session.prompt(`routed to ${api}`, { images: [{ type: "image", data: PIXEL_PNG, mimeType: "image/png" }] });
+		await runtime.session.prompt(`routed to ${api}`, {
+			images: [{ type: "image", data: PIXEL_PNG, mimeType: "image/png" }],
+		});
 	}
 
 	assert.deepEqual(runtime.errors, []);
@@ -206,7 +214,10 @@ suite("payload representation per API", { concurrency: true }, () => {
 			const laterSection: ExtensionFactory = (pi) => {
 				pi.on("before_agent_start", (event) => {
 					// Recorded as a mid-conversation system message on the second prompt
-					if (addSection) event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, later: "<later/>" };
+					if (addSection)
+						event.systemPromptOptions.sections = {
+							...event.systemPromptOptions.sections, later: "<later/>",
+						};
 				});
 			};
 			const runtime = await createRuntime(t, { model: [api, "text"], extensions: [laterSection] });
@@ -218,9 +229,12 @@ suite("payload representation per API", { concurrency: true }, () => {
 
 			assert.deepEqual(runtime.errors, []);
 			assert.equal(runtime.requests.length, 3);
-			for (const request of runtime.requests) assert.deepEqual(matchingApis(request.payload), [api]);
+			for (const request of runtime.requests)
+				assert.deepEqual(matchingApis(request.payload), [api]);
+
 			const last = runtime.requests[2].payload;
 			assert.ok(last);
+
 			const roles = (isItemList(last.messages) ? last.messages : []).map((message) => message.role);
 			if (api === "anthropic-messages") {
 				assert.ok(roles.includes("system"), "Anthropic sends mid-conversation system messages in messages");
@@ -262,7 +276,9 @@ async function exerciseResponsesToolChanges(
 	runtime.session.setActiveToolsByName(["ls"]);
 	await runtime.session.prompt("tool removed");
 	assert.deepEqual(runtime.errors, []);
+
 	const [, added, removed] = runtime.requests.map((request) => request.payload);
+
 	return { added, removed };
 }
 
@@ -273,15 +289,19 @@ async function exerciseResponsesToolChanges(
 async function createRuntime(t: TestContext, options: RuntimeOptions): Promise<Runtime> {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
+
 	// After hooks run in registration order: the session must stop before its directory is removed
 	let stopSession: (() => void) | undefined;
 	t.after(() => stopSession?.());
+
 	const directory = await mkdtemp(join(tmpdir(), "context-dispatch-test-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
+
 	const settingsManager = SettingsManager.inMemory({
 		cacheWarming: "off", compaction: { enabled: false }, retry: { enabled: false },
 	});
 	useSettings(t, directory, () => settingsManager);
+
 	const modelRuntime = await ModelRuntime.create({
 		authPath: join(directory, "auth.json"), modelsPath: null, refreshOnCreate: false, allowModelNetwork: false,
 	});
@@ -301,22 +321,31 @@ async function createRuntime(t: TestContext, options: RuntimeOptions): Promise<R
 		],
 	});
 	await resourceLoader.reload();
+
 	const { session, extensionsResult } = await createAgentSession({
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, modelRuntime,
 		model: models.find((model) => model.api === api && model.id === modelId),
-		sessionManager: SessionManager.inMemory(directory), tools: [...(options.tools ?? ["read"])], thinkingLevel: "off",
+		sessionManager: SessionManager.inMemory(directory),
+		tools: [...(options.tools ?? ["read"])], thinkingLevel: "off",
 	});
 	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
+
 	const errors: string[] = [];
 	await session.bindExtensions({
-		mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); }, uiContext: createUiContext(),
+		mode: "tui",
+		onError: (error) => {
+			errors.push(`${error.event}: ${error.error}`);
+		},
+		uiContext: createUiContext(),
 	});
+
 	return {
 		session, provider, requests, errors,
 		model: (providerId, id) => {
 			const model = modelRuntime.getModel(providerId, id);
 			assert.ok(model, `${providerId}/${id} is registered`);
+
 			return model;
 		},
 	};
@@ -348,18 +377,21 @@ function createObserver(requests: ObservedRequest[]): ExtensionFactory {
 			requests.push(current);
 		});
 		pi.on("before_provider_request", (event, ctx) => {
-			if (!current) return;
+			if (!current)
+				return;
 			current.payloadModel = describeModel(ctx.model);
 			current.payload = structuredClone(event.payload) as Item;
 		});
 		pi.on("after_provider_response", () => { current?.events.push("after_provider_response"); });
 		pi.on("message_start", (event) => {
 			const message = event.message;
-			if (message.role === "assistant") current?.events.push(`message_start ${message.provider}/${message.api}/${message.model}`);
+			if (message.role === "assistant")
+				current?.events.push(`message_start ${message.provider}/${message.api}/${message.model}`);
 		});
 		pi.on("message_end", (event, ctx) => {
 			const message = event.message;
-			if (message.role !== "assistant" || !current) return;
+			if (message.role !== "assistant" || !current)
+				return;
 			current.events.push(`message_end ${message.provider}/${message.api}/${message.model}`);
 			current.found = capabilities(ctx.modelRegistry.find(message.provider, message.model));
 		});
@@ -397,7 +429,9 @@ function capabilities(model: Model | undefined): Capabilities {
  * payload that cannot be the selected API's; they never select a parser.
  */
 function matchingApis(payload: Item | undefined): MockApi[] {
-	if (!payload) return [];
+	if (!payload)
+		return [];
+
 	return APIS.filter((api) => PAYLOAD_SHAPE_CHECKS[api](payload));
 }
 
@@ -413,7 +447,9 @@ function isItemList(value: unknown): value is Item[] {
 
 /** The items of an optional list: empty when absent, undefined when not a list of objects. */
 function optionalItems(value: unknown): Item[] | undefined {
-	if (value === undefined) return [];
+	if (value === undefined)
+		return [];
+
 	return isItemList(value) ? value : undefined;
 }
 
@@ -425,6 +461,7 @@ function toolNames(tools: unknown): unknown[] {
 /** Tool names an OpenAI Responses payload declares inline: `additional_tools` and `tool_search_output` items. */
 function inlineToolNames(payload: Item | undefined): unknown[] {
 	const items = optionalItems(payload?.input) ?? [];
+
 	return items.filter((item) => item.type === "additional_tools" || item.type === "tool_search_output")
 		.flatMap((item) => toolNames(item.tools));
 }

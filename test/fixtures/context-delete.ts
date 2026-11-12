@@ -16,6 +16,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("context", (event) => {
 		const messages = event.messages.filter((message) => message.role !== "user"
 			|| !JSON.stringify(message.content).includes(CONTEXT_DELETE_MARKER));
+
 		return messages.length === event.messages.length ? undefined : { messages };
 	});
 }

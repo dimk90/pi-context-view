@@ -19,9 +19,11 @@ function createSession(): { session: SessionManager; entries: Record<"first" | "
 	const session = SessionManager.inMemory("/tmp/project");
 	session.appendMessage({ role: "system", content: "", sections: { cwd: "<cwd>\n/tmp\n</cwd>" },
 		toolsAdded: [READ], timestamp: 1 });
+
 	const first = session.appendMessage(user("first", 2));
 	const second = session.appendMessage(user("second", 3));
 	const third = session.appendMessage(user("third", 4));
+
 	return { session, entries: { first, second, third } };
 }
 

@@ -39,6 +39,7 @@ function usageFor(messages: ContextEvent["messages"], systemChanges: SystemChang
 		systemPrompt: "LIVE PROMPT MUST NOT REPLACE TRANSCRIPT", options: { cwd: "/current" },
 		allTools: [CURRENT_TOOL], activeToolNames: ["search"], messages, systemChanges,
 	});
+
 	return computeUsage({ snapshot, messages });
 }
 
@@ -73,6 +74,7 @@ test("system replay appends content, patches sections, and applies tool removals
 	assert.doesNotMatch(systemMessageText(state), /Old rules|New rules|OPAQUE/);
 	assert.deepEqual(messages, original);
 	assert.equal(getCurrentSystemMessage([]), undefined);
+
 	const empty: SystemMessage = { role: "system", content: "", timestamp: 1 };
 	assert.deepEqual(getCurrentSystemMessage([empty]), empty, "an explicitly empty state is still a state");
 });
@@ -92,6 +94,7 @@ test("Usage counts replayed sections and declarations once instead of live state
 	assert.equal(usage.categories.some((category) => category.id === "extensions"), false);
 	assert.equal(usage.categories.some((category) => category.id === "built-in-tools"), false);
 	assert.equal(usage.categories.find((category) => category.id === "custom-tools")?.children?.[0]?.label, "search");
+
 	// Collapsing the same state has exactly the same semantic estimate, not another patch charge
 	const state = getCurrentSystemMessage(messages);
 	assert.ok(state);
@@ -125,13 +128,16 @@ test("Usage follows restored branches and compaction checkpoints without old sys
 
 	const header = session.getHeader();
 	assert.ok(header);
+
 	const restored = SessionManager.inMemory("/fixture", undefined, [header, ...session.getEntries()]);
-	assert.equal(usageFor(restored.buildSessionProjection().messages).estimatedTokens, beforeCompaction.estimatedTokens);
+	assert.equal(usageFor(restored.buildSessionProjection().messages).estimatedTokens,
+		beforeCompaction.estimatedTokens);
 	assert.equal(usageFor(buildSessionProjection(restored.getEntries(), root).messages).estimatedTokens,
 		usageFor([INITIAL]).estimatedTokens);
 
 	restored.branch(root);
-	assert.doesNotMatch(previewText(usageFor(restored.buildSessionProjection().messages)), /New rules|search definition/);
+	assert.doesNotMatch(previewText(usageFor(restored.buildSessionProjection().messages)),
+		/New rules|search definition/);
 	restored.appendMessage({
 		role: "system", content: "", sections: { rules: "<rules>\nBranch rules\n</rules>" }, timestamp: 5,
 	});
@@ -140,6 +146,7 @@ test("Usage follows restored branches and compaction checkpoints without old sys
 	restored.appendCompaction("Synthetic compacted summary", user, 10_000);
 	const compacted = restored.buildSessionProjection().messages;
 	assert.equal(compacted.filter((message) => message.role === "system").length, 1);
+
 	const compactedUsage = usageFor(compacted);
 	for (const id of ["system-prompt", "custom-tools"]) {
 		assert.equal(compactedUsage.categories.find((category) => category.id === id)?.tokens,
@@ -169,13 +176,16 @@ for (const transcriptBacked of [false, true]) {
 		assert.equal(entries.filter((entry) => entry.type === "usage").length, messages.length + 1);
 		assert.equal(session.getLeafEntry()?.type, "usage");
 		assert.ok(session.buildContextEntries().some((entry) => entry.type === "usage"));
+
 		const context = buildSessionProjection(entries, session.getLeafId()).messages;
 		assert.deepEqual(context, messages);
+
 		const usage = usageFor(context);
 		assert.ok(usage.estimatedTokens > 0);
 		assert.equal(usage.estimatedTokens, expected.estimatedTokens);
 		assert.deepEqual(usage.categories, expected.categories);
-		assert.deepEqual(usage.categories.flatMap(collectPreviewEntries), expected.categories.flatMap(collectPreviewEntries));
+		assert.deepEqual(usage.categories.flatMap(collectPreviewEntries),
+			expected.categories.flatMap(collectPreviewEntries));
 		assert.match(previewText(usage), /Real user text/);
 		assert.match(previewText(usage), /Real injected text/);
 		assert.doesNotMatch(previewText(usage), /cache_warm|warming-model|CACHE_WARM_NOTE/);
@@ -183,6 +193,7 @@ for (const transcriptBacked of [false, true]) {
 		// Restore the entry tree as on resume, then navigate to the warming-only branch prefix
 		const header = session.getHeader();
 		assert.ok(header);
+
 		const restored = SessionManager.inMemory("/fixture", undefined, [header, ...entries]);
 		const resumed = buildSessionProjection(restored.getEntries(), restored.getLeafId()).messages;
 		assert.deepEqual(resumed, messages);
@@ -196,13 +207,16 @@ test("warming-only sessions add no message categories or previews to Usage", () 
 	const session = SessionManager.inMemory("/fixture");
 	appendCacheWarm(session);
 	appendCacheWarm(session);
+
 	const messages = buildSessionProjection(session.getEntries(), session.getLeafId()).messages;
 	assert.deepEqual(messages, []);
+
 	const usage = usageFor(messages);
 	const expected = usageFor([]);
 	assert.equal(usage.estimatedTokens, expected.estimatedTokens);
 	assert.deepEqual(usage.categories, expected.categories);
-	assert.deepEqual(usage.categories.flatMap(collectPreviewEntries), expected.categories.flatMap(collectPreviewEntries));
+	assert.deepEqual(usage.categories.flatMap(collectPreviewEntries),
+		expected.categories.flatMap(collectPreviewEntries));
 	assert.doesNotMatch(previewText(usage), /cache_warm|warming-model|CACHE_WARM_NOTE/);
 });
 
@@ -220,6 +234,7 @@ test("request-only system changes apply once after the replayed state and do not
 	assert.match(previewText(usage), /Recorded search definition/);
 	assert.doesNotMatch(previewText(usage), /Old rules|Old read definition/);
 	assert.equal(usage.categories.some((category) => category.id === "extensions"), false);
+
 	const recorded: SystemMessage = {
 		role: "system", content: "", timestamp: 2,
 		sections: { rules: "<rules>\nRequest rule\n</rules>", inline: "<inline>Inline request section</inline>" },

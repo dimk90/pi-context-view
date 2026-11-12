@@ -16,8 +16,11 @@ export const PAYLOAD_REMOVED_TOOL = "write";
 export default function (pi: ExtensionAPI): void {
 	pi.on("before_provider_request", (event) => {
 		const payload = event.payload as { tools?: unknown };
-		if (!Array.isArray(payload.tools)) return undefined;
+		if (!Array.isArray(payload.tools))
+			return undefined;
+
 		const tools = payload.tools.filter((tool) => declaredToolName(tool) !== PAYLOAD_REMOVED_TOOL);
+
 		return tools.length === payload.tools.length ? undefined : { ...payload, tools };
 	});
 }

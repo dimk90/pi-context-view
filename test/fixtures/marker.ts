@@ -4,7 +4,8 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-export default function (pi: ExtensionAPI) {
+/** Register the marker prompt addition and startup message. */
+export default function (pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event) => {
 		return {
 			systemPrompt: `${event.systemPrompt}\n\nXYZZY_MARKER_INJECTION: verification prompt addition.`,

@@ -38,6 +38,7 @@ const PAYLOAD_MESSAGE = "XYZZY_PAYLOAD: a user message added to the provider pay
 
 /** Physical model supplied by the runtime. */
 type Model = NonNullable<ExtensionContext["model"]>;
+/** Settings shape accepted by the in-memory manager. */
 type Settings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
 
 /** Isolated session options; extension order is explicit. */
@@ -71,6 +72,7 @@ for (const api of APIS) {
 		await runtime.session.prompt("first");
 		runtime.provider.enqueue({ type: "tool-call", name: "read", arguments: { path: "missing.txt" } });
 		await runtime.session.prompt("second");
+
 		const snapshots = await runtime.snapshots();
 		assert.equal(snapshots.length, 3);
 		for (const snapshot of snapshots) {
@@ -87,6 +89,7 @@ for (const api of APIS) {
 					const read = payload.tools[0];
 					const definition = api === "openai-completions" ? read.function as Record<string, unknown> : read;
 					definition.description = "Changed in payload — 工具";
+
 					const extra = { ...structuredClone(read), ...(api === "openai-completions"
 						? { function: { ...definition, name: "extra" } } : { name: "extra" }) };
 					payload.tools.splice(1, 1, extra);
@@ -94,6 +97,7 @@ for (const api of APIS) {
 			};
 			const runtime = await createRuntime(t, { api, [order]: [editor] });
 			await runtime.session.prompt("tool edits");
+
 			const [snapshot] = await runtime.snapshots();
 			const changed = [{ type: "added", text: "Changed in payload — 工具" }];
 			// The modification also lists every line of read's built-in description as removed
@@ -107,7 +111,8 @@ for (const api of APIS) {
 			]);
 			if (order === "before") {
 				for (const change of ["deleted", "modified"]) {
-					const edit = findings(snapshot).find((finding) => finding.type === "payload-tool-change" && finding.change === change);
+					const edit = findings(snapshot)
+						.find((finding) => finding.type === "payload-tool-change" && finding.change === change);
 					assert.ok(edit?.type === "payload-tool-change");
 					assert.ok(edit.lines.some((line) => line.type === "removed"), `${change} lists the captured lines`);
 				}
@@ -124,6 +129,7 @@ for (const mode of ["on", "only"] as const) {
 				settings: { codemode: { mode }, defaultTools: ["read", "write", "codemode", "tool_search"] },
 			});
 			await runtime.session.prompt("built-in loadout");
+
 			const [snapshot] = await runtime.snapshots();
 			assert.deepEqual(snapshot.changes, { conversation: [], system: [] });
 			assert.deepEqual(findings(snapshot), []);
@@ -147,6 +153,7 @@ for (const order of ["before", "after"] as const) {
 		});
 		await runtime.session.prompt("/context injections");
 		await runtime.session.prompt("/context injections");
+
 		const [snapshot] = await runtime.snapshots();
 		assert.equal(snapshot.origin, "synthetic-probe");
 		assert.equal(snapshot.guard.status, "incomplete");
@@ -154,6 +161,7 @@ for (const order of ["before", "after"] as const) {
 		assert.deepEqual(snapshot.hiddenTools, ["read", "write"], "a probe records the tools Pi hides");
 		assert.equal(responses, 0, "after_provider_response sentinel stays silent");
 		assert.equal(runtime.provider.requests.length, 0);
+
 		const assistant = runtime.session.sessionManager.getBranch().findLast((entry) =>
 			entry.type === "message" && entry.message.role === "assistant");
 		assert.ok(assistant?.type === "message" && assistant.message.role === "assistant");
@@ -165,13 +173,16 @@ test("hidden-tools demo keeps nested calls available and subject to permission g
 	const directory = await temporaryDirectory(t);
 	const path = join(directory, "note.txt");
 	await writeFile(path, "XYZZY_HIDDEN_TOOL_READ");
+
 	let blocked = false;
 	let calls = 0;
 	const gate: ExtensionFactory = (pi) => {
 		pi.on("tool_call", (event) => {
-			if (event.toolName !== "read") return;
+			if (event.toolName !== "read")
+				return;
 			calls++;
-			if (blocked) return { block: true, reason: "XYZZY_HIDDEN_TOOL_BLOCKED" };
+			if (blocked)
+				return { block: true, reason: "XYZZY_HIDDEN_TOOL_BLOCKED" };
 		});
 	};
 	const runtime = await createRuntime(t, { before: [hiddenTools, gate] });
@@ -186,18 +197,24 @@ test("hidden-tools demo keeps nested calls available and subject to permission g
 	}
 	assert.equal(calls, 2);
 	assert.equal(runtime.provider.requests.length, 4, "each codemode call has one follow-up");
-	for (const snapshot of await runtime.snapshots()) findings(snapshot);
+	for (const snapshot of await runtime.snapshots())
+		findings(snapshot);
 });
 
 test("MCP direct tools are recorded declarations, not payload changes", async (t) => {
 	const directory = await temporaryDirectory(t);
 	const runtime = await createRuntime(t, {
 		before: [
-			(pi) => pi.registerMcpServer("fixture", { command: process.execPath, args: [MCP_SERVER], exposure: "direct" }),
-			createMcpExtension({ loadConfig: () => ({ servers: [], errors: [] }), logPath: join(directory, "mcp.log") }),
+			(pi) => pi.registerMcpServer("fixture", {
+				command: process.execPath, args: [MCP_SERVER], exposure: "direct",
+			}),
+			createMcpExtension({
+				loadConfig: () => ({ servers: [], errors: [] }), logPath: join(directory, "mcp.log"),
+			}),
 		],
 	});
 	await runtime.session.prompt("MCP declaration");
+
 	const [snapshot] = await runtime.snapshots();
 	assert.deepEqual(findings(snapshot), []);
 	assert.deepEqual(snapshot.changes, { conversation: [], system: [] });
@@ -206,7 +223,9 @@ test("MCP direct tools are recorded declarations, not payload changes", async (t
 
 for (const compat of [{ supportsAdditionalTools: true }, { supportsToolSearch: true }]) {
 	test(`Responses ${Object.keys(compat)[0]} inline additions, then removals and redefinitions`, async (t) => {
-		const runtime = await createRuntime(t, { api: "openai-responses", compat: { supportsMidConvoSystemMessages: true, ...compat } });
+		const runtime = await createRuntime(t, {
+			api: "openai-responses", compat: { supportsMidConvoSystemMessages: true, ...compat },
+		});
 		await exerciseToolChanges(runtime);
 	});
 }
@@ -216,8 +235,10 @@ test("Completions system-message tool additions, then removals and redefinitions
 		compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true },
 	});
 	await exerciseToolChanges(runtime);
+
 	const sent = runtime.provider.requests.map((request) => request.body.messages as Array<Record<string, unknown>>);
-	assert.ok(sent.some((messages) => messages.some((message) => message.role === "system" && message.tools !== undefined)),
+	assert.ok(sent.some((messages) =>
+		messages.some((message) => message.role === "system" && message.tools !== undefined)),
 		"a system message declared a later tool inline");
 });
 
@@ -246,11 +267,17 @@ for (const { api, compat, effortOf } of EFFORT_CASES) {
 		await runtime.session.prompt("first");
 		runtime.session.setThinkingLevel("high");
 		await runtime.session.prompt("second");
-		const efforts = payloadMessages(api, runtime.provider.requests.at(-1)?.body).map(effortOf).filter(Boolean);
-		assert.deepEqual(efforts, [{ effort: "low" }, { effort: "high" }], "the first reply's level, then the active one");
+
+		const efforts = payloadMessages(api, runtime.provider.requests.at(-1)?.body)
+			.map(effortOf)
+			.filter(Boolean);
+		assert.deepEqual(efforts, [{ effort: "low" }, { effort: "high" }],
+			"the first reply's level, then the active one");
+
 		const snapshots = await runtime.snapshots();
 		assert.equal(snapshots.length, 2);
-		for (const snapshot of snapshots) assert.deepEqual(findings(snapshot), []);
+		for (const snapshot of snapshots)
+			assert.deepEqual(findings(snapshot), []);
 	});
 }
 
@@ -271,6 +298,7 @@ test("virtual routing selects each parser and image capability from the dispatch
 		route(_request, ctx) {
 			const model = ctx.modelRegistry.find(`mock-${api}`, "text");
 			assert.ok(model);
+
 			return { model, thinkingLevel: "off" };
 		},
 	});
@@ -287,6 +315,7 @@ test("virtual routing selects each parser and image capability from the dispatch
 		assert.ok(sent.includes("(image omitted: model does not support images)"));
 		assert.ok(!sent.includes(PIXEL_PNG));
 	}
+
 	const snapshots = await runtime.snapshots();
 	assert.equal(snapshots.length, 3);
 	for (const [index, snapshot] of snapshots.entries()) {
@@ -317,6 +346,7 @@ test("physical guard publishes before HTTP response, then detects setModel durin
 		switchTo = target;
 		await runtime.session.prompt("switch during preparation");
 	}
+
 	const snapshots = await runtime.snapshots();
 	assert.deepEqual(findings(snapshots[0]), []);
 	for (const snapshot of snapshots.slice(1)) {
@@ -328,23 +358,38 @@ test("physical guard publishes before HTTP response, then detects setModel durin
 for (const level of ["agent", "provider"] as const) {
 	test(`${level} retries pair each capture only once`, async (t) => {
 		const runtime = await createRuntime(t, { settings: {
-			retry: { enabled: level === "agent", maxRetries: 1, baseDelayMs: 1, provider: { maxRetries: level === "provider" ? 1 : 0 } },
+			retry: {
+				enabled: level === "agent", maxRetries: 1, baseDelayMs: 1,
+				provider: { maxRetries: level === "provider" ? 1 : 0 },
+			},
 		} });
-		runtime.provider.enqueue({ type: "error", status: 500, message: "Internal server error" }, { type: "text", text: "retry ok" });
+		runtime.provider.enqueue(
+			{ type: "error", status: 500, message: "Internal server error" },
+			{ type: "text", text: "retry ok" },
+		);
 		await runtime.session.prompt("retry once");
+
 		const snapshots = await runtime.snapshots();
 		assert.equal(runtime.provider.requests.length, 2);
 		assert.equal(snapshots.length, level === "agent" ? 2 : 1);
-		for (const snapshot of snapshots) assert.deepEqual(findings(snapshot), []);
+		for (const snapshot of snapshots)
+			assert.deepEqual(findings(snapshot), []);
 	});
 }
 
 for (const api of ["openai-completions", "openai-responses"] as const) {
 	test(`${api}: successful and failed idle warm refreshes publish nothing`, { timeout: 30_000 }, async (t) => {
-		const runtime = await createRuntime(t, { api, warming: true, before: [cacheWarm], settings: { cacheWarming: "idle" } });
+		const runtime = await createRuntime(t, {
+			api, warming: true, before: [cacheWarm], settings: { cacheWarming: "idle" },
+		});
 		await runtime.session.prompt("warm this request");
+
 		let prompts = 1;
-		for (const reply of [{ type: "text", text: "warm" }, { type: "error", status: 500, message: "warm failure" }] as const) {
+		const replies = [
+			{ type: "text", text: "warm" },
+			{ type: "error", status: 500, message: "warm failure" },
+		] as const;
+		for (const reply of replies) {
 			prompts += await warmOnce(runtime, api, reply);
 		}
 		await runtime.session.prompt("real request after warming");
@@ -355,6 +400,7 @@ for (const api of ["openai-completions", "openai-responses"] as const) {
 test("idle warming: a probe without a live warm run ends its own warm run and stays provider-free", async (t) => {
 	const runtime = await createRuntime(t, { warming: true, before: [cacheWarm], settings: { cacheWarming: "idle" } });
 	await runtime.session.prompt("/context injections");
+
 	const [snapshot] = await runtime.snapshots();
 	assert.equal(snapshot.origin, "synthetic-probe");
 	// Omitting the probe changes the context, so Pi never refreshes the probe's request
@@ -378,9 +424,16 @@ for (const api of APIS) {
 						{ type: "removed", text: PAYLOAD_CHANGE_ORIGINAL },
 						{ type: "added", text: PAYLOAD_CHANGE_MODIFIED },
 					] },
-					{ type: "payload-change", change: "deleted", part: "user", lines: [{ type: "removed", text: PAYLOAD_CHANGE_DELETED }] },
-					{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: PAYLOAD_CHANGE_ADDED }] },
+					{
+						type: "payload-change", change: "deleted", part: "user",
+						lines: [{ type: "removed", text: PAYLOAD_CHANGE_DELETED }],
+					},
+					{
+						type: "payload-change", change: "added", part: "user",
+						lines: [{ type: "added", text: PAYLOAD_CHANGE_ADDED }],
+					},
 				]);
+
 				const sent = JSON.stringify(runtime.provider.requests.at(-1)?.body);
 				assert.ok(sent.includes(PAYLOAD_CHANGE_ADDED) && sent.includes(PAYLOAD_CHANGE_MODIFIED));
 				assert.ok(!sent.includes(PAYLOAD_CHANGE_DELETED) && !sent.includes(PAYLOAD_CHANGE_ORIGINAL));
@@ -396,6 +449,7 @@ for (const api of APIS) {
 				api, [order]: [hiddenTools], settings: { codemode: { mode: "on" } },
 			});
 			await runtime.session.prompt("ordinary prompt");
+
 			const [snapshot] = await runtime.snapshots();
 			assert.deepEqual(findings(snapshot), []);
 			assert.deepEqual(snapshot.hiddenTools, ["read", "write"]);
@@ -407,13 +461,24 @@ for (const api of APIS) {
 			const runtime = await createRuntime(t, { api, [order]: [payloadMessageEditor(api)] });
 			await runtime.session.prompt("first prompt");
 			await runtime.session.prompt("second prompt");
+
 			const snapshots = await runtime.snapshots();
 			const sent = JSON.stringify(runtime.provider.requests.at(-1)?.body);
-			assert.ok(sent.includes(PAYLOAD_MESSAGE) && !sent.includes("first prompt"), "the editor changed the sent payload");
+			assert.ok(sent.includes(PAYLOAD_MESSAGE) && !sent.includes("first prompt"),
+				"the editor changed the sent payload");
 			assert.deepEqual(findings(snapshots[1]), order === "after" ? [] : [
-				{ type: "payload-change", change: "deleted", part: "user", lines: [{ type: "removed", text: "first prompt" }] },
-				{ type: "payload-change", change: "modified", part: "user", lines: [{ type: "added", text: PAYLOAD_LINE }] },
-				{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: PAYLOAD_MESSAGE }] },
+				{
+					type: "payload-change", change: "deleted", part: "user",
+					lines: [{ type: "removed", text: "first prompt" }],
+				},
+				{
+					type: "payload-change", change: "modified", part: "user",
+					lines: [{ type: "added", text: PAYLOAD_LINE }],
+				},
+				{
+					type: "payload-change", change: "added", part: "user",
+					lines: [{ type: "added", text: PAYLOAD_MESSAGE }],
+				},
 			]);
 		});
 	}
@@ -422,11 +487,14 @@ for (const api of APIS) {
 		const unknownPart: ExtensionFactory = (pi) => {
 			pi.on("before_provider_request", (event) => {
 				const messages = payloadMessages(api, event.payload);
-				messages.push({ role: "user", content: [{ type: "input_audio", input_audio: { data: "", format: "wav" } }] });
+				messages.push({
+					role: "user", content: [{ type: "input_audio", input_audio: { data: "", format: "wav" } }],
+				});
 			});
 		};
 		const runtime = await createRuntime(t, { api, before: [unknownPart] });
 		await runtime.session.prompt("prompt");
+
 		const [snapshot] = await runtime.snapshots();
 		assert.ok(snapshot.guard.status === "incomplete");
 		assert.match(snapshot.guard.reason, /shape the .* parser does not know/);
@@ -472,34 +540,46 @@ for (const adjustment of ADJUSTMENT_CASES) {
 	test(`${api}: Pi's adjustments are not payload changes ${JSON.stringify(variant)}`, async (t) => {
 		const runtime = await createRuntime(t, {
 			api, modelId: adjustment.modelId, compat: adjustment.compat, oauth: adjustment.oauth,
-			before: [...(adjustment.forced ? [forcedPrompt] : []), ...(adjustment.codemode ? [createCodemodeExtension()] : [])],
+			before: [
+				...(adjustment.forced ? [forcedPrompt] : []),
+				...(adjustment.codemode ? [createCodemodeExtension()] : []),
+			],
 			settings: {
 				...(adjustment.blockImages ? { images: { blockImages: true } } : {}),
-				...(adjustment.codemode ? { codemode: { mode: "on" }, defaultTools: ["read", "write", "codemode"] } : {}),
+				...(adjustment.codemode
+					? { codemode: { mode: "on" }, defaultTools: ["read", "write", "codemode"] }
+					: {}),
 			},
 		});
 		await runtime.session.prompt("first prompt");
 		seedHistory(runtime.session, runtime.session.model);
 		await runtime.session.prompt("second prompt");
+
 		const snapshots = await runtime.snapshots();
 		assert.equal(snapshots.length, 2);
 		assert.deepEqual(snapshots[1].changes, { conversation: [], system: [] });
 		assert.deepEqual(findings(snapshots[1]), []);
+
 		const sent = JSON.stringify(runtime.provider.requests.at(-1)?.body);
 		for (const text of ["Foreign answer.", "Custom block note.", "Ran `ls`", "No result provided"]) {
 			assert.ok(sent.includes(text), `the payload carries the seeded ${text}`);
 		}
 		assert.ok(!sent.includes("Failed partial.") && !sent.includes("hidden output"));
 		assert.ok(!sent.includes("Foreign reasoning.") && !sent.includes("Foreign unsigned reasoning."));
+
 		const relocates = api === "anthropic-messages" && adjustment.modelId !== "text" && !adjustment.blockImages;
 		assert.equal(sent.includes("(image attached after the tool results)"), relocates);
 		for (const caption of [
 			"Images from the error result of tool call call_error_id (read):",
 			"Images from the error result of tool call call_error (read):",
-		]) assert.equal(sent.includes(caption), relocates, caption);
-		if (adjustment.modelId === "text") assert.ok(sent.includes("(image omitted: model does not support images)"));
-		if (adjustment.blockImages) assert.ok(sent.includes("Image reading is disabled."));
-		if (adjustment.codemode) assert.ok(sent.includes("\"input\":\"return 1;\""), "the codemode call is a grammar call");
+		])
+			assert.equal(sent.includes(caption), relocates, caption);
+		if (adjustment.modelId === "text")
+			assert.ok(sent.includes("(image omitted: model does not support images)"));
+		if (adjustment.blockImages)
+			assert.ok(sent.includes("Image reading is disabled."));
+		if (adjustment.codemode)
+			assert.ok(sent.includes("\"input\":\"return 1;\""), "the codemode call is a grammar call");
 	});
 }
 
@@ -515,7 +595,11 @@ function seedHistory(session: AgentSession, model: Model | undefined): void {
 	const manager = session.sessionManager;
 	const image: ImageContent = { type: "image", data: PIXEL_PNG, mimeType: "image/png" };
 	const text = (value: string): TextContent => ({ type: "text", text: value });
-	const other = { provider: "elsewhere", api: model.api === "anthropic-messages" ? "openai-responses" : "anthropic-messages", model: "x" };
+	const other = {
+		provider: "elsewhere",
+		api: model.api === "anthropic-messages" ? "openai-responses" : "anthropic-messages",
+		model: "x",
+	};
 	const same = { provider: model.provider, api: model.api, model: model.id };
 	const signature = model.api === "openai-responses"
 		? JSON.stringify({ type: "reasoning", id: "rs_seed", summary: [] })
@@ -533,10 +617,13 @@ function seedHistory(session: AgentSession, model: Model | undefined): void {
 	]));
 	// Pi persists section patches only; it removes these unknown sections again on the next prompt
 	append({ role: "system", content: "", sections: { held: "<held>Held section.</held>" }, timestamp: 2 });
-	append({ role: "toolResult", toolCallId: "call|foreign+id", toolName: "read", content: [image], isError: false, timestamp: 3 });
 	append({
-		role: "toolResult", toolCallId: "call|error+id", toolName: "read", content: [text("Error detail."), image, image],
-		isError: true, timestamp: 3,
+		role: "toolResult", toolCallId: "call|foreign+id", toolName: "read", content: [image],
+		isError: false, timestamp: 3,
+	});
+	append({
+		role: "toolResult", toolCallId: "call|error+id", toolName: "read",
+		content: [text("Error detail."), image, image], isError: true, timestamp: 3,
 	});
 	append(assistant(same, "toolUse", [
 		{ type: "thinking", thinking: "Signed reasoning.", thinkingSignature: signature },
@@ -547,19 +634,27 @@ function seedHistory(session: AgentSession, model: Model | undefined): void {
 		{ type: "toolCall", id: "call_error", name: "read", arguments: { path: "error.png" } },
 		{ type: "toolCall", id: "call_orphan", name: "write", arguments: { path: "c.txt", content: "x" } },
 	]));
-	append({ role: "toolResult", toolCallId: "call_read", toolName: "read", content: [], isError: false, timestamp: 4 });
 	append({
-		role: "toolResult", toolCallId: "call_code", toolName: "codemode", content: [text("1"), image], isError: false, timestamp: 5,
+		role: "toolResult", toolCallId: "call_read", toolName: "read", content: [], isError: false, timestamp: 4,
 	});
-	append({ role: "toolResult", toolCallId: "call_error", toolName: "read", content: [image], isError: true, timestamp: 5 });
+	append({
+		role: "toolResult", toolCallId: "call_code", toolName: "codemode", content: [text("1"), image],
+		isError: false, timestamp: 5,
+	});
+	append({
+		role: "toolResult", toolCallId: "call_error", toolName: "read", content: [image], isError: true, timestamp: 5,
+	});
 	append(assistant(same, "error", [text("Failed partial.")]));
 	append(assistant(same, "aborted", [text("Aborted partial.")]));
 	manager.appendCustomMessageEntry("note", "Custom string note.", true);
 	manager.appendCustomMessageEntry("note", [text("Custom block note."), image], false);
-	append({ role: "bashExecution", command: "ls", output: "file.txt", exitCode: 1, cancelled: false, truncated: false, timestamp: 6 });
 	append({
-		role: "bashExecution", command: "cat secret", output: "hidden output", exitCode: 0, cancelled: false, truncated: false,
-		excludeFromContext: true, timestamp: 7,
+		role: "bashExecution", command: "ls", output: "file.txt", exitCode: 1, cancelled: false, truncated: false,
+		timestamp: 6,
+	});
+	append({
+		role: "bashExecution", command: "cat secret", output: "hidden output", exitCode: 0,
+		cancelled: false, truncated: false, excludeFromContext: true, timestamp: 7,
 	});
 	append({ role: "branchSummary", summary: "Branch summary.", fromId: null, timestamp: 8 });
 	append({ role: "user", content: "   ", timestamp: 9 });
@@ -596,10 +691,15 @@ function payloadMessageEditor(api: MockApi): ExtensionFactory {
 			const users = messages.filter((message) => message.role === "user");
 			// The first request has one user message; edit the second
 			const last = users.at(-1);
-			if (users.length < 2 || last === undefined) return;
+			if (users.length < 2 || last === undefined)
+				return;
 			messages.splice(messages.indexOf(users[0]), 1);
-			if (typeof last.content === "string") last.content = `${last.content}\n${PAYLOAD_LINE}`;
-			else (last.content as unknown[]).push({ type: api === "openai-responses" ? "input_text" : "text", text: PAYLOAD_LINE });
+			if (typeof last.content === "string")
+				last.content = `${last.content}\n${PAYLOAD_LINE}`;
+			else
+				(last.content as unknown[]).push({
+					type: api === "openai-responses" ? "input_text" : "text", text: PAYLOAD_LINE,
+				});
 			messages.push(api === "openai-responses"
 				? { role: "user", content: [{ type: "input_text", text: PAYLOAD_MESSAGE }] }
 				: { role: "user", content: PAYLOAD_MESSAGE });
@@ -619,6 +719,7 @@ async function exerciseToolChanges(runtime: Runtime): Promise<void> {
 		runtime.session.setActiveToolsByName(names);
 		await runtime.session.prompt(names.join(" "));
 	}
+
 	const snapshots = await runtime.snapshots();
 	for (const index of [0, 1, 2]) {
 		assert.deepEqual(findings(snapshots[index]), []);
@@ -634,20 +735,24 @@ async function exerciseToolChanges(runtime: Runtime): Promise<void> {
 async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Promise<Runtime> {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
+
 	// After hooks run in registration order: a late warm refresh must stop before its auth file is removed
 	let stopSession: (() => Promise<void>) | undefined;
 	t.after(() => stopSession?.());
+
 	const directory = await temporaryDirectory(t);
 	const settingsManager = SettingsManager.inMemory({
 		cacheWarming: "off", compaction: { enabled: false }, retry: { enabled: false, provider: { maxRetries: 0 } },
 		defaultTools: ["read", "write"], ...options.settings,
 	});
 	useSettings(t, directory, () => settingsManager);
+
 	const modelRuntime = await ModelRuntime.create({
 		authPath: join(directory, "auth.json"), modelsPath: null, refreshOnCreate: false, allowModelNetwork: false,
 	});
 	const models: Model[] = APIS.flatMap((api) => ["vision", "text"].map((id) => ({
-		provider: `mock-${api}`, id, api, name: id, baseUrl: provider.baseUrls[api], reasoning: options.thinking ?? false,
+		provider: `mock-${api}`, id, api, name: id, baseUrl: provider.baseUrls[api],
+		reasoning: options.thinking ?? false,
 		input: id === "vision" ? ["text", "image"] : ["text"], maxTokens: 128, contextWindow: 100_000,
 		cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
 		compat: options.compat,
@@ -656,6 +761,7 @@ async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Prom
 	const store = new SnapshotStore();
 	const published: RequestSnapshot[] = [];
 	store.subscribe((snapshot) => published.push(snapshot));
+
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: directory, agentDir: directory, settingsManager,
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
@@ -665,17 +771,23 @@ async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Prom
 				models: models.filter((model) => model.api === api),
 			})),
 			(pi) => pi.registerCommand("redefine", { description: "Test only", handler: async () => {
-				pi.registerTool({ name: "write", label: "write", description: "Redefined write.", parameters: Type.Object({}),
-					execute: async () => ({ content: [], details: undefined }) });
+				pi.registerTool({
+					name: "write", label: "write", description: "Redefined write.", parameters: Type.Object({}),
+					execute: async () => ({ content: [], details: undefined }),
+				});
 			} }),
-			...(options.before ?? []), (pi) => registerExtension(pi, store, createIsolatedConfigStore()), ...(options.after ?? []),
+			...(options.before ?? []),
+			(pi) => registerExtension(pi, store, createIsolatedConfigStore()),
+			...(options.after ?? []),
 		],
 	});
 	await resourceLoader.reload();
+
 	const { session, extensionsResult } = await createAgentSession({
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, modelRuntime,
 		sessionManager: SessionManager.inMemory(directory),
-		model: models.find((model) => model.api === (options.api ?? "openai-completions") && model.id === (options.modelId ?? "vision")),
+		model: models.find((model) =>
+			model.api === (options.api ?? "openai-completions") && model.id === (options.modelId ?? "vision")),
 		thinkingLevel: options.thinking ? "low" : "off",
 	});
 	stopSession = async () => {
@@ -683,20 +795,28 @@ async function createRuntime(t: TestContext, options: RuntimeOptions = {}): Prom
 		session.dispose();
 	};
 	assert.deepEqual(extensionsResult.errors, []);
+
 	const errors: string[] = [];
 	await session.bindExtensions({
-		mode: "tui", onError: (error) => { errors.push(`${error.event}: ${error.error}`); }, uiContext: createUiContext(),
+		mode: "tui",
+		onError: (error) => {
+			errors.push(`${error.event}: ${error.error}`);
+		},
+		uiContext: createUiContext(),
 	});
+
 	return {
 		session, provider, store, published,
 		model: (api, id = "vision") => {
 			const model = modelRuntime.getModel(`mock-${api}`, id);
 			assert.ok(model);
+
 			return model;
 		},
 		snapshots: async () => {
 			await flush();
 			assert.deepEqual(errors, []);
+
 			return [...new Map(published.map((snapshot) => [snapshot.id, snapshot])).values()];
 		},
 	};
@@ -721,7 +841,8 @@ async function warmOnce(runtime: Runtime, api: MockApi, reply: MockReply): Promi
 		const sent = runtime.provider.requests.length;
 		runtime.provider.enqueue(reply);
 		while (runtime.provider.requests.length === sent && !warmingStopped(runtime)) {
-			assert.ok(Date.now() < deadline, `No warm refresh; warming status: ${JSON.stringify(runtime.session.cacheWarmingStatus)}`);
+			assert.ok(Date.now() < deadline,
+				`No warm refresh; warming status: ${JSON.stringify(runtime.session.cacheWarmingStatus)}`);
 			await sleep(50);
 		}
 		if (runtime.provider.requests.length > sent) {
@@ -758,5 +879,6 @@ function flush(): Promise<void> {
 async function temporaryDirectory(t: TestContext): Promise<string> {
 	const directory = await mkdtemp(join(tmpdir(), "context-payload-test-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
+
 	return directory;
 }

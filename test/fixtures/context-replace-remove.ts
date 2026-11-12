@@ -18,7 +18,9 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("context", (event) => {
 		let changed = false;
 		const messages = event.messages.flatMap((message): ContextEvent["messages"] => {
-			if (message.role !== "user") return [message];
+			if (message.role !== "user")
+				return [message];
+
 			const text = typeof message.content === "string"
 				? message.content
 				: message.content.map((block) => block.type === "text" ? block.text : "").join("");
@@ -26,10 +28,13 @@ export default function (pi: ExtensionAPI): void {
 				changed = true;
 				return [];
 			}
-			if (text !== CONTEXT_REPLACE_ORIGINAL) return [message];
+			if (text !== CONTEXT_REPLACE_ORIGINAL)
+				return [message];
 			changed = true;
+
 			return [{ ...message, content: CONTEXT_REPLACE_TEXT }];
 		});
+
 		return changed ? { messages } : undefined;
 	});
 }

@@ -26,6 +26,7 @@ import {
 function createConfigPath(context: TestContext): string {
 	const directory = mkdtempSync(join(tmpdir(), "pi-context-view-config-"));
 	context.after(() => rmSync(directory, { recursive: true, force: true }));
+
 	return join(directory, "pi-context-view.json");
 }
 
@@ -35,8 +36,10 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(createDefaultConfigFile(filePath), { type: "created", filePath });
 	const text = readFileSync(filePath, "utf8");
 	assert.ok(text.endsWith("\n"));
+
 	// The documented example is the exact file, blank lines between key groups included
-	const documented = /```json\n([\s\S]*?\n)```/.exec(readFileSync(new URL("../doc/CONFIG.md", import.meta.url), "utf8"));
+	const configDoc = readFileSync(new URL("../doc/CONFIG.md", import.meta.url), "utf8");
+	const documented = /```json\n([\s\S]*?\n)```/.exec(configDoc);
 	assert.equal(text, documented?.[1]);
 	// Entries, not the parsed object: the file must also list keys in legend order
 	assert.deepEqual(Object.entries(JSON.parse(text)), [
@@ -75,6 +78,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 test("createDefaultConfigFile reports an unusable path instead of claiming the file exists", (context) => {
 	const blockingFile = createConfigPath(context);
 	writeFileSync(blockingFile, "not a directory");
+
 	const filePath = join(blockingFile, "pi-context-view.json");
 
 	// mkdir reports EEXIST for a parent that is a file; only the write may mean "exists"
@@ -245,6 +249,7 @@ test("loadConfigFile keeps the default for an unusable map size and warns once",
 test("loadConfigFile applies autoProbing and keeps the default for a non-boolean value", (context) => {
 	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({ autoProbing: false }));
+
 	const disabled = loadConfigFile(filePath);
 	assert.deepEqual(disabled.warnings, []);
 	assert.equal(disabled.config.autoProbing, false);
@@ -286,6 +291,7 @@ for (const { old, current, categoryId } of RENAMED_KEY_CASES) {
 test("loadConfigFile degrades invalid JSON and non-object roots to defaults", (context) => {
 	const filePath = createConfigPath(context);
 	writeFileSync(filePath, "{");
+
 	const invalidJson = loadConfigFile(filePath);
 	assert.equal(invalidJson.config, DEFAULT_CONFIG);
 	assert.equal(invalidJson.warnings.length, 1);
@@ -302,6 +308,7 @@ test("loadConfigFile degrades invalid JSON and non-object roots to defaults", (c
 test("ConfigStore warns once per revision and reloads after mtime changes", (context) => {
 	const filePath = createConfigPath(context);
 	writeFileSync(filePath, JSON.stringify({ unknownColor: "accent" }));
+
 	const store = new ConfigStore(filePath);
 
 	const first = store.load();
@@ -311,6 +318,7 @@ test("ConfigStore warns once per revision and reloads after mtime changes", (con
 	writeFileSync(filePath, JSON.stringify({ systemPromptColor: "success" }));
 	const future = new Date(Date.now() + 2_000);
 	utimesSync(filePath, future, future);
+
 	const changed = store.load();
 	assert.deepEqual(changed.warnings, []);
 	assert.equal(resolveCategoryColor(changed.config.categoryColors, "system-prompt"), "success");

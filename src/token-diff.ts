@@ -46,9 +46,13 @@ export interface DiffSide {
  * no diff removes more than the base or adds more than the request has.
  */
 export function measureTokenDiff(base: DiffSide | undefined, request: DiffSide): TokenDiff | undefined {
-	if (base === undefined) return nonEmptyDiff({ added: request.tokens, removed: 0 });
-	if (base.text === request.text) return undefined;
+	if (base === undefined)
+		return nonEmptyDiff({ added: request.tokens, removed: 0 });
+	if (base.text === request.text)
+		return undefined;
+
 	const changes = countWordChanges(base.text, request.text);
+
 	return nonEmptyDiff(reconcileTokens(base.tokens, request.tokens, changes));
 }
 
@@ -58,9 +62,12 @@ export function measureTokenDiff(base: DiffSide | undefined, request: DiffSide):
  * to align within `MAX_EDIT_STEPS` counts its whole middle as replaced.
  */
 export function countWordChanges(before: string, after: string): WordChanges {
-	if (before === after) return { addedChars: 0, removedChars: 0 };
+	if (before === after)
+		return { addedChars: 0, removedChars: 0 };
+
 	const words = comparisonWords(before, after);
 	const matchedChars = words.prefix.length + words.suffix.length + matchedMiddleChars(words.before, words.after);
+
 	return { addedChars: after.length - matchedChars, removedChars: before.length - matchedChars };
 }
 
@@ -69,10 +76,13 @@ export function countWordChanges(before: string, after: string): WordChanges {
  * trace retained only for previews. An unalignable middle is a replacement.
  */
 export function diffWords(before: string, after: string): WordDiffPart[] {
-	if (before === after) return before.length === 0 ? [] : [{ type: "unchanged", text: before }];
+	if (before === after)
+		return before.length === 0 ? [] : [{ type: "unchanged", text: before }];
+
 	const words = comparisonWords(before, after);
 	const trace: Int32Array[] = [];
 	matchedMiddleChars(words.before, words.after, trace);
+
 	const middle = trace.length === 0
 		? [{ type: "removed" as const, text: words.before.join("") },
 			{ type: "added" as const, text: words.after.join("") }]
@@ -80,11 +90,16 @@ export function diffWords(before: string, after: string): WordDiffPart[] {
 	const parts: WordDiffPart[] = [];
 	for (const part of [{ type: "unchanged" as const, text: words.prefix }, ...middle,
 		{ type: "unchanged" as const, text: words.suffix }]) {
-		if (part.text.length === 0) continue;
+		if (part.text.length === 0)
+			continue;
+
 		const previous = parts.at(-1);
-		if (previous?.type === part.type) parts[parts.length - 1] = { type: part.type, text: previous.text + part.text };
-		else parts.push(part);
+		if (previous?.type === part.type)
+			parts[parts.length - 1] = { type: part.type, text: previous.text + part.text };
+		else
+			parts.push(part);
 	}
+
 	return parts;
 }
 
@@ -101,13 +116,16 @@ function comparisonWords(before: string, after: string): ComparisonWords {
 	const beforeWords = before.match(WORD_PATTERN) ?? [];
 	const afterWords = after.match(WORD_PATTERN) ?? [];
 	let start = 0;
-	while (start < beforeWords.length && start < afterWords.length && beforeWords[start] === afterWords[start]) start++;
+	while (start < beforeWords.length && start < afterWords.length && beforeWords[start] === afterWords[start])
+		start++;
+
 	let beforeEnd = beforeWords.length;
 	let afterEnd = afterWords.length;
 	while (beforeEnd > start && afterEnd > start && beforeWords[beforeEnd - 1] === afterWords[afterEnd - 1]) {
 		beforeEnd--;
 		afterEnd--;
 	}
+
 	return {
 		before: beforeWords.slice(start, beforeEnd), after: afterWords.slice(start, afterEnd),
 		prefix: beforeWords.slice(0, start).join(""), suffix: beforeWords.slice(beforeEnd).join(""),
@@ -123,10 +141,14 @@ function comparisonWords(before: string, after: string): ComparisonWords {
 function matchedMiddleChars(before: readonly string[], after: readonly string[], trace?: Int32Array[]): number {
 	const n = before.length;
 	const m = after.length;
-	if (n === 0 || m === 0) return 0;
+	if (n === 0 || m === 0)
+		return 0;
+
 	const maxSteps = Math.min(n + m, MAX_EDIT_STEPS);
 	const offset = maxSteps + 1;
-	// furthest[offset + k]: the furthest x reached on diagonal k = x - y; kept[offset + k]: its kept characters
+	// Search state per diagonal k = x - y:
+	//   furthest[offset + k]   the furthest x reached on diagonal k
+	//   kept[offset + k]       its kept characters
 	const furthest = new Int32Array(2 * offset + 1);
 	const kept = new Float64Array(2 * offset + 1);
 	for (let steps = 0; steps <= maxSteps; steps++) {
@@ -150,7 +172,9 @@ function matchedMiddleChars(before: readonly string[], after: readonly string[],
 		}
 		trace?.push(furthest.slice(offset - steps, offset + steps + 1));
 	}
-	if (trace !== undefined) trace.length = 0;
+	if (trace !== undefined)
+		trace.length = 0;
+
 	return 0;
 }
 
@@ -177,6 +201,7 @@ function traceParts(before: readonly string[], after: readonly string[], trace: 
 		parts.push({ type: "unchanged", text: before[--x] });
 		y--;
 	}
+
 	return parts.reverse();
 }
 
@@ -201,7 +226,9 @@ function reconcileTokens(baseTokens: number, requestTokens: number, changes: Wor
 		added -= cut;
 		removed += -error - cut;
 	}
-	if (added > requestTokens || removed > baseTokens) return { added: requestTokens, removed: baseTokens };
+	if (added > requestTokens || removed > baseTokens)
+		return { added: requestTokens, removed: baseTokens };
+
 	return { added, removed };
 }
 

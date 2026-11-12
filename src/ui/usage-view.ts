@@ -129,6 +129,7 @@ type UsageMapScale = "window" | "fit";
 /** View-local denominator selected for legend and preview-header percentages. */
 type PercentageScale = "window" | "used";
 
+/** A selectable category row; Tool Output children sit at depth 1 under their root. */
 interface CategoryLegendRow {
 	readonly type: "category";
 	readonly category: UsageCategory;
@@ -136,18 +137,22 @@ interface CategoryLegendRow {
 	readonly rootId: string;
 }
 
+/** The non-selectable auto-compact buffer row. */
 interface BufferLegendRow {
 	readonly type: "buffer";
 	readonly tokens: number;
 }
 
+/** The non-selectable free space row. */
 interface FreeLegendRow {
 	readonly type: "free";
 	readonly tokens: number;
 }
 
+/** One row of the legend beside the map. */
 type LegendRow = CategoryLegendRow | BufferLegendRow | FreeLegendRow;
 
+/** Shared legend alignment: the token value column and the widths of its two fields. */
 interface LegendColumns {
 	readonly value: number;
 	readonly tokenWidth: number;
@@ -284,20 +289,26 @@ export class UsageView {
 	 * acceleration. Every other mouse event falls through to pi.
 	 */
 	public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
+		if (event.type !== "wheel" || !event.wheelDelta)
+			return undefined;
+
 		const moved = this.scrollByWheel(event.wheelDelta);
-		if (moved) this.clearCache();
+		if (moved)
+			this.clearCache();
+
 		return { handled: true, render: moved };
 	}
 
 	/** Apply one wheel notch of `wheelDelta` lines to the visible level and report whether it moved. */
 	private scrollByWheel(wheelDelta: number): boolean {
 		const direction = Math.sign(wheelDelta);
-		if (this.previewRow === undefined) return this.navigator.moveBy(direction);
+		if (this.previewRow === undefined)
+			return this.navigator.moveBy(direction);
 		// Blocks are selected rather than scrolled, so one notch steps one block
 		if (this.getFullContentEntry(this.previewRow) === undefined) {
 			return direction < 0 ? this.blockNavigator.stepBack() : this.blockNavigator.stepForward();
 		}
+
 		return this.previewScroller.scrollBy(wheelDelta);
 	}
 
@@ -310,8 +321,10 @@ export class UsageView {
 			if (this.search.prompt.editing && !isSearchNavigationKey(data)) {
 				this.search.handlePromptKey(data);
 				this.clearCache();
-			} else if (blockStream) this.handlePreviewInput(data);
-			else this.handleContentInput(data);
+			} else if (blockStream)
+				this.handlePreviewInput(data);
+			else
+				this.handleContentInput(data);
 			return;
 		}
 		if (matchesKey(data, Key.escape) || data === "q") {
@@ -330,17 +343,23 @@ export class UsageView {
 		} else if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
-			if (this.navigator.moveBy(-1)) this.clearCache();
+			if (this.navigator.moveBy(-1))
+				this.clearCache();
 		} else if (isStepForwardKey(data)) {
-			if (this.navigator.moveBy(1)) this.clearCache();
+			if (this.navigator.moveBy(1))
+				this.clearCache();
 		} else if (isPageBackKey(data)) {
-			if (this.navigator.page(-1)) this.clearCache();
+			if (this.navigator.page(-1))
+				this.clearCache();
 		} else if (isPageForwardKey(data)) {
-			if (this.navigator.page(1)) this.clearCache();
+			if (this.navigator.page(1))
+				this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
-			if (this.navigator.moveTo(0)) this.clearCache();
+			if (this.navigator.moveTo(0))
+				this.clearCache();
 		} else if (matchesKey(data, Key.end)) {
-			if (this.navigator.moveTo(this.legendRows.length - 1)) this.clearCache();
+			if (this.navigator.moveTo(this.legendRows.length - 1))
+				this.clearCache();
 		}
 	}
 
@@ -360,6 +379,7 @@ export class UsageView {
 		this.cachedWidth = width;
 		this.cachedTerminalRows = terminalRows;
 		this.cachedLines = lines;
+
 		return lines;
 	}
 
@@ -377,9 +397,13 @@ export class UsageView {
 	/** Render the dashboard, a multi-entry block stream, or one entry's full content. */
 	private renderActiveMode(width: number, terminalRows: number): string[] {
 		const row = this.previewRow;
-		if (row === undefined) return this.renderDashboard(width, terminalRows);
+		if (row === undefined)
+			return this.renderDashboard(width, terminalRows);
+
 		const entry = this.getFullContentEntry(row);
-		if (entry === undefined) return this.renderPreview(width, terminalRows, row);
+		if (entry === undefined)
+			return this.renderPreview(width, terminalRows, row);
+
 		return this.renderContentView(width, terminalRows, row, entry);
 	}
 
@@ -390,13 +414,18 @@ export class UsageView {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
 		const notices = this.noticeLines(width);
-		const prefix = [this.copy.topBorder(theme, width), "", ...this.headerLines(width), "", ...notices, ...(notices.length > 0 ? [""] : [])];
+		const prefix = [
+			this.copy.topBorder(theme, width), "", ...this.headerLines(width), "",
+			...notices, ...(notices.length > 0 ? [""] : []),
+		];
 		const availableRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT);
 		const map = this.dashboardMap(width, availableRows);
 		const descriptionLines = this.dashboardDescriptionLines(width, availableRows, map);
 		const dashboardRows = Math.max(1, availableRows - descriptionBlockRows(descriptionLines));
 		const dashboard = this.dashboardLines(width, dashboardRows, map).slice(0, dashboardRows);
-		while (dashboard.length < dashboardRows) dashboard.push("");
+		while (dashboard.length < dashboardRows)
+			dashboard.push("");
+
 		const tail = [
 			...(descriptionLines.length === 0 ? [] : ["", ...descriptionLines]),
 			"",
@@ -404,6 +433,7 @@ export class UsageView {
 			"",
 			border,
 		];
+
 		return fitToTerminalHeight([...prefix, ...dashboard, ...tail], terminalRows, border);
 	}
 
@@ -448,19 +478,22 @@ export class UsageView {
 		if (visibleWidth(title) + 1 + visibleWidth(summary) <= width) {
 			return [spreadLine(title, summary, width)];
 		}
+
 		return [this.fit(title, width), "", this.fit(summary, width)];
 	}
 
 	/** Toggle the view-local map denominator when the binding is currently visible. */
 	private toggleMapScale(): void {
-		if (!this.canToggleMapScale(this.currentWidth)) return;
+		if (!this.canToggleMapScale(this.currentWidth))
+			return;
 		this.mapScale = this.mapScale === "window" ? "fit" : "window";
 		this.clearCache();
 	}
 
 	/** Toggle the view-local percentage denominator between the window and the used total. */
 	private togglePercentageScale(): void {
-		if (!this.canTogglePercentageScale()) return;
+		if (!this.canTogglePercentageScale())
+			return;
 		this.percentageScale = this.percentageScale === "window" ? "used" : "window";
 		this.clearCache();
 	}
@@ -477,6 +510,7 @@ export class UsageView {
 	/** Whether zoom can help and its binding is visible at this width. */
 	private canToggleMapScale(width: number | undefined): boolean {
 		const contextWindow = this.usage.reported?.contextWindow;
+
 		return width !== undefined &&
 			width >= MAP_SIDE_BY_SIDE_MIN_WIDTH &&
 			contextWindow !== undefined &&
@@ -492,7 +526,9 @@ export class UsageView {
 			!this.canToggleMapScale(width) ||
 			contextWindow === undefined ||
 			this.fitMapScale === undefined
-		) return undefined;
+		)
+			return undefined;
+
 		return this.theme.fg(
 			"mdHeading",
 			`Zoom ${formatTokens(contextWindow)} → ${formatTokens(this.fitMapScale)}`,
@@ -505,11 +541,15 @@ export class UsageView {
 			[STEP_KEY_HINT, "Navigate"],
 			["Enter", "Preview"],
 		];
-		if (this.legendRows[this.navigator.selected]?.type === "category") hints.push(COPY_HINT);
-		if (this.canToggleMapScale(width)) hints.push(["Z", "Zoom"]);
+		if (this.legendRows[this.navigator.selected]?.type === "category")
+			hints.push(COPY_HINT);
+		if (this.canToggleMapScale(width))
+			hints.push(["Z", "Zoom"]);
 		// Optional, so it drops out first on narrow rows; the binding stays active and the header names the scale
-		if (this.canTogglePercentageScale()) hints.push(["P", "%", true]);
+		if (this.canTogglePercentageScale())
+			hints.push(["P", "%", true]);
 		hints.push(["Esc", "Close"]);
+
 		return hints;
 	}
 
@@ -522,6 +562,7 @@ export class UsageView {
 		const notes = [usageNote(), ...(this.input.probingDisabled === true ? [probingDisabledNote(this.theme)] : [])];
 		const lines = notes.flatMap((note) => descriptionNoteLines(this.theme, note, width));
 		const required = this.fullDashboardRows(width, map) + descriptionBlockRows(lines);
+
 		return required <= availableRows ? lines : [];
 	}
 
@@ -532,7 +573,9 @@ export class UsageView {
 	 */
 	private fullDashboardRows(width: number, map: UsageMap | undefined): number {
 		const detailRows = DETAIL_CATEGORY_HEADER_LINE_COUNT + this.legendRows.length;
-		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) return detailRows;
+		if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH)
+			return detailRows;
+
 		return Math.max(map.rows, detailRows + MAP_KEY_DETAILED_SPARE_ROWS);
 	}
 
@@ -546,8 +589,11 @@ export class UsageView {
 		const requested = this.input.mapSize;
 		const columns = Math.min(requested.columns, maxMapColumns(width));
 		const rows = Math.min(requested.rows, availableRows);
-		if (columns < 1 || rows < 1) return undefined;
+		if (columns < 1 || rows < 1)
+			return undefined;
+
 		const scaleTokens = this.mapScale === "fit" ? this.fitMapScale : undefined;
+
 		return buildUsageMap(this.usage, columns, rows, scaleTokens);
 	}
 
@@ -562,6 +608,7 @@ export class UsageView {
 		const mapLines = Array.from({ length: map.rows }, (_, row) => {
 			const start = row * map.columns;
 			const cells = map.cells.slice(start, start + map.columns);
+
 			return `${BODY_INDENT}${cells.map((cell) => this.mapCell(cell)).join(separator)}`;
 		});
 		const mapWidth = BODY_INDENT.length + map.columns + (spaced ? map.columns - 1 : 0);
@@ -569,9 +616,11 @@ export class UsageView {
 		const detailWidth = Math.max(1, width - mapWidth - gap);
 		const details = this.detailLines(detailWidth, rows, map);
 		const lineCount = Math.max(mapLines.length, details.length);
+
 		return Array.from({ length: lineCount }, (_, index) => {
 			const mapLine = mapLines[index] ?? " ".repeat(mapWidth);
 			const detail = this.fit(details[index] ?? "", detailWidth);
+
 			return this.fit(`${mapLine}${" ".repeat(gap)}${detail}`, width);
 		});
 	}
@@ -593,18 +642,22 @@ export class UsageView {
 		const start = this.navigator.offset;
 		for (let index = start; index < start + this.navigator.windowSize; index++) {
 			const row = this.legendRows[index];
-			if (row === undefined) break;
+			if (row === undefined)
+				break;
+
 			const selected = index === this.navigator.selected;
 			// The cursor stays in one fixed column at the start of the legend
 			const cursor = selected ? theme.fg("accent", "→ ") : "  ";
 			visibleRows.push(this.fit(`${cursor}${this.legendLine(row, columns, rowWidth, selected)}`, width));
 		}
+
 		const counterLines = viewport.showScroll
 			? [this.fit(
 				theme.fg("dim", `${BODY_INDENT}(${this.navigator.visibleEnd}/${this.legendRows.length})`),
 				width,
 			)]
 			: [];
+
 		return [
 			headingRow,
 			...visibleRows,
@@ -621,10 +674,14 @@ export class UsageView {
 	 */
 	private mapKeyLines(map: UsageMap, width: number, rows: number): string[] {
 		const spare = rows - DETAIL_CATEGORY_HEADER_LINE_COUNT - this.legendRows.length;
-		if (spare < MAP_KEY_COMPACT_SPARE_ROWS) return [];
-		if (spare < MAP_KEY_DETAILED_SPARE_ROWS) return [this.compactMapKeyLine(map, width)];
+		if (spare < MAP_KEY_COMPACT_SPARE_ROWS)
+			return [];
+		if (spare < MAP_KEY_DETAILED_SPARE_ROWS)
+			return [this.compactMapKeyLine(map, width)];
+
 		const theme = this.theme;
 		const sizeLabel = theme.fg("muted", `${MAP_KEY_SIZE_LABEL}: `);
+
 		return [
 			this.fit(theme.fg("mdHeading", theme.bold("Map:")), width),
 			this.fit(this.mapKeyEntry("text", FULL_CELL, theme.fg("muted", MAP_KEY_FULL_DESCRIPTION)), width),
@@ -652,14 +709,19 @@ export class UsageView {
 		const separator = theme.fg("dim", " · ");
 		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One category")}`;
 		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Mixed")}`;
-		const size = (withPercent: boolean) =>
-			`${this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL)} ${this.blockSizeText(map, withPercent)}`;
+		const freeCell = this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
+		const size = (withPercent: boolean) => `${freeCell} ${this.blockSizeText(map, withPercent)}`;
 		const prefix = `${heading} ${full}${separator}${partial}${separator}`;
 		const detailed = `${prefix}${size(true)}`;
-		if (visibleWidth(detailed) <= width) return detailed;
+		if (visibleWidth(detailed) <= width)
+			return detailed;
+
 		const withoutPercent = `${prefix}${size(false)}`;
-		if (visibleWidth(withoutPercent) <= width) return withoutPercent;
+		if (visibleWidth(withoutPercent) <= width)
+			return withoutPercent;
+
 		const shortenedFull = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One")}`;
+
 		return this.fit(`${heading} ${shortenedFull}${separator}${partial}${separator}${size(false)}`, width);
 	}
 
@@ -672,6 +734,7 @@ export class UsageView {
 	private blockSizeText(map: UsageMap, withPercent: boolean): string {
 		const percent = withPercent ? formatPercent(1 / (map.columns * map.rows)) : "";
 		const tokens = formatTokens(Math.round(map.blockTokens));
+
 		return this.theme.fg(
 			this.mapScale === "fit" ? "mdHeading" : "muted",
 			percent === "" ? tokens : `${tokens} (${percent})`,
@@ -681,7 +744,9 @@ export class UsageView {
 	/** Pi-reported usage/window metadata, with a marked estimate when current usage is unknown. */
 	private reportedSummary(): string {
 		const reported = this.usage.reported;
-		if (reported === undefined) return this.theme.fg("muted", "Context usage unavailable.");
+		if (reported === undefined)
+			return this.theme.fg("muted", "Context usage unavailable.");
+
 		const contextWindow = formatTokens(reported.contextWindow);
 		if (reported.tokens === undefined) {
 			const percent = formatPercent(this.usage.estimatedTokens / reported.contextWindow);
@@ -690,7 +755,9 @@ export class UsageView {
 				`≈${formatTokens(this.usage.estimatedTokens)}/${contextWindow} (${percent})`,
 			);
 		}
+
 		const percent = reported.percent === undefined ? "" : ` (${formatPercent(reported.percent / 100)})`;
+
 		return this.theme.fg("text", `${formatTokens(reported.tokens)}/${contextWindow}${percent}`);
 	}
 
@@ -701,9 +768,13 @@ export class UsageView {
 	private buildLegendRows(): LegendRow[] {
 		const rows: LegendRow[] = buildCategoryLegendRows(this.usage.categories);
 		const bufferTokens = this.bufferTokens();
-		if (bufferTokens > 0) rows.push({ type: "buffer", tokens: bufferTokens });
+		if (bufferTokens > 0)
+			rows.push({ type: "buffer", tokens: bufferTokens });
+
 		const freeTokens = this.freeSpaceTokens();
-		if (freeTokens !== undefined) rows.push({ type: "free", tokens: freeTokens });
+		if (freeTokens !== undefined)
+			rows.push({ type: "free", tokens: freeTokens });
+
 		return rows;
 	}
 
@@ -711,14 +782,18 @@ export class UsageView {
 	private bufferTokens(): number {
 		const contextWindow = this.usage.reported?.contextWindow;
 		const reserve = this.usage.autoCompactReserveTokens;
-		if (contextWindow === undefined || contextWindow <= 0 || reserve === undefined) return 0;
+		if (contextWindow === undefined || contextWindow <= 0 || reserve === undefined)
+			return 0;
+
 		return Math.min(reserve, Math.max(0, contextWindow - this.usage.estimatedTokens));
 	}
 
 	/** Estimated remaining space before the buffer, or undefined without a usable context window. */
 	private freeSpaceTokens(): number | undefined {
 		const contextWindow = this.usage.reported?.contextWindow;
-		if (contextWindow === undefined || contextWindow <= 0) return undefined;
+		if (contextWindow === undefined || contextWindow <= 0)
+			return undefined;
+
 		return Math.max(0, contextWindow - this.usage.estimatedTokens - this.bufferTokens());
 	}
 
@@ -730,6 +805,7 @@ export class UsageView {
 		const percentWidth = Math.max(0, ...rows.map((row) => this.plainLegendPercent(row, legendTokens(row)).length));
 		const rightWidth = tokenWidth + (percentWidth > 0 ? LEGEND_VALUE_GAP + percentWidth : 0);
 		const idealValue = Math.min(MAX_LEGEND_VALUE_COLUMN, labelWidth + LEGEND_LEADER_GAP);
+
 		return {
 			value: Math.max(1, Math.min(idealValue, width - rightWidth)),
 			tokenWidth,
@@ -749,6 +825,7 @@ export class UsageView {
 		const percentPart = percent === ""
 			? ""
 			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "muted", percent)}`;
+
 		return fitLine(
 			`${left}${leader}${this.theme.fg(valueColor, tokens)}${tokenPadding}${percentPart}`,
 			width,
@@ -757,15 +834,21 @@ export class UsageView {
 
 	/** Fill a label/value gap with dim dots, retaining spaces at both ends. */
 	private legendLeader(width: number): string {
-		if (width < 3) return " ".repeat(Math.max(0, width));
+		if (width < 3)
+			return " ".repeat(Math.max(0, width));
+
 		return ` ${this.theme.fg("dim", ".".repeat(width - 2))} `;
 	}
 
 	/** Unstyled hierarchy label used to choose the shared value column. */
 	private plainLegendLabel(row: LegendRow): string {
-		if (row.type === "buffer") return `${BUFFER_CELL} Auto-Compact Buffer`;
-		if (row.type === "free") return `${FREE_CELL} Free Space`;
+		if (row.type === "buffer")
+			return `${BUFFER_CELL} Auto-Compact Buffer`;
+		if (row.type === "free")
+			return `${FREE_CELL} Free Space`;
+
 		const indent = "  ".repeat(row.depth);
+
 		return `${indent}${categoryMarker(row.category.id, row.depth)} ${normalizeInlineText(row.category.label)}`;
 	}
 
@@ -779,10 +862,12 @@ export class UsageView {
 			const color = this.categoryColor(FREE_SPACE_CATEGORY_ID);
 			return `${this.paint(color, FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
 		}
+
 		const indent = "  ".repeat(row.depth);
 		const color = this.categoryColor(row.rootId);
 		const marker = this.paint(color, categoryMarker(row.category.id, row.depth));
 		const labelColor = selected ? "accent" : row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
+
 		return `${indent}${marker} ${this.theme.fg(labelColor, normalizeInlineText(row.category.label))}`;
 	}
 
@@ -793,11 +878,15 @@ export class UsageView {
 			// categories add up to about 100%. Capacity shares stay window-relative
 			// and would read as a second scale inside one column, so they are
 			// hidden here and reappear with the next Window toggle.
-			if (row.type !== "category" || this.usage.estimatedTokens <= 0) return "";
+			if (row.type !== "category" || this.usage.estimatedTokens <= 0)
+				return "";
 			return formatPercent(tokens / this.usage.estimatedTokens);
 		}
+
 		const contextWindow = this.usage.reported?.contextWindow;
-		if (contextWindow === undefined || contextWindow <= 0) return "";
+		if (contextWindow === undefined || contextWindow <= 0)
+			return "";
+
 		return formatPercent(tokens / contextWindow);
 	}
 
@@ -805,12 +894,14 @@ export class UsageView {
 	private legendHeadingRow(columns: LegendColumns, width: number): string {
 		const heading = this.theme.fg("mdHeading", this.theme.bold("Category:"));
 		const scaleLabel = this.percentageColumnLabel();
-		if (scaleLabel === undefined) return heading;
+		if (scaleLabel === undefined)
+			return heading;
 
 		// Legend rows start after the cursor column; center the label over the percentage column
 		const percentStart = CURSOR_COLUMN_WIDTH + columns.value + columns.tokenWidth + LEGEND_VALUE_GAP;
 		const labelStart = percentStart + Math.floor((columns.percentWidth - visibleWidth(scaleLabel)) / 2);
 		const labelEnd = labelStart + visibleWidth(scaleLabel);
+
 		return spreadLine(heading, this.theme.fg("dim", scaleLabel), Math.min(width, labelEnd));
 	}
 
@@ -819,7 +910,9 @@ export class UsageView {
 		if (this.percentageScale === "used") {
 			return this.usage.estimatedTokens > 0 ? "Used %" : undefined;
 		}
+
 		const contextWindow = this.usage.reported?.contextWindow;
+
 		return contextWindow !== undefined && contextWindow > 0 ? "Window %" : undefined;
 	}
 
@@ -828,10 +921,13 @@ export class UsageView {
 		if (cell.fill === "buffer") {
 			return this.paint(this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID), BUFFER_CELL);
 		}
-		if (cell.fill === "free") return this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
+		if (cell.fill === "free")
+			return this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
+
 		const glyph = cell.categoryId === "compacted-data"
 			? COMPACTED_CELL
 			: cell.fill === "full" ? FULL_CELL : PARTIAL_CELL;
+
 		return this.paint(this.categoryColor(cell.categoryId), glyph);
 	}
 
@@ -852,6 +948,7 @@ export class UsageView {
 	private noticeLines(width: number): string[] {
 		const blocks = (this.input.notices ?? [])
 			.map((notice) => this.wrapNotice(notice, width));
+
 		return capNoticeLines(blocks, MAX_NOTICE_LINES, (notice) => this.wrapNotice(notice, width));
 	}
 
@@ -873,6 +970,7 @@ export class UsageView {
 			return false;
 		}
 		this.clearCache();
+
 		return true;
 	}
 
@@ -886,83 +984,108 @@ export class UsageView {
 			this.copyBlockSelection();
 			return;
 		}
+
 		// Decide from the entries, not render caches: keys can arrive before the stream first renders
 		const row = this.previewRow;
 		if (row !== undefined && this.previewEntries(row).length > 0) {
 			const anchor = this.cachedStreamSearch?.starts[this.blockNavigator.selected] ?? 0;
-			if (this.handleSearchKey(data, anchor)) return;
+			if (this.handleSearchKey(data, anchor))
+				return;
 		}
 		if (matchesKey(data, Key.enter)) {
 			this.openBlock();
 		} else if (isStepBackKey(data)) {
-			if (this.blockNavigator.stepBack()) this.clearCache();
+			if (this.blockNavigator.stepBack())
+				this.clearCache();
 		} else if (isStepForwardKey(data)) {
-			if (this.blockNavigator.stepForward()) this.clearCache();
+			if (this.blockNavigator.stepForward())
+				this.clearCache();
 		} else if (isPageBackKey(data)) {
-			if (this.blockNavigator.page(-1)) this.clearCache();
+			if (this.blockNavigator.page(-1))
+				this.clearCache();
 		} else if (isPageForwardKey(data)) {
-			if (this.blockNavigator.page(1)) this.clearCache();
+			if (this.blockNavigator.page(1))
+				this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
-			if (this.blockNavigator.moveToFirst()) this.clearCache();
+			if (this.blockNavigator.moveToFirst())
+				this.clearCache();
 		} else if (matchesKey(data, Key.end)) {
-			if (this.blockNavigator.moveToLast()) this.clearCache();
+			if (this.blockNavigator.moveToLast())
+				this.clearCache();
 		}
 	}
 
 	/** Scroll full content and return to its category or originating block stream. */
 	private handleContentInput(data: string): void {
 		if (matchesKey(data, Key.escape) || data === "q") {
-			if (this.openBlockIndex === undefined) this.closePreview();
-			else this.closeBlock();
+			if (this.openBlockIndex === undefined)
+				this.closePreview();
+			else
+				this.closeBlock();
 			return;
 		}
 		if (matchesKey(data, "c")) {
 			this.copyOpenContent();
 			return;
 		}
-		if (this.handleSearchKey(data, this.previewScroller.offset)) return;
+		if (this.handleSearchKey(data, this.previewScroller.offset))
+			return;
 		if (isStepBackKey(data)) {
-			if (this.previewScroller.scrollBy(-1)) this.clearCache();
+			if (this.previewScroller.scrollBy(-1))
+				this.clearCache();
 		} else if (isStepForwardKey(data)) {
-			if (this.previewScroller.scrollBy(1)) this.clearCache();
+			if (this.previewScroller.scrollBy(1))
+				this.clearCache();
 		} else if (isPageBackKey(data)) {
-			if (this.previewScroller.page(-1)) this.clearCache();
+			if (this.previewScroller.page(-1))
+				this.clearCache();
 		} else if (isPageForwardKey(data)) {
-			if (this.previewScroller.page(1)) this.clearCache();
+			if (this.previewScroller.page(1))
+				this.clearCache();
 		} else if (matchesKey(data, Key.home)) {
-			if (this.previewScroller.scrollTo(0)) this.clearCache();
+			if (this.previewScroller.scrollTo(0))
+				this.clearCache();
 		} else if (matchesKey(data, Key.end)) {
-			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
+			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset))
+				this.clearCache();
 		}
 	}
 
 	/** Copy every entry of the highlighted dashboard category. */
 	private copyDashboardSelection(): void {
 		const row = this.legendRows[this.navigator.selected];
-		if (row?.type !== "category") return;
+		if (row?.type !== "category")
+			return;
 		this.copy.copy(copyableJoin(collectPreviewEntries(row.category).map((entry) => entry.text)));
 	}
 
 	/** Copy the highlighted block of the open category stream. */
 	private copyBlockSelection(): void {
 		const row = this.previewRow;
-		if (row === undefined) return;
+		if (row === undefined)
+			return;
+
 		const entry = this.previewEntries(row)[this.blockNavigator.selected];
-		if (entry !== undefined) this.copy.copy(copyableText(entry.text));
+		if (entry !== undefined)
+			this.copy.copy(copyableText(entry.text));
 	}
 
 	/** Copy the open entry when the category or block already shows its full content. */
 	private copyOpenContent(): void {
 		const row = this.previewRow;
-		if (row === undefined) return;
+		if (row === undefined)
+			return;
+
 		const entry = this.getFullContentEntry(row);
-		if (entry !== undefined) this.copy.copy(copyableText(entry.text));
+		if (entry !== undefined)
+			this.copy.copy(copyableText(entry.text));
 	}
 
 	/** Open the selected category, bypassing blocks when it has exactly one entry. */
 	private openPreview(): void {
 		const row = this.legendRows[this.navigator.selected];
-		if (row === undefined || row.type !== "category") return;
+		if (row === undefined || row.type !== "category")
+			return;
 		this.previewRow = row;
 		this.cachedPreviewEntries = undefined;
 		this.clearPreviewContent();
@@ -991,7 +1114,9 @@ export class UsageView {
 		// The rendered stream carries the height-dependent cap the user sees, so it decides what Enter opens
 		const index = this.blockNavigator.selected;
 		const block = this.cachedStream?.blocks[index];
-		if (block === undefined || block.hiddenLineCount === 0) return;
+		if (block === undefined || block.hiddenLineCount === 0)
+			return;
+
 		// The opened level searches the same header and content rows, so offsets carry over unchanged
 		const start = this.cachedStreamSearch?.starts[index] ?? 0;
 		const blockLineCount = block.lines.length + block.hiddenLineCount;
@@ -1043,12 +1168,15 @@ export class UsageView {
 			reservedLineCount,
 		);
 		this.blockNavigator.setExtent(stream.layout, viewport.visibleCount);
+
 		const searchLines = this.streamSearch(width, row);
 		const revealRow = this.search.sync(searchLines.lines);
-		if (revealRow !== undefined) this.blockNavigator.select(blockAtRow(searchLines.starts, revealRow));
+		if (revealRow !== undefined)
+			this.blockNavigator.select(blockAtRow(searchLines.starts, revealRow));
 
 		const lines: string[] = [
-			this.copy.topBorder(theme, width), "", this.categoryHeaderLine(row, width), "", ...this.search.promptLines(theme, width),
+			this.copy.topBorder(theme, width), "", this.categoryHeaderLine(row, width), "",
+			...this.search.promptLines(theme, width),
 		];
 		lines.push(...this.previewStreamLines(stream, viewport.visibleCount, width));
 		if (viewport.showScroll) {
@@ -1059,40 +1187,51 @@ export class UsageView {
 				),
 			);
 		}
-		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
+		if (descriptionLines.length > 0)
+			lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(fitHintRow(theme, this.streamHints(stream.blocks.length), width));
 		lines.push("", border);
+
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
 	/** Cached search lines of the open stream; rebuilt with the content they flatten. */
 	private streamSearch(width: number, row: CategoryLegendRow): StreamSearchLines {
 		const entries = this.previewContent(width, row);
-		if (this.cachedStreamSearch?.entries === entries) return this.cachedStreamSearch;
+		if (this.cachedStreamSearch?.entries === entries)
+			return this.cachedStreamSearch;
+
 		const lines: string[] = [];
 		const starts: number[] = [];
 		this.previewEntries(row).forEach((entry, index) => {
-			if (index > 0) lines.push("");
+			if (index > 0)
+				lines.push("");
 			starts.push(lines.length);
 			lines.push(this.entryHeader(entry), ...entries[index] ?? []);
 		});
 		this.cachedStreamSearch = { entries, lines, starts };
+
 		return this.cachedStreamSearch;
 	}
 
 	/** Cached full-content search lines, rebuilt with the body they cover. */
 	private contentSearch(body: readonly string[], header: string | undefined): ContentSearchLines {
 		const cached = this.cachedContentSearch;
-		if (cached?.body === body && cached.header === header) return cached;
+		if (cached?.body === body && cached.header === header)
+			return cached;
+
 		const lines = header === undefined ? body : [header, ...body];
 		this.cachedContentSearch = { body, header, lines };
+
 		return this.cachedContentSearch;
 	}
 
 	/** Block stream hints; an empty stream moves nowhere and has nothing to search. */
 	private streamHints(blockCount: number): Hint[] {
-		if (blockCount === 0) return [["Esc", "Back"]];
+		if (blockCount === 0)
+			return [["Esc", "Back"]];
+
 		return searchHints(this.search.prompt, "Navigate", COPY_HINT);
 	}
 
@@ -1120,6 +1259,7 @@ export class UsageView {
 			body.length, terminalRows, fixedLineCount, descriptionBlockRows(descriptionLines),
 		);
 		this.previewScroller.setExtent(body.length, viewport.visibleCount);
+
 		const searchLines = this.contentSearch(body, showEntryHeader ? this.entryHeader(entry) : undefined);
 		// Body rows follow the header row when it is searched
 		const bodyRow = searchLines.header === undefined ? 0 : 1;
@@ -1147,10 +1287,12 @@ export class UsageView {
 				this.fit(theme.fg("dim", `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${body.length})`), width),
 			);
 		}
-		if (descriptionLines.length > 0) lines.push("", ...descriptionLines);
+		if (descriptionLines.length > 0)
+			lines.push("", ...descriptionLines);
 		lines.push("");
 		lines.push(fitHintRow(theme, searchHints(this.search.prompt, "Scroll", COPY_HINT), width));
 		lines.push("", border);
+
 		return fitToTerminalHeight(lines, terminalRows, border);
 	}
 
@@ -1167,6 +1309,7 @@ export class UsageView {
 		const forced = this.previewEntries(row).some((entry) => entry.change === "forced");
 		const marker = forced ? forcedMarker(theme) : "";
 		const fitsMarker = visibleWidth(title) + visibleWidth(meta) + visibleWidth(marker) + 2 <= width;
+
 		return spreadLine(title, `${meta}${fitsMarker ? marker : ""} `, width);
 	}
 
@@ -1176,7 +1319,9 @@ export class UsageView {
 			const message = this.theme.fg("muted", `${BODY_INDENT}${emptyPreviewNote().text}`);
 			return Array.from({ length: visibleCount }, (_, index) => index === 0 ? this.fit(message, width) : "");
 		}
+
 		const start = this.blockNavigator.offset;
+
 		return Array.from(
 			{ length: visibleCount },
 			(_, index) => this.previewStreamLine(stream, start + index, width),
@@ -1186,15 +1331,20 @@ export class UsageView {
 	/** One stream line: blank separator, block content, or the block's truncation marker. */
 	private previewStreamLine(stream: PreviewStream, index: number, width: number): string {
 		const ref = stream.layout.lines[index];
-		if (ref === undefined) return "";
+		if (ref === undefined)
+			return "";
+
 		const block = stream.blocks[ref.blockIndex];
-		if (block === undefined) return "";
+		if (block === undefined)
+			return "";
+
 		const selected = ref.blockIndex === this.blockNavigator.selected;
 		const start = this.cachedStreamSearch?.starts[ref.blockIndex];
 		const line = ref.lineIndex < block.lines.length
 			? this.highlightStreamLine(block.lines[ref.lineIndex] ?? "", start, ref.lineIndex)
 			: this.truncationMarker(block.hiddenLineCount, selected);
 		const gutter = this.blockGutter(selected, line === "");
+
 		return this.fit(`${gutter}${line}`, width);
 	}
 
@@ -1205,16 +1355,21 @@ export class UsageView {
 
 	/** Accent bar marking the selected block, or the plain two-column indent. */
 	private blockGutter(selected: boolean, blankLine: boolean): string {
-		if (!selected) return blankLine ? "" : BODY_INDENT;
+		if (!selected)
+			return blankLine ? "" : BODY_INDENT;
+
 		return this.theme.fg("accent", blankLine ? BLOCK_GUTTER : `${BLOCK_GUTTER} `);
 	}
 
 	/** Left-aligned truncation marker with a brighter action label on the selected block only. */
 	private truncationMarker(hiddenLineCount: number, selected: boolean): string {
 		const marker = `${BODY_INDENT}${this.theme.fg("dim", `… +${hiddenLineCount} lines`)}`;
-		if (!selected) return marker;
+		if (!selected)
+			return marker;
+
 		const separator = this.theme.fg("dim", " · ");
 		const action = this.theme.fg("accent", "Enter - View Content");
+
 		return `${marker}${separator}${action}`;
 	}
 
@@ -1222,10 +1377,13 @@ export class UsageView {
 	private previewStream(width: number, maxLines: number, row: CategoryLegendRow): PreviewStream {
 		const wrapWidth = previewWrapWidth(width);
 		const cached = this.cachedStream;
-		if (cached !== undefined && cached.wrapWidth === wrapWidth && cached.maxLines === maxLines) return cached;
+		if (cached !== undefined && cached.wrapWidth === wrapWidth && cached.maxLines === maxLines)
+			return cached;
+
 		const content = this.previewContent(width, row);
 		const blocks = this.previewEntries(row).map((entry, index) => {
 			const lines = content[index] ?? [];
+
 			return {
 				lines: [this.entryHeader(entry), ...lines.slice(0, maxLines)],
 				hiddenLineCount: Math.max(0, lines.length - maxLines),
@@ -1237,6 +1395,7 @@ export class UsageView {
 			blocks,
 			layout: layoutPreviewBlocks(blocks.map(blockHeight)),
 		};
+
 		return this.cachedStream;
 	}
 
@@ -1250,10 +1409,12 @@ export class UsageView {
 		if (this.cachedContent !== undefined && this.cachedContent.wrapWidth === wrapWidth) {
 			return this.cachedContent.entries;
 		}
+
 		const compactSkills = row.rootId === "user-messages";
 		const entries = this.previewEntries(row)
 			.map((entry) => this.entryContentLines(entry, wrapWidth, compactSkills));
 		this.cachedContent = { wrapWidth, entries };
+
 		return entries;
 	}
 
@@ -1266,17 +1427,21 @@ export class UsageView {
 		if (this.cachedBlockBody !== undefined && this.cachedBlockBody.width === width) {
 			return this.cachedBlockBody.lines;
 		}
+
 		const wrapWidth = previewWrapWidth(width);
 		const content = this.entryContentLines(entry, wrapWidth, row.rootId === "user-messages");
 		const lines = content.map((line) => line === "" ? "" : this.fit(`${BODY_INDENT}${line}`, width));
 		this.cachedBlockBody = { width, lines };
+
 		return lines;
 	}
 
 	/** The sole category entry or an explicitly opened block; undefined for a block stream. */
 	private getFullContentEntry(row: CategoryLegendRow): UsagePreviewEntry | undefined {
 		const entries = this.previewEntries(row);
-		if (entries.length === 1) return entries[0];
+		if (entries.length === 1)
+			return entries[0];
+
 		return this.openBlockIndex === undefined ? undefined : entries[this.openBlockIndex];
 	}
 
@@ -1312,15 +1477,19 @@ export class UsageView {
 				theme.fg("dim", `+ ${label} ${marker}${formatTokens(tokens)} (${marker}${formatTokens(total)})`),
 			);
 		}
+
 		return cells.join(" ");
 	}
 
 	/** The legend collapses around uncapped content geometry; reasoning notation keeps its existing fixed footer. */
 	private previewDescriptionLines(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
-		if (row.rootId === "assistant-thinking") return this.thinkingDescriptionLines(width, row);
+		if (row.rootId === "assistant-thinking")
+			return this.thinkingDescriptionLines(width, row);
+
 		// Count entry headers and separator rows before applying the legend-dependent cap
 		const contentLineCount = this.previewContent(width, row)
 			.reduce((total, lines) => total + lines.length + 2, -1);
+
 		return previewLegendLines(this.theme, this.previewEntries(row), {
 			width,
 			availableRows: terminalRows - PREVIEW_FIXED_LINE_COUNT,
@@ -1330,9 +1499,12 @@ export class UsageView {
 
 	/** Keep reasoning notation visible when the category opens as blocks or direct full content. */
 	private thinkingDescriptionLines(width: number, row: CategoryLegendRow): string[] {
-		if (row.rootId !== "assistant-thinking") return [];
+		if (row.rootId !== "assistant-thinking")
+			return [];
+
 		const hasInvisibleReasoning = this.previewEntries(row)
 			.some((entry) => entry.invisibleReasoning !== undefined);
+
 		return hasInvisibleReasoning
 			? descriptionNoteLines(this.theme, thinkingNote(), width)
 			: [];
@@ -1355,15 +1527,19 @@ export class UsageView {
 		for (const paragraph of this.entryPreviewText(text, compactSkills).split("\n")) {
 			const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
 			const paragraphLines = wrapped.length === 0 ? [""] : wrapped;
-			for (const line of paragraphLines) lines.push(line === "" ? "" : `${BODY_INDENT}${line}`);
+			for (const line of paragraphLines)
+				lines.push(line === "" ? "" : `${BODY_INDENT}${line}`);
 		}
+
 		return lines;
 	}
 
 	/** Sanitize raw entry text and replace complete attached skills with pi-colored badges. */
 	private entryPreviewText(text: string, compactSkills: boolean): string {
 		const sanitized = normalizePreviewText(text);
-		if (!compactSkills) return sanitized;
+		if (!compactSkills)
+			return sanitized;
+
 		return splitSkillPreview(sanitized)
 			.map((segment) => segment.type === "text" ? segment.text : this.skillBadge(segment.name))
 			.join("");
@@ -1373,7 +1549,9 @@ export class UsageView {
 	private skillBadge(name: string): string {
 		const label = this.theme.fg("customMessageLabel", this.theme.bold("[skill]"));
 		const safeName = normalizeInlineText(name);
-		if (safeName === "") return label;
+		if (safeName === "")
+			return label;
+
 		return `${label} ${this.theme.fg("customMessageText", safeName)}`;
 	}
 
@@ -1395,11 +1573,13 @@ function buildCategoryLegendRows(categories: readonly UsageCategory[]): Category
 	const rows: CategoryLegendRow[] = [];
 	for (const category of categories) {
 		rows.push({ type: "category", category, depth: 0, rootId: category.id });
-		if (category.id !== "tool-output") continue;
+		if (category.id !== "tool-output")
+			continue;
 		for (const child of category.children ?? []) {
 			rows.push({ type: "category", category: child, depth: 1, rootId: category.id });
 		}
 	}
+
 	return rows;
 }
 
@@ -1409,11 +1589,14 @@ function buildCategoryLegendRows(categories: readonly UsageCategory[]): Category
  * side-by-side width, where no map renders at all.
  */
 function maxMapColumns(width: number): number {
-	if (width < MAP_SIDE_BY_SIDE_MIN_WIDTH) return 0;
+	if (width < MAP_SIDE_BY_SIDE_MIN_WIDTH)
+		return 0;
+
 	const spaced = width >= SPACED_MAP_MIN_WIDTH;
 	const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
 	// Spaced cells cost two columns each, except the last one, which has no trailing space
 	const available = width - BODY_INDENT.length - gap - MIN_DETAIL_WIDTH + (spaced ? 1 : 0);
+
 	return Math.max(0, Math.floor(available / (spaced ? 2 : 1)));
 }
 
@@ -1435,13 +1618,16 @@ function previewBlockMaxLines(terminalRows: number, reservedLineCount: number): 
 	// Assume the counter row; a stream short enough to drop it loses at most one line per block
 	const visibleCount = terminalRows - PREVIEW_FIXED_LINE_COUNT - reservedLineCount - 1;
 	const fitted = Math.floor((visibleCount - TWO_BLOCK_FRAME_ROWS) / 2);
+
 	return Math.max(PREVIEW_BLOCK_MIN_LINES, Math.min(PREVIEW_BLOCK_MAX_LINES, fitted));
 }
 
 /** Block holding one row of the flattened stream search lines. */
 function blockAtRow(starts: readonly number[], row: number): number {
 	let index = 0;
-	while (index + 1 < starts.length && (starts[index + 1] ?? Infinity) <= row) index++;
+	while (index + 1 < starts.length && (starts[index + 1] ?? Infinity) <= row)
+		index++;
+
 	return index;
 }
 
@@ -1454,13 +1640,16 @@ function blockHeight(block: PreviewBlock): number {
 function formatEntryTimestamp(timestamp: number): string {
 	const date = new Date(timestamp);
 	const pad = (value: number) => `${value}`.padStart(2, "0");
+
 	return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}` +
 		` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 /** Marker distinguishing top-level occupancy, compacted data, and nested breakdowns. */
 function categoryMarker(categoryId: string, depth: number): string {
-	if (depth > 0) return BREAKDOWN_MARKER;
+	if (depth > 0)
+		return BREAKDOWN_MARKER;
+
 	return categoryId === "compacted-data" ? COMPACTED_CELL : FULL_CELL;
 }
 
@@ -1471,15 +1660,20 @@ function legendTokens(row: LegendRow): number {
 
 /** Compact token count: 951, 3.7k, 43.8k, 1M. */
 export function formatTokens(tokens: number): string {
-	if (tokens < 1_000) return `${tokens}`;
-	if (tokens < 1_000_000) return `${trimTrailingZero((tokens / 1_000).toFixed(1))}k`;
+	if (tokens < 1_000)
+		return `${tokens}`;
+	if (tokens < 1_000_000)
+		return `${trimTrailingZero((tokens / 1_000).toFixed(1))}k`;
+
 	return `${trimTrailingZero((tokens / 1_000_000).toFixed(1))}M`;
 }
 
 /** Percentage with one decimal below 10%: 0.4%, 4.2%, 96%. */
 export function formatPercent(ratio: number): string {
 	const percent = ratio * 100;
-	if (percent >= 10) return `${Math.round(percent)}%`;
+	if (percent >= 10)
+		return `${Math.round(percent)}%`;
+
 	return `${trimTrailingZero(percent.toFixed(1))}%`;
 }
 

@@ -43,19 +43,29 @@ export function statusBarLines(theme: Theme, row: InjectionRow, width: number): 
 
 /** Unwrapped fields of one row, in display order. */
 function statusFields(theme: Theme, row: InjectionRow): string[] {
-	if (row.kind !== "group" && row.kind !== "item") return [];
+	if (row.kind !== "group" && row.kind !== "item")
+		return [];
+
 	const fields: string[] = [];
-	if (row.scope !== undefined) fields.push(field(theme, "Change", changeText(theme, row.diff, row.scope)));
-	if (row.kind !== "item") return fields;
-	if (row.diffOnly === true) fields.push(theme.fg("dim", DIFF_ONLY_NOTE));
-	else if (row.editors !== undefined) fields.push(field(theme, "Changed By", editorsText(theme, row.editors)));
+	if (row.scope !== undefined)
+		fields.push(field(theme, "Change", changeText(theme, row.diff, row.scope)));
+	if (row.kind !== "item")
+		return fields;
+	if (row.diffOnly === true)
+		fields.push(theme.fg("dim", DIFF_ONLY_NOTE));
+	else if (row.editors !== undefined)
+		fields.push(field(theme, "Changed By", editorsText(theme, row.editors)));
 	// A row shows one of Dropped and Moved, like its markers
-	if (row.dropped === true) fields.push(markerStatusField(theme, "dropped"));
-	else if (row.moved === true) fields.push(markerStatusField(theme, "moved"));
-	if (row.change === "forced") fields.push(markerStatusField(theme, "forced"));
+	if (row.dropped === true)
+		fields.push(markerStatusField(theme, "dropped"));
+	else if (row.moved === true)
+		fields.push(markerStatusField(theme, "moved"));
+	if (row.change === "forced")
+		fields.push(markerStatusField(theme, "forced"));
 	if (row.forcedEdit !== undefined) {
 		fields.push(markerStatusField(theme, row.forcedEdit.sent ? "forced-edit-sent" : "forced-edit-unsent"));
 	}
+
 	return fields;
 }
 
@@ -67,18 +77,26 @@ function field(theme: Theme, name: string, value: string): string {
 /** `+N -N` in the diff colors, then where the changes live; only the phrase without a diff. */
 function changeText(theme: Theme, diff: TokenDiff | undefined, scope: ChangeScope): string {
 	const sides: string[] = [];
-	if (diff !== undefined && diff.added > 0) sides.push(theme.fg("toolDiffAdded", formatDiffAdded(diff.added)));
-	if (diff !== undefined && diff.removed > 0) sides.push(theme.fg("toolDiffRemoved", formatDiffRemoved(diff.removed)));
+	if (diff !== undefined && diff.added > 0)
+		sides.push(theme.fg("toolDiffAdded", formatDiffAdded(diff.added)));
+	if (diff !== undefined && diff.removed > 0)
+		sides.push(theme.fg("toolDiffRemoved", formatDiffRemoved(diff.removed)));
+
 	const phrase = SCOPE_PHRASES[scope];
-	if (sides.length === 0) return theme.fg("dim", phrase);
+	if (sides.length === 0)
+		return theme.fg("dim", phrase);
+
 	return `${sides.join(" ")}${theme.fg("dim", `${scope === "partly" ? "," : ""} ${phrase}`)}`;
 }
 
 /** Comma-separated editors: sanitized extension labels with a dim `(guess)` where inferred, then `Unknown`. */
 function editorsText(theme: Theme, editors: readonly ChangeEditor[]): string {
 	return editors.map((editor) => {
-		if (editor.type === "unknown") return theme.fg("dim", "Unknown");
+		if (editor.type === "unknown")
+			return theme.fg("dim", "Unknown");
+
 		const label = theme.fg("dim", normalizeInlineText(editor.source.label));
+
 		return editor.attribution === "guess" ? `${label}${guessMarker(theme)}` : label;
 	}).join(theme.fg("dim", ", "));
 }
@@ -87,6 +105,7 @@ function editorsText(theme: Theme, editors: readonly ChangeEditor[]): string {
 function wrapField(text: string, width: number): string[] {
 	const indentWidth = Math.min(CONTINUATION_INDENT.length, Math.max(0, width - 1));
 	const wrapped = wrapTextWithAnsi(text, Math.max(1, width - indentWidth));
+
 	return wrapped.map((line, index) => {
 		const indent = (index === 0 ? FIELD_INDENT : CONTINUATION_INDENT).slice(0, indentWidth);
 		return fitLine(`${indent}${line}`, width);

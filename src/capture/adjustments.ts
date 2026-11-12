@@ -83,6 +83,7 @@ export function convertCapturedRequest(
 	options: { readonly blockImages: boolean },
 ): ConvertedRequest {
 	const converted = convertToLlm(rebuildRequest(capture));
+
 	return {
 		messages: (options.blockImages ? converted.map(blockImages) : converted).map(stripMessage),
 		grammarInputs: collectGrammarInputs(capture),
@@ -132,14 +133,17 @@ function rebuildRequest(capture: ConvertibleCapture): RequestMessage[] {
 	if (capture.forcedPrompt !== undefined) {
 		return [{ role: "system", content: capture.forcedPrompt, timestamp: 0 }, ...conversation];
 	}
+
 	const messages: RequestMessage[] = [];
 	let next = 0;
 	for (let position = 0; position <= conversation.length; position++) {
 		while (next < capture.systemTexts.length && capture.systemTexts[next].position === position) {
 			messages.push(toSystemMessage(capture.systemTexts[next++]));
 		}
-		if (position < conversation.length) messages.push(conversation[position]);
+		if (position < conversation.length)
+			messages.push(conversation[position]);
 	}
+
 	return messages;
 }
 
@@ -166,13 +170,18 @@ function toSystemMessage(text: SystemText): RebuiltSystemMessage {
 
 /** Replace each run of images with Pi's blocked-image text, as its `convertToLlm` wrapper does. */
 function blockImages(message: Message): Message {
-	if ((message.role !== "user" && message.role !== "toolResult") || !Array.isArray(message.content)) return message;
+	if ((message.role !== "user" && message.role !== "toolResult") || !Array.isArray(message.content))
+		return message;
+
 	const content: ReadonlyArray<TextContent | ImageContent> = message.content;
-	if (!content.some((block) => block.type === "image")) return message;
+	if (!content.some((block) => block.type === "image"))
+		return message;
+
 	const replaced = content.map((block): TextContent | ImageContent =>
 		block.type === "image" ? { type: "text", text: BLOCKED_IMAGE_TEXT } : block);
 	const deduplicated = replaced.filter((block, index) => !(index > 0 && isBlockedImageText(block)
 		&& isBlockedImageText(replaced[index - 1])));
+
 	return { ...message, content: deduplicated } as Message;
 }
 
@@ -189,7 +198,8 @@ function isBlockedImageText(block: TextContent | ImageContent): boolean {
 function stripMessage(message: Message): Message {
 	switch (message.role) {
 		case "user":
-			if (typeof message.content === "string") return message;
+			if (typeof message.content === "string")
+				return message;
 			return { ...message, content: (message.content ?? []).map(stripImage) };
 		case "toolResult":
 			return { ...message, content: (message.content ?? []).map(stripImage) };
@@ -231,8 +241,11 @@ function stripAssistantBlock(block: AssistantMessage["content"][number]): Assist
  * Anthropic serializer treat alike: absent, empty, blank, or set.
  */
 function reduceSignature(signature: string | undefined): string | undefined {
-	if (typeof signature !== "string") return undefined;
-	if (signature.length === 0) return "";
+	if (typeof signature !== "string")
+		return undefined;
+	if (signature.length === 0)
+		return "";
+
 	return signature.trim().length === 0 ? " " : "*";
 }
 
@@ -240,7 +253,9 @@ function reduceSignature(signature: string | undefined): string | undefined {
 function collectGrammarInputs(capture: ConvertibleCapture): GrammarInputs {
 	const current = grammarInputsOf(capture.system?.toolsAdded ?? []);
 	// The forced prompt projection leaves one system message holding the current tools
-	if (capture.forcedPrompt !== undefined) return { declared: current, current };
+	if (capture.forcedPrompt !== undefined)
+		return { declared: current, current };
+
 	return { declared: grammarInputsOf(capture.declarations), current };
 }
 
@@ -249,8 +264,10 @@ function grammarInputsOf(tools: readonly Tool[]): Map<string, string> {
 	const inputs = new Map<string, string>();
 	for (const tool of tools) {
 		const property = grammarInputProperty(tool);
-		if (property !== undefined) inputs.set(tool.name, property);
+		if (property !== undefined)
+			inputs.set(tool.name, property);
 	}
+
 	return inputs;
 }
 
@@ -268,14 +285,18 @@ interface GrammarSchema {
  */
 function grammarInputProperty(tool: Tool): string | undefined {
 	const config = tool.constrainedSampling;
-	if (config === undefined || config === false || config.type !== "grammar") return undefined;
+	if (config === undefined || config === false || config.type !== "grammar")
+		return undefined;
+
 	const hasVariant = [config.variants.openai_lark, config.variants.openai_regex]
 		.some((variant) => typeof variant === "string" && variant.trim().length > 0);
 	const schema = tool.parameters as GrammarSchema;
 	if (!hasVariant || schema.type !== "object" || !Array.isArray(schema.required) || schema.required.length !== 1) {
 		return undefined;
 	}
+
 	const property: unknown = schema.required[0];
+
 	return typeof property === "string" && schema.properties?.[property]?.type === "string" ? property : undefined;
 }
 
@@ -285,15 +306,20 @@ function grammarInputProperty(tool: Tool): string | undefined {
 
 /** Without mid-conversation system messages, Pi replays them into one leading message. */
 function resolveSystemMessages(messages: readonly Message[], keepsSystem: boolean): readonly Message[] {
-	if (keepsSystem) return messages;
+	if (keepsSystem)
+		return messages;
+
 	const head = getCurrentSystemMessage(messages);
 	const conversation = messages.filter((message) => message.role !== "system");
+
 	return head === undefined ? conversation : [head, ...conversation];
 }
 
 /** Without image input, each run of user or tool-result images becomes one placeholder text. */
 function downgradeImages(messages: readonly Message[], model: GuardModel): readonly Message[] {
-	if (model.input.includes("image")) return messages;
+	if (model.input.includes("image"))
+		return messages;
+
 	return messages.map((message) => {
 		if (message.role === "user" && Array.isArray(message.content)) {
 			return { ...message, content: replaceImages(message.content, USER_IMAGE_PLACEHOLDER) };
@@ -301,6 +327,7 @@ function downgradeImages(messages: readonly Message[], model: GuardModel): reado
 		if (message.role === "toolResult") {
 			return { ...message, content: replaceImages(message.content, TOOL_IMAGE_PLACEHOLDER) };
 		}
+
 		return message;
 	});
 }
@@ -314,13 +341,15 @@ function replaceImages(
 	let previousWasPlaceholder = false;
 	for (const block of content) {
 		if (block.type === "image") {
-			if (!previousWasPlaceholder) result.push({ type: "text", text: placeholder });
+			if (!previousWasPlaceholder)
+				result.push({ type: "text", text: placeholder });
 			previousWasPlaceholder = true;
 			continue;
 		}
 		result.push(block);
 		previousWasPlaceholder = block.text === placeholder;
 	}
+
 	return result;
 }
 
@@ -331,17 +360,22 @@ function replaceImages(
  */
 function replayMessages(messages: readonly Message[], model: GuardModel): Message[] {
 	const toolCallIds = new Map<string, string>();
+
 	return messages.map((message) => {
 		if (message.role === "toolResult") {
 			const toolCallId = toolCallIds.get(message.toolCallId);
 			return toolCallId === undefined ? message : { ...message, toolCallId };
 		}
-		if (message.role !== "assistant") return message;
+		if (message.role !== "assistant")
+			return message;
+
 		const sameModel = isSameModel(message, model);
 		const content = message.content.flatMap((block): AssistantMessage["content"] => {
 			if (block.type === "thinking") {
-				if (!sameModel) return [];
-				if (block.redacted || block.thinkingSignature) return [block];
+				if (!sameModel)
+					return [];
+				if (block.redacted || block.thinkingSignature)
+					return [block];
 				return block.thinking?.trim() ? [block] : [];
 			}
 			if (block.type === "toolCall" && !sameModel && model.api === "anthropic-messages") {
@@ -351,8 +385,10 @@ function replayMessages(messages: readonly Message[], model: GuardModel): Messag
 					return [{ ...block, id }];
 				}
 			}
+
 			return [block];
 		});
+
 		return { ...message, content };
 	});
 }
@@ -370,7 +406,8 @@ function closeToolCalls(messages: readonly Message[]): Message[] {
 	const held: Message[] = [];
 	const close = () => {
 		for (const call of pending) {
-			if (!answered.has(call.id)) result.push(missingResult(call.id, call.name));
+			if (!answered.has(call.id))
+				result.push(missingResult(call.id, call.name));
 		}
 		pending = [];
 		answered = new Set();
@@ -380,7 +417,9 @@ function closeToolCalls(messages: readonly Message[]): Message[] {
 		switch (message.role) {
 			case "assistant": {
 				close();
-				if (message.stopReason === "error" || message.stopReason === "aborted") break;
+				if (message.stopReason === "error" || message.stopReason === "aborted")
+					break;
+
 				const calls = message.content.filter((block) => block.type === "toolCall");
 				if (calls.length > 0) {
 					pending = calls;
@@ -394,8 +433,10 @@ function closeToolCalls(messages: readonly Message[]): Message[] {
 				result.push(message);
 				break;
 			case "system":
-				if (pending.length > 0) held.push(message);
-				else result.push(message);
+				if (pending.length > 0)
+					held.push(message);
+				else
+					result.push(message);
 				break;
 			case "user":
 				close();
@@ -406,6 +447,7 @@ function closeToolCalls(messages: readonly Message[]): Message[] {
 		}
 	}
 	close();
+
 	return result;
 }
 
@@ -452,8 +494,10 @@ function completionsUnits(
 					units.text("user", message.content);
 					break;
 				}
+
 				const parts = message.content.filter((block) => block.type !== "text" || block.text.length > 0);
-				if (parts.length === 0) continue;
+				if (parts.length === 0)
+					continue;
 				units.text("user", textOf(parts));
 				break;
 			}
@@ -465,9 +509,11 @@ function completionsUnits(
 				const calls = message.content.filter((block) => block.type === "toolCall");
 				const text = thinkingAsText && thinking.length > 0
 					? [thinking.join("\n\n"), ...texts].join("\n") : texts.join("");
-				if (text.length === 0 && calls.length === 0) continue;
+				if (text.length === 0 && calls.length === 0)
+					continue;
 				units.text("assistant", text);
-				for (const call of calls) units.toolCall(call.name, toolCallText(call, grammar));
+				for (const call of calls)
+					units.toolCall(call.name, toolCallText(call, grammar));
 				break;
 			}
 			case "toolResult": {
@@ -475,11 +521,13 @@ function completionsUnits(
 				for (; index < messages.length && messages[index].role === "toolResult"; index++) {
 					const result = messages[index] as ToolResultMessage;
 					units.toolResult(openAiResultText(result.content, false));
-					if (model.input.includes("image") && hasImages(result.content)) images = true;
+					if (model.input.includes("image") && hasImages(result.content))
+						images = true;
 				}
 				index--;
 				if (images) {
-					if (bridge) units.text("assistant", TOOL_RESULT_BRIDGE_TEXT);
+					if (bridge)
+						units.text("assistant", TOOL_RESULT_BRIDGE_TEXT);
 					units.boundary();
 					units.text("user", TOOL_IMAGES_TEXT);
 				}
@@ -489,6 +537,7 @@ function completionsUnits(
 		}
 		lastRole = message.role;
 	}
+
 	return units.result();
 }
 
@@ -521,7 +570,8 @@ function responsesUnits(
 					units.boundary();
 				}
 				units.text("system", index === 0 ? getSystemMessageText(message) : renderSystemMessageUpdate(message));
-				if (tools?.removal !== undefined) units.text("system", tools.removal);
+				if (tools?.removal !== undefined)
+					units.text("system", tools.removal);
 				break;
 			}
 			case "user":
@@ -530,8 +580,10 @@ function responsesUnits(
 			case "assistant":
 				for (const block of message.content) {
 					units.boundary();
-					if (block.type === "text") units.text("assistant", block.text);
-					else if (block.type === "toolCall") units.toolCall(block.name, toolCallText(block, grammar));
+					if (block.type === "text")
+						units.text("assistant", block.text);
+					else if (block.type === "toolCall")
+						units.toolCall(block.name, toolCallText(block, grammar));
 				}
 				break;
 			case "toolResult":
@@ -539,6 +591,7 @@ function responsesUnits(
 				break;
 		}
 	}
+
 	return units.result();
 }
 
@@ -564,14 +617,20 @@ class ResponsesToolNotices {
 	/** The texts for the next system message's tool changes, in transcript order. */
 	public next(names: SystemToolNames | undefined): ResponsesToolTexts {
 		const added = names?.added ?? [];
-		for (const name of added) this.unavailable.delete(name);
+		for (const name of added)
+			this.unavailable.delete(name);
+
 		let incremental: string | undefined;
 		if (added.length > 0) {
-			if (this.declared) incremental = this.renderIncremental();
+			if (this.declared)
+				incremental = this.renderIncremental();
 			this.declared = true;
 		}
+
 		const removed = (names?.removed ?? []).filter((name) => !added.includes(name));
-		for (const name of removed) this.unavailable.add(name);
+		for (const name of removed)
+			this.unavailable.add(name);
+
 		return {
 			...(incremental === undefined ? {} : { incremental }),
 			...(removed.length === 0 ? {} : { removal: renderToolRemoval(removed) }),
@@ -605,7 +664,9 @@ function anthropicUnits(messages: readonly Message[], model: GuardModel): Messag
 	const allowEmptySignature = compatFlag(model, "allowEmptySignature");
 	const units = new UnitCollector();
 	const leading = messages[0]?.role === "system" ? messages[0] : undefined;
-	if (leading !== undefined) units.text("system", getSystemMessageText(leading));
+	if (leading !== undefined)
+		units.text("system", getSystemMessageText(leading));
+
 	const held: string[] = [];
 	const flushHeld = () => {
 		for (const text of held.splice(0)) {
@@ -619,7 +680,8 @@ function anthropicUnits(messages: readonly Message[], model: GuardModel): Messag
 		switch (message.role) {
 			case "system": {
 				const text = renderSystemMessageUpdate(message);
-				if (text.length > 0) held.push(text);
+				if (text.length > 0)
+					held.push(text);
 				break;
 			}
 			case "user":
@@ -628,7 +690,8 @@ function anthropicUnits(messages: readonly Message[], model: GuardModel): Messag
 			case "assistant":
 				flushHeld();
 				units.boundary();
-				for (const block of message.content) addAnthropicAssistantBlock(units, block, allowEmptySignature);
+				for (const block of message.content)
+					addAnthropicAssistantBlock(units, block, allowEmptySignature);
 				break;
 			case "toolResult":
 				index = addAnthropicToolResults(units, messages, index) - 1;
@@ -636,6 +699,7 @@ function anthropicUnits(messages: readonly Message[], model: GuardModel): Messag
 		}
 	}
 	flushHeld();
+
 	return units.result();
 }
 
@@ -651,9 +715,12 @@ function addAnthropicToolResults(units: UnitCollector, messages: readonly Messag
 		const split = result.isError && hasImages(result.content);
 		units.toolResult(anthropicResultText(split
 			? replaceImages(result.content, ERROR_TOOL_IMAGE_PLACEHOLDER) : result.content));
-		if (split) captions.push(`Images from the error result of tool call ${result.toolCallId} (${result.toolName}):`);
+		if (split)
+			captions.push(`Images from the error result of tool call ${result.toolCallId} (${result.toolName}):`);
 	}
-	for (const caption of captions) units.text("user", caption);
+	for (const caption of captions)
+		units.text("user", caption);
+
 	return index;
 }
 
@@ -669,7 +736,8 @@ function addAnthropicAssistantBlock(
 			return;
 		case "thinking": {
 			const signed = block.thinkingSignature !== undefined && block.thinkingSignature.trim().length > 0;
-			if (block.redacted || signed || allowEmptySignature || block.thinking.trim().length === 0) return;
+			if (block.redacted || signed || allowEmptySignature || block.thinking.trim().length === 0)
+				return;
 			units.text("assistant", block.thinking);
 			return;
 		}
@@ -705,7 +773,9 @@ function hasImages(content: ReadonlyArray<TextContent | ImageContent>): boolean 
  */
 function openAiResultText(content: ReadonlyArray<TextContent | ImageContent>, imagesAsParts: boolean): string {
 	const text = textOf(content);
-	if (text.length > 0 || (imagesAsParts && hasImages(content))) return text;
+	if (text.length > 0 || (imagesAsParts && hasImages(content)))
+		return text;
+
 	return hasImages(content) ? IMAGE_ONLY_RESULT_TEXT : EMPTY_RESULT_TEXT;
 }
 
@@ -717,8 +787,10 @@ function toolCallText(
 	const property = grammar.get(call.name);
 	if (property !== undefined && typeof call.arguments === "object" && call.arguments !== null) {
 		const input = (call.arguments as Record<string, unknown>)[property];
-		if (typeof input === "string") return input;
+		if (typeof input === "string")
+			return input;
 	}
+
 	return canonicalJson(call.arguments);
 }
 

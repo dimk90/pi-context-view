@@ -16,7 +16,15 @@ import {
 	descriptionNoteLines, injectionsNotes, requestOriginLabel,
 	type DescriptionNote, type InjectionsNotesInput,
 } from "../src/ui/notes.ts";
-import { assertFrame, containsBlock, createTheme, frameText, stripSgr, stripStyle, wholeOrAbsent } from "./harness/frame.ts";
+import {
+	assertFrame,
+	containsBlock,
+	createTheme,
+	frameText,
+	stripSgr,
+	stripStyle,
+	wholeOrAbsent,
+} from "./harness/frame.ts";
 import { mouseEvent, wheelEvent } from "./harness/mouse.ts";
 
 /** Expected note selected by semantic kind, never by an English sentence. */
@@ -24,6 +32,7 @@ function noteLines(kind: DescriptionNote["kind"], width = 1_000, input: Partial<
 	const theme = createTheme();
 	const note = injectionsNotes(theme, { items: [], ...input }).find((note) => note.kind === kind);
 	assert.ok(note, `missing ${kind} note`);
+
 	return descriptionNoteLines(theme, note, width);
 }
 
@@ -38,6 +47,7 @@ function noteIndex(lines: readonly string[], kind: DescriptionNote["kind"] = "ov
 function expectedStatus(data: InjectionSnapshot, index: number): string[] {
 	const row = buildInjectionRows(data)[index];
 	assert.ok(row);
+
 	return statusBarLines(createTheme(), row, 1_000).map(stripSgr).map((line) => line.trim());
 }
 
@@ -54,6 +64,7 @@ function item(id: string, sourceId: string, native: boolean, tokens: number): In
 	};
 }
 
+/** A source group whose total is the sum of its items. */
 function group(sourceId: string, native: boolean, items: InjectionItem[]): InjectionGroup {
 	return {
 		source: { id: sourceId, label: sourceId, native },
@@ -62,16 +73,21 @@ function group(sourceId: string, native: boolean, items: InjectionItem[]): Injec
 	};
 }
 
+/** A pi group and an extension group with `itemsPerGroup` items each. */
 function snapshot(itemsPerGroup: number): InjectionSnapshot {
-	const piItems = Array.from({ length: itemsPerGroup }, (_, index) => item(`pi-${index}`, "pi", true, 1_234_567));
-	const extensionItems = Array.from({ length: itemsPerGroup }, (_, index) => item(`ext-${index}`, "npm:web", false, 42));
+	const piItems = Array.from({ length: itemsPerGroup },
+		(_, index) => item(`pi-${index}`, "pi", true, 1_234_567));
+	const extensionItems = Array.from({ length: itemsPerGroup },
+		(_, index) => item(`ext-${index}`, "npm:web", false, 42));
 	const groups = [group("pi", true, piItems), group("npm:web", false, extensionItems)];
+
 	return {
 		groups,
 		totalTokens: groups.reduce((sum, entry) => sum + entry.totalTokens, 0),
 	};
 }
 
+/** A view over `snapshot(itemsPerGroup)` with an optional notice. */
 function createView(
 	itemsPerGroup = 8,
 	notice?: string,
@@ -91,6 +107,7 @@ function createView(
 function statusIndex(lines: readonly string[], expected: readonly string[]): number {
 	const first = stripSgr(expected[0] ?? "").trim();
 	assert.notEqual(first, "", "a selected change must have status text");
+
 	return lines.findIndex((line) => stripSgr(line).trim() === first);
 }
 
@@ -109,6 +126,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	let lines = view.render(80);
 	assert.equal(lines[1], "");
 	assert.equal(lines.at(-2), "");
+
 	const headerIndex = lines.findIndex((line) => stripSgr(line).includes("Context Injections"));
 	const tabIndex = lines.findIndex((line) => stripSgr(line).includes(requestOriginLabel()));
 	assert.ok(headerIndex >= 0 && tabIndex === headerIndex);
@@ -118,6 +136,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	// Runtime stays hidden until the runtime-inspection roadmap step
 	assert.ok(!lines.some((line) => stripSgr(line).includes("RUNTIME")));
 	assert.ok(!lines.some((line) => stripSgr(line).includes("Runtime Logging:")));
+
 	const selectedGroup = lines.find((line) => stripSgr(line).includes("→ pi"));
 	assert.ok(selectedGroup !== undefined);
 	assert.equal(stripSgr(selectedGroup).indexOf("→"), 0);
@@ -125,6 +144,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.ok(selectedGroup.includes(theme.fg("accent", "60")));
 	assert.match(stripSgr(selectedGroup), /→ pi \.{2,}\s+60/);
 	assert.doesNotMatch(selectedGroup, /\u001b\[48;/);
+
 	const parentLine = lines.find((line) => stripSgr(line).includes("parent with a moderately"));
 	const childLine = lines.find((line) => stripSgr(line).includes("child with a moderately"));
 	assert.match(stripSgr(parentLine ?? ""), /^  ├─ parent/);
@@ -135,6 +155,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.ok(childLine?.includes(theme.fg("dim", "│  └─ ")));
 	assert.ok(childLine?.includes(theme.getFgAnsi("dim") + "child"));
 	assert.ok(childLine?.includes(theme.fg("muted", "20")));
+
 	const siblingLine = lines.find((line) => stripSgr(line).includes("sibling with a moderately"));
 	assert.match(stripSgr(siblingLine ?? ""), /^  └─ sibling/);
 
@@ -146,6 +167,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	].map(([label, value]) => {
 		const line = lines.map(stripSgr).find((candidate) => candidate.includes(label));
 		assert.ok(line !== undefined);
+
 		return line.lastIndexOf(value);
 	});
 	assert.equal(new Set(alignedValues).size, 1);
@@ -201,6 +223,7 @@ test("InjectionsView clarifies the total scope and preserves its estimate at nar
 		} else {
 			assert.match(total, /…/, "the label yields space to the full estimate");
 		}
+
 		const valueRows = lines.filter((line) => /1,234,567$/.test(line));
 		assert.equal(valueRows.length, 3, "the group, tool, and total keep their estimates");
 		assert.equal(new Set(valueRows.map(visibleWidth)).size, 1, "the total shares the value column");
@@ -218,8 +241,11 @@ test("InjectionsView pins TOTAL below the viewport through navigation, resize, a
 			let fixedTotal: string | undefined;
 			let fixedIndex: number | undefined;
 			for (const input of ["", "j", "\u001b[6~", "\u001b[F", wheelEvent(1), "\u001b[H"]) {
-				if (typeof input === "string") view.handleInput(input);
-				else view.handleMouse(input);
+				if (typeof input === "string")
+					view.handleInput(input);
+				else
+					view.handleMouse(input);
+
 				const frame = view.render(width);
 				const plain = frame.map(stripSgr);
 				const total = plain.findIndex((line) => line.startsWith("  TOTAL"));
@@ -227,10 +253,13 @@ test("InjectionsView pins TOTAL below the viewport through navigation, resize, a
 				assert.equal(plain.filter((line) => line.startsWith("  TOTAL")).length, 1);
 				assert.match(plain[total] ?? "", new RegExp(`${data.totalTokens.toLocaleString("en-US")}$`));
 				assert.doesNotMatch(plain[total] ?? "", /→|\+\d|-[\d,]+/);
+
 				const selected = plain.findIndex((line) => line.startsWith("→"));
 				assert.ok(selected >= 0 && selected < total, "the selected row stays above TOTAL");
+
 				const counter = plain.findIndex((line) => /^  \(\d+\/62\)$/.test(line));
-				if (counter >= 0) assert.equal(total, counter + 2, "TOTAL follows the counter and one blank row");
+				if (counter >= 0)
+					assert.equal(total, counter + 2, "TOTAL follows the counter and one blank row");
 				if (fixedTotal === undefined) {
 					fixedTotal = frame[total];
 					fixedIndex = total;
@@ -244,6 +273,7 @@ test("InjectionsView pins TOTAL below the viewport through navigation, resize, a
 		}
 		height = 24;
 		view.handleInput("\u001b[F");
+
 		const before = view.render(width);
 		view.handleInput("\r");
 		assert.ok(!view.render(width).map(stripSgr).some((line) => line.startsWith("  TOTAL")),
@@ -286,7 +316,10 @@ test("InjectionsView right-aligns token values across every hierarchy level", ()
 		const lines = view.render(width).map(stripSgr);
 		const values = lines.flatMap((line) => {
 			const match = /(\d[\d,]*)(?: · Dropped)?$/.exec(line);
-			return match === null ? [] : [{ value: match[1], end: visibleWidth(line.slice(0, match.index) + match[1]) }];
+
+			return match === null
+				? []
+				: [{ value: match[1], end: visibleWidth(line.slice(0, match.index) + match[1]) }];
 		});
 		assert.deepEqual(values.map((entry) => entry.value), [
 			"1,234,567", "1,234,567", "1,234,560", "7", "0", "42", "42", "1,234,609",
@@ -295,9 +328,13 @@ test("InjectionsView right-aligns token values across every hierarchy level", ()
 		assert.ok(lines.every((line) => visibleWidth(line) <= width));
 	}
 
-	for (let step = 0; step < 3; step++) view.handleInput("j");
-	const selected = view.render(120).find((line) => stripSgr(line).startsWith("→") && stripSgr(line).includes("small"));
+	for (let step = 0; step < 3; step++)
+		view.handleInput("j");
+
+	const selected = view.render(120)
+		.find((line) => stripSgr(line).startsWith("→") && stripSgr(line).includes("small"));
 	assert.ok(selected?.includes(theme.fg("accent", "        7")), "the right-aligned selected value stays accent");
+
 	const dropped = view.render(120).map(stripSgr).find((line) => line.includes("dropped"));
 	assert.match(dropped ?? "", / {8}0 · Dropped$/, "markers follow the full shared value column");
 });
@@ -310,6 +347,7 @@ test("InjectionsView keeps the right-aligned value column stable while scrolling
 		const first = view.render(width).map(stripSgr).find((line) => line.startsWith("→ pi"));
 		assert.ok(first !== undefined);
 		view.handleInput("\u001b[F");
+
 		const last = view.render(width).map(stripSgr).find((line) => line.startsWith("→ └─ ext-29"));
 		assert.ok(last !== undefined);
 		assert.equal(visibleWidth(last), visibleWidth(first), `right edge after scrolling at width ${width}`);
@@ -338,6 +376,7 @@ function createInstructionFilesView(paths: readonly string[], theme = createThem
 		children,
 	};
 	const piGroup = group("pi", true, [parent]);
+
 	return new InjectionsView(theme, {
 		snapshot: { groups: [piGroup], totalTokens: piGroup.totalTokens },
 	}, () => {}, () => 40);
@@ -354,6 +393,7 @@ test("InjectionsView shortens instruction-file paths in the middle, keeping whol
 		assert.ok(lines.some((line) => line.includes("~/.pi/agent/AGENTS.md")), "short paths stay intact");
 		assert.ok(lines.some((line) => line.includes("Instruction Files (2)")), "the parent stays intact");
 		assert.ok(lines.every((line) => visibleWidth(line) <= width));
+
 		const values = lines.filter((line) => /\s\d+$/.test(line));
 		assert.equal(new Set(values.map(visibleWidth)).size, 1, "token alignment is unchanged");
 	}
@@ -378,6 +418,7 @@ test("InjectionsView preserves absolute, relative, Windows, and Unicode instruct
 			assert.ok(view.render(width).every((line) => visibleWidth(line) <= width));
 		}
 	}
+
 	const longName = createInstructionFilesView([`~/directory/${"指令👩‍💻".repeat(20)}.md`]);
 	assert.ok(longName.render(24).every((line) => visibleWidth(line) <= 24));
 });
@@ -388,6 +429,7 @@ test("InjectionsView keeps path shortening render-only, sanitized, and themed on
 	const view = createInstructionFilesView([`\u001b]0;unsafe\u0007${path}`], theme);
 	view.handleInput("j");
 	view.handleInput("j");
+
 	const before = view.render(60);
 	const selected = before.find((line) => stripSgr(line).startsWith("→"));
 	assert.ok(selected !== undefined);
@@ -425,18 +467,21 @@ test("InjectionsView wraps complete descriptions and restores them after collaps
 			const full = view.render(width);
 			const expected = noteLines("overview", width);
 			assert.ok(containsBlock(full, expected));
+
 			let collapsed = false;
 			let scrollingWithDescription = false;
 			for (height = 12; height <= 100; height++) {
 				const lines = view.render(width);
 				assertFrame(lines, width, height);
+
 				const visible = wholeOrAbsent(lines, expected);
 				collapsed ||= !visible;
 				scrollingWithDescription ||= visible && /\(\d+\/\d+\)/.test(frameText(lines));
 				assert.ok(lines.some((line) => stripSgr(line).startsWith("→")));
 			}
 			assert.ok(collapsed);
-			if (count === 16) assert.ok(scrollingWithDescription, "overflow alone must not hide descriptions");
+			if (count === 16)
+				assert.ok(scrollingWithDescription, "overflow alone must not hide descriptions");
 			height = 100;
 			assert.deepEqual(view.render(width), full);
 		}
@@ -444,7 +489,11 @@ test("InjectionsView wraps complete descriptions and restores them after collaps
 });
 
 test("InjectionsView explains a missing request only as a description note, without top warnings", () => {
-	const view = new InjectionsView(createTheme(), { snapshot: snapshot(4), requestMissing: true }, () => {}, () => 100);
+	const view = new InjectionsView(createTheme(),
+		{ snapshot: snapshot(4), requestMissing: true },
+		() => {},
+		() => 100,
+	);
 	const unwarned = createView(4, undefined, () => 100);
 	for (const width of [24, 40, 80, 120]) {
 		const lines = view.render(width);
@@ -495,11 +544,16 @@ test("InjectionsView separates top warnings from the list with a blank row", () 
 });
 
 test("InjectionsView explains disabled probing only as a description note, without top warnings", () => {
-	const view = new InjectionsView(createTheme(), { snapshot: snapshot(4), probingDisabled: true }, () => {}, () => 40);
+	const view = new InjectionsView(createTheme(),
+		{ snapshot: snapshot(4), probingDisabled: true },
+		() => {},
+		() => 40,
+	);
 	const lines = view.render(80);
 	const plain = lines.map((line) => stripSgr(line).trim());
 	assertFrame(lines, 80, 40);
 	assert.ok(containsBlock(lines, noteLines("probing-disabled", 80, { probingDisabled: true })));
+
 	// No warning block: the list starts right after the header's blank row
 	const unwarned = createView(4, undefined, () => 40).render(80).map((line) => stripSgr(line).trim());
 	assert.deepEqual(plain.slice(0, 6), unwarned.slice(0, 6));
@@ -527,7 +581,8 @@ test("InjectionsView preserves the request origin as its header reflows", () => 
 
 test("InjectionsView keeps every rendered line within the width", () => {
 	for (const width of [24, 40, 60, 80, 120]) {
-		const view = createView(8, "Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.");
+		const view = createView(8,
+			"Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.");
 		const listLines = view.render(width);
 		for (const line of listLines) {
 			assert.ok(visibleWidth(line) <= width, `line exceeds width ${width}: ${JSON.stringify(line)}`);
@@ -583,17 +638,20 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	view.handleInput("\u001b[B");
 	const listBefore = view.render(80).join("\n");
 	view.handleInput("\r");
+
 	const previewLines = view.render(80);
 	const preview = previewLines.join("\n");
 	assert.doesNotMatch(preview, /Raw captured text/);
 	assert.match(preview, /pi-1 preview line 0/);
 	assert.match(preview, /\(\d+\/\d+\)/);
+
 	const previewHeaderIndex = previewLines.findIndex((line) => stripSgr(line).includes("tokens"));
 	const firstContentIndex = previewLines.findIndex((line) => stripSgr(line).includes("preview line 0"));
 	assert.ok(previewHeaderIndex >= 0 && firstContentIndex === previewHeaderIndex + 2);
 	// Preview content is indented two spaces
 	assert.equal(stripSgr(previewLines[firstContentIndex] ?? "").indexOf("pi-1"), 2);
 	assert.equal(previewLines[previewHeaderIndex + 1], "");
+
 	const hintIndex = previewLines.findIndex((line) => stripSgr(line).includes("↑↓/jk Scroll"));
 	assert.ok(hintIndex > 0);
 	assert.equal(previewLines[hintIndex - 1], "");
@@ -640,7 +698,8 @@ test("preview subsections use two blank rows regardless of captured trailing whi
 });
 
 test("preview drops a pi block header its part label already shows", () => {
-	const documentation = "\nPi documentation (read only when the user asks about pi itself):\n- Main docs: /pi/README.md";
+	const documentation = "\nPi documentation (read only when the user asks about pi itself):\n"
+		+ "- Main docs: /pi/README.md";
 	const content = {
 		text: "unchanged part text",
 		sections: [
@@ -708,6 +767,7 @@ test("InjectionsView preview labels every known section", () => {
 		}
 		assert.match(rendered.map((line) => stripSgr(line)).join("\n"), /Available Tools · 6 tokens/);
 	}
+
 	const lines = view.render(80);
 	const plainLines = lines.map((line) => stripSgr(line));
 	const snippetIndex = plainLines.indexOf("  Available Tools · 6 tokens");
@@ -792,6 +852,7 @@ test("InjectionsView preview separates aggregate children and expands each child
 	const child = (name: string, tokens: number): InjectionItem => {
 		const heading = `${name}: Do ${name} things\n`;
 		const text = `${heading}${schema}`;
+
 		return {
 			...item(name, "pi", true, tokens),
 			kind: "tool",
@@ -905,6 +966,7 @@ test("InjectionsView invalidation rebuilds theme-colored section subheaders", ()
 	const originalFg = theme.fg.bind(theme);
 	let colorCode = 31;
 	theme.fg = (color, text) => `\u001b[${colorCode}m${originalFg(color, text)}\u001b[0m`;
+
 	const definition = 'search: Search\n{"q":"string"}';
 	const tool: InjectionItem = {
 		...item("search", "npm:web", false, 7),
@@ -1042,11 +1104,13 @@ test("InjectionsView scrolls with the mouse wheel and honors pi's wheel delta", 
 	wheel.handleInput("\r");
 	const previewTop = frame(wheel);
 	assert.equal(frame(arrows), previewTop);
-	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[B");
+	for (let step = 0; step < 4; step++)
+		arrows.handleInput("\u001b[B");
 	wheel.handleMouse(wheelDown);
 	assert.notEqual(frame(wheel), previewTop);
 	assert.equal(frame(wheel), frame(arrows));
-	for (let step = 0; step < 4; step++) arrows.handleInput("\u001b[A");
+	for (let step = 0; step < 4; step++)
+		arrows.handleInput("\u001b[A");
 	wheel.handleMouse(wheelUp);
 	assert.equal(frame(wheel), previewTop);
 	assert.equal(frame(arrows), previewTop);
@@ -1063,8 +1127,10 @@ test("InjectionsView navigation skips the fixed total and Escape closes", () => 
 	assert.ok(scrollIndicator !== undefined);
 	assert.match(stripSgr(scrollIndicator), /\(1\/62\)/);
 	assert.ok(scrollIndicator.includes(createTheme().getFgAnsi("dim")));
+
 	const before = initialLines.join("\n");
 	view.handleInput("\u001b[B");
+
 	const afterDown = view.render(80).join("\n");
 	assert.notEqual(afterDown, before);
 
@@ -1106,6 +1172,7 @@ function changedSnapshot(): InjectionSnapshot {
 		},
 	];
 	const changes = { ...group("unattributed", false, items), diff: { added: 7, removed: 1_240 } };
+
 	return { groups: [changes], totalTokens: 9 };
 }
 
@@ -1138,8 +1205,10 @@ test("InjectionsView shows token diffs in right-aligned columns and marks reques
 	assert.match(row("TOTAL"), / 11$/, "TOTAL has no diff");
 	assert.ok(lines.some((line) => line.includes(theme.fg("toolDiffAdded", "+3"))));
 	assert.ok(lines.some((line) => line.includes(theme.fg("toolDiffRemoved", "-1,234"))));
+
 	const marker = `${theme.fg("dim", " · ")}${theme.fg("dim", "Request-Only")}`;
 	assert.ok(lines.find((line) => line.includes("deleted message"))?.endsWith(marker), "the marker is dim");
+
 	const selected = lines.find((line) => stripSgr(line).startsWith("→ pi")) ?? "";
 	assert.ok(selected.includes(theme.fg("toolDiffAdded", "+2")), "the selected row keeps the diff colors");
 	assert.ok(!plain.some((line) => /Added|Modified|Deleted/.test(line)), "rows name no change marker");
@@ -1149,7 +1218,8 @@ test("InjectionsView shows token diffs in right-aligned columns and marks reques
 test("InjectionsView drops the diff columns whole at narrow widths and keeps markers after them", () => {
 	const theme = createTheme();
 	const prompt: InjectionItem = {
-		...item("base-prompt", "pi", true, 7), label: "System Prompt", change: "forced", diff: { added: 5, removed: 12 },
+		...item("base-prompt", "pi", true, 7), label: "System Prompt", change: "forced",
+		diff: { added: 5, removed: 12 },
 	};
 	const moved: InjectionItem = {
 		...item("moved", "pi", true, 3), label: "moved part", moved: true, requestOnly: true,
@@ -1168,6 +1238,7 @@ test("InjectionsView drops the diff columns whole at narrow widths and keeps mar
 		const narrow = view.render(width).map(stripSgr);
 		assert.ok(narrow.every((line) => visibleWidth(line) <= width));
 		assert.ok(!narrow.some((line) => /[+-]\d/.test(line) && !line.startsWith("  ")), `${width}: no diff column`);
+
 		const row = narrow.find((line) => line.includes("System")) ?? "";
 		assert.doesNotMatch(row, /\+5|-12/, `${width}: the diff columns drop whole`);
 	}
@@ -1181,7 +1252,9 @@ test("InjectionsView drops the diff columns whole at narrow widths and keeps mar
 
 test("InjectionsView explains a forced System Prompt in its status bar and preview legend", () => {
 	const theme = createTheme();
-	const prompt = { ...item("base-prompt", "pi", false, 7), label: "System Prompt", text: "forced text", change: "forced" as const };
+	const prompt = {
+		...item("base-prompt", "pi", false, 7), label: "System Prompt", text: "forced text", change: "forced" as const,
+	};
 	const forced: InjectionSnapshot = {
 		groups: [group("pi", false, [prompt])], totalTokens: 7,
 	};
@@ -1191,6 +1264,7 @@ test("InjectionsView explains a forced System Prompt in its status bar and previ
 	assert.match(plain.find((line) => line.includes("System Prompt")) ?? "", /7 · Forced$/);
 	assert.ok(lines.some((line) => line.includes(theme.fg("warning", "Forced"))));
 	assert.ok(!plain.some((line) => line.startsWith("  - ")), "the list has no marker legend");
+
 	const legend = markerLegendLines(theme, ["forced"], 100);
 
 	view.handleInput("\u001b[B");
@@ -1199,6 +1273,7 @@ test("InjectionsView explains a forced System Prompt in its status bar and previ
 		"the status bar explains the selected row's marker");
 	assert.ok(forcedStatus.some((line) => line.includes(theme.fg("warning", "Forced"))));
 	view.handleInput("\r");
+
 	const preview = view.render(100).map(stripSgr);
 	assert.match(preview.find((line) => line.includes("System Prompt")) ?? "", /7 tokens · Forced/);
 	assert.ok(containsBlock(preview, legend), "the preview legend explains the marker");
@@ -1209,6 +1284,7 @@ test("InjectionsView previews counted and zero-token reference parts with respon
 	view.handleInput("\u001b[B");
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
+
 	const plain = view.render(100).map(stripSgr);
 
 	assert.match(plain.find((line) => line.includes("modified message")) ?? "",
@@ -1218,6 +1294,7 @@ test("InjectionsView previews counted and zero-token reference parts with respon
 	assert.ok(request >= 0 && session > request);
 	assert.equal(plain[request + 1]?.trim(), "request version");
 	assert.equal(plain[session + 1]?.trim(), "session original");
+
 	const bullets = plain.filter((line) => line.startsWith("  - ")).map((line) => line.slice(4));
 	assert.ok(containsBlock(plain, markerLegendLines(createTheme(), ["diff", "request-only"], 100, "session")));
 	assert.equal(bullets.length, 2);
@@ -1251,6 +1328,7 @@ test("InjectionsView previews System Prompt parts with their diffs against pi's 
 	const view = new InjectionsView(theme, { snapshot: { groups: [piGroup], totalTokens: 15 } }, () => {}, () => 40);
 	view.handleInput("\u001b[B");
 	view.handleInput("\r");
+
 	const lines = view.render(100);
 	const plain = lines.map(stripSgr);
 
@@ -1298,6 +1376,7 @@ test("InjectionsView shows a system prompt row's diff without a value and previe
 	const selected = view.render(100).find((candidate) => stripSgr(candidate).startsWith("→")) ?? "";
 	assert.ok(selected.includes(theme.fg("toolDiffAdded", "+27")), "the selected row keeps its diff color");
 	view.handleInput("\r");
+
 	const lines = view.render(100);
 	const preview = lines.map(stripSgr);
 	assert.match(preview.find((candidate) => candidate.startsWith("system prompt")) ?? "",
@@ -1328,7 +1407,8 @@ test("InjectionsView shows a system prompt row's diff without a value and previe
 test("InjectionsView previews an unattributed system prompt deletion without a token estimate", () => {
 	const theme = createTheme();
 	const row: InjectionItem = {
-		...item("system-prompt:unattributed", "unattributed", false, 0), label: "system prompt", kind: "prompt-addition",
+		...item("system-prompt:unattributed", "unattributed", false, 0),
+		label: "system prompt", kind: "prompt-addition",
 		diffOnly: true, diff: { added: 0, removed: 7 }, requestOnly: true,
 		sections: [{ label: "Documentation", text: "Deleted\u001b[2J documentation", tokens: 0, diffOnly: true,
 			diff: { added: 0, removed: 7 }, requestOnly: true }],
@@ -1341,6 +1421,7 @@ test("InjectionsView previews an unattributed system prompt deletion without a t
 	assert.doesNotMatch(list.join("\n"), /Deleted|documentation/);
 	view.handleInput("j");
 	view.handleInput("\r");
+
 	const preview = view.render(100).map(stripSgr);
 	assert.match(preview.find((candidate) => candidate.startsWith("system prompt")) ?? "",
 		/unattributed · -7 · counted in System Prompt · Request-Only $/);
@@ -1349,10 +1430,13 @@ test("InjectionsView previews an unattributed system prompt deletion without a t
 	assert.doesNotMatch(preview.join("\n"), /0 tokens/);
 	assert.match(view.render(70).map(stripSgr)[2] ?? "", /counted in System Prompt $/,
 		"a narrow header drops the marker before the accounting note");
+
 	const originalFg = theme.fg.bind(theme);
 	theme.fg = (color, text) => originalFg(color === "syntaxKeyword" ? "success" : color, text);
 	view.invalidate();
-	assert.ok(view.render(100).some((candidate) => candidate.includes(theme.fg("syntaxKeyword", theme.bold("Documentation")))),
+
+	const subheader = theme.fg("syntaxKeyword", theme.bold("Documentation"));
+	assert.ok(view.render(100).some((candidate) => candidate.includes(subheader)),
 		"theme invalidation rebuilds diff-only part subheaders");
 });
 
@@ -1365,10 +1449,12 @@ test("InjectionsView renders selected capture notes without conflating origin an
 	for (const kind of ["probe", "payload-check"] as const) {
 		assert.ok(containsBlock(lines, noteLines(kind, 120, input)));
 	}
+
 	const pendingInput = { guard: { status: "pending" } } as const;
 	const pending = new InjectionsView(theme, { snapshot: snapshot(2), ...pendingInput }, () => {}, () => 100);
 	assert.ok(containsBlock(pending.render(120), noteLines("payload-check", 120, pendingInput)));
 	assert.ok(!containsBlock(pending.render(120), noteLines("probe", 120, { probe: true })));
+
 	const short = new InjectionsView(theme, input, () => {}, () => 16).render(120);
 	assert.ok(!containsBlock(short, noteLines("probe", 120, input)));
 	assert.ok(!containsBlock(short, noteLines("payload-check", 120, input)));
@@ -1388,8 +1474,10 @@ test("InjectionsView collapses and restores all probe notes together", () => {
 		for (height = 12; height <= 100; height++) {
 			const lines = view.render(width);
 			assertFrame(lines, width, height);
-			if (wholeOrAbsent(lines, expected)) visible = true;
-			else collapsed = true;
+			if (wholeOrAbsent(lines, expected))
+				visible = true;
+			else
+				collapsed = true;
 		}
 		assert.ok(collapsed && visible);
 		assert.ok(containsBlock(view.render(width), expected));
@@ -1407,11 +1495,13 @@ test("changed Injections frames reflow without raw text leaks or partial descrip
 			const frame = view.render(width);
 			assert.ok(frame.length <= height, `${width}x${height}: height`);
 			assert.ok(frame.every((line) => visibleWidth(line) <= width), `${width}x${height}: width`);
+
 			const plain = frame.map(stripSgr).join("\n");
 			assert.doesNotMatch(plain, /session original|deleted original|\u001b\[2J/);
 		}
 	}
 	height = 70;
+
 	const expanded = view.render(120).map(stripSgr).join("\n");
 	assert.ok(containsBlock([expanded], noteLines("payload-check", 120,
 		{ guard: { status: "incomplete", reason: "No payload.\u001b[2J" } })));
@@ -1420,6 +1510,7 @@ test("changed Injections frames reflow without raw text leaks or partial descrip
 	view.handleInput("\r");
 	assert.match(view.render(120).map(stripSgr).join("\n"), /deleted original/);
 	view.handleInput("\u001b");
+
 	const returned = view.render(120).map(stripSgr).join("\n");
 	assert.match(returned, /→ .*deleted message/);
 	assert.doesNotMatch(returned, /deleted original/);
@@ -1452,6 +1543,7 @@ function guardedSnapshot(): InjectionSnapshot {
 		group("pi", true, [builtin]),
 		{ ...group(AGGREGATE_SOURCE.id, false, [payload]), source: AGGREGATE_SOURCE, diff: payload.diff },
 	];
+
 	return {
 		groups,
 		totalTokens: groups.reduce((sum, entry) => sum + entry.totalTokens, 0), hiddenTools: ["write", "bash"],
@@ -1474,6 +1566,7 @@ test("InjectionsView counts one hidden tool in the singular and none without a h
 	const bullets = (hiddenTools: readonly string[] | undefined): string[] => {
 		const snapshot = { ...guardedSnapshot(), hiddenTools };
 		const view = new InjectionsView(createTheme(), { snapshot }, () => {}, () => 60);
+
 		return view.render(200).map(stripSgr).filter((line) => line.startsWith("  - ")).map((line) => line.slice(4));
 	};
 	const single = frameText(noteLines("hidden-tools", 200, { hiddenTools: ["bash"] })).replace(/^- /, "");
@@ -1490,6 +1583,7 @@ test("InjectionsView lists every hidden tool alphabetically without changing the
 	for (const width of [24, 60, 200]) {
 		const lines = view.render(width);
 		assert.ok(lines.every((line) => visibleWidth(line) <= width));
+
 		const plain = lines.map(stripSgr).join(" ").replace(/\s+/g, " ");
 		assert.ok(containsBlock([plain], noteLines("hidden-tools", width, { hiddenTools })));
 	}
@@ -1522,6 +1616,7 @@ test("InjectionsView previews payload changes as one part per finding with color
 	const view = new InjectionsView(theme, { snapshot: guardedSnapshot() }, () => {}, () => 60);
 	view.handleInput("\u001b[F");
 	view.handleInput("\r");
+
 	const lines = view.render(60);
 	const plain = lines.map(stripSgr);
 
@@ -1534,6 +1629,7 @@ test("InjectionsView previews payload changes as one part per finding with color
 	assert.ok(tool.includes(theme.fg("dim", "tool:") + theme.fg("syntaxKeyword", theme.bold("write"))),
 		"a tool declaration reads apart from a tool call");
 	assert.match(plain[plain.indexOf("  tool:write · 0 tokens · -3") + 1] ?? "", /^ {2}- Write files$/);
+
 	const removed = plain.findIndex((line) => line === "  - before the edit");
 	assert.ok(removed >= 0);
 	assert.ok(lines[removed]?.includes(theme.getFgAnsi("toolDiffRemoved")));
@@ -1571,7 +1667,8 @@ test("payload-change and hidden-tool frames reflow without partial descriptions"
 				const frame = view.render(width);
 				assertFrame(frame, width, height);
 				wholeOrAbsent(frame, expected);
-				if (height === 100) assert.ok(containsBlock(frame, expected));
+				if (height === 100)
+					assert.ok(containsBlock(frame, expected));
 			}
 		}
 	};
@@ -1588,16 +1685,19 @@ test("InjectionsView pins selected-row details above the description, separate f
 		snapshot: changedSnapshot(), probe: true, guard: { status: "pending" },
 	}, () => {}, () => 40);
 	view.handleInput("j");
+
 	const lines = view.render(120);
 	const plain = lines.map(stripSgr);
 	assert.ok(containsBlock(lines, expectedStatus(changedSnapshot(), 1)));
+
 	const change = statusIndex(lines, expectedStatus(changedSnapshot(), 1));
 	const description = noteIndex(lines);
 	const total = plain.findIndex((line) => line.startsWith("  TOTAL"));
 	assert.ok(total >= 0 && change > total && description > change);
 	assert.equal(plain[change - 1], "");
 	assert.equal(plain[description - 1], "");
-	assert.ok(containsBlock(plain.slice(description), noteLines("payload-check", 120, { guard: { status: "pending" } })));
+	assert.ok(containsBlock(plain.slice(description),
+		noteLines("payload-check", 120, { guard: { status: "pending" } })));
 	assert.ok(containsBlock(plain.slice(description), noteLines("probe", 120, { probe: true })));
 	assert.ok(!containsBlock(plain.slice(change, description), noteLines("probe", 120, { probe: true })));
 	assert.doesNotMatch(plain.join("\n"), /request version|session original|deleted original/);
@@ -1625,7 +1725,8 @@ test("InjectionsView separates the fixed total from the list counter and selecte
 			assert.ok(change >= 0, `${width}x${height}: the selected row's bar is visible`);
 			assert.equal(counter >= 0, height === 16, `${width}x${height}: counter only when the list overflows`);
 			assert.ok(total >= 0, `${width}x${height}: TOTAL stays visible even when the list overflows`);
-			if (counter >= 0) assert.equal(total, counter + 2, "one blank row separates the counter and TOTAL");
+			if (counter >= 0)
+				assert.equal(total, counter + 2, "one blank row separates the counter and TOTAL");
 			assert.equal(plain[total - 1], "");
 			assert.equal(change, total + 2, `${width}x${height}: exactly one blank row after TOTAL`);
 			assert.equal(plain[change - 1], "");
@@ -1641,12 +1742,16 @@ test("InjectionsView fills the terminal height with empty rows between the bar a
 		for (height of [50, 40, 16, 50]) {
 			const plain = view.render(width).map(stripSgr);
 			assert.equal(plain.length, height, `${width}x${height}: the frame fills the terminal`);
+
 			const hints = plain.findIndex((line) => line.includes("Navigate · Enter Preview"));
 			assert.equal(hints, height - 3, `${width}x${height}: hints and the border stay at the bottom`);
-			if (height === 16) continue;
+			if (height === 16)
+				continue;
+
 			const description = noteIndex(plain);
 			assert.ok(description >= 0 && plain.slice(description, hints - 1).every((line) => line !== ""),
 				`${width}x${height}: the description ends one blank row above the hints`);
+
 			const status = expectedStatus(changedSnapshot(), 1);
 			const barEnd = plain.findIndex((line) => line.trim() === status.at(-1));
 			assert.ok(barEnd >= statusIndex(plain, status));
@@ -1664,6 +1769,7 @@ test("InjectionsView keeps the full wrapped bar when descriptions collapse or th
 	}, () => {}, () => height);
 	view.handleInput("j");
 	view.handleInput("j");
+
 	const expected = frameText(expectedStatus(changedSnapshot(), 2));
 	for (const width of [24, 60, 80, 120]) {
 		// At 24 columns the compact header, selected row, fixed total, and full bar need 13 rows
@@ -1689,6 +1795,7 @@ test("InjectionsView reserves the tallest bar's height, so the list keeps its si
 	const data = snapshot(16);
 	const first = data.groups[0]?.items[0];
 	assert.ok(first !== undefined);
+
 	const changed = { ...first, requestOnly: true, change: "modified" as const, diff: { added: 3, removed: 1 } };
 	const modified: InjectionSnapshot = {
 		...data, groups: [{ ...data.groups[0], items: [changed, ...(data.groups[0]?.items.slice(1) ?? [])] },
@@ -1698,13 +1805,17 @@ test("InjectionsView reserves the tallest bar's height, so the list keeps its si
 	// The group has a request-only change, but no Changed By field; an unchanged row has an empty bar
 	view.handleInput("j");
 	view.handleInput("j");
+
 	const unchanged = view.render(120).map(stripSgr);
 	assert.deepEqual(expectedStatus(modified, 2), [], "an unchanged row has no status text");
+
 	const hints = unchanged.findIndex((line) => line.includes("↑↓/jk Navigate"));
 	assert.deepEqual(unchanged.slice(hints - 4, hints), ["", "", "", ""], "the bar's empty lines between its spacers");
+
 	const visibleCount = (lines: readonly string[]) =>
 		lines.filter((line) => /^(?:→ |  )(?:├─|└─|pi\b|npm:web\b)/.test(line)).length;
 	view.handleInput("k");
+
 	const changedFrame = view.render(120).map(stripSgr);
 	assert.equal(expectedStatus(modified, 1).length, 2);
 	assert.ok(containsBlock(changedFrame, expectedStatus(modified, 1)));
@@ -1775,6 +1886,7 @@ test("InjectionsView prefixes tool rows outside Built-in Tools with a dim tool:"
 	assert.ok(lines.some((line) =>
 		line.includes(theme.fg("dim", "\u2514\u2500 tool:") + theme.fg("muted", "web_search"))));
 	view.handleInput("\u001b[F");
+
 	const selected = view.render(80).find((line) => stripSgr(line).startsWith("\u2192")) ?? "";
 	assert.ok(selected.includes(theme.fg("dim", "\u2514\u2500 tool:") + theme.fg("accent", "web_search")),
 		"the prefix stays dim on selection, like the connectors");
@@ -1804,6 +1916,7 @@ test("InjectionsView lists messages in one unattributed row and previews one par
 	};
 	const view = new InjectionsView(theme, { snapshot }, () => {}, () => 40);
 	view.handleInput("j");
+
 	const list = view.render(100);
 	const plain = list.map(stripSgr);
 	assert.ok(plain.some((line) =>
@@ -1815,7 +1928,8 @@ test("InjectionsView lists messages in one unattributed row and previews one par
 
 	view.handleInput("\r");
 	const preview = view.render(100).map(stripSgr);
-	assert.match(preview[2] ?? "", /^messages \(3\) +unattributed \u00b7 12 tokens \u00b7 \+8 -4 \u00b7 Request-Only $/);
+	assert.match(preview[2] ?? "",
+		/^messages \(3\) +unattributed \u00b7 12 tokens \u00b7 \+8 -4 \u00b7 Request-Only $/);
 	assert.deepEqual(preview.filter((line) => / \u00b7 \d+ tokens/.test(line)).slice(1), [
 		"  fixture-notes \u00b7 3 tokens",
 		"  user · user prompt #1 · 5 tokens · +4 -1 · Request-Only",
@@ -1826,7 +1940,9 @@ test("InjectionsView lists messages in one unattributed row and previews one par
 	assert.ok(preview.includes("  - original prompt"));
 	assert.ok(preview.includes("  + edited prompt"));
 	assert.ok(preview.includes("  - deleted prompt"));
-	assert.ok(preview.includes("    added note"), "an addition reads like plain content, its +4 already says it is new");
+	assert.ok(preview.includes("    added note"),
+		"an addition reads like plain content, its +4 already says it is new");
+
 	const styled = view.render(100);
 	assert.ok(styled.some((line) => line.includes(theme.fg("muted", " · user prompt #1"))));
 	assert.ok(styled.some((line) => line.includes(theme.inverse("original"))));
@@ -1867,7 +1983,9 @@ test("InjectionsView keeps request origins bold mdHeading and complete payload s
 		let height = 16;
 		const view = new InjectionsView(theme, {
 			snapshot: snapshot(2), probe,
-			guard: { status: "complete", dispatch: { provider: "fixture", api: "fixture", model: "fixture" }, findings: [] },
+			guard: {
+				status: "complete", dispatch: { provider: "fixture", api: "fixture", model: "fixture" }, findings: [],
+			},
 		}, () => {}, () => height);
 		const header = view.render(90)[2] ?? "";
 		const label = requestOriginLabel(probe);
@@ -1891,8 +2009,11 @@ test("InjectionsView moves the request origin below a narrow header and wraps in
 	for (let width = 1; width <= 120; width++) {
 		const lines = view.render(width).map(stripSgr);
 		assertFrame(lines, width, 120);
+
 		const selected = lines.findIndex((line) => line.startsWith("→"));
-		if (width >= 4) assert.ok(selected >= 0);
+		if (width >= 4)
+			assert.ok(selected >= 0);
+
 		const headingText = lines.slice(0, selected < 0 ? undefined : selected).join("").replace(/\s+/g, "");
 		assert.ok(headingText.includes(requestOriginLabel(true).replace(/\s/g, "")), `${width}: origin`);
 	}
@@ -1910,6 +2031,7 @@ test("InjectionsView preserves capture status through scrolling, preview return,
 		const full = view.render(width).map(stripSgr);
 		assert.ok(containsBlock(full, noteLines("overview", width)));
 		assert.ok(containsBlock(full, noteLines("probe", width, { probe: true })));
+
 		const selected = full.findIndex((line) => line.startsWith("→"));
 		const header = full.slice(2, selected);
 		for (height of [12, 16, 24]) {
@@ -1917,6 +2039,7 @@ test("InjectionsView preserves capture status through scrolling, preview return,
 			const collapsed = view.render(width).map(stripSgr);
 			assert.ok(!containsBlock(collapsed, noteLines("overview", width)));
 			view.handleInput("\u001b[F");
+
 			const scrolled = view.render(width).map(stripSgr);
 			for (const frame of [collapsed, scrolled]) {
 				const selected = frame.findIndex((line) => line.startsWith("→"));
@@ -1932,6 +2055,7 @@ test("InjectionsView preserves capture status through scrolling, preview return,
 		view.handleInput("\u001b[H");
 		assert.deepEqual(view.render(width).map(stripSgr), full);
 		view.handleInput("j");
+
 		const beforePreview = view.render(width);
 		view.handleInput("\r");
 		assert.ok(!containsBlock(view.render(width), [requestOriginLabel(true)]));
@@ -1987,11 +2111,13 @@ test("InjectionsView rebuilds persistent capture colors after theme invalidation
 	}, () => {}, () => 16);
 	const before = view.render(80);
 	assert.strictEqual(view.render(80), before, "unchanged renders reuse the cache");
+
 	const originalFg = theme.fg.bind(theme);
 	theme.fg = (color, text) => originalFg(
 		color === "mdHeading" || color === "muted" || color === "dim" ? "syntaxFunction" : color, text,
 	);
 	view.invalidate();
+
 	const header = view.render(80)[2] ?? "";
 	assert.ok(header.includes(theme.fg("mdHeading", theme.bold(requestOriginLabel(true)))));
 	assert.notEqual(header, before[2]);
@@ -2002,7 +2128,9 @@ const SEARCH_MATCH_BG = "\u001b[48;2;17;34;51m";
 
 /** Skills and an extension tool, where only some text mentions tree-sitter. */
 function searchSnapshot(): InjectionSnapshot {
-	const skill = (name: string, text: string): InjectionItem => ({ ...item(`skill:${name}`, "pi", true, 50), label: name, text });
+	const skill = (name: string, text: string): InjectionItem => ({
+		...item(`skill:${name}`, "pi", true, 50), label: name, text,
+	});
 	const filler = Array.from({ length: 40 }, (_, line) => `filler line ${line}`).join("\n");
 	const skills: InjectionItem = {
 		...item("skills", "pi", true, 150),
@@ -2020,6 +2148,7 @@ function searchSnapshot(): InjectionSnapshot {
 		text: "Search the web, not tree-sitter grammars.",
 	};
 	const groups = [group("pi", true, [system, skills]), group("npm:pi-web-access", false, [webSearch])];
+
 	return { groups, totalTokens: 180 };
 }
 
@@ -2027,11 +2156,14 @@ function searchSnapshot(): InjectionSnapshot {
 function styledTheme(): Theme {
 	const theme = createTheme();
 	theme.bold = (text) => `\u001b[1m${text}\u001b[22m`;
+
 	return theme;
 }
 
+/** Send each character of `text` as its own key. */
 function typeKeys(view: InjectionsView, text: string): void {
-	for (const key of text) view.handleInput(key);
+	for (const key of text)
+		view.handleInput(key);
 }
 
 /** Plain list rows between the header block and the hint row. */
@@ -2063,8 +2195,10 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	const lines = view.render(80);
 	plain = lines.map((line) => stripStyle(line).trimEnd());
 	assert.match(plain[promptIndex] ?? "", /^ {2}◉ Name \| ○ Content > cym +1 match$/);
-	assert.ok((lines[promptIndex] ?? "").includes(theme.bold(theme.fg("accent", "◉ Name"))), "the active mode is bold accent");
+	assert.ok((lines[promptIndex] ?? "").includes(theme.bold(theme.fg("accent", "◉ Name"))),
+		"the active mode is bold accent");
 	assert.ok((lines[promptIndex] ?? "").includes(theme.fg("dim", "○ Content")), "the other mode is dim");
+
 	const rows = plain.slice(promptIndex + 2, plain.indexOf("", promptIndex + 2));
 	assert.deepEqual(rows.map(withoutLeaders), ["  pi 170", "  └─ Skills (3) 150", "→    └─ cymbal 50"]);
 	assert.ok((lines[promptIndex + 4] ?? "").includes(SEARCH_MATCH_BG), "the matched label text is highlighted");
@@ -2092,6 +2226,7 @@ test("InjectionsView shows an empty filter result and Escape while typing drops 
 	const view = new InjectionsView(createTheme(), { snapshot: searchSnapshot() }, () => {}, () => 30);
 	view.handleInput("/");
 	typeKeys(view, "zzz");
+
 	let plain = plainFrame(view);
 	assert.match(plain.join("\n"), /◉ Name \| ○ Content > zzz +No matches/);
 	assert.ok(plain.includes("  No injections match the filter."));
@@ -2107,7 +2242,9 @@ test("InjectionsView shows an empty filter result and Escape while typing drops 
 
 test("InjectionsView erasing or canceling a typed filter restores the selection from before it", () => {
 	const view = new InjectionsView(createTheme(), { snapshot: snapshot(16) }, () => {}, () => 16);
-	for (let step = 0; step < 10; step++) view.handleInput("j");
+	for (let step = 0; step < 10; step++)
+		view.handleInput("j");
+
 	const before = plainFrame(view);
 
 	// Erasing the query restores the list exactly, selection and scroll included
@@ -2141,6 +2278,7 @@ test("InjectionsView clearing a filter keeps a selected group whose label anothe
 	view.handleInput("\u001b");
 	view.handleInput("k");
 	view.handleInput("\u001b");
+
 	const groupRows = plainFrame(view).map(withoutLeaders).filter((line) => /^. {1,3}tools /.test(line));
 	assert.deepEqual(groupRows, ["  tools 10", "\u2192 tools 20"]);
 });
@@ -2151,9 +2289,11 @@ test("InjectionsView content filter carries its query into the preview search", 
 	view.handleInput("/");
 	view.handleInput("\t");
 	typeKeys(view, "tree-sitter");
+
 	const prompt = view.render(80).find((line) => stripStyle(line).startsWith("  ○ Name | ◉ Content >")) ?? "";
 	assert.ok(prompt.includes(theme.bold(theme.fg("accent", "◉ Content"))), "Tab makes Content the active mode");
 	assert.ok(prompt.includes(theme.fg("dim", "○ Name")));
+
 	let plain = plainFrame(view);
 	assert.match(plain.join("\n"), /○ Name \| ◉ Content > tree-sitter +2 matches/);
 	assert.match(plain.join("\n"), /↑↓ Navigate · Tab Mode · Enter Preview · Esc Clear/);
@@ -2166,6 +2306,7 @@ test("InjectionsView content filter carries its query into the preview search", 
 	const lines = view.render(80);
 	plain = lines.map((line) => stripStyle(line).trimEnd());
 	assert.match(plain[4] ?? "", /^ {2}Search: tree-sitter +1\/2$/);
+
 	const matchRow = plain.findIndex((line) => line.includes("Built on tree-sitter."));
 	assert.ok(matchRow > 0);
 	assert.ok((lines[matchRow] ?? "").includes(SEARCH_MATCH_BG));
@@ -2191,7 +2332,8 @@ test("InjectionsView preview search types live, keeps the query on Enter, and dr
 	view.handleInput("/");
 	typeKeys(view, "cymbal");
 	view.handleInput("\r");
-	assert.ok(!plainFrame(view).some((line) => line.includes("Search:")), "a name filter starts the preview unsearched");
+	assert.ok(!plainFrame(view).some((line) => line.includes("Search:")),
+		"a name filter starts the preview unsearched");
 
 	view.handleInput("/");
 	assert.match(plainFrame(view).join("\n"), /↑↓ Scroll · Enter Done · Esc Clear/);
@@ -2225,7 +2367,8 @@ test("InjectionsView search stays within the width and drops the filter hint bef
 	view.handleInput("\t");
 	typeKeys(view, "a very long query that cannot fit the prompt row at all");
 	for (const width of [20, 50, 80, 120]) {
-		for (const line of view.render(width)) assert.ok(visibleWidth(line) <= width, `width ${width}`);
+		for (const line of view.render(width))
+			assert.ok(visibleWidth(line) <= width, `width ${width}`);
 	}
 	view.handleInput("\u001b");
 	view.handleInput("\u001b[B");
@@ -2236,7 +2379,8 @@ test("InjectionsView search stays within the width and drops the filter hint bef
 	view.handleInput("/");
 	typeKeys(view, "filler");
 	for (const width of [20, 50, 80, 120]) {
-		for (const line of view.render(width)) assert.ok(visibleWidth(line) <= width, `preview width ${width}`);
+		for (const line of view.render(width))
+			assert.ok(visibleWidth(line) <= width, `preview width ${width}`);
 	}
 });
 
@@ -2268,7 +2412,7 @@ test("InjectionsView copies a highlighted group, item, and open preview", async 
 	const actions: CopyActions = { copyText: async (text) => { copied.push(text); }, schedule: () => () => {} };
 	const view = createView(8, undefined, () => 24, actions);
 
-	// The first highlighted row is the pi group; copy every item in it.
+	// The first highlighted row is the pi group; copy every item in it
 	assert.match(plainFrame(view).find((line) => line.includes("Navigate")) ?? "", /C Copy/);
 	view.handleInput("c");
 	await settleCopy();
@@ -2276,14 +2420,14 @@ test("InjectionsView copies a highlighted group, item, and open preview", async 
 	assert.match(copied[0] ?? "", /^pi-0 preview line 0/);
 	assert.match(copied[0] ?? "", /pi-7 preview line 39/);
 
-	// One item row copies only that item.
+	// One item row copies only that item
 	view.handleInput("j");
 	const itemText = copied[0]?.split("\n\n")[0] ?? "";
 	view.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[1], itemText);
 
-	// Its open preview copies the same item text.
+	// Its open preview copies the same item text
 	view.handleInput("\r");
 	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
 	view.handleInput("c");
@@ -2314,7 +2458,7 @@ test("InjectionsView copies only the visible items of a filtered group", async (
 	const copied: string[] = [];
 	const view = createView(8, undefined, () => 24, { copyText: async (text) => { copied.push(text); } });
 
-	// Submit a name filter that keeps one item, then return to the group row.
+	// Submit a name filter that keeps one item, then return to the group row
 	view.handleInput("/");
 	typeKeys(view, "pi-3");
 	view.handleInput("\r");
@@ -2360,6 +2504,7 @@ test("InjectionsView stops redrawing a copy result after the host disposes it", 
 	});
 	view.handleInput("c");
 	view.dispose();
+
 	const refreshesAtDispose = refreshes;
 	pending[0]?.();
 	await settleCopy();

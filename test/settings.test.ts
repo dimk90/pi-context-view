@@ -3,7 +3,11 @@ import { test } from "node:test";
 
 import { type ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-import { type CompactionModel, readAutoCompactReserveTokens, resolveAutoCompactReserveTokens } from "../src/settings.ts";
+import {
+	type CompactionModel,
+	readAutoCompactReserveTokens,
+	resolveAutoCompactReserveTokens,
+} from "../src/settings.ts";
 
 /** Pi's built-in reserve, used when neither an override nor an ordinary setting applies. */
 const PI_DEFAULT_RESERVE_TOKENS = 16_384;
@@ -14,6 +18,7 @@ const GEMINI: CompactionModel = { provider: "google", id: "gemini-3-pro" };
 /** Settings shape accepted by the in-memory manager; the barrel exports no `Settings` type. */
 type SettingsOverrides = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
 
+/** An in-memory settings manager holding `settings`. */
 function settingsWith(settings: SettingsOverrides): SettingsManager {
 	return SettingsManager.inMemory(settings);
 }

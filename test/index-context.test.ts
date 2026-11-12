@@ -46,6 +46,7 @@ function registerOnFakePi(ctx: ExtensionContext, snapshots?: SnapshotStore) {
 		getSettings: () => ({}),
 	} as unknown as ExtensionAPI;
 	registerExtension(pi, snapshots, createIsolatedConfigStore());
+
 	return {
 		emit: (event: TestEvent): unknown[] => (handlers.get(event.type) ?? []).map((handler) => handler(event, ctx)),
 		handles: (eventType: string): boolean => handlers.has(eventType),
@@ -111,15 +112,21 @@ test("only context_with_system observes requests: the filter returns a result, c
 	], "only the filter returns a result; capture returns nothing");
 	assert.deepEqual(full, [system, probeUser, realUser, patch], "filter never mutates the input");
 	assert.equal(sessionReads, 2, "structured capture reads the baseline of each request");
-	assert.deepEqual(emit({ type: "context_with_system", messages: [system, realUser, patch] }), [undefined, undefined]);
+	assert.deepEqual(emit({ type: "context_with_system", messages: [system, realUser, patch] }),
+		[undefined, undefined]);
 	assert.equal(sessionReads, 3);
 });
 
 test("#9: capture handlers return nothing and leave event.messages and the payload unchanged", async () => {
-	const system = { role: "system", content: "system prompt", timestamp: 1 } satisfies ContextEvent["messages"][number];
+	const system = {
+		role: "system", content: "system prompt", timestamp: 1,
+	} satisfies ContextEvent["messages"][number];
 	const entries: SessionEntry[] = [
 		{ type: "message", id: "s", parentId: null, timestamp: "2026-08-22T10:00:00Z", message: system },
-		{ type: "message", id: "1", parentId: "s", timestamp: "2026-08-22T10:00:01Z", message: userMessage("hello", 2) },
+		{
+			type: "message", id: "1", parentId: "s", timestamp: "2026-08-22T10:00:01Z",
+			message: userMessage("hello", 2),
+		},
 	];
 	const model = { provider: "mock", api: "openai-completions", id: "text", input: ["text"] };
 	const ctx = {
@@ -138,7 +145,8 @@ test("#9: capture handlers return nothing and leave event.messages and the paylo
 	emit({ type: "session_start", reason: "new" });
 	emit({
 		type: "before_agent_start", messageType: "user", prompt: "hello", systemPrompt: "system prompt",
-		systemPromptOptions: { cwd: "/tmp", hiddenTools: [] } as unknown as BeforeAgentStartEvent["systemPromptOptions"],
+		systemPromptOptions:
+			{ cwd: "/tmp", hiddenTools: [] } as unknown as BeforeAgentStartEvent["systemPromptOptions"],
 	});
 
 	// An earlier handler added a request-only message, so capture copies it
@@ -173,6 +181,8 @@ test("#9: capture handlers return nothing and leave event.messages and the paylo
 	assert.equal(latest?.changes.conversation[0]?.type, "added");
 	assert.deepEqual(latest?.guard, {
 		status: "complete", dispatch: { provider: "mock", api: "openai-completions", model: "text" },
-		findings: [{ type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "edit note" }] }],
+		findings: [{
+			type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: "edit note" }],
+		}],
 	});
 });

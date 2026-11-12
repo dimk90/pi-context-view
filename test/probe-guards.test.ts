@@ -46,6 +46,7 @@ function createHarness(settings: Settings = {}) {
 		ui: { setWorkingVisible: (visible: boolean) => visibility.push(visible) },
 	} as unknown as ExtensionCommandContext;
 	const trigger = new ProbeTrigger({ pi, probe, snapshots: new SnapshotStore(), compaction: new CompactionState() });
+
 	return { context, probe, trigger, sent, visibility };
 }
 
@@ -72,6 +73,7 @@ async function assertSkipped(harness: ReturnType<typeof createHarness>, cause: P
 	assert.equal(result.status === "failed" ? result.cause : undefined, cause);
 	assert.deepEqual(harness.sent, []);
 	assert.deepEqual(harness.visibility, []);
+
 	const attempt = harness.probe.start();
 	assert.equal(attempt.started, true);
 	harness.probe.fail("shutdown");
@@ -97,6 +99,7 @@ test("probe guards reject a virtual selection before checking its authentication
 test("probe guards distinguish a missing model from missing authentication", async () => {
 	const missing = createHarness();
 	await assertSkipped({ ...missing, context: { ...missing.context, model: undefined } }, "missing-model");
+
 	const unauthenticated = createHarness();
 	unauthenticated.context.modelRegistry.hasConfiguredAuth = () => false;
 	await assertSkipped(unauthenticated, "missing-auth");

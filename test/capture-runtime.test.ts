@@ -96,7 +96,10 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		const runtime = await createRuntime(t, provider, { factories: [] });
 		await runtime.session.prompt("/context injections");
 		await runtime.session.prompt("first prompt");
-		provider.enqueue({ type: "tool-call", name: "read", arguments: { path: "missing.txt" } }, { type: "text", text: "done" });
+		provider.enqueue(
+			{ type: "tool-call", name: "read", arguments: { path: "missing.txt" } },
+			{ type: "text", text: "done" },
+		);
 		await runtime.session.prompt("second prompt");
 		provider.enqueue({ type: "text", text: "Compacted summary." });
 		await runtime.session.compact();
@@ -105,13 +108,17 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		const snapshots = await runtime.settled();
 		assert.deepEqual(runtime.errors, []);
 		assert.deepEqual(snapshots.map((snapshot) => snapshot.origin),
-			["synthetic-probe", "real-turn", "real-turn", "real-turn", "real-turn"], "the tool follow-up is captured too");
-		for (const snapshot of snapshots) assertEmpty(snapshot);
+			["synthetic-probe", "real-turn", "real-turn", "real-turn", "real-turn"],
+			"the tool follow-up is captured too");
+		for (const snapshot of snapshots)
+			assertEmpty(snapshot);
 		assert.deepEqual(snapshots.map((snapshot) => snapshot.id), [1, 2, 3, 4, 5]);
 		assert.ok(snapshots.every((snapshot) => snapshot.leafId !== null));
 		// Pending, then one guard update; or one publication when the guard settled before the diff ran
 		for (const { id, origin } of snapshots) {
-			const statuses = runtime.published.filter((snapshot) => snapshot.id === id).map((snapshot) => snapshot.guard.status);
+			const statuses = runtime.published
+				.filter((snapshot) => snapshot.id === id)
+				.map((snapshot) => snapshot.guard.status);
 			const settled = origin === "synthetic-probe" ? "incomplete" : "complete";
 			assert.ok([`pending,${settled}`, settled].includes(statuses.join()), `${id}: ${statuses}`);
 		}
@@ -127,24 +134,32 @@ suite("structured capture calibration", { concurrency: true }, () => {
 			input: 10, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 11,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		};
-		sessionManager.appendMessage({ role: "user", content: [{ type: "text", text: "first prompt" }], timestamp: Date.now() });
 		sessionManager.appendMessage({
-			role: "assistant", content: [{ type: "toolCall", id: "call_x", name: "read", arguments: { path: "missing.txt" } }],
-			api: "openai-completions", provider: PROVIDER, model: "vision", usage, stopReason: "length", timestamp: Date.now(),
+			role: "user", content: [{ type: "text", text: "first prompt" }], timestamp: Date.now(),
 		});
 		sessionManager.appendMessage({
-			role: "toolResult", toolCallId: "call_x", toolName: "read", content: [{ type: "text", text: "not executed" }],
-			isError: true, timestamp: Date.now(),
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call_x", name: "read", arguments: { path: "missing.txt" } }],
+			api: "openai-completions", provider: PROVIDER, model: "vision", usage, stopReason: "length",
+			timestamp: Date.now(),
 		});
+		sessionManager.appendMessage({
+			role: "toolResult", toolCallId: "call_x", toolName: "read",
+			content: [{ type: "text", text: "not executed" }], isError: true, timestamp: Date.now(),
+		});
+
 		const runtime = await createRuntime(t, provider, { factories: [], sessionManager, autoCompaction: true });
 		await runtime.session.prompt("after recovery");
 
 		const entries = runtime.session.sessionManager.getBranch();
 		const edits = entries.filter((entry) => entry.type === "context_edit");
 		assert.equal(edits.length, 2, "pi hides the truncated call and its result");
+
 		const snapshots = await runtime.settled();
 		assert.deepEqual(runtime.errors, []);
-		for (const snapshot of snapshots) assertEmpty(snapshot);
+		for (const snapshot of snapshots)
+			assertEmpty(snapshot);
+
 		const last = provider.requests.at(-1)?.body.messages as Array<{ role: string }>;
 		assert.ok(!last.some((message) => message.role === "tool"), "the request has no orphaned tool result");
 	});
@@ -153,12 +168,15 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		const provider = await startProvider(t);
 		// After hooks run in registration order: both sessions must stop before their session file is removed
 		const sessions: AgentSession[] = [];
-		t.after(() => { for (const session of sessions) session.dispose(); });
+		t.after(() => { for (const session of sessions)
+			session.dispose(); });
+
 		const directory = await temporaryDirectory(t);
 		const first = SessionManager.create(directory, directory);
 		const before = await createRuntime(t, provider, { factories: [], sessionManager: first });
 		sessions.push(before.session);
 		await before.session.prompt("first prompt");
+
 		const file = first.getSessionFile();
 		assert.ok(file);
 		before.session.dispose();
@@ -168,6 +186,7 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		});
 		sessions.push(after.session);
 		await after.session.prompt("after resume");
+
 		const [snapshot] = await after.settled();
 		assert.equal(provider.requests.at(-1)?.body.model, "text");
 		assertEmpty(snapshot);
@@ -179,20 +198,23 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		const laterSection: ExtensionFactory = (pi) => {
 			pi.on("before_agent_start", (event) => {
 				// Recorded as a mid-conversation system message on the second prompt
-				if (addSection) event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, later: "<later/>" };
+				if (addSection)
+					event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, later: "<later/>" };
 			});
 		};
 		const runtime = await createRuntime(t, provider, { factories: [laterSection, contextAdd] });
 		await runtime.session.prompt("first prompt");
 		addSection = true;
 		await runtime.session.prompt("second prompt");
+
 		const snapshots = await runtime.settled();
 		const systemMessages = runtime.session.sessionManager.buildSessionProjection().messages
 			.filter((message) => message.role === "system");
 		assert.ok(systemMessages.length >= 2, "the session records a later system message");
 		for (const snapshot of snapshots) {
 			assert.deepEqual(snapshot.changes.system, []);
-			assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
+			assert.deepEqual(snapshot.changes.conversation.map(describeChange),
+				[`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
 		}
 	});
 
@@ -209,8 +231,10 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		const provider = await startProvider(t);
 		const runtime = await createRuntime(t, provider, { factories: [contextAdd], mode: "rpc" });
 		await runtime.session.prompt("prompt");
+
 		const [snapshot] = await runtime.settled();
-		assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
+		assert.deepEqual(snapshot.changes.conversation.map(describeChange),
+			[`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
 		await runtime.session.prompt("/context injections");
 		assert.ok(containsBlock(await runtime.renderView(), [requestOriginLabel()]));
 		assert.deepEqual(runtime.notices, []);
@@ -221,7 +245,9 @@ suite("structured capture calibration", { concurrency: true }, () => {
 		test(`/context ${view} refuses the view when the host never calls the factory`, async (t) => {
 			const provider = await startProvider(t);
 			// As Pi's own RPC mode: `custom()` resolves without a view
-			const runtime = await createRuntime(t, provider, { factories: [], mode: "rpc", custom: async () => undefined });
+			const runtime = await createRuntime(t, provider, {
+				factories: [], mode: "rpc", custom: async () => undefined,
+			});
 			await runtime.session.prompt(`/context ${view}`);
 			assert.equal(runtime.notices.length, 1, "one refusal replaces the view");
 			assert.ok(runtime.notices[0].startsWith(`/context ${view} `), "the refusal names the form typed");
@@ -235,25 +261,32 @@ suite("structured edits", { concurrency: true }, () => {
 	for (const position of ["before", "after"] as const) {
 		/** Fixtures are loaded before or after the monitor. */
 		const runWith = (t: TestContext, fixture: ExtensionFactory) => withProvider(t, (provider) =>
-			createRuntime(t, provider, { factories: position === "before" ? [fixture, monitorSlot] : [monitorSlot, fixture] }));
+			createRuntime(t, provider, {
+				factories: position === "before" ? [fixture, monitorSlot] : [monitorSlot, fixture],
+			}));
 
 		test(`context addition is attributed by customType (fixture ${position})`, async (t) => {
 			const runtime = await runWith(t, contextAdd);
 			await runtime.session.prompt("prompt");
+
 			const [snapshot] = await runtime.settled();
-			assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
+			assert.deepEqual(snapshot.changes.conversation.map(describeChange),
+				[`added ${CONTEXT_ADD_TYPE}: ${CONTEXT_ADD_TEXT}`]);
 		});
 
 		test(`context user addition is unattributed (fixture ${position})`, async (t) => {
 			const runtime = await runWith(t, contextAddUser);
 			await runtime.session.prompt("prompt");
+
 			const [snapshot] = await runtime.settled();
-			assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`added user: ${CONTEXT_ADD_USER_TEXT}`]);
+			assert.deepEqual(snapshot.changes.conversation.map(describeChange),
+				[`added user: ${CONTEXT_ADD_USER_TEXT}`]);
 		});
 
 		test(`context modification references its entry (fixture ${position})`, async (t) => {
 			const runtime = await runWith(t, contextModify);
 			await runtime.session.prompt("original text");
+
 			const [snapshot] = await runtime.settled();
 			assert.deepEqual(snapshot.changes.conversation.map(describeChange),
 				[`modified user: ${CONTEXT_MODIFY_PREFIX} original text`]);
@@ -267,8 +300,10 @@ suite("structured edits", { concurrency: true }, () => {
 			const runtime = await createRuntime(t, provider, { factories });
 			await runtime.session.prompt(CONTEXT_REPLACE_ORIGINAL);
 			await runtime.session.prompt(CONTEXT_REMOVE_TEXT);
+
 			const snapshots = await runtime.settled();
 			assert.equal(snapshots.length, 2);
+
 			const latest = snapshots[1];
 			assert.deepEqual(latest.changes.conversation.map(describeChange), ["modified user: bbbb", "deleted"]);
 			assertReferencesUserEntry(runtime, latest.changes.conversation[0], CONTEXT_REPLACE_ORIGINAL);
@@ -288,12 +323,14 @@ suite("structured edits", { concurrency: true }, () => {
 			const users = usage.categories.find((category) => category.id === "user-messages");
 			assert.ok(users);
 			assert.equal(users.tokens, 1);
+
 			const texts = collectPreviewEntries(users).map((entry) => entry.text);
 			assert.deepEqual(texts, [CONTEXT_REPLACE_TEXT]);
 			assert.equal(provider.requests.length, 2);
 			for (const request of provider.requests) {
 				const messages = request.body.messages as Array<{ role: string; content: string }>;
-				assert.deepEqual(messages.filter((message) => message.role === "user").map((message) => message.content), texts);
+				const sent = messages.filter((message) => message.role === "user").map((message) => message.content);
+				assert.deepEqual(sent, texts);
 			}
 			assert.deepEqual(runtime.errors, []);
 		});
@@ -301,6 +338,7 @@ suite("structured edits", { concurrency: true }, () => {
 		test(`context in-place edit is a modification (fixture ${position})`, async (t) => {
 			const runtime = await runWith(t, contextInPlace);
 			await runtime.session.prompt("original text");
+
 			const [snapshot] = await runtime.settled();
 			assert.deepEqual(snapshot.changes.conversation.map(describeChange),
 				[`modified user: original text\n${CONTEXT_IN_PLACE_SUFFIX}`]);
@@ -310,17 +348,21 @@ suite("structured edits", { concurrency: true }, () => {
 			const runtime = await runWith(t, contextDelete);
 			await runtime.session.prompt(`${CONTEXT_DELETE_MARKER}: drop me`);
 			await runtime.session.prompt("keep me");
+
 			const snapshots = await runtime.settled();
 			assert.deepEqual(snapshots[1].changes.conversation.map(describeChange), ["deleted"]);
-			assertReferencesUserEntry(runtime, snapshots[1].changes.conversation[0], `${CONTEXT_DELETE_MARKER}: drop me`);
+			assertReferencesUserEntry(runtime, snapshots[1].changes.conversation[0],
+				`${CONTEXT_DELETE_MARKER}: drop me`);
 		});
 
 		test(`context reorder is a deletion plus an addition (fixture ${position})`, async (t) => {
 			const runtime = await runWith(t, contextReorder);
 			await runtime.session.prompt(`${CONTEXT_REORDER_MARKER}: move me`);
 			await runtime.session.prompt("latest prompt");
+
 			const snapshots = await runtime.settled();
 			assertEmpty(snapshots[0]);
+
 			// Which messages anchor the alignment is a tie; every moved message stays counted once
 			const changes = snapshots[1].changes.conversation.map(describeChange);
 			assert.equal(changes.filter((change) => change === "deleted").length, 2);
@@ -333,11 +375,13 @@ suite("structured edits", { concurrency: true }, () => {
 			const factories = position === "before" ? [injectionPoints, monitorSlot] : [monitorSlot, injectionPoints];
 			const runtime = await createRuntime(t, provider, { factories });
 			await runtime.session.prompt("prompt");
+
 			const [snapshot] = await runtime.settled({ payloadChanges: true });
 			const sent = JSON.stringify(provider.requests[0]?.body);
 			for (const text of [POINT_AGENT_START_TEXT, POINT_CONTEXT_TEXT, POINT_SYSTEM_TEXT, POINT_PAYLOAD_TEXT]) {
 				assert.ok(sent.includes(text), `the request carries ${text}`);
 			}
+
 			const persisted = runtime.session.sessionManager.getBranch().some((entry) =>
 				entry.type === "custom_message" && entry.customType === POINT_AGENT_START_TYPE);
 			assert.ok(persisted, "the before_agent_start message is persisted, so it belongs to the baseline");
@@ -349,7 +393,8 @@ suite("structured edits", { concurrency: true }, () => {
 				...(before ? [`added ${POINT_SYSTEM_TYPE}: ${POINT_SYSTEM_TEXT}`] : []),
 			]);
 			assert.ok(snapshot.guard.status === "complete");
-			// Before the monitor, the payload message is a payload change; after it, the custom message Pi converted to user text
+			// Before the monitor, the payload message is a payload change; after it, the custom message Pi
+			// converted to user text
 			assert.deepEqual(snapshot.guard.findings, [{
 				type: "payload-change", change: "added", part: "user",
 				lines: [{ type: "added", text: before ? POINT_PAYLOAD_TEXT : POINT_SYSTEM_TEXT }],
@@ -376,6 +421,7 @@ suite("structured edits", { concurrency: true }, () => {
 			const fixtureRows = async () => {
 				await runtime.session.prompt("/context injections");
 				const rows = treeRows(await runtime.renderView());
+
 				return rows.slice(rows.indexOf("read") + 1, rows.indexOf("TOTAL (Prompt, Tools, Injections)"));
 			};
 
@@ -394,14 +440,18 @@ suite("structured edits", { concurrency: true }, () => {
 			for (const snapshot of snapshots) {
 				assert.deepEqual(snapshot.changes.conversation.map(describeChange), before ? addition : []);
 			}
+
 			const real = snapshots[1];
 			assert.ok(real?.guard.status === "complete");
 			assert.deepEqual(real.guard.findings, before ? [] : [{
-				type: "payload-change", change: "added", part: "user", lines: [{ type: "added", text: SYSTEM_ADD_MESSAGE_TEXT }],
+				type: "payload-change", change: "added", part: "user",
+				lines: [{ type: "added", text: SYSTEM_ADD_MESSAGE_TEXT }],
 			}]);
+
 			const saved = runtime.session.sessionManager.getBranch().filter((entry) =>
 				entry.type === "custom_message" && entry.customType === AGENT_START_MESSAGE_TYPE);
 			assert.equal(saved.length, 2, "the probe and the prompt each save one copy");
+
 			const sent = JSON.stringify(provider.requests[0]?.body);
 			assert.ok(sent.includes(AGENT_START_MESSAGE_TEXT) && sent.includes(SYSTEM_ADD_MESSAGE_TEXT));
 			assert.deepEqual(runtime.errors, []);
@@ -414,6 +464,7 @@ suite("structured edits", { concurrency: true }, () => {
 				const factories = structured ? [...fixtures, monitorSlot] : [monitorSlot, ...fixtures];
 				const runtime = await createRuntime(t, provider, { factories });
 				await runtime.session.prompt("prompt");
+
 				const [snapshot] = await runtime.settled({ payloadChanges: !structured });
 				if (!structured) {
 					assertEmpty(snapshot);
@@ -421,11 +472,13 @@ suite("structured edits", { concurrency: true }, () => {
 					return;
 				}
 				assert.deepEqual(snapshot.guard.status === "complete" && snapshot.guard.findings, []);
+
 				const system = snapshot.changes.system.map(describeSystemChange);
 				assert.equal(system.length, 10);
 				assert.match(system[0], new RegExp(`^content: .*${SYSTEM_APPEND_TEXT}$`, "s"));
 				assertSectionChanges(snapshot);
-				assert.deepEqual(snapshot.changes.conversation.map(describeChange), [`modified user: prompt\n${IN_PLACE_SUFFIX}`]);
+				assert.deepEqual(snapshot.changes.conversation.map(describeChange),
+					[`modified user: prompt\n${IN_PLACE_SUFFIX}`]);
 			});
 		});
 
@@ -439,6 +492,7 @@ suite("structured edits", { concurrency: true }, () => {
 			const factories = structured ? [...fixtures, monitorSlot, sentinel] : [monitorSlot, ...fixtures, sentinel];
 			const runtime = await createRuntime(t, provider, { factories });
 			await runtime.session.prompt("/context injections");
+
 			const [probe] = await runtime.settled();
 			assert.equal(probe.origin, "synthetic-probe");
 			assert.equal(responses, 0);
@@ -459,7 +513,8 @@ suite("structured edits", { concurrency: true }, () => {
 					assert.equal(part?.tokens, 0);
 					assert.equal(part?.text, text, "deleted preview retains its original without tags");
 				}
-			} else assertEmpty(probe);
+			} else
+				assertEmpty(probe);
 
 			await runtime.session.prompt("ordinary prompt");
 			await runtime.session.prompt("another ordinary prompt");
@@ -478,6 +533,7 @@ suite("structured edits", { concurrency: true }, () => {
 				const runtime = await createRuntime(t, provider, { factories });
 				await runtime.session.prompt("/context injections");
 				await runtime.session.prompt("real prompt");
+
 				const snapshots = await runtime.settled();
 				assert.deepEqual(runtime.errors, []);
 				assert.deepEqual(snapshots.map((snapshot) => snapshot.origin), ["synthetic-probe", "real-turn"]);
@@ -498,6 +554,7 @@ suite("Injections composition", { concurrency: true }, () => {
 		const runtime = await createRuntime(t, provider, { factories: [...fixtures, monitorSlot] });
 		await runtime.session.prompt("original text");
 		await runtime.session.prompt("later prompt");
+
 		const [first] = await runtime.settled();
 		const composition = buildInjectionsSnapshot({
 			snapshot: first,
@@ -525,6 +582,7 @@ suite("Injections composition", { concurrency: true }, () => {
 			...Object.keys(SECTION_DELETE_SECTIONS).map((name) => `pi / ${name}: deleted`),
 			"unattributed / user: modified",
 		].sort());
+
 		const modified = messages?.sections?.find((part) => part.change === "modified");
 		assert.deepEqual([modified?.label, modified?.text, modified?.message?.original?.text], [
 			"user", `${CONTEXT_MODIFY_PREFIX} original text`, JSON.stringify([{ type: "text", text: "original text" }]),
@@ -546,6 +604,7 @@ suite("Injections composition", { concurrency: true }, () => {
 			await runtime.session.prompt("/context injections");
 			assert.equal(responses, 0, "after_provider_response sentinel stays silent for the probe");
 			assert.equal(provider.requests.length, 0);
+
 			const probe = await runtime.renderView();
 			const probeNotes = noteKindsShown(probe, true, true);
 			assert.ok(containsBlock(probe, [requestOriginLabel(true)]));
@@ -556,6 +615,7 @@ suite("Injections composition", { concurrency: true }, () => {
 			const [, real] = await runtime.settled();
 			assert.equal(real?.origin, "real-turn");
 			await runtime.session.prompt("/context injections");
+
 			const latest = await runtime.renderView();
 			const latestNotes = noteKindsShown(latest, true, true);
 			assert.ok(containsBlock(latest, [requestOriginLabel()]));
@@ -576,6 +636,7 @@ function noteKindsShown(lines: readonly string[], probe: boolean, incomplete: bo
 		probe, guard: incomplete ? { status: "incomplete", reason } : undefined, items: [],
 	});
 	const text = frameText(lines);
+
 	return new Set(notes.filter((note) => {
 		const fixed = stripSgr(note.text).split(reason)[0]?.replace(/\s+/g, " ").trim() ?? "";
 		return fixed !== "" && text.includes(fixed);
@@ -589,6 +650,7 @@ const monitorSlot: ExtensionFactory = () => undefined;
 async function startProvider(t: TestContext): Promise<MockProvider> {
 	const provider = await startMockProvider();
 	t.after(() => provider.close());
+
 	return provider;
 }
 
@@ -601,6 +663,7 @@ async function withProvider<T>(t: TestContext, body: (provider: MockProvider) =>
 async function temporaryDirectory(t: TestContext): Promise<string> {
 	const directory = await mkdtemp(join(tmpdir(), "context-capture-test-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
+
 	return directory;
 }
 
@@ -612,6 +675,7 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 	// After hooks run in registration order: the session must stop before its directory is removed
 	let stopSession: (() => void) | undefined;
 	t.after(() => stopSession?.());
+
 	const directory = await temporaryDirectory(t);
 	// Keep almost nothing on manual compaction, so a short session can compact
 	const settingsManager = SettingsManager.inMemory({
@@ -622,6 +686,7 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 			: { enabled: false, keepRecentTokens: 1 },
 	});
 	useSettings(t, directory, () => settingsManager);
+
 	const modelRuntime = await ModelRuntime.create({
 		authPath: join(directory, "auth.json"), modelsPath: null, refreshOnCreate: false, allowModelNetwork: false,
 	});
@@ -633,6 +698,7 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 	const store = new SnapshotStore();
 	const published: RequestSnapshot[] = [];
 	store.subscribe((snapshot) => published.push(snapshot));
+
 	const monitor: ExtensionFactory = (pi) => registerExtension(pi, store, createIsolatedConfigStore());
 	const ordered = options.factories.includes(monitorSlot)
 		? options.factories.map((factory) => factory === monitorSlot ? monitor : factory)
@@ -648,13 +714,16 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 		],
 	});
 	await resourceLoader.reload();
+
 	const { session, extensionsResult } = await createAgentSession({
 		cwd: directory, agentDir: directory, settingsManager, resourceLoader, modelRuntime,
 		model: models.find((model) => model.id === (options.modelId ?? "vision")),
-		sessionManager: options.sessionManager ?? SessionManager.inMemory(directory), tools: ["read"], thinkingLevel: "off",
+		sessionManager: options.sessionManager ?? SessionManager.inMemory(directory),
+		tools: ["read"], thinkingLevel: "off",
 	});
 	stopSession = () => session.dispose();
 	assert.deepEqual(extensionsResult.errors, []);
+
 	const errors: string[] = [];
 	const notices: string[] = [];
 	let viewFactory: ViewFactory | undefined;
@@ -672,12 +741,15 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 			}),
 		}),
 	});
+
 	return {
 		session, published, errors, notices,
 		renderView: async () => {
 			const factory = viewFactory;
 			assert.ok(factory, "a view was opened");
+
 			const view = await createView(factory);
+
 			return view.render(120);
 		},
 		settled: async ({ payloadChanges = false } = {}) => {
@@ -685,12 +757,15 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 			const latest = new Map(published.map((snapshot) => [snapshot.id, snapshot]));
 			const snapshots = [...latest.values()].sort((a, b) => a.id - b.id);
 			for (const snapshot of snapshots) {
-				if (snapshot.origin === "synthetic-probe") assert.deepEqual(snapshot.guard, NO_PAYLOAD);
+				if (snapshot.origin === "synthetic-probe")
+					assert.deepEqual(snapshot.guard, NO_PAYLOAD);
 				else {
 					assert.ok(snapshot.guard.status === "complete", JSON.stringify(snapshot.guard));
-					if (!payloadChanges) assert.deepEqual(snapshot.guard.findings, []);
+					if (!payloadChanges)
+						assert.deepEqual(snapshot.guard.findings, []);
 				}
 			}
+
 			return snapshots;
 		},
 	};
@@ -703,9 +778,12 @@ async function createRuntime(t: TestContext, provider: MockProvider, options: Ru
 function treeRows(lines: readonly string[]): string[] {
 	return lines.flatMap((line) => {
 		const row = /^[→│├└─\s]*(.+?) \.+ +[\d,]+(?: +(\+)[\d,]+)?(?: +(-)[\d,]+)?(?: +· ([\w-]+))?$/.exec(line);
-		if (row === null) return [];
+		if (row === null)
+			return [];
+
 		const [, label, added, removed, marker] = row;
 		const diffs = `${added === undefined ? "" : " +"}${removed === undefined ? "" : " -"}`;
+
 		return [`${label}${diffs}${marker === undefined ? "" : ` · ${marker}`}`];
 	});
 }
@@ -729,12 +807,14 @@ function assertPayloadChanges(snapshot: RequestSnapshot): void {
 	assert.ok(system?.type === "payload-change" && user?.type === "payload-change");
 	assert.deepEqual([system.change, system.part, user.change, user.part], ["modified", "system", "modified", "user"]);
 	assert.deepEqual(user.lines, [{ type: "added", text: IN_PLACE_SUFFIX }]);
+
 	const added = system.lines.filter((line) => line.type === "added").map((line) => line.text);
 	assert.deepEqual(added, [
 		SYSTEM_APPEND_TEXT, SECTION_MODIFY_TEXT,
 		...SECTION_MODIFY_SECTIONS.map(({ text }) => text),
 		...Object.values(SECTION_PATCH_SECTIONS).flatMap((text) => text.split("\n")),
 	]);
+
 	const removed = system.lines.filter((line) => line.type === "removed").map((line) => line.text);
 	assert.ok(removed.length > 0 && removed[0] === `<${SECTION_DELETE_NAME}>`, removed.join("\n"));
 }
@@ -761,18 +841,25 @@ function assertReferencesUserEntry(runtime: Runtime, change: ConversationChange 
 
 /** One-line description of a conversation change. */
 function describeChange(change: ConversationChange): string {
-	if (change.type === "deleted") return "deleted";
+	if (change.type === "deleted")
+		return "deleted";
+
 	const message = change.message;
 	const source = change.attribution.customType ?? message.role;
 	const text = message.role === "user" || message.role === "custom" ? contentText(message.content) : message.role;
+
 	return `${change.type} ${source}: ${text}`;
 }
 
 /** One-line description of a system change; section text keeps only its marker line when it has one. */
 function describeSystemChange(change: SystemChange): string {
-	if (change.type === "content") return `content: ${change.text}`;
-	if (change.type === "tool") return `tool ${change.name}: ${change.declaration === null ? "removed" : "declared"}`;
-	if (change.text === null) return `section ${change.name}: removed`;
+	if (change.type === "content")
+		return `content: ${change.text}`;
+	if (change.type === "tool")
+		return `tool ${change.name}: ${change.declaration === null ? "removed" : "declared"}`;
+	if (change.text === null)
+		return `section ${change.name}: removed`;
+
 	return `section ${change.name}: ${change.text.split("\n").find((line) => line.includes("XYZZY")) ?? change.text}`;
 }
 

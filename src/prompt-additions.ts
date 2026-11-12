@@ -60,6 +60,7 @@ export function splitPromptAdditions(
 			runs.push(previous);
 		}
 	}
+
 	return runs.map((run) => ({
 		...run,
 		attribution: run.source.id === AGGREGATE_SOURCE.id ? undefined : "guess",
@@ -77,11 +78,13 @@ export function collectPromptSources(
 	commands: readonly SlashCommandInfo[],
 ): PromptSourceSlice[] {
 	const sources = new Map<string, CollectedPromptSource>();
-	for (const tool of allTools) addPromptSource(sources, tool.sourceInfo, tool.name);
+	for (const tool of allTools)
+		addPromptSource(sources, tool.sourceInfo, tool.name);
 	// Prompt text refers to a command the way a user types it, so keep its slash
 	for (const command of commands) {
 		addPromptSource(sources, command.sourceInfo, command.name.startsWith("/") ? command.name : `/${command.name}`);
 	}
+
 	return [...sources.values()];
 }
 
@@ -90,11 +93,15 @@ function additionRegions(prompt: string, start: number, end: number, excluded: r
 	const regions: string[] = [];
 	let cursor = start;
 	for (const span of excluded) {
-		if (span.end <= cursor || span.start >= end) continue;
-		if (span.start > cursor) regions.push(prompt.slice(cursor, span.start));
+		if (span.end <= cursor || span.start >= end)
+			continue;
+		if (span.start > cursor)
+			regions.push(prompt.slice(cursor, span.start));
 		cursor = Math.min(end, span.end);
 	}
-	if (cursor < end) regions.push(prompt.slice(cursor, end));
+	if (cursor < end)
+		regions.push(prompt.slice(cursor, end));
+
 	return regions;
 }
 
@@ -103,13 +110,17 @@ function splitBlocks(text: string): string[] {
 	const blocks: string[] = [];
 	let start = 0;
 	for (const separator of text.matchAll(/\r?\n[\t ]*\r?\n(?:[\t ]*\r?\n)*/g)) {
-		if (text.slice(start, separator.index).trim().length === 0) continue;
-		if (text.slice(separator.index).trim().length === 0) break;
+		if (text.slice(start, separator.index).trim().length === 0)
+			continue;
+		if (text.slice(separator.index).trim().length === 0)
+			break;
 		blocks.push(text.slice(start, separator.index));
 		start = separator.index;
 	}
 	// Removing a section can leave a separator behind; blank text has no author
-	if (text.slice(start).trim().length > 0) blocks.push(text.slice(start));
+	if (text.slice(start).trim().length > 0)
+		blocks.push(text.slice(start));
+
 	return blocks;
 }
 
@@ -127,7 +138,9 @@ function guessOwner(text: string, sources: readonly PromptSourceSlice[]): Prompt
 	const normalized = text.replaceAll("\\", "/");
 	const matches = new Map<string, InjectionSource>();
 	for (const source of sources) {
-		if (source.source === "builtin" || source.source === "sdk") continue;
+		if (source.source === "builtin" || source.source === "sdk")
+			continue;
+
 		const packageName = source.source.match(/^npm:((?:@[^/]+\/)?[^@]+)(?:@.*)?$/)?.[1];
 		if (
 			containsPath(normalized, source.path) || containsPath(normalized, source.baseDir) ||
@@ -138,8 +151,11 @@ function guessOwner(text: string, sources: readonly PromptSourceSlice[]): Prompt
 			matches.set(owner.id, owner);
 		}
 	}
+
 	const [match] = matches.values();
-	if (matches.size !== 1 || match === undefined) return { source: AGGREGATE_SOURCE };
+	if (matches.size !== 1 || match === undefined)
+		return { source: AGGREGATE_SOURCE };
+
 	return { source: match, tool: guessTool(normalized, sources, match.id) };
 }
 
@@ -156,12 +172,16 @@ function guessTool(
 ): string | undefined {
 	const matches = new Set<string>();
 	for (const source of sources) {
-		if (extensionSource(source).id !== ownerId) continue;
+		if (extensionSource(source).id !== ownerId)
+			continue;
 		for (const name of source.names ?? []) {
-			if (name.length >= MIN_NAME_LENGTH && containsName(text, name)) matches.add(name);
+			if (name.length >= MIN_NAME_LENGTH && containsName(text, name))
+				matches.add(name);
 		}
 	}
+
 	const [name] = matches;
+
 	return matches.size === 1 ? name : undefined;
 }
 
@@ -186,10 +206,14 @@ function containsPackage(text: string, name: string): boolean {
 
 /** Match absolute paths at boundaries; a package root may be followed by a child path. */
 function containsPath(text: string, path: string | undefined): boolean {
-	if (path === undefined) return false;
+	if (path === undefined)
+		return false;
+
 	const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
 	// A relative or synthetic provenance such as `<builtin:read>` is no evidence of authorship
-	if (!/^(\/|[A-Za-z]:\/).+/.test(normalized)) return false;
+	if (!/^(\/|[A-Za-z]:\/).+/.test(normalized))
+		return false;
+
 	return new RegExp(`(?:^|[^\\w/.-])${escapePattern(normalized)}(?=$|${PATH_BOUNDARY})`).test(text);
 }
 
@@ -209,7 +233,9 @@ function addPromptSource(
 	sourceInfo: SourceInfo,
 	name: string,
 ): void {
-	if (sourceInfo.source === "builtin" || sourceInfo.source === "sdk") return;
+	if (sourceInfo.source === "builtin" || sourceInfo.source === "sdk")
+		return;
+
 	const key = `${sourceInfo.source}\n${sourceInfo.path}`;
 	let collected = sources.get(key);
 	if (collected === undefined) {
@@ -222,5 +248,6 @@ function addPromptSource(
 		};
 		sources.set(key, collected);
 	}
-	if (!collected.names.includes(name)) collected.names.push(name);
+	if (!collected.names.includes(name))
+		collected.names.push(name);
 }

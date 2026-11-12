@@ -15,6 +15,7 @@ export function normalizeMultilineText(text: string): string {
 	const normalized = text
 		.replaceAll("\r\n", "\n")
 		.replaceAll("\r", "\n");
+
 	return stripTerminalStrings(normalized)
 		.replace(TERMINAL_CSI_SEQUENCE, "")
 		.replace(TERMINAL_ESCAPE_SEQUENCE, "")
@@ -31,16 +32,19 @@ function stripTerminalStrings(text: string): string {
 	const parts: string[] = [];
 	let offset = 0;
 	TERMINAL_STRING_START.lastIndex = 0;
+
 	let start: RegExpExecArray | null;
 	while ((start = TERMINAL_STRING_START.exec(text)) !== null) {
 		TERMINAL_STRING_END.lastIndex = TERMINAL_STRING_START.lastIndex;
-		if (TERMINAL_STRING_END.exec(text) === null) break;
+		if (TERMINAL_STRING_END.exec(text) === null)
+			break;
 		parts.push(text.slice(offset, start.index));
 		offset = TERMINAL_STRING_END.lastIndex;
 		TERMINAL_STRING_START.lastIndex = offset;
 	}
 	// Preserve an incomplete string for the existing escape/control sanitizers
 	parts.push(text.slice(offset));
+
 	return parts.join("");
 }
 

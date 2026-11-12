@@ -29,7 +29,10 @@ export type CreateOverlayView = (
  * Show a view as a fullscreen overlay until it closes. Resolves `false` when the
  * host never called the factory: Pi's RPC mode returns from `custom()` without a view.
  */
-export async function showOverlayView(context: ExtensionCommandContext, createView: CreateOverlayView): Promise<boolean> {
+export async function showOverlayView(
+	context: ExtensionCommandContext,
+	createView: CreateOverlayView,
+): Promise<boolean> {
 	let opened = false;
 	await context.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
@@ -37,6 +40,7 @@ export async function showOverlayView(context: ExtensionCommandContext, createVi
 			const view = createView(theme, done, () => tui.terminal.rows, {
 				refresh: () => tui.requestRender(),
 			});
+
 			return {
 				render: (width: number) => view.render(width),
 				invalidate: () => view.invalidate(),
