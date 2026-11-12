@@ -42,13 +42,13 @@ See what fills your context, for example, what survives compaction:
 ➥ Pi theme in this demo: [`dark-legacy`](https://github.com/dimk90/pi-context-view/blob/master/doc/dark-legacy.json).
 
 
-## Demo: `/context injections`
+## Demo: `injections`
 
 Inspect hidden parts of the context, such as tool definitions:
 
 ![Context injections view and item preview](https://media.githubusercontent.com/media/dimk90/pi-context-view/0ee9a806e9c23bea642edabacfd6830755f3122d/doc/images/context-injections.gif)  
 
-## Demo: Zoom
+## Demo: `zoom`
 
 Zoom in for a more detailed breakdown of large context windows, such as
 1M-token windows:
@@ -99,13 +99,15 @@ You can configure the number of rows and columns in the `Context Usage` map:
 ## Context Footprint
 
 `pi-context-view` adds nothing to the model context. Opening a view before the
-first turn may run one [silent probe](doc/architecture/probe.md)
+first turn may run one [silent probe](https://github.com/dimk90/pi-context-view/blob/master/doc/architecture/probe.md)
 that sends no request and leaves only blank entries, omitted from future context.
 Set `"autoProbing": false` in the [config](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md#silent-probe) to disable it.
 
 ## My Other Stuff
 
 📌 [S-VHS](https://github.com/dimk90/s-vhs) - terminal recorder used to create the demo GIFs.
+
+📌 [pi-tui-prompt-box](https://github.com/dimk90/pi-tui-prompt-box) - Pi extension with an alternative style for the prompt input.
 
 ## License
 
