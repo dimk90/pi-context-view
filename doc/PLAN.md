@@ -1,37 +1,5 @@
 
-# v0.8.5
-
-- [x] **Fail fast when the probe run never starts**:
-  - Problem: `pi.sendUserMessage()` returns nothing and Pi catches its rejection, so the probe cannot see
-    a failed start. When another extension's `input` handler returns `handled`, or Pi rejects the prompt,
-    the attempt waits the full 5 s and reports `timeout` ("Preconditions, Failures, and Fallback" in
-    `doc/architecture/probe.md`).
-  - No exact fix with the current Pi API: only `ReplacedSessionContext.sendUserMessage()` returns a promise.
-  - Possible fix: two short stage limits instead of one long timeout.
-    - From the send to this extension's `input` handler seeing the token.
-    - From that `input` to `before_agent_start`.
-  - Risk: slow `input` handlers of earlier extensions and Pi's authentication check run inside these
-    stages, so a limit that is too short fails a probe that would have started.
-  - Keep tracking the run after the failure, as the timeout does today, so a late probe run is still
-    aborted and sanitized.
-  - Add a failure cause of its own, for example `no-run`, so the reason is not `timeout`.
-  - Upstream: ask Pi to return the send's promise or result from `pi.sendUserMessage()`.
-
 # v0.9.0
-
-- [ ] **Evaluate a custom-message probe**:
-  - Idea: start the probe with `pi.sendMessage({ customType, display: false }, { triggerTurn: true })`
-    instead of `pi.sendUserMessage("")`.
-  - Gain: `before_agent_start` carries the message, so its `customType` identifies the run exactly. This
-    would remove the `AsyncLocalStorage` token, the nested-send limitation, the `input` reset, matching by
-    role and timestamp, and the user row that stays on screen.
-  - Cost: `input` handlers and handlers limited to `messageType === "user"` do not run, so the snapshot
-    misses their contributions. Handlers that read `event.prompt` without checking `messageType` may throw.
-  - `doc/architecture/probe.md` rejects this today as a worse approximation of a user prompt. Decide
-    whether the safer run identity is worth the lower fidelity: a probe snapshot is already an
-    approximation that the first real request replaces.
-  - Check first: a custom message can be blanked and omitted like the probe prompt, ProbeFilter can match
-    it by `customType`, and `ctx.abort()` at `turn_start` ends the run the same way.
 
 - [ ] **Probe only after the view is known to open**:
   - Problem: the command resolves the snapshot, and may probe, before it calls `ctx.ui.custom()`. In Pi's

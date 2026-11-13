@@ -99,7 +99,8 @@ outcome.
 
 Use `sendUserMessage("")`, not `pi.sendMessage(..., { triggerTurn: true })`:
 a custom-message run skips `input` and handlers limited to
-`messageType === "user"`, so it is a worse approximation of a user prompt.
+`messageType === "user"`, so it is a worse approximation of a user prompt
+([rejected alternative](#rejected-alternative-custom-message-probe)).
 Abort at `turn_start`, not `before_provider_request`:
 some transports skip the payload hook, and a standard probe never reaches it
 ([below](#what-a-probe-run-reaches)).
@@ -230,6 +231,28 @@ fail-safe**, however: nested user-message sends can still be mistaken for the
 probe when the sender's `input` handler runs first, including non-empty sends
 that the old checks would have left alone. A timeout or fallback does not fix
 that ownership mistake or guarantee that the original probe is aborted.
+
+### Rejected Alternative: Custom-Message Probe
+
+A probe started with
+`pi.sendMessage({ customType, display: false }, { triggerTurn: true })` works
+on Pi 1.5.2: `before_agent_start` carries the message, a `message_end`
+replacement blanks it, a `context_edit` omits its `custom_message` entry, and
+`ctx.abort()` at `turn_start` ends the run without a provider request.
+
+| Gain                                                                                   | Cost                                                                                                                              |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `customType` identifies the run exactly: no token, `input` reset, or nested-send limit | `input` handlers and handlers limited to `messageType === "user"` do not run, so the snapshot misses their contributions          |
+| No row on screen: the TUI skips a `display: false` custom message                      | A handler that reads `event.prompt` without checking `messageType` throws; Pi shows the error and drops that handler's result     |
+| No `input` handler can return `handled`, and Pi's prompt authentication check is skipped | While another run is active, Pi steers the message into that run instead of rejecting the send; Pi has no compaction guard here |
+|                                                                                        | Pi before 1.2.0 fires no `before_agent_start` for a custom-message run                                                            |
+
+The aborted assistant message has no `customType`, so role-and-timestamp
+identities and their persisted entry would stay in either design.
+
+Keep the user-message probe: nested sends are rare, while Pi's documentation
+tells handlers that act on prompts to check `messageType === "user"`, so the
+custom-message snapshot would miss the injections the views exist to show.
 
 ## Keeping Probe Messages Out of Real Context
 
