@@ -6,7 +6,7 @@ import { probeFailure, type ProbeFailureCause } from "../src/probe/failure.ts";
 
 const CAUSES = {
 	compaction: true, "pending-messages": true, "missing-model": true, "virtual-model": true, "missing-auth": true,
-	"idle-warming": true, "context-limit": true, settings: true, timeout: true, "foreign-run": true,
+	"idle-warming": true, "context-limit": true, settings: true, timeout: true, "no-run": true, "foreign-run": true,
 	"nested-send": true, shutdown: true, startup: true, "missing-snapshot": true,
 } satisfies Record<ProbeFailureCause, true>;
 

@@ -1,7 +1,7 @@
 /** Probe failure identity is separate from its user-facing explanation. */
 export type ProbeFailureCause =
 	| "compaction" | "pending-messages" | "missing-model" | "virtual-model" | "missing-auth"
-	| "idle-warming" | "context-limit" | "settings" | "timeout" | "foreign-run" | "nested-send"
+	| "idle-warming" | "context-limit" | "settings" | "timeout" | "no-run" | "foreign-run" | "nested-send"
 	| "shutdown" | "startup" | "missing-snapshot";
 
 /** Process-local failure metadata; never persisted with probe identities. */
@@ -23,6 +23,7 @@ export function probeFailure(cause: ProbeFailureCause, detail = ""): ProbeFailur
 		"context-limit": "Silent probe unavailable: context exceeds the auto-compaction threshold.",
 		settings: "Silent probe unavailable: Pi settings could not be checked.",
 		timeout: "Silent probe timed out.",
+		"no-run": "Silent probe run did not start in time.",
 		"foreign-run": "Another agent run started before the silent probe was recognized.",
 		"nested-send": "Another extension sent a user message during the silent probe; neither run was stopped, " +
 			"so the empty probe prompt may reach the model.",

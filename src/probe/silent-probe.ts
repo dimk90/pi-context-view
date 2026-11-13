@@ -17,6 +17,8 @@ import { type PersistedIdentities, PROBE_IDENTITIES_CUSTOM_TYPE, type ProbeFilte
 import { createProbeToken, type ProbeToken, readProbeToken } from "./token.ts";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+const DEFAULT_INPUT_STAGE_MS = 1_000;
+const DEFAULT_RUN_STAGE_MS = 2_000;
 /** `AbortError` text of the JavaScript runtime that runs pi, for the probe's `turn_start` abort. */
 const SETUP_ABORT_ERROR_MESSAGES = new Set([
 	"This operation was aborted", // Node.js
@@ -33,6 +35,20 @@ const WRONG_CLAIM_WARNING = "Silent probe may have stopped another extension's m
 export type ProbeOutcome =
 	| { readonly status: "settled" }
 	| ProbeFailure;
+
+/**
+ * Time limits of one probe attempt. Pi reports no failed start, so the two
+ * stage limits stand in for it: a stage that takes too long fails the attempt
+ * as `no-run` instead of waiting for the whole timeout.
+ */
+export interface ProbeLimits {
+	/** Limit for the whole attempt, until its run settles; defaults to 5 s. */
+	readonly timeoutMs?: number;
+	/** Limit from the start to this extension's `input` handler claiming the prompt; defaults to 1 s. */
+	readonly inputStageMs?: number;
+	/** Limit from that claim to `before_agent_start`; defaults to 2 s. */
+	readonly runStageMs?: number;
+}
 
 /** A probe start request; concurrent callers share `token` and `completion`. */
 export interface ProbeAttempt {
@@ -54,8 +70,8 @@ export type RunClaim = "claimed" | "wrong-claim" | "foreign";
 
 /**
  * Lifecycle of the single probe attempt. Ownership outlives the attempt's own
- * completion, so a probe run arriving after a timeout or after an unattributed
- * run is still claimed, aborted, and sanitized. A second idle input with the
+ * completion, so a probe run arriving after a timeout, a passed stage limit, or
+ * an unattributed run is still claimed, aborted, and sanitized. A second idle input with the
  * token ends ownership without a claim: the attempt becomes `ambiguous`.
  */
 type ProbePhase = "idle" | "waiting" | "running" | "settled" | "ambiguous";
@@ -79,6 +95,9 @@ export class SilentProbe {
 	private resolveCompletion: ((outcome: ProbeOutcome) => void) | undefined;
 	private outcome: ProbeOutcome | undefined;
 	private timeout: NodeJS.Timeout | undefined;
+	/** Limit of the current stage before the run starts; cleared once a run is claimed. */
+	private stageTimeout: NodeJS.Timeout | undefined;
+	private runStageMs = DEFAULT_RUN_STAGE_MS;
 	private promptProgress: PromptProgress = "pending";
 	/** Whether an idle input with the token was claimed; a second one makes ownership ambiguous. */
 	private inputClaimed = false;
@@ -98,10 +117,11 @@ export class SilentProbe {
 	}
 
 	/**
-	 * Begin the one allowed probe attempt with a failure timeout. Repeat calls
-	 * return the original attempt's completion with `started: false`.
+	 * Begin the one allowed probe attempt with its failure timeout and the limit
+	 * of its first stage. Repeat calls return the original attempt's completion
+	 * with `started: false`.
 	 */
-	public start(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): ProbeAttempt {
+	public start(limits: ProbeLimits = {}): ProbeAttempt {
 		if (this.attempt !== undefined) {
 			return { ...this.attempt, started: false };
 		}
@@ -111,7 +131,9 @@ export class SilentProbe {
 		this.resolveCompletion = resolve;
 		this.timeout = setTimeout(() => {
 			this.resolve(probeFailure("timeout"));
-		}, timeoutMs);
+		}, limits.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);
+		this.runStageMs = limits.runStageMs ?? DEFAULT_RUN_STAGE_MS;
+		this.limitStage(limits.inputStageMs ?? DEFAULT_INPUT_STAGE_MS);
 		this.attempt = { started: true, token: createProbeToken(), completion };
 
 		return this.attempt;
@@ -139,6 +161,7 @@ export class SilentProbe {
 			return false;
 		if (!this.inputClaimed) {
 			this.inputClaimed = true;
+			this.limitStage(this.runStageMs);
 			return true;
 		}
 		this.phase = "ambiguous";
@@ -166,6 +189,7 @@ export class SilentProbe {
 				return "foreign";
 			}
 			this.phase = "running";
+			this.clearStageLimit();
 			return "claimed";
 		}
 
@@ -307,10 +331,30 @@ export class SilentProbe {
 		return token !== undefined && token === this.attempt?.token;
 	}
 
-	/** Settle the completion promise exactly once and clear the timeout. */
+	/**
+	 * Fail the attempt as `no-run` unless its current stage ends within
+	 * `limitMs`; replaces the limit of the previous stage. Ownership is
+	 * untouched, so a run that starts later is still claimed.
+	 */
+	private limitStage(limitMs: number): void {
+		this.clearStageLimit();
+		this.stageTimeout = setTimeout(() => {
+			this.resolve(probeFailure("no-run"));
+		}, limitMs);
+	}
+
+	/** Stop the current stage limit, if any. */
+	private clearStageLimit(): void {
+		if (this.stageTimeout !== undefined)
+			clearTimeout(this.stageTimeout);
+		this.stageTimeout = undefined;
+	}
+
+	/** Settle the completion promise exactly once and clear the timeout and the stage limit. */
 	private resolve(outcome: ProbeOutcome): void {
 		if (this.outcome !== undefined)
 			return;
+		this.clearStageLimit();
 		if (this.timeout !== undefined)
 			clearTimeout(this.timeout);
 		this.timeout = undefined;

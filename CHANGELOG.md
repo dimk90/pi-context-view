@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+* `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.
+
+
 ## [0.8.4] - 10.11.2026
 
 ### Changed

@@ -174,7 +174,8 @@ that run continue: it may be the user's prompt or another extension's message,
 so never abort or rewrite it.
 
 Keep watching for the probe run after the attempt ends. The attempt can end
-early, on timeout or because a foreign run failed it, while the probe's own run
+early, on timeout, on a passed stage limit, or because a foreign run failed it,
+while the probe's own run
 is still on its way. That run still carries the token, so it is still claimed,
 aborted, and sanitized.
 
@@ -380,7 +381,7 @@ limitation also remains. Strict zero-provider-request guarantees require
 passive capture.
 
 Any skipped precondition above, a missing model, missing authentication, a
-startup failure, a timeout, a nested send, or a probe that settles without a
+startup failure, a timeout, a run that did not start in time, a nested send, or a probe that settles without a
 request snapshot reports a precise reason. Each failure also carries a typed cause from `src/probe/failure.ts`;
 callers and tests branch on the cause, while the reason is diagnostic text
 that neither view shows.
@@ -396,11 +397,23 @@ throw. No run starts, and no event reports it, when:
 - Pi rejects the prompt, for example because compaction or another run started
   after the preconditions passed, or authentication stopped resolving.
 
-The attempt then waits for its full 5-second timeout and reports `timeout`,
-without the real reason.
+Two stage limits stand in for the missing signal, so the attempt does not wait
+for its full 5-second timeout. Passing either one fails the attempt with the
+`no-run` cause:
 
-Always restore the working-row state in `finally`. If the probe times out,
-keep tracking its run until it settles: delayed synthetic messages must still
+| Stage                                                 | Limit | Runs inside it                                                                                                                 |
+| ----------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Send to this extension's `input` handler              | 1 s   | Earlier extensions' `input` handlers                                                                                           |
+| That `input` to this extension's `before_agent_start` | 2 s   | Later `input` handlers, Pi's authentication and pre-prompt compaction checks, earlier extensions' `before_agent_start` handlers |
+
+The limits are a guess, not a signal: `no-run` does not tell a `handled` input
+from a rejected prompt, and a slow handler inside a stage fails a probe that
+would have started. The second limit is longer because `before_agent_start`
+handlers may do slow work. Claiming the run ends the stage limits; the
+5-second timeout then covers the run until it settles.
+
+Always restore the working-row state in `finally`. If the probe times out or
+passes a stage limit, keep tracking its run until it settles: delayed synthetic messages must still
 be sanitized and filtered.
 
 ## Side Effects

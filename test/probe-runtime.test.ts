@@ -293,6 +293,28 @@ test("filtering unomitted probe entries keeps mid-conversation system messages i
 	assert.deepEqual(provider.bodies[1].messages.map((message) => message.role), seen.afterFilter);
 });
 
+for (const position of ["before", "after"] as const) {
+	test(`an input handler ${position} this extension that handles the probe prompt starts no run`, async (t) => {
+		const provider = await startProvider(t);
+		let runs = 0;
+		const handler: ExtensionFactory = (pi) => {
+			pi.on("input", (event) => event.source === "extension" ? { action: "handled" } as const : undefined);
+			pi.on("before_agent_start", () => { runs++; });
+		};
+		const session = await createRuntime(t, provider.baseUrl,
+			position === "before" ? [handler, registerExtension] : [registerExtension, handler]);
+		const errors = await bindTui(session);
+
+		// The command returns once a stage limit fails the attempt; the shared test
+		// process delays timers, so `silent-probe` checks the limits and the cause
+		await session.prompt("/context injections");
+
+		assert.deepEqual(errors, [], "Pi reports nothing for a handled prompt");
+		assert.equal(runs, 0);
+		assert.equal(provider.requests(), 0);
+	});
+}
+
 test("a nested custom-message run fails the attempt and the probe still claims its own prompt", { timeout: 30_000 }, async (t) => {
 	const provider = await startProvider(t);
 	const events: string[] = [];

@@ -196,7 +196,7 @@ test("resolveRequestSnapshot skips the probe when compaction starts while waitin
 	assert.equal(sentUserMessages, 0);
 	assert.equal(result.type, "missing");
 
-	const unusedAttempt = probe.start(1_000);
+	const unusedAttempt = probe.start({ timeoutMs: 1_000 });
 	assert.equal(unusedAttempt.started, true, "skipping compaction must not consume the runtime's probe attempt");
 	probe.fail("shutdown");
 

@@ -1,11 +1,7 @@
 
 # v0.8.5
 
-- [x] **Check usage numbers with Anthropic message threads** (Pi 1.5.1, on by default for `api.anthropic.com`):
-  - Needs a real provider request: confirm that reported input and cache tokens still cover the whole
-    context when a request sends only the new messages.
-
-- [ ] **Fail fast when the probe run never starts**:
+- [x] **Fail fast when the probe run never starts**:
   - Problem: `pi.sendUserMessage()` returns nothing and Pi catches its rejection, so the probe cannot see
     a failed start. When another extension's `input` handler returns `handled`, or Pi rejects the prompt,
     the attempt waits the full 5 s and reports `timeout` ("Preconditions, Failures, and Fallback" in
