@@ -124,7 +124,9 @@ Since Pi 1.5.1, the Anthropic adapter can send a request as a message thread:
 only the new messages, without `system` and `tools`. It is on by default for
 the `anthropic` provider on `api.anthropic.com`. Pi makes this cut after
 `before_provider_request`, so the hook and the guard still see the full
-payload.
+payload. The reported usage still covers the whole context: the provider counts
+the messages that were not sent as cache tokens, so `ctx.getContextUsage()`
+matches a full request.
 
 Compaction and branch-summary requests, nested calls through
 `ctx.modelRegistry`, router classifier calls, and image generation are separate

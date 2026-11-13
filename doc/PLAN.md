@@ -1,13 +1,7 @@
 
 # v0.8.5
 
-- [x] **Recheck `doc/architecture/pi-requests.md` against Pi 1.5.2**:
-  - The page says it was last checked in full against Pi `1.3.0`.
-  - Follow "After a Pi Upgrade" in `doc/architecture/validation.md`, then update the version in that note.
-  - Known difference: the request flow says a standard probe ends with an assistant error; since Pi 1.5.1 its
-    stop reason is `aborted` (see the first item of this section).
-
-- [ ] **Check usage numbers with Anthropic message threads** (Pi 1.5.1, on by default for `api.anthropic.com`):
+- [x] **Check usage numbers with Anthropic message threads** (Pi 1.5.1, on by default for `api.anthropic.com`):
   - Needs a real provider request: confirm that reported input and cache tokens still cover the whole
     context when a request sends only the new messages.
 
