@@ -17,6 +17,7 @@ import {
 	ConfigStore,
 	createDefaultConfigFile,
 	DEFAULT_CONFIG,
+	DEFAULT_ICON_STYLE,
 	FREE_SPACE_CATEGORY_ID,
 	loadConfigFile,
 	resolveCategoryColor,
@@ -60,6 +61,13 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 		["freeSpaceColor", "dim"],
 		["mapCols", 16],
 		["mapRows", 16],
+		["iconStyle", "Square"],
+		["iconStyles", {
+			CC: "⛝⛶⛀⛁⛃",
+			Nerd: "\u{f0157}⛶\u{ede8}\u{f01bc}\u{eb29}",
+			Circle: "⮾·◕●♼",
+			Square: "⛝⛶◧■▦",
+		}],
 		["autoProbing", true],
 	]);
 	assert.deepEqual(readdirSync(dirname(filePath)), ["pi-context-view.json"]);
@@ -68,6 +76,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(loaded.warnings, []);
 	assert.deepEqual(loaded.config.categoryColors, DEFAULT_CONFIG.categoryColors);
 	assert.deepEqual(loaded.config.mapSize, DEFAULT_CONFIG.mapSize);
+	assert.deepEqual(loaded.config.icons, DEFAULT_ICON_STYLE);
 	assert.equal(loaded.config.autoProbing, true);
 
 	// Repeating the command hits the write's EEXIST, the only branch that may report "exists"
@@ -259,6 +268,77 @@ test("loadConfigFile applies autoProbing and keeps the default for a non-boolean
 	assert.equal(invalid.config.autoProbing, true);
 	assert.equal(invalid.warnings.length, 1);
 	assert.ok(invalid.warnings[0]?.includes('"autoProbing"'), "the warning names the ignored key");
+});
+
+test("loadConfigFile selects a pre-defined or configured icon style", (context) => {
+	const filePath = createConfigPath(context);
+	assert.deepEqual(DEFAULT_ICON_STYLE, { buffer: "⛝", free: "⛶", partial: "◧", full: "■", compacted: "▦" });
+
+	writeFileSync(filePath, JSON.stringify({ iconStyle: "Circle" }));
+	const predefined = loadConfigFile(filePath);
+	assert.deepEqual(predefined.warnings, []);
+	assert.deepEqual(predefined.config.icons, { buffer: "⮾", free: "·", partial: "◕", full: "●", compacted: "♼" });
+
+	// Listed before the style it names: the selection must not depend on key order
+	writeFileSync(filePath, JSON.stringify({ iconStyle: "Mine", iconStyles: { Other: "12345", Mine: "abcde" } }));
+	const custom = loadConfigFile(filePath);
+	assert.deepEqual(custom.warnings, []);
+	assert.deepEqual(custom.config.icons, { buffer: "a", free: "b", partial: "c", full: "d", compacted: "e" });
+});
+
+test("loadConfigFile replaces the icon style list and falls back within it", (context) => {
+	const filePath = createConfigPath(context);
+
+	// The list no longer has the built-in style, so an unselected view draws the first listed one
+	writeFileSync(filePath, JSON.stringify({ iconStyles: { Mine: "abcde", Other: "12345" } }));
+	const unselected = loadConfigFile(filePath);
+	assert.deepEqual(unselected.warnings, []);
+	assert.equal(unselected.config.icons.full, "d");
+
+	writeFileSync(filePath, JSON.stringify({ iconStyle: "Circle", iconStyles: { Mine: "abcde", Square: "12345" } }));
+	const removed = loadConfigFile(filePath);
+	assert.equal(removed.config.icons.full, "4", "a listed Square stays the fallback");
+	assert.equal(removed.warnings.length, 1);
+	assert.ok(removed.warnings[0]?.includes('"Circle"'), "the warning names the unknown style");
+	assert.ok(removed.warnings[0]?.includes('"Mine", "Square"'), "the warning lists the selectable styles");
+});
+
+test("loadConfigFile ignores unusable icon styles and warns", (context) => {
+	const filePath = createConfigPath(context);
+	const unusableStyles: Array<readonly [string, unknown]> = [
+		["too few glyphs", "abcd"],
+		["too many glyphs", "abcdef"],
+		["a wide glyph", "abcd😀"],
+		["a zero-width glyph", "abcd\u200b"],
+		["an array of glyphs", ["a", "b", "c", "d", "e"]],
+	];
+
+	for (const [reason, glyphs] of unusableStyles) {
+		writeFileSync(filePath, JSON.stringify({ iconStyle: "Bad", iconStyles: { Bad: glyphs, Good: "abcde" } }));
+		const mixed = loadConfigFile(filePath);
+
+		assert.equal(mixed.config.icons.full, "d", reason);
+		assert.equal(mixed.warnings.length, 2, reason);
+		assert.ok(mixed.warnings.every((warning) => warning.includes('"Bad"')), reason);
+
+		// Without one valid style the pre-defined list stays, so the map always has glyphs
+		writeFileSync(filePath, JSON.stringify({ iconStyle: "Circle", iconStyles: { Bad: glyphs } }));
+		const empty = loadConfigFile(filePath);
+
+		assert.equal(empty.config.icons.full, "●", reason);
+		assert.equal(empty.warnings.length, 1, reason);
+		assert.ok(empty.warnings[0]?.includes('"iconStyles"'), reason);
+	}
+
+	for (const value of [["abcde"], "abcde", null, {}]) {
+		writeFileSync(filePath, JSON.stringify({ iconStyles: value, iconStyle: 4 }));
+		const invalid = loadConfigFile(filePath);
+
+		assert.deepEqual(invalid.config.icons, DEFAULT_ICON_STYLE);
+		assert.equal(invalid.warnings.length, 2);
+		assert.ok(invalid.warnings.some((warning) => warning.includes('"iconStyles"')));
+		assert.ok(invalid.warnings.some((warning) => warning.includes('"iconStyle"')));
+	}
 });
 
 /** Every renamed config key with the current name and the category both color. */

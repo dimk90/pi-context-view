@@ -8,8 +8,10 @@ import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
 	type CategoryColors,
 	DEFAULT_CATEGORY_COLORS,
+	DEFAULT_ICON_STYLE,
 	DEFAULT_MAP_SIZE,
 	FREE_SPACE_CATEGORY_ID,
+	type IconStyle,
 	type MapSize,
 } from "../src/config.ts";
 import type { ContextUsageSnapshot } from "../src/model.ts";
@@ -100,9 +102,10 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 /** Build a view over the built-in colors and map size unless a test overrides them. */
 function createView(
 	theme: Theme,
-	input: Omit<UsageViewInput, "categoryColors" | "mapSize"> & {
+	input: Omit<UsageViewInput, "categoryColors" | "mapSize" | "icons"> & {
 		readonly categoryColors?: CategoryColors;
 		readonly mapSize?: MapSize;
+		readonly icons?: IconStyle;
 	},
 	done: (result: undefined) => void,
 	getTerminalRows?: () => number,
@@ -113,7 +116,7 @@ function createView(
 
 	return new UsageView(
 		theme,
-		{ ...input, categoryColors: colors, mapSize },
+		{ ...input, categoryColors: colors, mapSize, icons: input.icons ?? DEFAULT_ICON_STYLE },
 		done,
 		getTerminalRows,
 		actions,
@@ -241,6 +244,27 @@ test("UsageView renders a configured map size and clamps it to the viewport", ()
 		widePlain.some((line) => /→ ■ System Prompt \.* 3\.7k\s+0\.4%$/.test(line)),
 		"the legend keeps whole labels and both value columns",
 	);
+});
+
+test("UsageView draws the map, legend, and map key with the configured icon style", () => {
+	const icons = { buffer: "B", free: "F", partial: "P", full: "O", compacted: "C" };
+	const configuredUsage = { ...usage(), autoCompactReserveTokens: 100_000 };
+	const plain = createView(createTheme(), { usage: configuredUsage, icons }, () => {}, () => 100)
+		.render(80)
+		.map(stripSgr);
+
+	const mapCells = plain.filter((line) => /^  [BFPOC]( [BFPOC]){15}/.test(line))
+		.flatMap((line) => line.slice(2, 33).split(" "));
+	assert.equal(mapCells.length, 256);
+	for (const glyph of [icons.buffer, icons.free, icons.full])
+		assert.ok(mapCells.includes(glyph), glyph);
+
+	assert.ok(plain.some((line) => line.includes("O System Prompt ")));
+	assert.ok(plain.some((line) => line.includes("B Auto-Compact Buffer ")));
+	assert.ok(plain.some((line) => line.includes("F Free Space ")));
+	assert.ok(plain.some((line) => /\s+O - \S/.test(line)));
+	assert.ok(plain.some((line) => /\s+P - \S/.test(line)));
+	assert.ok(plain.some((line) => /\s+F - Block Size: /.test(line)));
 });
 
 test("UsageView applies configured colors to category, buffer, and free-space markers", () => {

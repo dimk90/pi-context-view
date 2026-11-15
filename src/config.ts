@@ -12,6 +12,7 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { getAgentDir, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 /** Global override file; project-local configuration is intentionally unsupported. */
 export const CONFIG_FILE_NAME = "pi-context-view.json";
@@ -105,6 +106,29 @@ const CONFIG_KEY_MAP_FIELDS: ReadonlyMap<string, MapSizeField> = new Map(
 	Object.entries(MAP_SIZE_SPECS).map(([field, spec]) => [spec.key, field as MapSizeField]),
 );
 
+/** Config key naming the icon style the usage map draws with. */
+const ICON_STYLE_KEY = "iconStyle";
+/** Config key listing every selectable icon style by name. */
+const ICON_STYLES_KEY = "iconStyles";
+
+/** Map roles in the order an icon style's glyph string lists them. */
+const ICON_ROLES = ["buffer", "free", "partial", "full", "compacted"] as const;
+
+/** Pre-defined icon styles as written to a created override file, one glyph per role. */
+const DEFAULT_ICON_STYLE_GLYPHS = {
+	CC: "⛝⛶⛀⛁⛃",
+	// Nerd Font private-use glyphs, escaped because they render blank without such a font
+	Nerd: "\u{f0157}⛶\u{ede8}\u{f01bc}\u{eb29}",
+	Circle: "⮾·◕●♼",
+	Square: "⛝⛶◧■▦",
+} as const satisfies Record<string, string>;
+
+/** Name of the built-in icon style, also preferred when a configured list still carries it. */
+const DEFAULT_ICON_STYLE_NAME = "Square" satisfies keyof typeof DEFAULT_ICON_STYLE_GLYPHS;
+
+/** Splits a glyph string into user-perceived characters, so a combined glyph counts once. */
+const GLYPH_SEGMENTER = new Intl.Segmenter();
+
 /** Config key of the switch that lets a view start the silent probe on its own. */
 const AUTO_PROBING_KEY = "autoProbing";
 
@@ -146,10 +170,26 @@ export interface MapSize {
 	readonly rows: number;
 }
 
+/** Glyphs of one icon style, each exactly one terminal cell wide. */
+export interface IconStyle {
+	/** Cell inside the auto-compaction reserve. */
+	readonly buffer: string;
+	/** Unoccupied cell. */
+	readonly free: string;
+	/** Cell shared by several categories. */
+	readonly partial: string;
+	/** Cell holding a single category. */
+	readonly full: string;
+	/** Cell of compacted data. */
+	readonly compacted: string;
+}
+
 /** All user-configurable state of one runtime. */
 export interface ContextViewConfig {
 	readonly categoryColors: CategoryColors;
 	readonly mapSize: MapSize;
+	/** Glyphs of the selected icon style. */
+	readonly icons: IconStyle;
 	/** Whether a view opened before any captured request may start the silent probe. */
 	readonly autoProbing: boolean;
 }
@@ -178,10 +218,21 @@ export const DEFAULT_MAP_SIZE: MapSize = {
 	rows: MAP_SIZE_SPECS.rows.cells,
 };
 
+/** Pre-defined icon styles by name, used whenever the file omits or misconfigures the list. */
+const DEFAULT_ICON_STYLES: ReadonlyMap<string, IconStyle> = new Map(
+	Object.entries(DEFAULT_ICON_STYLE_GLYPHS).map(([name, glyphs]) => [name, toIconStyle(splitGlyphs(glyphs))]),
+);
+
+/** Built-in icon style, used whenever the file selects none. */
+export const DEFAULT_ICON_STYLE: IconStyle = toIconStyle(
+	splitGlyphs(DEFAULT_ICON_STYLE_GLYPHS[DEFAULT_ICON_STYLE_NAME]),
+);
+
 /** Configuration used when no override file exists. */
 export const DEFAULT_CONFIG: ContextViewConfig = {
 	categoryColors: DEFAULT_CATEGORY_COLORS,
 	mapSize: DEFAULT_MAP_SIZE,
+	icons: DEFAULT_ICON_STYLE,
 	autoProbing: DEFAULT_AUTO_PROBING,
 };
 
@@ -282,21 +333,27 @@ export function isHexColor(color: CategoryColor): color is HexColor {
 	return color.startsWith("#");
 }
 
-/** Serialize every built-in default as an editable, flat override file. */
+/** Serialize every built-in default as an editable override file. */
 function serializeDefaultConfig(): string {
-	const groups: Array<ReadonlyArray<readonly [string, CategoryColor | number | boolean]>> = [
+	const groups: Array<ReadonlyArray<readonly [string, unknown]>> = [
 		Object.values(CATEGORY_COLOR_SPECS).map((spec) => [spec.key, spec.color]),
 		Object.values(MAP_SIZE_SPECS).map((spec) => [spec.key, spec.cells]),
+		[[ICON_STYLE_KEY, DEFAULT_ICON_STYLE_NAME], [ICON_STYLES_KEY, DEFAULT_ICON_STYLE_GLYPHS]],
 		[[AUTO_PROBING_KEY, DEFAULT_AUTO_PROBING]],
 	];
 	// Written by hand: JSON.stringify cannot leave the blank lines that separate the groups
 	const body = groups
 		.map((entries) => entries
-			.map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`)
+			.map(([key, value]) => `  ${JSON.stringify(key)}: ${serializeConfigValue(value)}`)
 			.join(",\n"))
 		.join(",\n\n");
 
 	return `{\n${body}\n}\n`;
+}
+
+/** One value of the override file; an object spreads over indented lines, one entry each. */
+function serializeConfigValue(value: unknown): string {
+	return JSON.stringify(value, undefined, 2).replaceAll("\n", "\n  ");
 }
 
 /** Merge valid overrides onto the built-in defaults, reporting every ignored entry. */
@@ -309,6 +366,8 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 		categoryColors: new Map(DEFAULT_CATEGORY_COLORS),
 		mapSize: { ...DEFAULT_MAP_SIZE },
 		autoProbing: DEFAULT_AUTO_PROBING,
+		iconStyles: DEFAULT_ICON_STYLES,
+		iconStyleName: undefined,
 	};
 	const warnings: string[] = [];
 	for (const [key, value] of Object.entries(raw)) {
@@ -322,7 +381,22 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 			warnings.push(warning);
 	}
 
-	return { config, warnings };
+	// Resolved after the loop, so the selection never depends on the order of the two icon keys
+	if (config.iconStyleName !== undefined && !config.iconStyles.has(config.iconStyleName)) {
+		const names = [...config.iconStyles.keys()].map((name) => `"${name}"`).join(", ");
+		warnings.push(`Ignoring unknown icon style "${config.iconStyleName}" for "${ICON_STYLE_KEY}"; ` +
+			`expected one of: ${names}.`);
+	}
+
+	return {
+		config: {
+			categoryColors: config.categoryColors,
+			mapSize: config.mapSize,
+			autoProbing: config.autoProbing,
+			icons: selectIconStyle(config.iconStyles, config.iconStyleName),
+		},
+		warnings,
+	};
 }
 
 /** Configuration being assembled from the defaults, before it is returned read-only. */
@@ -330,6 +404,10 @@ interface ConfigDraft {
 	categoryColors: Map<string, CategoryColor>;
 	mapSize: Record<MapSizeField, number>;
 	autoProbing: boolean;
+	/** Selectable styles: the pre-defined ones until a valid configured list replaces them. */
+	iconStyles: ReadonlyMap<string, IconStyle>;
+	/** Configured style name, not yet checked against the list. */
+	iconStyleName: string | undefined;
 }
 
 /**
@@ -369,8 +447,79 @@ function applyOverride(
 		config.autoProbing = value;
 		return undefined;
 	}
+	if (resolvedKey === ICON_STYLE_KEY) {
+		if (typeof value !== "string")
+			return `Ignoring invalid value for "${configuredKey}"; expected an icon style name.`;
+		config.iconStyleName = value;
+		return undefined;
+	}
+	if (resolvedKey === ICON_STYLES_KEY)
+		return applyIconStyles(configuredKey, value, config);
 
 	return `Ignoring unknown ${CONFIG_FILE_NAME} key "${configuredKey}".`;
+}
+
+/**
+ * Replace the selectable styles with the configured list, returning the reason
+ * any of it was ignored. A list without one valid style keeps the pre-defined
+ * styles, so the map always has glyphs to draw.
+ */
+function applyIconStyles(configuredKey: string, value: unknown, config: ConfigDraft): string | undefined {
+	const expectation = `expected ${ICON_ROLES.length} glyphs, each one cell wide`;
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		return `Ignoring invalid value for "${configuredKey}"; expected an object of named icon styles.`;
+
+	const styles = new Map<string, IconStyle>();
+	const invalidNames: string[] = [];
+	for (const [name, glyphs] of Object.entries(value)) {
+		const style = parseIconStyle(glyphs);
+		if (style === undefined)
+			invalidNames.push(`"${name}"`);
+		else
+			styles.set(name, style);
+	}
+	if (styles.size === 0)
+		return `Ignoring "${configuredKey}" without a valid icon style; ${expectation}.`;
+
+	config.iconStyles = styles;
+	if (invalidNames.length === 0)
+		return undefined;
+
+	return `Ignoring invalid icon style ${invalidNames.join(", ")} in "${configuredKey}"; ${expectation}.`;
+}
+
+/** Accept only a string of one glyph per map role, each one cell wide so the map grid stays aligned. */
+function parseIconStyle(value: unknown): IconStyle | undefined {
+	if (typeof value !== "string")
+		return undefined;
+
+	const glyphs = splitGlyphs(value);
+	if (glyphs.length !== ICON_ROLES.length || glyphs.some((glyph) => visibleWidth(glyph) !== 1))
+		return undefined;
+
+	return toIconStyle(glyphs);
+}
+
+/** User-perceived characters of one glyph string. */
+function splitGlyphs(glyphs: string): string[] {
+	return [...GLYPH_SEGMENTER.segment(glyphs)].map((part) => part.segment);
+}
+
+/** Assign glyphs to map roles by position; callers pass one glyph per role. */
+function toIconStyle(glyphs: readonly string[]): IconStyle {
+	const [buffer = "", free = "", partial = "", full = "", compacted = ""] = glyphs;
+	return { buffer, free, partial, full, compacted };
+}
+
+/**
+ * Glyphs of the named style. An omitted or unknown name falls back to the
+ * built-in style, or to the first listed one when the list no longer has it.
+ */
+function selectIconStyle(styles: ReadonlyMap<string, IconStyle>, name: string | undefined): IconStyle {
+	const selected = name === undefined ? undefined : styles.get(name);
+	const [first] = styles.values();
+
+	return selected ?? styles.get(DEFAULT_ICON_STYLE_NAME) ?? first ?? DEFAULT_ICON_STYLE;
 }
 
 /** Whole-file failure: built-in defaults plus one explanatory warning. */

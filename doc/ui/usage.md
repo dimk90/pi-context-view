@@ -34,7 +34,12 @@ unavailable auto-compaction reserve. Explain the map's resolution relative to
 its current scale. Degrade optional map explanations before sacrificing category
 navigation; an oversized configured map must not crowd out the legend.
 
-[Configuration](../CONFIG.md#map-size) owns size settings;
+Draw every map cell, legend marker, and map key glyph from the configured icon
+style, never from a fixed glyph. Each glyph is one cell wide, so a style never
+changes the map geometry.
+
+[Configuration](../CONFIG.md#map-size) owns size settings and
+[icon styles](../CONFIG.md#icon-styles);
 [views.md](../architecture/views.md#auto-compaction-reserve) owns the reserve's
 source and accounting.
 

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type { ContextEvent, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { DEFAULT_CATEGORY_COLORS, DEFAULT_MAP_SIZE } from "../src/config.ts";
+import { DEFAULT_CATEGORY_COLORS, DEFAULT_ICON_STYLE, DEFAULT_MAP_SIZE } from "../src/config.ts";
 import { buildInjectionsSnapshot } from "../src/injections.ts";
 import { analyzeSystemPrompt } from "../src/measure.ts";
 import { buildSnapshot, type InjectionSnapshot } from "../src/model.ts";
@@ -155,7 +155,7 @@ test("request summaries and bash text reach both previews without envelope metad
 
 		const usage = new UsageView(theme, {
 			usage: computeUsage({ snapshot: buildSnapshot([]), messages: [message] }),
-			categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE,
+			categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE, icons: DEFAULT_ICON_STYLE,
 		}, () => {}, () => height);
 		for (const view of [injections, usage]) {
 			const overview = view.render(120);
@@ -258,7 +258,7 @@ test("Usage opens System Prompt sections directly and retains attribution withou
 	const usage = computeUsage({ snapshot: createSnapshot(), messages: [] });
 	const view = new UsageView(
 		theme,
-		{ usage, categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE },
+		{ usage, categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE, icons: DEFAULT_ICON_STYLE },
 		() => {},
 		() => height,
 	);
@@ -446,7 +446,7 @@ function createPreview(
 	const view = new UsageView(theme, {
 		usage: { ...usage, categories, estimatedTokens: usage.estimatedTokens + (target === "usage-single" ? 0 : 1) },
 		categoryColors: new Map(DEFAULT_CATEGORY_COLORS).set("system-prompt", "error"),
-		mapSize: DEFAULT_MAP_SIZE,
+		mapSize: DEFAULT_MAP_SIZE, icons: DEFAULT_ICON_STYLE,
 	}, () => {}, getRows);
 	view.render(120);
 	view.handleInput("\r");
@@ -675,7 +675,7 @@ test("Usage preserves moved parts, their estimates, and their marker across them
 	const usage = computeUsage({ snapshot: createRelocatedSnapshot(), messages: [] });
 	const view = new UsageView(
 		theme,
-		{ usage, categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE },
+		{ usage, categoryColors: DEFAULT_CATEGORY_COLORS, mapSize: DEFAULT_MAP_SIZE, icons: DEFAULT_ICON_STYLE },
 		() => {},
 		() => 40,
 	);
@@ -731,7 +731,7 @@ test("Usage explains markers in categories beyond the System Prompt, at both pre
 		const view = new UsageView(theme, {
 			usage: { ...usage, categories },
 			categoryColors: DEFAULT_CATEGORY_COLORS,
-			mapSize: DEFAULT_MAP_SIZE,
+			mapSize: DEFAULT_MAP_SIZE, icons: DEFAULT_ICON_STYLE,
 		}, () => {}, () => 40);
 		view.render(120);
 		view.handleInput("\r");
@@ -785,7 +785,7 @@ test("Usage keeps the Forced marker out of previews other than System Prompt", (
 	const view = new UsageView(createTheme(), {
 		usage: computeUsage({ snapshot: forcedSnapshot(createSnapshot()), messages: [] }),
 		categoryColors: DEFAULT_CATEGORY_COLORS,
-		mapSize: DEFAULT_MAP_SIZE,
+		mapSize: DEFAULT_MAP_SIZE, icons: DEFAULT_ICON_STYLE,
 	}, () => {}, () => 40);
 	assert.doesNotMatch(plain(view.render(120)), /Forced/);
 	view.handleInput("j"); // Custom Tools
@@ -814,7 +814,7 @@ test("native-only System Prompt and sibling previews do not claim extension inje
 	const usage = new UsageView(theme, {
 		usage: computeUsage({ snapshot, messages: [] }),
 		categoryColors: DEFAULT_CATEGORY_COLORS,
-		mapSize: DEFAULT_MAP_SIZE,
+		mapSize: DEFAULT_MAP_SIZE, icons: DEFAULT_ICON_STYLE,
 	}, () => {}, () => 40);
 	usage.handleInput("\r");
 	assert.ok(!hasHighlightLegend(usage.render(120)));

@@ -19,6 +19,7 @@ import {
 	type CategoryColor,
 	type CategoryColors,
 	FREE_SPACE_CATEGORY_ID,
+	type IconStyle,
 	type MapSize,
 	resolveCategoryColor,
 } from "../config.ts";
@@ -97,11 +98,6 @@ const SPACED_MAP_COLUMN_GAP = 3;
  * that renders a map at all.
  */
 const MIN_DETAIL_WIDTH = 32;
-const FULL_CELL = "■";
-const PARTIAL_CELL = "◧";
-const COMPACTED_CELL = "▦";
-const BUFFER_CELL = "⛝";
-const FREE_CELL = "⛶";
 const BREAKDOWN_MARKER = "•";
 const MAP_KEY_FULL_DESCRIPTION = "Single category block";
 const MAP_KEY_PART_DESCRIPTION = "Shared block, largest category shown";
@@ -122,6 +118,8 @@ export interface UsageViewInput {
 	readonly categoryColors: CategoryColors;
 	/** Map geometry requested by configuration; the viewport clamps it per frame. */
 	readonly mapSize: MapSize;
+	/** Map and legend glyphs of the configured icon style, or `DEFAULT_ICON_STYLE`. */
+	readonly icons: IconStyle;
 }
 
 /** View-local denominator selected for the context map. */
@@ -232,6 +230,7 @@ export class UsageView {
 	private readonly copy: CopyNotices;
 	private readonly usage: ContextUsageSnapshot;
 	private readonly categoryColors: CategoryColors;
+	private readonly icons: IconStyle;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
 	/** Search of the open category, shared by its block stream and the block it opens. */
@@ -275,6 +274,7 @@ export class UsageView {
 		});
 		this.usage = input.usage;
 		this.categoryColors = input.categoryColors;
+		this.icons = input.icons;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
 		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable
@@ -684,12 +684,12 @@ export class UsageView {
 
 		return [
 			this.fit(theme.fg("mdHeading", theme.bold("Map:")), width),
-			this.fit(this.mapKeyEntry("text", FULL_CELL, theme.fg("muted", MAP_KEY_FULL_DESCRIPTION)), width),
-			this.fit(this.mapKeyEntry("text", PARTIAL_CELL, theme.fg("muted", MAP_KEY_PART_DESCRIPTION)), width),
+			this.fit(this.mapKeyEntry("text", this.icons.full, theme.fg("muted", MAP_KEY_FULL_DESCRIPTION)), width),
+			this.fit(this.mapKeyEntry("text", this.icons.partial, theme.fg("muted", MAP_KEY_PART_DESCRIPTION)), width),
 			this.fit(
 				this.mapKeyEntry(
 					this.categoryColor(FREE_SPACE_CATEGORY_ID),
-					FREE_CELL,
+					this.icons.free,
 					`${sizeLabel}${this.blockSizeText(map, true)}`,
 				),
 				width,
@@ -707,9 +707,9 @@ export class UsageView {
 		const theme = this.theme;
 		const heading = theme.fg("mdHeading", theme.bold("Map:"));
 		const separator = theme.fg("dim", " · ");
-		const full = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One category")}`;
-		const partial = `${theme.fg("text", PARTIAL_CELL)}${theme.fg("muted", " Mixed")}`;
-		const freeCell = this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
+		const full = `${theme.fg("text", this.icons.full)}${theme.fg("muted", " One category")}`;
+		const partial = `${theme.fg("text", this.icons.partial)}${theme.fg("muted", " Mixed")}`;
+		const freeCell = this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), this.icons.free);
 		const size = (withPercent: boolean) => `${freeCell} ${this.blockSizeText(map, withPercent)}`;
 		const prefix = `${heading} ${full}${separator}${partial}${separator}`;
 		const detailed = `${prefix}${size(true)}`;
@@ -720,7 +720,7 @@ export class UsageView {
 		if (visibleWidth(withoutPercent) <= width)
 			return withoutPercent;
 
-		const shortenedFull = `${theme.fg("text", FULL_CELL)}${theme.fg("muted", " One")}`;
+		const shortenedFull = `${theme.fg("text", this.icons.full)}${theme.fg("muted", " One")}`;
 
 		return this.fit(`${heading} ${shortenedFull}${separator}${partial}${separator}${size(false)}`, width);
 	}
@@ -843,29 +843,30 @@ export class UsageView {
 	/** Unstyled hierarchy label used to choose the shared value column. */
 	private plainLegendLabel(row: LegendRow): string {
 		if (row.type === "buffer")
-			return `${BUFFER_CELL} Auto-Compact Buffer`;
+			return `${this.icons.buffer} Auto-Compact Buffer`;
 		if (row.type === "free")
-			return `${FREE_CELL} Free Space`;
+			return `${this.icons.free} Free Space`;
 
 		const indent = "  ".repeat(row.depth);
+		const marker = categoryMarker(this.icons, row.category.id, row.depth);
 
-		return `${indent}${categoryMarker(row.category.id, row.depth)} ${normalizeInlineText(row.category.label)}`;
+		return `${indent}${marker} ${normalizeInlineText(row.category.label)}`;
 	}
 
 	/** Themed hierarchy label; the marker keeps its map color even when selected. */
 	private styledLegendLabel(row: LegendRow, selected: boolean): string {
 		if (row.type === "buffer") {
 			const color = this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID);
-			return `${this.paint(color, BUFFER_CELL)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
+			return `${this.paint(color, this.icons.buffer)} ${this.theme.fg("text", "Auto-Compact Buffer")}`;
 		}
 		if (row.type === "free") {
 			const color = this.categoryColor(FREE_SPACE_CATEGORY_ID);
-			return `${this.paint(color, FREE_CELL)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
+			return `${this.paint(color, this.icons.free)} ${this.theme.fg(selected ? "accent" : "text", "Free Space")}`;
 		}
 
 		const indent = "  ".repeat(row.depth);
 		const color = this.categoryColor(row.rootId);
-		const marker = this.paint(color, categoryMarker(row.category.id, row.depth));
+		const marker = this.paint(color, categoryMarker(this.icons, row.category.id, row.depth));
 		const labelColor = selected ? "accent" : row.depth === 0 ? "text" : row.depth === 1 ? "muted" : "dim";
 
 		return `${indent}${marker} ${this.theme.fg(labelColor, normalizeInlineText(row.category.label))}`;
@@ -919,14 +920,14 @@ export class UsageView {
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */
 	private mapCell(cell: UsageMapCell): string {
 		if (cell.fill === "buffer") {
-			return this.paint(this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID), BUFFER_CELL);
+			return this.paint(this.categoryColor(AUTO_COMPACT_BUFFER_CATEGORY_ID), this.icons.buffer);
 		}
 		if (cell.fill === "free")
-			return this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), FREE_CELL);
+			return this.paint(this.categoryColor(FREE_SPACE_CATEGORY_ID), this.icons.free);
 
 		const glyph = cell.categoryId === "compacted-data"
-			? COMPACTED_CELL
-			: cell.fill === "full" ? FULL_CELL : PARTIAL_CELL;
+			? this.icons.compacted
+			: cell.fill === "full" ? this.icons.full : this.icons.partial;
 
 		return this.paint(this.categoryColor(cell.categoryId), glyph);
 	}
@@ -1646,11 +1647,11 @@ function formatEntryTimestamp(timestamp: number): string {
 }
 
 /** Marker distinguishing top-level occupancy, compacted data, and nested breakdowns. */
-function categoryMarker(categoryId: string, depth: number): string {
+function categoryMarker(icons: IconStyle, categoryId: string, depth: number): string {
 	if (depth > 0)
 		return BREAKDOWN_MARKER;
 
-	return categoryId === "compacted-data" ? COMPACTED_CELL : FULL_CELL;
+	return categoryId === "compacted-data" ? icons.compacted : icons.full;
 }
 
 /** Token estimate carried by category, buffer, or free-space legend rows. */

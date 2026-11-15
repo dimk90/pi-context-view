@@ -102,6 +102,10 @@ changes.
 - An unreadable or unparseable file, unknown key, invalid color, or
   out-of-range value falls back to the applicable default. Warn once per file
   revision, never fail the view.
+- `iconStyles` replaces the pre-defined list instead of merging into it. Invalid
+  styles are dropped; a list without one valid style keeps the pre-defined
+  list. An omitted or unknown `iconStyle` selects the built-in style, or the
+  first listed style when the list no longer has it.
 - A renamed key keeps its old name as a silently accepted alias. If both names
   are present, the current name wins.
 

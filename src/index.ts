@@ -140,6 +140,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			notices: loadedConfig.warnings,
 			categoryColors: loadedConfig.config.categoryColors,
 			mapSize: loadedConfig.config.mapSize,
+			icons: loadedConfig.config.icons,
 		});
 	}
 

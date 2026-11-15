@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### New
+* `[usage]` Add `iconStyle` and `iconStyles` to pick or define the usage map glyphs.
+
 ### Changed
 * `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.
 
