@@ -4,6 +4,7 @@
 
 ### New
 * `[usage]` Add `iconStyle` and `iconStyles` to pick or define the usage map glyphs.
+* `[usage]` Add `i` to cycle the usage map icon styles and save the selected one.
 
 ### Changed
 * `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.

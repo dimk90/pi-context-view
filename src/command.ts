@@ -5,7 +5,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
-import type { ConfigCreationResult } from "./config.ts";
+import type { ConfigCreationResult, ConfigSaveResult } from "./config.ts";
 import { MIN_PI_VERSION } from "./pi-version.ts";
 import type { ProbeTrigger } from "./probe/trigger.ts";
 import type { RequestSnapshot, SnapshotReader } from "./snapshot.ts";
@@ -167,6 +167,17 @@ export function reportConfigCreation(context: ExtensionCommandContext, result: C
 			return _exhaustive;
 		}
 	}
+}
+
+/**
+ * Report an icon style the Usage view could not save. A saved style and a
+ * view that changed none need no message: the map already shows the outcome.
+ */
+export function reportIconStyleSave(context: ExtensionCommandContext, result: ConfigSaveResult | undefined): void {
+	if (result?.type !== "failed")
+		return;
+
+	reportCommandMessage(context, `Cannot save the icon style to ${result.filePath}: ${result.reason}`, "warning");
 }
 
 /** Shorten over-long text with an ellipsis marker. */

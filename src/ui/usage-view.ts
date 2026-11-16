@@ -18,8 +18,10 @@ import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
 	type CategoryColor,
 	type CategoryColors,
+	DEFAULT_ICON_STYLE,
 	FREE_SPACE_CATEGORY_ID,
 	type IconStyle,
+	type IconStyles,
 	type MapSize,
 	resolveCategoryColor,
 } from "../config.ts";
@@ -51,6 +53,7 @@ import {
 	isStepBackKey,
 	isStepForwardKey,
 	normalizeTerminalRows,
+	type RightHint,
 	spreadLine,
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
@@ -118,8 +121,12 @@ export interface UsageViewInput {
 	readonly categoryColors: CategoryColors;
 	/** Map geometry requested by configuration; the viewport clamps it per frame. */
 	readonly mapSize: MapSize;
-	/** Map and legend glyphs of the configured icon style, or `DEFAULT_ICON_STYLE`. */
-	readonly icons: IconStyle;
+	/** Icon styles the `i` key cycles through, in order. */
+	readonly iconStyles: IconStyles;
+	/** Style the map and legend start with; a name missing from `iconStyles` draws `DEFAULT_ICON_STYLE`. */
+	readonly iconStyleName: string;
+	/** Called with each style the user switches to, so the caller can save the last one. */
+	readonly onIconStyleChange?: (name: string) => void;
 }
 
 /** View-local denominator selected for the context map. */
@@ -230,7 +237,8 @@ export class UsageView {
 	private readonly copy: CopyNotices;
 	private readonly usage: ContextUsageSnapshot;
 	private readonly categoryColors: CategoryColors;
-	private readonly icons: IconStyle;
+	private iconStyleName: string;
+	private icons: IconStyle;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
 	/** Search of the open category, shared by its block stream and the block it opens. */
@@ -274,7 +282,8 @@ export class UsageView {
 		});
 		this.usage = input.usage;
 		this.categoryColors = input.categoryColors;
-		this.icons = input.icons;
+		this.iconStyleName = input.iconStyleName;
+		this.icons = input.iconStyles.get(input.iconStyleName) ?? DEFAULT_ICON_STYLE;
 		this.fitMapScale = calculateFitMapScale(this.usage);
 		this.legendRows = this.buildLegendRows();
 		// The trailing buffer/free block has no preview: it scrolls with the list but is never selectable
@@ -340,6 +349,8 @@ export class UsageView {
 			this.toggleMapScale();
 		} else if (matchesKey(data, "p")) {
 			this.togglePercentageScale();
+		} else if (matchesKey(data, "i")) {
+			this.cycleIconStyle();
 		} else if (matchesKey(data, Key.enter)) {
 			this.openPreview();
 		} else if (isStepBackKey(data)) {
@@ -429,7 +440,7 @@ export class UsageView {
 		const tail = [
 			...(descriptionLines.length === 0 ? [] : ["", ...descriptionLines]),
 			"",
-			fitHintRow(theme, this.dashboardHints(width), width),
+			fitHintRow(theme, this.dashboardHints(width), width, this.iconStyleHint()),
 			"",
 			border,
 		];
@@ -496,6 +507,31 @@ export class UsageView {
 			return;
 		this.percentageScale = this.percentageScale === "window" ? "used" : "window";
 		this.clearCache();
+	}
+
+	/**
+	 * Switch to the next icon style, wrapping around, and report it for saving.
+	 * A list with one style has nothing to switch to.
+	 */
+	private cycleIconStyle(): void {
+		const names = [...this.input.iconStyles.keys()];
+		const name = names[(names.indexOf(this.iconStyleName) + 1) % names.length];
+		const icons = name === undefined ? undefined : this.input.iconStyles.get(name);
+		if (name === undefined || icons === undefined || name === this.iconStyleName)
+			return;
+
+		this.iconStyleName = name;
+		this.icons = icons;
+		this.clearCache();
+		this.input.onIconStyleChange?.(name);
+	}
+
+	/** Right-aligned hint naming the active icon style, omitted together with its binding. */
+	private iconStyleHint(): RightHint | undefined {
+		if (this.input.iconStyles.size < 2)
+			return undefined;
+
+		return { key: "I", description: "Icons", detail: normalizeInlineText(this.iconStyleName) };
 	}
 
 	/**

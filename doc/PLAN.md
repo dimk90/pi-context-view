@@ -11,10 +11,12 @@
   - Default icon style should be set to "Square" = "⛝⛶◧■▩".
   - Update CONFIG.md
 
-- [ ] **Cycle icon styles via hotkeys**
+- [x] **Cycle icon styles via hotkeys**
   - Add hotkey to cycle icons styles in context usage view.
   - The hotkey should be aligned to the right.
   - The icon style hotkey should change style in persistent way (save it to the config).
+
+- [ ] Reverse dim/muted colors for hotkey line.
 
 - [ ] Move "Window/Used" % to back to hotkey bar:
   - to reduce visual noise.

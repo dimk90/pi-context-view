@@ -38,6 +38,14 @@ Draw every map cell, legend marker, and map key glyph from the configured icon
 style, never from a fixed glyph. Each glyph is one cell wide, so a style never
 changes the map geometry.
 
+The `i` key switches to the next configured icon style, wrapping around, and
+the choice is saved for later views
+([explicit writes](../architecture/privacy.md#explicit-writes)). Its hint names
+the active style and sits at the right end of the hint row, apart from the
+navigation and view-local hints. The hint is the first to give way on a narrow
+row, the style name before the hint itself, while the binding stays active.
+Hide the hint and the binding together when only one style is configured.
+
 [Configuration](../CONFIG.md#map-size) owns size settings and
 [icon styles](../CONFIG.md#icon-styles);
 [views.md](../architecture/views.md#auto-compaction-reserve) owns the reserve's

@@ -8,10 +8,11 @@ import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
 	type CategoryColors,
 	DEFAULT_CATEGORY_COLORS,
-	DEFAULT_ICON_STYLE,
+	DEFAULT_ICON_STYLE_NAME,
+	DEFAULT_ICON_STYLES,
 	DEFAULT_MAP_SIZE,
 	FREE_SPACE_CATEGORY_ID,
-	type IconStyle,
+	type IconStyles,
 	type MapSize,
 } from "../src/config.ts";
 import type { ContextUsageSnapshot } from "../src/model.ts";
@@ -99,13 +100,14 @@ function usage(tokens = 43_800): ContextUsageSnapshot {
 	};
 }
 
-/** Build a view over the built-in colors and map size unless a test overrides them. */
+/** Build a view over the built-in colors, map size, and icon styles unless a test overrides them. */
 function createView(
 	theme: Theme,
-	input: Omit<UsageViewInput, "categoryColors" | "mapSize" | "icons"> & {
+	input: Omit<UsageViewInput, "categoryColors" | "mapSize" | "iconStyles" | "iconStyleName"> & {
 		readonly categoryColors?: CategoryColors;
 		readonly mapSize?: MapSize;
-		readonly icons?: IconStyle;
+		readonly iconStyles?: IconStyles;
+		readonly iconStyleName?: string;
 	},
 	done: (result: undefined) => void,
 	getTerminalRows?: () => number,
@@ -114,9 +116,12 @@ function createView(
 	const colors = input.categoryColors ?? DEFAULT_CATEGORY_COLORS;
 	const mapSize = input.mapSize ?? DEFAULT_MAP_SIZE;
 
+	const iconStyles = input.iconStyles ?? DEFAULT_ICON_STYLES;
+	const iconStyleName = input.iconStyleName ?? DEFAULT_ICON_STYLE_NAME;
+
 	return new UsageView(
 		theme,
-		{ ...input, categoryColors: colors, mapSize, icons: input.icons ?? DEFAULT_ICON_STYLE },
+		{ ...input, categoryColors: colors, mapSize, iconStyles, iconStyleName },
 		done,
 		getTerminalRows,
 		actions,
@@ -249,7 +254,8 @@ test("UsageView renders a configured map size and clamps it to the viewport", ()
 test("UsageView draws the map, legend, and map key with the configured icon style", () => {
 	const icons = { buffer: "B", free: "F", partial: "P", full: "O", compacted: "C" };
 	const configuredUsage = { ...usage(), autoCompactReserveTokens: 100_000 };
-	const plain = createView(createTheme(), { usage: configuredUsage, icons }, () => {}, () => 100)
+	const input = { usage: configuredUsage, iconStyles: new Map([["Mine", icons]]), iconStyleName: "Mine" };
+	const plain = createView(createTheme(), input, () => {}, () => 100)
 		.render(80)
 		.map(stripSgr);
 
@@ -2184,4 +2190,75 @@ test("UsageView drops the copy hint whole when the dashboard hint row is narrow"
 	const hints = plainFrame(view, 58).find((line) => line.includes("Navigate")) ?? "";
 	assert.match(hints, /Esc Close/);
 	assert.doesNotMatch(hints, /C Copy/);
+});
+
+test("UsageView cycles icon styles with i and reports each one for saving", () => {
+	const iconStyles = new Map([
+		["First", { buffer: "a", free: "b", partial: "c", full: "d", compacted: "e" }],
+		["Second", { buffer: "1", free: "2", partial: "3", full: "4", compacted: "5" }],
+	]);
+	const reported: string[] = [];
+	const view = createView(
+		createTheme(),
+		{ usage: usage(), iconStyles, iconStyleName: "First", onIconStyleChange: (name) => reported.push(name) },
+		() => {},
+		() => 40,
+	);
+	/** The hint row of the current frame. */
+	const hints = (): string => plainFrame(view, 100).find((line) => line.includes("Navigate")) ?? "";
+
+	assert.ok(plainFrame(view, 100).some((line) => line.includes("d System Prompt ")));
+	assert.match(hints(), /Esc Close\s+I Icons: First$/, "the hint sits at the right edge");
+	assert.equal(visibleWidth(hints()), 100);
+
+	view.handleInput("i");
+	assert.ok(plainFrame(view, 100).some((line) => line.includes("4 System Prompt ")), "the cached frame is dropped");
+	assert.match(hints(), /I Icons: Second$/);
+
+	view.handleInput("i");
+	assert.ok(plainFrame(view, 100).some((line) => line.includes("d System Prompt ")), "the last style wraps around");
+	assert.deepEqual(reported, ["Second", "First"]);
+});
+
+test("UsageView offers no icon style switch for a single style", () => {
+	const iconStyles = new Map([["Only", { buffer: "a", free: "b", partial: "c", full: "d", compacted: "e" }]]);
+	const reported: string[] = [];
+	const view = createView(
+		createTheme(),
+		{ usage: usage(), iconStyles, iconStyleName: "Only", onIconStyleChange: (name) => reported.push(name) },
+		() => {},
+		() => 40,
+	);
+	const frame = plainFrame(view, 100);
+
+	view.handleInput("i");
+	assert.deepEqual(plainFrame(view, 100), frame);
+	assert.ok(!frame.some((line) => line.includes("Icons:")), "the hint goes with the binding");
+	assert.deepEqual(reported, []);
+});
+
+test("UsageView shortens and then drops the icon style hint on narrow rows", () => {
+	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 40);
+	/** The hint row at one width. */
+	const hints = (width: number): string => plainFrame(view, width).find((line) => line.includes("Navigate")) ?? "";
+	/** Columns the hints left of the icon style hint occupy. */
+	const leftWidth = (row: string): number => visibleWidth(row.replace(/\s+I Icons.*$/, ""));
+	const gap = 3;
+
+	const wide = hints(120);
+	assert.match(wide, /C Copy.* P % · Esc Close\s+I Icons: Square$/);
+	const detailedWidth = leftWidth(wide) + gap + visibleWidth("I Icons: Square");
+	assert.match(hints(detailedWidth), /Esc Close   I Icons: Square$/);
+
+	// The style name goes first, so every other hint stays
+	assert.match(hints(detailedWidth - 1), /C Copy.* P % · Esc Close\s+I Icons$/);
+	const shortWidth = leftWidth(wide) + gap + visibleWidth("I Icons");
+
+	// Then the whole hint goes, before any other hint does
+	const withoutSwitch = hints(shortWidth - 1);
+	assert.doesNotMatch(withoutSwitch, /Icons/);
+	assert.match(withoutSwitch, /C Copy.* P % · Esc Close$/);
+
+	view.handleInput("i");
+	assert.match(hints(120), /I Icons: (?!Square)\S+$/, "the binding outlives its hint");
 });

@@ -105,6 +105,10 @@ Each style is a string of exactly 5 glyphs, in this order:
 | 4        | `■`               | Block of a single category             |
 | 5        | `▦`               | Compacted data                         |
 
+Press `i` in `Context Usage` to switch to the next style in the list. The
+selected style is saved to `iconStyle` when the view closes. Without a config
+file, this creates one that holds only `iconStyle`.
+
 Add your own style under any name and select it with `iconStyle`:
 
 ```json

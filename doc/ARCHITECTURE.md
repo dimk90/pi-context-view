@@ -123,7 +123,8 @@ flowchart TD
   request. ProbeTrigger has no guard.
 - **Wiring.** Each layer's module exports its state and a `register*()`
   function with its Pi handlers. `src/index.ts` creates the layers, calls those
-  functions, registers the command, and clears the store on `session_shutdown`.
+  functions, registers the command, and on `session_shutdown` saves a pending
+  icon style and clears the store.
   Register the probe layer first: ProbeFilter's `context_with_system` handler
   must run before capture's.
 

@@ -10,6 +10,9 @@ import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from
 /** Hint-row key label for the single-step navigation keys both views accept. */
 export const STEP_KEY_HINT = "↑↓/jk";
 
+/** Narrowest gap between the hints and a right-aligned hint, as wide as the hint separator. */
+const RIGHT_HINT_GAP = 3;
+
 /** Two-space indent for descriptions, counters, hints, and body content. */
 export const BODY_INDENT = "  ";
 export const DEFAULT_TERMINAL_ROWS = 24;
@@ -22,6 +25,14 @@ export interface Viewport {
 
 /** One hint pair; an optional hint is the first to go when the row is too narrow. */
 export type Hint = readonly [key: string, description: string, optional?: boolean];
+
+/** A hint at the right edge of a hint row, shown as `key description: detail`. */
+export interface RightHint {
+	readonly key: string;
+	readonly description: string;
+	/** Current value of what the key changes; the first thing a narrow row drops. */
+	readonly detail: string;
+}
 
 /** Divide terminal rows between content and an overflow indicator. */
 export function calculateViewport(
@@ -159,9 +170,18 @@ export function hintRow(theme: Theme, hints: readonly Hint[]): string {
 /**
  * Hint row fitted to the width: optional hints drop out whole before any
  * required hint is truncated, so a narrow frame keeps its essential keys.
+ * `rightHint` sits at the right edge and gives way first: it loses its detail,
+ * then drops out whole, before any other hint does.
  */
-export function fitHintRow(theme: Theme, hints: readonly Hint[], width: number): string {
+export function fitHintRow(theme: Theme, hints: readonly Hint[], width: number, rightHint?: RightHint): string {
 	const full = hintRow(theme, hints);
+	if (rightHint !== undefined) {
+		const right = [`${rightHint.description}: ${rightHint.detail}`, rightHint.description]
+			.map((description) => hint(theme, rightHint.key, description))
+			.find((candidate) => visibleWidth(full) + RIGHT_HINT_GAP + visibleWidth(candidate) <= width);
+		if (right !== undefined)
+			return spreadLine(full, right, width);
+	}
 	if (visibleWidth(full) <= width)
 		return full;
 

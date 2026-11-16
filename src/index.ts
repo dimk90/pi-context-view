@@ -19,6 +19,7 @@ import {
 	reportCommandMessage,
 	reportCompactionInProgress,
 	reportConfigCreation,
+	reportIconStyleSave,
 	reportUnsupportedPi,
 	reportViewUnavailable,
 	type RequestSnapshotResult,
@@ -125,7 +126,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 		});
 
-		return showUsageView(ctx, {
+		const opened = await showUsageView(ctx, {
 			usage: computeUsage({
 				snapshot: current,
 				messages,
@@ -140,8 +141,14 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			notices: loadedConfig.warnings,
 			categoryColors: loadedConfig.config.categoryColors,
 			mapSize: loadedConfig.config.mapSize,
-			icons: loadedConfig.config.icons,
+			iconStyles: loadedConfig.config.iconStyles,
+			iconStyleName: loadedConfig.config.iconStyleName,
+			onIconStyleChange: (name) => configStore.selectIconStyle(name),
 		});
+		// One write per view, however many styles the user cycled through
+		reportIconStyleSave(ctx, configStore.flush());
+
+		return opened;
 	}
 
 	pi.registerCommand("context", {
@@ -204,6 +211,8 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 	registerCompactionTracking(pi, compaction);
 
 	pi.on("session_shutdown", () => {
+		// A view still open at shutdown never reaches its own save
+		configStore.flush();
 		snapshots.clear();
 	});
 }

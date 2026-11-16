@@ -4,7 +4,8 @@
  * Defaults live in this module; the global
  * `<agent dir>/extensions/pi-context-view.json` carries overrides only. The
  * file is never auto-created and never backfilled with missing defaults, so
- * later default changes still reach users who did not override them. An
+ * later default changes still reach users who did not override them. Saving
+ * an icon style the user picked in a view writes that one override. An
  * absent file or omitted value is silent; unreadable, unparseable, and invalid
  * configuration warns and degrades to defaults instead of failing a view.
  */
@@ -124,7 +125,13 @@ const DEFAULT_ICON_STYLE_GLYPHS = {
 } as const satisfies Record<string, string>;
 
 /** Name of the built-in icon style, also preferred when a configured list still carries it. */
-const DEFAULT_ICON_STYLE_NAME = "Square" satisfies keyof typeof DEFAULT_ICON_STYLE_GLYPHS;
+export const DEFAULT_ICON_STYLE_NAME = "Square" satisfies keyof typeof DEFAULT_ICON_STYLE_GLYPHS;
+
+/** The `iconStyle` entry of an override file with a string value; the group holds everything before the value. */
+const ICON_STYLE_ENTRY_PATTERN = new RegExp(`("${ICON_STYLE_KEY}"\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`);
+
+/** Content a saved override starts from while no file exists. */
+const EMPTY_CONFIG_TEXT = "{}\n";
 
 /** Splits a glyph string into user-perceived characters, so a combined glyph counts once. */
 const GLYPH_SEGMENTER = new Intl.Segmenter();
@@ -184,12 +191,17 @@ export interface IconStyle {
 	readonly compacted: string;
 }
 
+/** Selectable icon styles by name, in the order the Usage view cycles through them. */
+export type IconStyles = ReadonlyMap<string, IconStyle>;
+
 /** All user-configurable state of one runtime. */
 export interface ContextViewConfig {
 	readonly categoryColors: CategoryColors;
 	readonly mapSize: MapSize;
-	/** Glyphs of the selected icon style. */
-	readonly icons: IconStyle;
+	/** Never empty: the pre-defined styles, or the valid ones of a configured list. */
+	readonly iconStyles: IconStyles;
+	/** Name of the selected icon style, always one of `iconStyles`. */
+	readonly iconStyleName: string;
 	/** Whether a view opened before any captured request may start the silent probe. */
 	readonly autoProbing: boolean;
 }
@@ -207,6 +219,11 @@ export type ConfigCreationResult =
 	| { readonly type: "exists"; readonly filePath: string }
 	| { readonly type: "failed"; readonly filePath: string; readonly reason: string };
 
+/** Outcome of saving one override into the override file. */
+export type ConfigSaveResult =
+	| { readonly type: "saved"; readonly filePath: string }
+	| { readonly type: "failed"; readonly filePath: string; readonly reason: string };
+
 /** Built-in colors, used whenever the file omits or misconfigures a category. */
 export const DEFAULT_CATEGORY_COLORS: CategoryColors = new Map(
 	Object.entries(CATEGORY_COLOR_SPECS).map(([categoryId, spec]) => [categoryId, spec.color] as const),
@@ -219,7 +236,7 @@ export const DEFAULT_MAP_SIZE: MapSize = {
 };
 
 /** Pre-defined icon styles by name, used whenever the file omits or misconfigures the list. */
-const DEFAULT_ICON_STYLES: ReadonlyMap<string, IconStyle> = new Map(
+export const DEFAULT_ICON_STYLES: IconStyles = new Map(
 	Object.entries(DEFAULT_ICON_STYLE_GLYPHS).map(([name, glyphs]) => [name, toIconStyle(splitGlyphs(glyphs))]),
 );
 
@@ -232,7 +249,8 @@ export const DEFAULT_ICON_STYLE: IconStyle = toIconStyle(
 export const DEFAULT_CONFIG: ContextViewConfig = {
 	categoryColors: DEFAULT_CATEGORY_COLORS,
 	mapSize: DEFAULT_MAP_SIZE,
-	icons: DEFAULT_ICON_STYLE,
+	iconStyles: DEFAULT_ICON_STYLES,
+	iconStyleName: DEFAULT_ICON_STYLE_NAME,
 	autoProbing: DEFAULT_AUTO_PROBING,
 };
 
@@ -264,6 +282,24 @@ export function createDefaultConfigFile(filePath: string = getConfigFilePath()):
 }
 
 /**
+ * Save the selected icon style as the file's `iconStyle` override, creating a
+ * file that holds only this entry when none exists. The entry is merged over a
+ * fresh read, so every other key and the file's layout survive. An unparseable
+ * file is left untouched and reported as a failure.
+ */
+export function saveIconStyleName(name: string, filePath: string = getConfigFilePath()): ConfigSaveResult {
+	try {
+		const text = setIconStyleEntry(readConfigText(filePath) ?? EMPTY_CONFIG_TEXT, name);
+		mkdirSync(dirname(filePath), { recursive: true });
+		writeFileSync(filePath, text, "utf8");
+
+		return { type: "saved", filePath };
+	} catch (error) {
+		return { type: "failed", filePath, reason: describeError(error) };
+	}
+}
+
+/**
  * Per-runtime configuration cache.
  *
  * The file is read lazily on the first view open, then re-read only after its
@@ -275,6 +311,8 @@ export class ConfigStore {
 	private cachedModifiedTime: number | undefined;
 	private pendingWarnings: readonly string[] = [];
 	private loaded = false;
+	/** Icon style picked in a view and not yet saved. */
+	private pendingIconStyleName: string | undefined;
 
 	/** Create a store over the global override file, or an explicit path in tests. */
 	public constructor(filePath: string = getConfigFilePath()) {
@@ -299,6 +337,27 @@ export class ConfigStore {
 		this.pendingWarnings = [];
 
 		return { config: this.cached, warnings };
+	}
+
+	/**
+	 * Remember the icon style picked in a view. Nothing is written until
+	 * `flush()`, so cycling through several styles costs one write.
+	 */
+	public selectIconStyle(name: string): void {
+		this.pendingIconStyleName = name;
+	}
+
+	/**
+	 * Save the remembered icon style. Returns `undefined` without touching the
+	 * file when no style was picked or the pick is the style already loaded.
+	 */
+	public flush(): ConfigSaveResult | undefined {
+		const name = this.pendingIconStyleName;
+		this.pendingIconStyleName = undefined;
+		if (name === undefined || name === this.cached.iconStyleName)
+			return undefined;
+
+		return saveIconStyleName(name, this.filePath);
 	}
 }
 
@@ -331,6 +390,59 @@ export function resolveCategoryColor(colors: CategoryColors, categoryId: string 
 /** Whether a resolved color is a literal value rather than a theme color key. */
 export function isHexColor(color: CategoryColor): color is HexColor {
 	return color.startsWith("#");
+}
+
+/** Text of the override file, or `undefined` while it does not exist. */
+function readConfigText(filePath: string): string | undefined {
+	try {
+		return readFileSync(filePath, "utf8");
+	} catch (error) {
+		if (hasErrorCode(error, "ENOENT"))
+			return undefined;
+		throw error;
+	}
+}
+
+/**
+ * Override file text with `iconStyle` set to `name`. Edits the text in place
+ * to keep the user's layout, and serializes the whole object again only when
+ * that edit does not produce the intended content. Throws for text that is
+ * not a JSON object.
+ */
+function setIconStyleEntry(text: string, name: string): string {
+	const raw: unknown = JSON.parse(text);
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+		throw new Error(`${CONFIG_FILE_NAME} must contain a JSON object`);
+
+	const updated = { ...raw, [ICON_STYLE_KEY]: name };
+	const edited = ICON_STYLE_KEY in raw ? replaceIconStyleValue(text, name) : appendIconStyleEntry(text, name);
+	if (parsesTo(edited, updated))
+		return edited;
+
+	return `${JSON.stringify(updated, undefined, 2)}\n`;
+}
+
+/** Swap the value of the first `iconStyle` entry, leaving the text unchanged when it holds no string. */
+function replaceIconStyleValue(text: string, name: string): string {
+	return text.replace(ICON_STYLE_ENTRY_PATTERN, (_entry, prefix: string) => `${prefix}${JSON.stringify(name)}`);
+}
+
+/** Add an `iconStyle` entry as the last one of the root object. */
+function appendIconStyleEntry(text: string, name: string): string {
+	const end = text.lastIndexOf("}");
+	const head = text.slice(0, end).trimEnd();
+	const separator = head.endsWith("{") ? "" : ",";
+
+	return `${head}${separator}\n  ${JSON.stringify(ICON_STYLE_KEY)}: ${JSON.stringify(name)}\n${text.slice(end)}`;
+}
+
+/** Whether edited text parses to exactly the expected entries, in the same order. */
+function parsesTo(text: string, expected: object): boolean {
+	try {
+		return JSON.stringify(JSON.parse(text)) === JSON.stringify(expected);
+	} catch {
+		return false;
+	}
 }
 
 /** Serialize every built-in default as an editable override file. */
@@ -393,7 +505,8 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 			categoryColors: config.categoryColors,
 			mapSize: config.mapSize,
 			autoProbing: config.autoProbing,
-			icons: selectIconStyle(config.iconStyles, config.iconStyleName),
+			iconStyles: config.iconStyles,
+			iconStyleName: selectIconStyleName(config.iconStyles, config.iconStyleName),
 		},
 		warnings,
 	};
@@ -405,7 +518,7 @@ interface ConfigDraft {
 	mapSize: Record<MapSizeField, number>;
 	autoProbing: boolean;
 	/** Selectable styles: the pre-defined ones until a valid configured list replaces them. */
-	iconStyles: ReadonlyMap<string, IconStyle>;
+	iconStyles: IconStyles;
 	/** Configured style name, not yet checked against the list. */
 	iconStyleName: string | undefined;
 }
@@ -512,14 +625,18 @@ function toIconStyle(glyphs: readonly string[]): IconStyle {
 }
 
 /**
- * Glyphs of the named style. An omitted or unknown name falls back to the
+ * Name of the style to draw with. An omitted or unknown name falls back to the
  * built-in style, or to the first listed one when the list no longer has it.
  */
-function selectIconStyle(styles: ReadonlyMap<string, IconStyle>, name: string | undefined): IconStyle {
-	const selected = name === undefined ? undefined : styles.get(name);
-	const [first] = styles.values();
+function selectIconStyleName(styles: IconStyles, name: string | undefined): string {
+	if (name !== undefined && styles.has(name))
+		return name;
+	if (styles.has(DEFAULT_ICON_STYLE_NAME))
+		return DEFAULT_ICON_STYLE_NAME;
 
-	return selected ?? styles.get(DEFAULT_ICON_STYLE_NAME) ?? first ?? DEFAULT_ICON_STYLE;
+	const [first] = styles.keys();
+
+	return first ?? DEFAULT_ICON_STYLE_NAME;
 }
 
 /** Whole-file failure: built-in defaults plus one explanatory warning. */
