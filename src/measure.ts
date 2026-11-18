@@ -119,6 +119,7 @@ export function analyzeSystemPrompt(
 	tools: ToolSlice[] = [],
 	additions: PromptAdditionOptions = {},
 ): InjectionItem[] {
+	if (typeof systemPrompt !== "string") systemPrompt = "";
 	const names = new Set<string>();
 	const sections = findPromptSections(systemPrompt).filter((section) => {
 		if (names.has(section.name)) return false;
@@ -480,10 +481,11 @@ interface SectionDraft {
 /** The payload one tool sends with every request: its name, description, and parameter schema. */
 function createDefinitionSection(tool: ToolSlice): SectionDraft {
 	const heading = `${tool.name}: ${tool.description}\n`;
+	const parametersJson = tool.parametersJson ?? "{}";
 	return {
 		label: "Definition",
-		text: `${heading}${tool.parametersJson}`,
-		jsonSpan: { start: heading.length, end: heading.length + tool.parametersJson.length },
+		text: `${heading}${parametersJson}`,
+		jsonSpan: { start: heading.length, end: heading.length + parametersJson.length },
 	};
 }
 

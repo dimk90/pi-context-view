@@ -113,11 +113,11 @@ export class InitialCaptureState {
 	 * it, which separates additions made before this extension loaded from those
 	 * made after it.
 	 */
-	public prepare(options: BuildSystemPromptOptions, promptAtHandler?: string): void {
+	public prepare(options: BuildSystemPromptOptions | undefined, promptAtHandler?: string): void {
 		if (this.initialSnapshot !== undefined) return;
 		this.pendingPreparation = {
 			promptOptions: copyPromptOptions(options),
-			toolSnippets: options.toolSnippets === undefined ? undefined : { ...options.toolSnippets },
+			toolSnippets: options?.toolSnippets === undefined ? undefined : { ...options.toolSnippets },
 			promptAtHandler,
 		};
 	}
@@ -441,15 +441,15 @@ export function mergeRequestOnlyMessages(
 }
 
 /** Copy the prompt-options slice used by measurement, without shared nested references. */
-export function copyPromptOptions(options: BuildSystemPromptOptions): PromptOptionsSlice {
+export function copyPromptOptions(options: BuildSystemPromptOptions | undefined): PromptOptionsSlice {
 	return {
-		cwd: options.cwd,
+		cwd: options?.cwd ?? process.cwd(),
 		homeDir: process.env.HOME,
-		customPrompt: options.customPrompt,
-		appendSystemPrompt: options.appendSystemPrompt,
-		sections: options.sections === undefined ? undefined : { ...options.sections },
-		contextFilePaths: options.contextFiles?.map((file) => file.path),
-		skills: options.skills
+		customPrompt: options?.customPrompt,
+		appendSystemPrompt: options?.appendSystemPrompt,
+		sections: options?.sections === undefined ? undefined : { ...options.sections },
+		contextFilePaths: options?.contextFiles?.map((file) => file.path),
+		skills: options?.skills
 			?.filter((skill) => !skill.disableModelInvocation)
 			.map((skill) => ({
 				name: skill.name,
@@ -470,10 +470,14 @@ export function collectPromptSources(
 	commands: readonly SlashCommandInfo[],
 ): PromptSourceSlice[] {
 	const sources = new Map<string, CollectedPromptSource>();
-	for (const tool of allTools) addPromptSource(sources, tool.sourceInfo, tool.name);
+	for (const tool of allTools) {
+		if (tool.sourceInfo !== undefined) addPromptSource(sources, tool.sourceInfo, tool.name);
+	}
 	// Prompt text refers to a command the way a user types it, so keep its slash.
 	for (const command of commands) {
-		addPromptSource(sources, command.sourceInfo, command.name.startsWith("/") ? command.name : `/${command.name}`);
+		if (command.sourceInfo !== undefined) {
+			addPromptSource(sources, command.sourceInfo, command.name.startsWith("/") ? command.name : `/${command.name}`);
+		}
 	}
 	return [...sources.values()];
 }
@@ -525,7 +529,7 @@ export function captureActiveTools(
 			parametersJson: JSON.stringify(tool.parameters ?? {}),
 			snippet: options.toolSnippets?.[tool.name],
 			guidelines: normalizeGuidelines(tool.promptGuidelines),
-			source: tool.sourceInfo.source,
+			source: tool.sourceInfo?.source ?? "unattributed",
 		}));
 }
 

@@ -21,6 +21,7 @@ import {
 	parsePersistedIdentities,
 	SilentProbeState,
 } from "../src/capture.ts";
+import { analyzeSystemPrompt } from "../src/measure.ts";
 import { buildSnapshot, type InjectionItem } from "../src/model.ts";
 
 /** Minimal custom-role message fixture. */
@@ -132,6 +133,31 @@ test("collectPromptSources rosters the names of extension tools and commands", (
 		["npm:ask", ["/ask"]],
 		["npm:web", ["/web"]],
 	]);
+});
+
+test("copyPromptOptions defaults cwd when options are omitted", () => {
+	const capture = new InitialCaptureState();
+	assert.doesNotThrow(() => capture.prepare(undefined));
+	assert.equal(copyPromptOptions(undefined).cwd, process.cwd());
+});
+
+test("analyzeSystemPrompt tolerates a missing system prompt string", () => {
+	assert.doesNotThrow(() =>
+		analyzeSystemPrompt(undefined as unknown as string, copyPromptOptions(undefined)),
+	);
+});
+
+test("collectPromptSources skips tools and commands without provenance", () => {
+	const tool = {
+		name: "orphan",
+		description: "test",
+		parameters: {},
+	} as ToolInfo;
+	const command = {
+		name: "/orphan",
+		description: "test",
+	} as SlashCommandInfo;
+	assert.deepEqual(collectPromptSources([tool], [command]), []);
 });
 
 test("copyPromptOptions owns decomposition metadata and keeps only visible skills", () => {
