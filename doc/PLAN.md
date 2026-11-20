@@ -16,11 +16,25 @@
   - The hotkey should be aligned to the right.
   - The icon style hotkey should change style in persistent way (save it to the config).
 
-- [ ] Reverse dim/muted colors for hotkey line.
+- [x] Reverse dim/muted colors for hotkey line.
+
+- [ ] **Bump Pi pins to 1.6.0**:
+  - Update the four development pins, run `pnpm install` and `pnpm check`.
+  - `render()` now returns `readonly string[]`. Our views return `string[]`, which still fits. Fix any type errors that appear.
+
+- [ ] **Check payload guard against 1.6.0 adapters**:
+  - OpenAI Completions now sends `system` instead of `developer` to every host except OpenAI. Check test fixtures that expect `developer` for other hosts.
+  - Unstarted tool calls cancelled with Esc now get stored "Operation aborted" results. Keep the `No result provided` synthesis for older sessions and check that tests still pass.
+  - `read` no longer stores the "model does not support images" note in the tool result. Check tests that expect the note.
+
+- [ ] **Check reasoning-token accounting**:
+  - OpenAI Completions now also reads `usage.reasoning_tokens`, and Copilot reports reasoning tokens. Check that `reportedReasoningTokens()` handles the new values. Update `doc/THINKING.md` if needed.
 
 - [ ] Move "Window/Used" % to back to hotkey bar:
   - to reduce visual noise.
   - use underline for the current mode.
+
+- [ ] Increase right and left padding for views content.
 
 - [ ] Fix more than 100% context windows:
   - Discuss what to do.

@@ -207,8 +207,8 @@ test("UsageView renders the 16x16 map and matching category legend with semantic
 	assert.ok(lines[descriptionIndex]?.includes(theme.getFgAnsi("dim")));
 	for (const key of ["↑↓/jk", "Enter", "Z", "Esc"])
 		assert.ok(plain[hintsIndex]?.includes(key));
-	assert.ok(lines[hintsIndex]?.includes(theme.fg("dim", "Esc")));
-	assert.ok(lines[hintsIndex]?.includes(theme.getFgAnsi("muted")));
+	assert.ok(lines[hintsIndex]?.includes(theme.fg("muted", "Esc")));
+	assert.ok(lines[hintsIndex]?.includes(theme.getFgAnsi("dim")));
 
 	// The first category row starts selected: fixed-column accent cursor and accent label/values
 	const selectedRow = lines.find((line) => stripSgr(line).includes("→ "));

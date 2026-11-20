@@ -188,7 +188,7 @@ export function fitHintRow(theme: Theme, hints: readonly Hint[], width: number, 
 	return fitLine(hintRow(theme, hints.filter(([, , optional]) => optional !== true)), width);
 }
 
-/** Pi-style hint: dim key, slightly brighter (muted) description. */
+/** Hint: slightly brighter (muted) key, dim description. */
 function hint(theme: Theme, key: string, description: string): string {
-	return theme.fg("dim", key) + theme.fg("muted", ` ${description}`);
+	return theme.fg("muted", key) + theme.fg("dim", ` ${description}`);
 }

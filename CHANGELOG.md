@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.9.0] - Unreleased
 
 ### New
 * `[usage]` Add `iconStyle` and `iconStyles` to pick or define the usage map glyphs.
@@ -8,6 +8,7 @@
 
 ### Changed
 * `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.
+* `[views]` Swap hotkey bar colors: brighter keys, dimmer descriptions.
 
 
 ## [0.8.4] - 10.11.2026
