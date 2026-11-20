@@ -9,6 +9,7 @@
 ### Changed
 * `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.
 * `[views]` Swap hotkey bar colors: brighter keys, dimmer descriptions.
+* `[views]` Pad view content on both sides, aligning descriptions and hints with titles.
 
 
 ## [0.8.4] - 10.11.2026

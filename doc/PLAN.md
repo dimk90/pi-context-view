@@ -22,6 +22,8 @@
   - Update the four development pins, run `pnpm install` and `pnpm check`.
   - `render()` now returns `readonly string[]`. Our views return `string[]`, which still fits. Fix any type errors that appear.
 
+- [x] Increase right and left padding for views content.
+
 - [ ] **Check payload guard against 1.6.0 adapters**:
   - OpenAI Completions now sends `system` instead of `developer` to every host except OpenAI. Check test fixtures that expect `developer` for other hosts.
   - Unstarted tool calls cancelled with Esc now get stored "Operation aborted" results. Keep the `No result provided` synthesis for older sessions and check that tests still pass.
@@ -33,8 +35,6 @@
 - [ ] Move "Window/Used" % to back to hotkey bar:
   - to reduce visual noise.
   - use underline for the current mode.
-
-- [ ] Increase right and left padding for views content.
 
 - [ ] Fix more than 100% context windows:
   - Discuss what to do.

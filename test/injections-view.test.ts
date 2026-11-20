@@ -1212,7 +1212,7 @@ test("InjectionsView shows token diffs in right-aligned columns and marks reques
 	const selected = lines.find((line) => stripSgr(line).startsWith("→ pi")) ?? "";
 	assert.ok(selected.includes(theme.fg("toolDiffAdded", "+2")), "the selected row keeps the diff colors");
 	assert.ok(!plain.some((line) => /Added|Modified|Deleted/.test(line)), "rows name no change marker");
-	assert.ok(!plain.some((line) => line.startsWith("  - ")), "the status bar, not a legend, explains the rows");
+	assert.ok(!plain.some((line) => line.startsWith("- ")), "the status bar, not a legend, explains the rows");
 });
 
 test("InjectionsView drops the diff columns whole at narrow widths and keeps markers after them", () => {
@@ -1232,7 +1232,7 @@ test("InjectionsView drops the diff columns whole at narrow widths and keeps mar
 	assert.match(forced, / 7 {2}\+5 {2}-12 · Forced$/);
 	assert.match(wide.find((line) => line.includes("moved part")) ?? "", / 3 {10}· Moved · Request-Only$/,
 		"blank diff columns keep markers aligned, in legend order");
-	assert.ok(!wide.some((line) => line.startsWith("  - ")), "the list has no marker legend");
+	assert.ok(!wide.some((line) => line.startsWith("- ")), "the list has no marker legend");
 
 	for (const width of [24, 40]) {
 		const narrow = view.render(width).map(stripSgr);
@@ -1263,7 +1263,7 @@ test("InjectionsView explains a forced System Prompt in its status bar and previ
 	const plain = lines.map(stripSgr);
 	assert.match(plain.find((line) => line.includes("System Prompt")) ?? "", /7 · Forced$/);
 	assert.ok(lines.some((line) => line.includes(theme.fg("warning", "Forced"))));
-	assert.ok(!plain.some((line) => line.startsWith("  - ")), "the list has no marker legend");
+	assert.ok(!plain.some((line) => line.startsWith("- ")), "the list has no marker legend");
 
 	const legend = markerLegendLines(theme, ["forced"], 100);
 
@@ -1295,7 +1295,7 @@ test("InjectionsView previews counted and zero-token reference parts with respon
 	assert.equal(plain[request + 1]?.trim(), "request version");
 	assert.equal(plain[session + 1]?.trim(), "session original");
 
-	const bullets = plain.filter((line) => line.startsWith("  - ")).map((line) => line.slice(4));
+	const bullets = plain.filter((line) => line.startsWith("- ")).map((line) => line.slice(2));
 	assert.ok(containsBlock(plain, markerLegendLines(createTheme(), ["diff", "request-only"], 100, "session")));
 	assert.equal(bullets.length, 2);
 	assert.ok(!plain.some((line) => /Added|Modified|Deleted/.test(line)), "Request-Only replaces the change markers");
@@ -1567,7 +1567,7 @@ test("InjectionsView counts one hidden tool in the singular and none without a h
 		const snapshot = { ...guardedSnapshot(), hiddenTools };
 		const view = new InjectionsView(createTheme(), { snapshot }, () => {}, () => 60);
 
-		return view.render(200).map(stripSgr).filter((line) => line.startsWith("  - ")).map((line) => line.slice(4));
+		return view.render(200).map(stripSgr).filter((line) => line.startsWith("- ")).map((line) => line.slice(2));
 	};
 	const single = frameText(noteLines("hidden-tools", 200, { hiddenTools: ["bash"] })).replace(/^- /, "");
 	assert.ok(containsBlock(bullets(["bash"]), [single]));
@@ -2361,7 +2361,7 @@ test("InjectionsView search stays within the width and drops the filter hint bef
 	const view = new InjectionsView(createTheme(), { snapshot: searchSnapshot() }, () => {}, () => 30);
 	const narrow = plainFrame(view, 50);
 	const hints = narrow.find((line) => line.includes("Navigate"));
-	assert.equal(hints, "  ↑↓/jk Navigate · Enter Preview · Esc Close");
+	assert.equal(hints, "↑↓/jk Navigate · Enter Preview · Esc Close");
 
 	view.handleInput("/");
 	view.handleInput("\t");

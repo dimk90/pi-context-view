@@ -14,9 +14,9 @@ import { fitLine } from "./layout.ts";
 import { formatDiffAdded, formatDiffRemoved, guessMarker, markerStatusField } from "./markers.ts";
 
 /** Indent of each field, two columns deeper than the description, so the bar reads apart from it. */
-const FIELD_INDENT = "    ";
+const FIELD_INDENT = "  ";
 /** Indent of a field's wrapped continuation lines. */
-const CONTINUATION_INDENT = "      ";
+const CONTINUATION_INDENT = "    ";
 
 /** Where a row's changes live, after the diff in its Change field. */
 const SCOPE_PHRASES: Record<ChangeScope, string> = {

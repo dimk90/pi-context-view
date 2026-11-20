@@ -349,6 +349,11 @@ export class InjectionsView {
 		this.copy.dispose();
 	}
 
+	/** Top border for the full overlay width, carrying the current copy notice. */
+	public topBorder(width: number): string {
+		return this.copy.topBorder(this.theme, width);
+	}
+
 	// === List filter ===
 
 	/**

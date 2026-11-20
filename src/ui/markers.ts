@@ -8,7 +8,7 @@ import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { ForcedEdit, RequestChange, TokenDiff } from "../model.ts";
-import { BODY_INDENT, fitLine } from "./layout.ts";
+import { fitLine } from "./layout.ts";
 
 /** Dim separator introducing a state marker after the estimate it explains. */
 const MARKER_SEPARATOR = " · ";
@@ -51,9 +51,9 @@ const DIFF_EXPLANATIONS: Record<DiffBase | "list", string> = {
 	"captured-request": " Tokens added or removed, compared with the captured request.",
 };
 
-/** Bullet marker and hanging indent of a legend entry, both two columns wide. */
+/** Bullet marker and hanging indent of a legend entry, both two columns wide and aligned with the title. */
 const BULLET_MARKER = "- ";
-const BULLET_INDENT = `${BODY_INDENT}  `;
+const BULLET_INDENT = "  ";
 
 /** A legend sentence: dim text, with runs that name a colored mark shown in that mark's color. */
 type LegendText = string | ReadonlyArray<string | { readonly text: string; readonly color: ThemeColor }>;
@@ -276,7 +276,7 @@ function bulletLines(theme: Theme, keyword: string, explanation: LegendText, wid
 	const sentence = runs.map((run) => typeof run === "string" ? theme.fg("dim", run) : theme.fg(run.color, run.text));
 	const text = `${keyword}${sentence.join("")}`;
 	const wrapped = wrapTextWithAnsi(text, Math.max(1, width - BULLET_INDENT.length));
-	const lead = `${BODY_INDENT}${theme.fg("dim", BULLET_MARKER)}`;
+	const lead = theme.fg("dim", BULLET_MARKER);
 
 	return wrapped.map((line, index) => fitLine(`${index === 0 ? lead : BULLET_INDENT}${line}`, width));
 }

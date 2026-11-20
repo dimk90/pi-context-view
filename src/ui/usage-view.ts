@@ -405,6 +405,11 @@ export class UsageView {
 		this.copy.dispose();
 	}
 
+	/** Top border for the full overlay width, carrying the current copy notice. */
+	public topBorder(width: number): string {
+		return this.copy.topBorder(this.theme, width);
+	}
+
 	/** Render the dashboard, a multi-entry block stream, or one entry's full content. */
 	private renderActiveMode(width: number, terminalRows: number): string[] {
 		const row = this.previewRow;
@@ -645,9 +650,9 @@ export class UsageView {
 			const start = row * map.columns;
 			const cells = map.cells.slice(start, start + map.columns);
 
-			return `${BODY_INDENT}${cells.map((cell) => this.mapCell(cell)).join(separator)}`;
+			return cells.map((cell) => this.mapCell(cell)).join(separator);
 		});
-		const mapWidth = BODY_INDENT.length + map.columns + (spaced ? map.columns - 1 : 0);
+		const mapWidth = map.columns + (spaced ? map.columns - 1 : 0);
 		const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
 		const detailWidth = Math.max(1, width - mapWidth - gap);
 		const details = this.detailLines(detailWidth, rows, map);
@@ -991,7 +996,7 @@ export class UsageView {
 
 	/** One sanitized notice wrapped to the available width, indented on every line. */
 	private wrapNotice(notice: string, width: number): string[] {
-		return wrapDescriptionLines(this.theme, normalizeInlineText(notice), "warning", width);
+		return wrapDescriptionLines(this.theme, normalizeInlineText(notice), "warning", width, BODY_INDENT);
 	}
 
 	// === Preview mode ===
@@ -1632,7 +1637,7 @@ function maxMapColumns(width: number): number {
 	const spaced = width >= SPACED_MAP_MIN_WIDTH;
 	const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
 	// Spaced cells cost two columns each, except the last one, which has no trailing space
-	const available = width - BODY_INDENT.length - gap - MIN_DETAIL_WIDTH + (spaced ? 1 : 0);
+	const available = width - gap - MIN_DETAIL_WIDTH + (spaced ? 1 : 0);
 
 	return Math.max(0, Math.floor(available / (spaced ? 2 : 1)));
 }

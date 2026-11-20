@@ -140,7 +140,7 @@ test("UsageView renders the 16x16 map and matching category legend with semantic
 	assert.ok(lines[2]?.includes(theme.fg("accent", theme.bold("Context Usage"))));
 	assert.ok(lines[2]?.includes(theme.getFgAnsi("muted") + "claude-opus-4-8"));
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
-	assert.match(plain[4] ?? "", /^  [■◧▦⛶]( [■◧▦⛶]){15}\s+Category:\s+Window %$/);
+	assert.match(plain[4] ?? "", /^[■◧▦⛶]( [■◧▦⛶]){15}\s+Category:\s+Window %$/);
 	// The key trails the more important legend, separated by one empty detail row
 	const mapKeyIndex = plain.findIndex((line) => line.includes("Map:"));
 	assert.ok(mapKeyIndex > plain.findIndex((line) => line.includes("Free Space")));
@@ -154,7 +154,7 @@ test("UsageView renders the 16x16 map and matching category legend with semantic
 	assert.doesNotMatch(plain[mapKeyIndex] ?? "", /Compacted|Free/);
 	// The block size stays muted at Window scale; only the Fit toggle highlights it
 	assert.ok(lines[mapKeyIndex + 3]?.includes(theme.fg("muted", "3.9k (0.4%)")));
-	assert.equal(plain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){15}/.test(line)).length, 16);
+	assert.equal(plain.filter((line) => /^[■◧▦⛶]( [■◧▦⛶]){15}/.test(line)).length, 16);
 	assert.ok(plain.some((line) => /■ System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
 	assert.ok(plain.some((line) => /■ Tool Output \.{2,}\s+5k\s+0\.5%/.test(line)));
 	assert.ok(plain.some((line) => /⛶ Free Space \.{2,}\s+956\.2k\s+96%/.test(line)));
@@ -226,14 +226,14 @@ test("UsageView renders a configured map size and clamps it to the viewport", ()
 	const view = createView(createTheme(), { usage: usage(), mapSize }, () => {}, () => 60);
 	const plain = view.render(100).map(stripSgr);
 
-	assert.equal(plain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){19}/.test(line)).length, 24);
+	assert.equal(plain.filter((line) => /^[■◧▦⛶]( [■◧▦⛶]){19}/.test(line)).length, 24);
 	// Block Size follows the configured geometry: 1M over 480 cells
 	assert.ok(plain.some((line) => line.endsWith("⛶ - Block Size: 2.1k (0.2%)")));
 
 	// A short terminal rebuilds the map with fewer rows instead of cropping its tail
 	const short = createView(createTheme(), { usage: usage(), mapSize }, () => {}, () => 20);
 	const shortPlain = short.render(100).map(stripSgr);
-	assert.equal(shortPlain.filter((line) => /^  [■◧▦⛶]( [■◧▦⛶]){19}/.test(line)).length, 12);
+	assert.equal(shortPlain.filter((line) => /^[■◧▦⛶]( [■◧▦⛶]){19}/.test(line)).length, 12);
 
 	// A narrow terminal drops columns, leaving the legend its minimum width
 	const wide = createView(
@@ -243,7 +243,7 @@ test("UsageView renders a configured map size and clamps it to the viewport", ()
 		() => 40,
 	);
 	const widePlain = wide.render(60).map(stripSgr);
-	const mapLines = widePlain.filter((line) => /^  [■◧▦⛶]{24}\s/.test(line));
+	const mapLines = widePlain.filter((line) => /^[■◧▦⛶]{26}\s/.test(line));
 	assert.equal(mapLines.length, 10);
 	assert.ok(
 		widePlain.some((line) => /→ ■ System Prompt \.* 3\.7k\s+0\.4%$/.test(line)),
@@ -259,8 +259,8 @@ test("UsageView draws the map, legend, and map key with the configured icon styl
 		.render(80)
 		.map(stripSgr);
 
-	const mapCells = plain.filter((line) => /^  [BFPOC]( [BFPOC]){15}/.test(line))
-		.flatMap((line) => line.slice(2, 33).split(" "));
+	const mapCells = plain.filter((line) => /^[BFPOC]( [BFPOC]){15}/.test(line))
+		.flatMap((line) => line.slice(0, 31).split(" "));
 	assert.equal(mapCells.length, 256);
 	for (const glyph of [icons.buffer, icons.free, icons.full])
 		assert.ok(mapCells.includes(glyph), glyph);
@@ -299,7 +299,7 @@ test("UsageView applies configured colors to category, buffer, and free-space ma
 	assert.ok(lines[bufferLine]?.includes(theme.fg("warning", "⛝")));
 	assert.ok(lines[freeLine]?.includes(theme.fg("error", "⛶")));
 
-	const mapLines = lines.filter((line) => /^  [■◧▦⛝⛶]/.test(stripSgr(line)));
+	const mapLines = lines.filter((line) => /^[■◧▦⛝⛶]/.test(stripSgr(line)));
 	assert.ok(mapLines.some((line) => line.includes(theme.fg("success", "■"))));
 	assert.ok(mapLines.some((line) => ["■", "◧"].some((marker) => line.includes(colorize(theme, "#80ff01", marker)))));
 	assert.ok(mapLines.some((line) => line.includes(theme.fg("warning", "⛝"))));
@@ -333,7 +333,7 @@ test("UsageView renders sanitized notices above the dashboard and caps the block
 	assert.ok(lines[4]?.includes(createTheme().getFgAnsi("warning")));
 	assert.doesNotMatch(lines[5] ?? "", /\u001b\[31m/);
 	assert.ok(!plain.some((line) => line.includes("skillsColor")));
-	assert.ok(plain.some((line) => /^  [■◧▦⛶]( [■◧▦⛶]){15}/.test(line)));
+	assert.ok(plain.some((line) => /^[■◧▦⛶]( [■◧▦⛶]){15}/.test(line)));
 });
 
 test("UsageView explains disabled probing in its description, not as a notice", () => {
@@ -428,8 +428,8 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	const view = createView(createTheme(), { usage: zoomUsage }, () => {}, () => 34);
 	const windowFrame = view.render(80);
 	const windowPlain = windowFrame.map(stripSgr);
-	const windowMap = windowPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
-	const windowCells = windowMap.flatMap((line) => line.slice(2, 2 + 16 * 2 - 1).split(" "));
+	const windowMap = windowPlain.filter((line) => /^[■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
+	const windowCells = windowMap.flatMap((line) => line.slice(0, 16 * 2 - 1).split(" "));
 
 	assert.ok(!windowPlain.some((line) => line.includes("Zoom 1M")));
 	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · P % · Esc Close")));
@@ -438,8 +438,8 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	view.handleInput("z");
 	const fitFrame = view.render(80);
 	const fitPlain = fitFrame.map(stripSgr);
-	const fitMap = fitPlain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
-	const fitCells = fitMap.flatMap((line) => line.slice(2, 2 + 16 * 2 - 1).split(" "));
+	const fitMap = fitPlain.filter((line) => /^[■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
+	const fitCells = fitMap.flatMap((line) => line.slice(0, 16 * 2 - 1).split(" "));
 
 	assert.notDeepEqual(fitFrame, windowFrame, "the scale toggle invalidates the same-width render cache");
 	assert.match(
@@ -609,8 +609,8 @@ test("UsageView shows a non-selectable Auto-Compact Buffer row before Free Space
 	assert.match(plain[bufferIndex - 1] ?? "", /Compacted Data/);
 
 	// The map's tail cells use the buffer glyph after the free cells
-	const mapRows = plain.filter((line) => /^  [■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
-	const mapCells = mapRows.flatMap((line) => line.slice(2, 2 + 16 * 2 - 1).split(" "));
+	const mapRows = plain.filter((line) => /^[■◧▦⛝⛶]( [■◧▦⛝⛶]){15}/.test(line));
+	const mapCells = mapRows.flatMap((line) => line.slice(0, 16 * 2 - 1).split(" "));
 	assert.equal(mapCells.length, 256);
 
 	const lastBuffer = mapCells.lastIndexOf("⛝");
@@ -1857,7 +1857,7 @@ test("UsageView respects width and height changes", () => {
 	}
 
 	const compactMap = view.render(60).map(stripSgr);
-	assert.ok(compactMap.some((line) => /^  [■◧▦⛶]{16}\s+Category:\s+Window %$/.test(line)));
+	assert.ok(compactMap.some((line) => /^[■◧▦⛶]{16}\s+Category:\s+Window %$/.test(line)));
 	assert.ok(compactMap.some((line) => /\s+Map:$/.test(line)));
 	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size: 3.9k (0.4%)")));
 	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
