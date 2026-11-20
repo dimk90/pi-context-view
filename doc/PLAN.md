@@ -18,7 +18,7 @@
 
 - [x] Reverse dim/muted colors for hotkey line.
 
-- [ ] **Bump Pi pins to 1.6.0**:
+- [x] **Bump Pi pins to 1.6.0**:
   - Update the four development pins, run `pnpm install` and `pnpm check`.
   - `render()` now returns `readonly string[]`. Our views return `string[]`, which still fits. Fix any type errors that appear.
 

@@ -87,7 +87,7 @@ interface Runtime {
 	 */
 	settled(options?: { readonly payloadChanges?: boolean }): Promise<RequestSnapshot[]>;
 	/** The last opened view's first frame at 120 columns and 60 rows, unstyled. */
-	renderView(): Promise<string[]>;
+	renderView(): Promise<readonly string[]>;
 }
 
 suite("structured capture calibration", { concurrency: true }, () => {
