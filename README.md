@@ -64,7 +64,7 @@ pi install npm:pi-context-view
 
 ## Customization
 
-Currently, you can customize only the colors and dimensions of the `Context Usage` map.
+You can customize the colors, dimensions and icon style of the `Context Usage` map.
 
 To get started, create a configuration file populated with the current defaults:
 
