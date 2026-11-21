@@ -23,7 +23,7 @@ if [[ $# -ne 0 ]]; then
 fi
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.6.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.7.1) && wait "$!" || exit 1
 
 
 ## Constants

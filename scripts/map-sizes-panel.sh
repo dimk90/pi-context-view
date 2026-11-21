@@ -23,7 +23,7 @@ readonly _MAP_SIZES_COLS=('' 8 22)
 # Match the palette composite and agg's asciinema theme
 readonly _MAP_SIZES_BACKGROUND='#121314'
 readonly _MAP_SIZES_FOREGROUND='#cccccc'
-readonly _MAP_SIZES_CAPTION_FONT='Iosevka-Term-Medium-Extended'
+readonly _MAP_SIZES_CAPTION_FAMILY='Iosevka Term'
 readonly _MAP_SIZES_CAPTION_SIZE=48
 readonly _MAP_SIZES_GAP=24
 
@@ -87,8 +87,8 @@ _map_sizes_check_dependencies() {
     }
 
     # Consume the full list so pipefail does not turn grep's early exit into failure
-    magick -list font | grep "Font: $_MAP_SIZES_CAPTION_FONT\$" >/dev/null || {
-        printf 'map-sizes: font %s is not available to ImageMagick\n' "$_MAP_SIZES_CAPTION_FONT" >&2
+    magick -list font | grep "family: $_MAP_SIZES_CAPTION_FAMILY\$" >/dev/null || {
+        printf 'map-sizes: font family %s is not available to ImageMagick\n' "$_MAP_SIZES_CAPTION_FAMILY" >&2
         return 1
     }
 
@@ -151,7 +151,7 @@ _map_sizes_composite() {
             '('
             -background "$_MAP_SIZES_BACKGROUND"
             -fill "$_MAP_SIZES_FOREGROUND"
-            -font "$_MAP_SIZES_CAPTION_FONT"
+            -family "$_MAP_SIZES_CAPTION_FAMILY"
             -pointsize "$_MAP_SIZES_CAPTION_SIZE"
             "$_MAP_SIZES_PANEL_DIR/$size.gif[0]"
             "label:$caption"
