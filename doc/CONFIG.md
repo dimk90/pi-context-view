@@ -31,7 +31,7 @@ The config file created with `/context config` will contain:
 
   "iconStyle": "Square",
   "iconStyles": {
-    "CC": "⛝⛶⛀⛁⛃",
+    "CC": "⛝⛶⛂⛃⛃",
     "Nerd": "󰅗⛶󰆼",
     "Circle": "⮾·◕●♼",
     "Square": "⛝⛶◧■▦"

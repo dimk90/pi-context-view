@@ -117,7 +117,7 @@ const ICON_ROLES = ["buffer", "free", "partial", "full", "compacted"] as const;
 
 /** Pre-defined icon styles as written to a created override file, one glyph per role. */
 const DEFAULT_ICON_STYLE_GLYPHS = {
-	CC: "⛝⛶⛀⛁⛃",
+	CC: "⛝⛶⛂⛃⛃",
 	// Nerd Font private-use glyphs, escaped because they render blank without such a font
 	Nerd: "\u{f0157}⛶\u{ede8}\u{f01bc}\u{eb29}",
 	Circle: "⮾·◕●♼",

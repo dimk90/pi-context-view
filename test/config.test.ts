@@ -71,7 +71,7 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 		["mapRows", 16],
 		["iconStyle", "Square"],
 		["iconStyles", {
-			CC: "⛝⛶⛀⛁⛃",
+			CC: "⛝⛶⛂⛃⛃",
 			Nerd: "\u{f0157}⛶\u{ede8}\u{f01bc}\u{eb29}",
 			Circle: "⮾·◕●♼",
 			Square: "⛝⛶◧■▦",
