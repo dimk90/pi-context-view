@@ -92,6 +92,11 @@ Anthropic empty system messages with `output_config`, the latter with
 `forceAdaptiveThinking`. A thinking-level change between prompts keeps the
 guard complete and both diffs empty.
 
+`payload` and `payload-runtime` cover both Completions instruction roles:
+`system`, Pi's default since 1.6.0, and `developer` with
+`compat.supportsDeveloperRole` on a reasoning model. Either role keeps the
+guard complete.
+
 ### Prompt source rows
 
 `system-prompt-rows`, `injections`, and `injections-view` test the diff-only

@@ -281,6 +281,31 @@ for (const { api, compat, effortOf } of EFFORT_CASES) {
 	});
 }
 
+// Since Pi 1.6.0, Completions sends `developer` only where compat enables it, by default only to OpenAI's own API
+for (const supportsDeveloperRole of [false, true]) {
+	const role = supportsDeveloperRole ? "developer" : "system";
+	test(`openai-completions: ${role} instruction messages are not payload changes`, async (t) => {
+		const runtime = await createRuntime(t, {
+			api: "openai-completions", thinking: true,
+			compat: { supportsDeveloperRole, supportsMidConvoSystemMessages: true },
+		});
+		await runtime.session.prompt("first prompt");
+		seedHistory(runtime.session, runtime.session.model);
+		await runtime.session.prompt("second prompt");
+
+		const roles = payloadMessages("openai-completions", runtime.provider.requests.at(-1)?.body)
+			.map((message) => message.role)
+			.filter((messageRole) => messageRole === "system" || messageRole === "developer");
+		assert.ok(roles.length > 1, "the prompt and a later instruction message");
+		assert.ok(roles.every((messageRole) => messageRole === role));
+
+		const snapshots = await runtime.snapshots();
+		assert.equal(snapshots.length, 2);
+		for (const snapshot of snapshots)
+			assert.deepEqual(findings(snapshot), []);
+	});
+}
+
 for (const oauth of [false, true]) {
 	test(`Anthropic native inline additions/removals/redefinitions${oauth ? " with OAuth casing" : ""}`, async (t) => {
 		const runtime = await createRuntime(t, {

@@ -24,7 +24,7 @@
 
 - [x] Increase right and left padding for views content.
 
-- [ ] **Check payload guard against 1.6.0 adapters**:
+- [x] **Check payload guard against 1.6.0 adapters**:
   - OpenAI Completions now sends `system` instead of `developer` to every host except OpenAI. Check test fixtures that expect `developer` for other hosts.
   - Unstarted tool calls cancelled with Esc now get stored "Operation aborted" results. Keep the `No result provided` synthesis for older sessions and check that tests still pass.
   - `read` no longer stores the "model does not support images" note in the tool result. Check tests that expect the note.

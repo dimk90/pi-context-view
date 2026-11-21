@@ -183,7 +183,10 @@ description lines.
 ### Message Channel
 
 `src/capture/payload.ts` extracts ordered text units: system, user, assistant,
-tool call, and tool result. Text blocks merge within one message part, not
+tool call, and tool result. Completions `system` and `developer` messages are
+both system units. Since Pi 1.6.0, Pi sends `developer` only to reasoning
+models with `compat.supportsDeveloperRole`, by default only OpenAI's own API,
+and `system` to every other host. Text blocks merge within one message part, not
 across message boundaries. Tool calls keep their name and canonical JSON
 arguments, or raw grammar input. Tool IDs, unsent metadata, images, reasoning
 blocks, OpenAI Responses `configuration_update` items, and inline declaration
