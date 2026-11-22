@@ -349,29 +349,29 @@ test("UsageView explains disabled probing in its description, not as a notice", 
 	assert.deepEqual(plain.slice(0, 6), plainView.slice(0, 6), "no notice rows above the dashboard");
 });
 
-test("UsageView switches legend percentages from window to current used context", () => {
-	// The reported total differs from the 43.8k category sum, so Used must divide by the estimate
-	const usedUsage = { ...usage(50_000), autoCompactReserveTokens: 16_384 };
-	const view = createView(createTheme(), { usage: usedUsage }, () => {}, () => 80);
+test("UsageView switches legend percentages from window to current context content", () => {
+	// The reported total differs from the 43.8k category sum, so Content must divide by the estimate
+	const contentUsage = { ...usage(50_000), autoCompactReserveTokens: 16_384 };
+	const view = createView(createTheme(), { usage: contentUsage }, () => {}, () => 80);
 	const windowPlain = view.render(100).map(stripSgr);
 	assert.ok(windowPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
 	assert.ok(windowPlain.some((line) => /Category:\s+Window %$/.test(line)));
 	assert.ok(windowPlain.some((line) => line.includes("P %")));
 
 	view.handleInput("p");
-	const usedPlain = view.render(100).map(stripSgr);
-	// Category shares norm to the estimated used total, so the categories add up to about 100%
-	assert.ok(usedPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+8\.4%/.test(line)));
-	assert.ok(usedPlain.some((line) => /Tool Output \.{2,}\s+5k\s+11%/.test(line)));
+	const contentPlain = view.render(100).map(stripSgr);
+	// Category shares norm to the estimated content total, so the categories add up to about 100%
+	assert.ok(contentPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+8\.4%/.test(line)));
+	assert.ok(contentPlain.some((line) => /Tool Output \.{2,}\s+5k\s+11%/.test(line)));
 	// Capacity rows keep their window tokens but hide percentages, keeping one scale per column
-	assert.ok(usedPlain.some((line) => /Auto-Compact Buffer \.{2,}\s+16\.4k/.test(line)));
-	assert.ok(usedPlain.some((line) => /Free Space \.{2,}\s+939\.8k/.test(line)));
-	assert.ok(!usedPlain.some((line) => /Auto-Compact Buffer|Free Space/.test(line) && line.includes("%")));
-	assert.ok(usedPlain.some((line) => /Category:\s+Used %$/.test(line)));
-	assert.ok(usedPlain.some((line) => line.includes("P %")));
+	assert.ok(contentPlain.some((line) => /Auto-Compact Buffer \.{2,}\s+16\.4k/.test(line)));
+	assert.ok(contentPlain.some((line) => /Free Space \.{2,}\s+939\.8k/.test(line)));
+	assert.ok(!contentPlain.some((line) => /Auto-Compact Buffer|Free Space/.test(line) && line.includes("%")));
+	assert.ok(contentPlain.some((line) => /Category:\s+Content %$/.test(line)));
+	assert.ok(contentPlain.some((line) => line.includes("P %")));
 
 	// The scale label is centered over the percentage column, not pushed to the frame edge
-	for (const [plain, label] of [[windowPlain, "Window %"], [usedPlain, "Used %"]] as const) {
+	for (const [plain, label] of [[windowPlain, "Window %"], [contentPlain, "Content %"]] as const) {
 		const labelStart = plain.find((line) => line.includes("Category:"))?.indexOf(label) ?? -1;
 		const percentRows = plain.map((line) => line.trimEnd()).filter((line) => /\.{2,}.*\s\S+%$/.test(line));
 		const percentStart = Math.min(...percentRows.map((line) => line.lastIndexOf(" ") + 1));
@@ -405,7 +405,7 @@ test("UsageView keeps the percentage binding when its optional hint drops out", 
 	assert.ok(narrow.some((line) => /Category:\s+Window %$/.test(line)));
 
 	view.handleInput("p");
-	assert.ok(view.render(40).map(stripSgr).some((line) => /Category:\s+Used %$/.test(line)));
+	assert.ok(view.render(40).map(stripSgr).some((line) => /Category:\s+Content %$/.test(line)));
 });
 
 test("UsageView hides the percentage hint and binding without any denominator", () => {

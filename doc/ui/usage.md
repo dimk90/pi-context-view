@@ -74,8 +74,8 @@ both views. Keep estimates and percentages aligned. Category colors identify
 markers and map cells, not selected labels or values.
 
 Legend percentages share one scale, named in the Category header right above
-the percentage column: Window or Used. Window gives each row's share of the context window.
-Used norms category shares to the estimated used total, so the categories read
+the percentage column: Window or Content. Window gives each row's share of the context window.
+Content norms category shares to the estimated content total, so the categories read
 as parts of one whole; capacity rows hide their percentages there, since a
 window-relative share inside the same column would read as more than a whole.
 The `p` toggle is local to the open view and starts at Window. The header label

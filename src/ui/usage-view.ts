@@ -132,7 +132,7 @@ export interface UsageViewInput {
 /** View-local denominator selected for the context map. */
 type UsageMapScale = "window" | "fit";
 /** View-local denominator selected for legend and preview-header percentages. */
-type PercentageScale = "window" | "used";
+type PercentageScale = "window" | "content";
 
 /** A selectable category row; Tool Output children sit at depth 1 under their root. */
 interface CategoryLegendRow {
@@ -506,11 +506,11 @@ export class UsageView {
 		this.clearCache();
 	}
 
-	/** Toggle the view-local percentage denominator between the window and the used total. */
+	/** Toggle the view-local percentage denominator between the window and the content total. */
 	private togglePercentageScale(): void {
 		if (!this.canTogglePercentageScale())
 			return;
-		this.percentageScale = this.percentageScale === "window" ? "used" : "window";
+		this.percentageScale = this.percentageScale === "window" ? "content" : "window";
 		this.clearCache();
 	}
 
@@ -915,8 +915,8 @@ export class UsageView {
 
 	/** Percentage text used by the independently aligned rightmost column. */
 	private plainLegendPercent(row: LegendRow, tokens: number): string {
-		if (this.percentageScale === "used") {
-			// Used mode norms category shares to the estimated used total, so the
+		if (this.percentageScale === "content") {
+			// Content mode norms category shares to the estimated content total, so the
 			// categories add up to about 100%. Capacity shares stay window-relative
 			// and would read as a second scale inside one column, so they are
 			// hidden here and reappear with the next Window toggle.
@@ -949,8 +949,8 @@ export class UsageView {
 
 	/** Label naming the active percentage scale, undefined without a denominator. */
 	private percentageColumnLabel(): string | undefined {
-		if (this.percentageScale === "used") {
-			return this.usage.estimatedTokens > 0 ? "Used %" : undefined;
+		if (this.percentageScale === "content") {
+			return this.usage.estimatedTokens > 0 ? "Content %" : undefined;
 		}
 
 		const contextWindow = this.usage.reported?.contextWindow;
