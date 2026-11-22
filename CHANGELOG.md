@@ -11,6 +11,9 @@
 * `[views]` Swap hotkey bar colors: brighter keys, dimmer descriptions.
 * `[views]` Pad view content on both sides, aligning descriptions and hints with titles.
 
+### Fixed
+* `[usage]` Count only visible thinking for OpenAI Completions, which never replays the rest.
+
 
 ## [0.8.4] - 10.11.2026
 

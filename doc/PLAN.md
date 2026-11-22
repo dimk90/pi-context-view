@@ -29,8 +29,10 @@
   - Unstarted tool calls cancelled with Esc now get stored "Operation aborted" results. Keep the `No result provided` synthesis for older sessions and check that tests still pass.
   - `read` no longer stores the "model does not support images" note in the tool result. Check tests that expect the note.
 
-- [ ] **Check reasoning-token accounting**:
+- [x] **Check reasoning-token accounting**:
   - OpenAI Completions now also reads `usage.reasoning_tokens`, and Copilot reports reasoning tokens. Check that `reportedReasoningTokens()` handles the new values. Update `doc/THINKING.md` if needed.
+
+- [ ] `/config` should write missing defaults to existing config file.
 
 - [ ] Move "Window/Used" % to back to hotkey bar:
   - to reduce visual noise.

@@ -58,6 +58,27 @@ visible thinking block.
 For messages with multiple visible thinking blocks, chars/4 rounding is pooled
 across the message and then allocated back to the individual preview entries.
 
+## OpenAI Completions counts visible thinking only
+
+For `openai-completions` messages, the estimator ignores both
+`usage.reasoning` and signatures, so `countedTokens = visibleTokens` and no
+invisible-reasoning annotation is shown. Checked against Pi 1.6.0:
+
+- Pi replays only the visible thinking text, in the field that
+  `thinkingSignature` names (`reasoning_content`, `reasoning`, or
+  `reasoning_text`). Hidden reasoning is never sent back.
+- `usage.reasoning` comes from `completion_tokens_details.reasoning_tokens`
+  or top-level `reasoning_tokens`. It counts the reasoning the model
+  generated, not its later context cost. Since Pi 1.6.0, GitHub Copilot Gemini
+  and Kimi models report it, often well above the visible summary.
+- Pi sets the field to `0` when the provider reports nothing, so it never
+  signals an absent count.
+- `thinkingSignature` usually holds a field name, not an envelope, so its
+  length is not a reasoning proxy.
+
+OpenRouter `reasoning_details` replay can carry encrypted reasoning, but its
+cost is unmeasured, so it is not estimated either.
+
 Since Pi 1.3.0, a request drops the thinking blocks of assistant messages from
 another provider, API, or model, and their tool calls' `thoughtSignature`.
 The estimator skips such messages entirely: no counted tokens, no signature
@@ -134,7 +155,9 @@ chars/4 over the visible summary misses the true cost by −9 to +219 tokens,
 because a short summary can front an arbitrarily long encoded reasoning trace.
 
 Prefer `usage.reasoning`; fall back to the signature proxy only when it is
-absent, and present the fallback as approximate.
+absent, and present the fallback as approximate. These measurements cover
+Anthropic only. OpenAI Completions does not replay hidden reasoning, see
+[above](#openai-completions-counts-visible-thinking-only).
 
 ## Preview presentation
 

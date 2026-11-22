@@ -573,6 +573,39 @@ test("computeUsage represents encoded-only reasoning without retaining its signa
 	}]);
 });
 
+test("computeUsage counts only visible thinking for OpenAI Completions messages", () => {
+	const base = assistantMessage();
+	assert.equal(base.role, "assistant");
+
+	const completions = { ...base, api: "openai-completions", provider: "github-copilot" } as const;
+	const messages: ContextEvent["messages"] = [
+		{
+			...completions,
+			timestamp: 10,
+			content: [{ type: "thinking", thinking: "abcdefgh", thinkingSignature: "reasoning_text" }],
+			usage: { ...base.usage, reasoning: 40 },
+		},
+		{
+			...completions,
+			timestamp: 20,
+			content: [{
+				type: "toolCall", id: "call", name: "read", arguments: { path: "x" },
+				thoughtSignature: "opaque-reasoning-payload",
+			}],
+			usage: { ...base.usage, reasoning: 0 },
+		},
+	];
+
+	const usage = computeUsage({ snapshot: snapshot(), messages, nextRequestModel: {
+		provider: "github-copilot", api: "openai-completions", id: "test",
+	} });
+	const thinking = category(usage.categories, "assistant-thinking");
+
+	// Hidden reasoning is never replayed, and the signature only names the replay field
+	assert.equal(thinking.tokens, 2);
+	assert.deepEqual(thinking.entries, [{ timestamp: 10, breadcrumb: ["assistant"], tokens: 2, text: "abcdefgh" }]);
+});
+
 test("computeUsage counts only the next request model's thinking", () => {
 	const base = assistantMessage();
 	assert.equal(base.role, "assistant");

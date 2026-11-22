@@ -306,13 +306,18 @@ type AssistantContextMessage = Extract<ContextEvent["messages"][number], { role:
 /**
  * Build thinking previews while accounting once per assistant message. Provider-reported
  * reasoning replaces a smaller visible-text estimate; signature-only estimates stay approximate metadata.
+ * OpenAI Completions messages count visible thinking only, because only that text is replayed.
  */
 function thinkingEntries(message: AssistantContextMessage): UsagePreviewEntry[] {
 	const texts = message.content.flatMap((block) => (block.type === "thinking" ? [block.thinking] : []));
 	const visibleTokens = textTokens(texts.reduce((sum, text) => sum + text.length, 0));
-	const reportedTokens = reportedReasoningTokens(message);
+
+	// Completions never replays hidden reasoning, so its usage.reasoning is generation cost,
+	// and its thinkingSignature usually names the replay field instead of holding an envelope
+	const visibleOnly = message.api === "openai-completions";
+	const reportedTokens = visibleOnly ? undefined : reportedReasoningTokens(message);
 	const countedTokens = Math.max(visibleTokens, reportedTokens ?? 0);
-	const signatureChars = message.content.reduce((sum, block) => {
+	const signatureChars = visibleOnly ? 0 : message.content.reduce((sum, block) => {
 		if (block.type === "thinking")
 			return sum + stringLength(block.thinkingSignature);
 		if (block.type === "toolCall")
