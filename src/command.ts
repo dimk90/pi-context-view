@@ -5,7 +5,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
-import type { ConfigCreationResult, ConfigSaveResult } from "./config.ts";
+import type { ConfigDefaultsResult, ConfigSaveResult } from "./config.ts";
 import { MIN_PI_VERSION } from "./pi-version.ts";
 import type { ProbeTrigger } from "./probe/trigger.ts";
 import type { RequestSnapshot, SnapshotReader } from "./snapshot.ts";
@@ -24,7 +24,7 @@ const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
 	{ value: "injections", label: "injections", description: "Explore the latest request's injections" },
-	{ value: "config", label: "config", description: "Create config file populated with defaults" },
+	{ value: "config", label: "config", description: "Create config file or add missing defaults" },
 ] satisfies AutocompleteItem[];
 
 /** The focused view a `/context` invocation requests. */
@@ -138,26 +138,32 @@ export function reportCompactionInProgress(context: ExtensionCommandContext, vie
 /** Refuse any `/context` form on a Pi version whose lifecycle this extension does not capture. */
 export function reportUnsupportedPi(context: ExtensionCommandContext, version: string): void {
 	reportCommandMessage(context,
-		`/context requires Pi ${MIN_PI_VERSION} or newer; this is Pi ${version}. Nothing was captured.`,
+		`/context requires Pi ${MIN_PI_VERSION} or newer. This is Pi ${version}. Nothing was captured.`,
 		"error",
 	);
 }
 
-/** Report the outcome of the explicit create-only configuration command. */
-export function reportConfigCreation(context: ExtensionCommandContext, result: ConfigCreationResult): void {
+/** Report the outcome of the explicit command that writes the configuration defaults. */
+export function reportConfigDefaults(context: ExtensionCommandContext, result: ConfigDefaultsResult): void {
 	switch (result.type) {
 		case "created":
 			reportCommandMessage(context, `Created default configuration: ${result.filePath}`, "info");
 			break;
-		case "exists":
+		case "completed":
 			reportCommandMessage(context,
-				`Configuration already exists; left unchanged: ${result.filePath}`,
-				"warning",
+				`Configuration already exists. Added missing defaults: ${result.filePath}`,
+				"info",
+			);
+			break;
+		case "unchanged":
+			reportCommandMessage(context,
+				`Configuration already has every setting. Left unchanged: ${result.filePath}`,
+				"info",
 			);
 			break;
 		case "failed":
 			reportCommandMessage(context,
-				`Cannot create configuration at ${result.filePath}: ${result.reason}`,
+				`Cannot write default configuration to ${result.filePath}: ${result.reason}`,
 				"error",
 			);
 			break;

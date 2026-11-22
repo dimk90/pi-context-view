@@ -3,9 +3,11 @@
  *
  * Defaults live in this module; the global
  * `<agent dir>/extensions/pi-context-view.json` carries overrides only. The
- * file is never auto-created and never backfilled with missing defaults, so
- * later default changes still reach users who did not override them. Saving
- * an icon style the user picked in a view writes that one override. An
+ * file is never auto-created and never backfilled automatically, so later
+ * default changes still reach users who did not override them. Only the
+ * explicit `/context config` writes defaults: it creates the file or adds the
+ * missing keys. Saving an icon style the user picked in a view writes that one
+ * override. An
  * absent file or omitted value is silent; unreadable, unparseable, and invalid
  * configuration warns and degrades to defaults instead of failing a view.
  */
@@ -213,10 +215,17 @@ export interface ConfigLoadResult {
 	readonly warnings: readonly string[];
 }
 
-/** Outcome of explicitly creating the defaults-populated override file. */
-export type ConfigCreationResult =
+/**
+ * Outcome of explicitly writing the built-in defaults:
+ *   created     no file existed, so one holding every default was created
+ *   completed   the existing file gained the keys it was missing
+ *   unchanged   the existing file already had every key
+ *   failed      nothing was written
+ */
+export type ConfigDefaultsResult =
 	| { readonly type: "created"; readonly filePath: string }
-	| { readonly type: "exists"; readonly filePath: string }
+	| { readonly type: "completed"; readonly filePath: string }
+	| { readonly type: "unchanged"; readonly filePath: string }
 	| { readonly type: "failed"; readonly filePath: string; readonly reason: string };
 
 /** Outcome of saving one override into the override file. */
@@ -260,11 +269,13 @@ export function getConfigFilePath(): string {
 }
 
 /**
- * Create the global override file populated with every built-in default. The
- * single `O_EXCL` write is atomic and never overwrites or modifies an existing
- * path, so a concurrent creator loses the race instead of the file's content.
+ * Write every built-in default the global override file lacks. Without a
+ * file, a single atomic `O_EXCL` write creates it with every default, so a
+ * concurrent creator loses the race instead of the file's content. An existing
+ * file only gains its missing keys: present values stay as they are, even
+ * invalid ones, and a renamed key's old name counts as present.
  */
-export function createDefaultConfigFile(filePath: string = getConfigFilePath()): ConfigCreationResult {
+export function writeConfigDefaults(filePath: string = getConfigFilePath()): ConfigDefaultsResult {
 	try {
 		// Separate from the write below: mkdir also reports EEXIST, for a parent that is a file
 		mkdirSync(dirname(filePath), { recursive: true });
@@ -275,10 +286,11 @@ export function createDefaultConfigFile(filePath: string = getConfigFilePath()):
 		writeFileSync(filePath, serializeDefaultConfig(), { encoding: "utf8", flag: "wx" });
 		return { type: "created", filePath };
 	} catch (error) {
-		if (hasErrorCode(error, "EEXIST"))
-			return { type: "exists", filePath };
-		return { type: "failed", filePath, reason: describeError(error) };
+		if (!hasErrorCode(error, "EEXIST"))
+			return { type: "failed", filePath, reason: describeError(error) };
 	}
+
+	return addMissingDefaults(filePath);
 }
 
 /**
@@ -392,6 +404,39 @@ export function isHexColor(color: CategoryColor): color is HexColor {
 	return color.startsWith("#");
 }
 
+/**
+ * Append the built-in defaults an existing file lacks, keeping its layout. An
+ * unparseable file is left untouched and reported as a failure.
+ */
+function addMissingDefaults(filePath: string): ConfigDefaultsResult {
+	try {
+		const text = readConfigText(filePath);
+		if (text === undefined)
+			throw new Error("the file was removed while it was being updated");
+
+		const raw = parseConfigObject(text);
+		const missing = listMissingDefaults(raw);
+		if (missing.length === 0)
+			return { type: "unchanged", filePath };
+
+		writeFileSync(filePath, appendEntries(text, raw, missing), "utf8");
+
+		return { type: "completed", filePath };
+	} catch (error) {
+		return { type: "failed", filePath, reason: describeError(error) };
+	}
+}
+
+/**
+ * Default entries whose key the file lacks, in the order a created file lists
+ * them. An old name of a renamed key counts as its current name, so the added
+ * default never overrides the value the alias already sets.
+ */
+function listMissingDefaults(raw: object): ConfigEntry[] {
+	const present = new Set(Object.keys(raw).map((key) => RENAMED_CONFIG_KEYS.get(key) ?? key));
+	return listDefaultEntryGroups().flat().filter(([key]) => !present.has(key));
+}
+
 /** Text of the override file, or `undefined` while it does not exist. */
 function readConfigText(filePath: string): string | undefined {
 	try {
@@ -403,37 +448,55 @@ function readConfigText(filePath: string): string | undefined {
 	}
 }
 
-/**
- * Override file text with `iconStyle` set to `name`. Edits the text in place
- * to keep the user's layout, and serializes the whole object again only when
- * that edit does not produce the intended content. Throws for text that is
- * not a JSON object.
- */
-function setIconStyleEntry(text: string, name: string): string {
+/** One key and value of the override file. */
+type ConfigEntry = readonly [string, unknown];
+
+/** Parse override file text, throwing for text that is not a JSON object. */
+function parseConfigObject(text: string): object {
 	const raw: unknown = JSON.parse(text);
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw))
 		throw new Error(`${CONFIG_FILE_NAME} must contain a JSON object`);
 
-	const updated = { ...raw, [ICON_STYLE_KEY]: name };
-	const edited = ICON_STYLE_KEY in raw ? replaceIconStyleValue(text, name) : appendIconStyleEntry(text, name);
-	if (parsesTo(edited, updated))
+	return raw;
+}
+
+/**
+ * Override file text with `iconStyle` set to `name`. Edits the text in place
+ * to keep the user's layout. Throws for text that is not a JSON object.
+ */
+function setIconStyleEntry(text: string, name: string): string {
+	const raw = parseConfigObject(text);
+	if (!(ICON_STYLE_KEY in raw))
+		return appendEntries(text, raw, [[ICON_STYLE_KEY, name]]);
+
+	return keepEditOrSerialize(replaceIconStyleValue(text, name), { ...raw, [ICON_STYLE_KEY]: name });
+}
+
+/** Add entries after the last one of the root object, keeping the layout before them. */
+function appendEntries(text: string, raw: object, entries: readonly ConfigEntry[]): string {
+	const end = text.lastIndexOf("}");
+	const head = text.slice(0, end).trimEnd();
+	const separator = head.endsWith("{") ? "" : ",";
+	const body = entries.map(serializeConfigEntry).join(",\n");
+	const edited = `${head}${separator}\n${body}\n${text.slice(end)}`;
+
+	return keepEditOrSerialize(edited, { ...raw, ...Object.fromEntries(entries) });
+}
+
+/**
+ * The in-place edit when it produces exactly the intended content, otherwise
+ * the whole object serialized again, which loses the user's layout.
+ */
+function keepEditOrSerialize(edited: string, expected: object): string {
+	if (parsesTo(edited, expected))
 		return edited;
 
-	return `${JSON.stringify(updated, undefined, 2)}\n`;
+	return `${JSON.stringify(expected, undefined, 2)}\n`;
 }
 
 /** Swap the value of the first `iconStyle` entry, leaving the text unchanged when it holds no string. */
 function replaceIconStyleValue(text: string, name: string): string {
 	return text.replace(ICON_STYLE_ENTRY_PATTERN, (_entry, prefix: string) => `${prefix}${JSON.stringify(name)}`);
-}
-
-/** Add an `iconStyle` entry as the last one of the root object. */
-function appendIconStyleEntry(text: string, name: string): string {
-	const end = text.lastIndexOf("}");
-	const head = text.slice(0, end).trimEnd();
-	const separator = head.endsWith("{") ? "" : ",";
-
-	return `${head}${separator}\n  ${JSON.stringify(ICON_STYLE_KEY)}: ${JSON.stringify(name)}\n${text.slice(end)}`;
 }
 
 /** Whether edited text parses to exactly the expected entries, in the same order. */
@@ -445,27 +508,29 @@ function parsesTo(text: string, expected: object): boolean {
 	}
 }
 
-/** Serialize every built-in default as an editable override file. */
-function serializeDefaultConfig(): string {
-	const groups: Array<ReadonlyArray<readonly [string, unknown]>> = [
+/** Every built-in default as file entries, in related groups and legend order. */
+function listDefaultEntryGroups(): ConfigEntry[][] {
+	return [
 		Object.values(CATEGORY_COLOR_SPECS).map((spec) => [spec.key, spec.color]),
 		Object.values(MAP_SIZE_SPECS).map((spec) => [spec.key, spec.cells]),
 		[[ICON_STYLE_KEY, DEFAULT_ICON_STYLE_NAME], [ICON_STYLES_KEY, DEFAULT_ICON_STYLE_GLYPHS]],
 		[[AUTO_PROBING_KEY, DEFAULT_AUTO_PROBING]],
 	];
+}
+
+/** Serialize every built-in default as an editable override file. */
+function serializeDefaultConfig(): string {
 	// Written by hand: JSON.stringify cannot leave the blank lines that separate the groups
-	const body = groups
-		.map((entries) => entries
-			.map(([key, value]) => `  ${JSON.stringify(key)}: ${serializeConfigValue(value)}`)
-			.join(",\n"))
+	const body = listDefaultEntryGroups()
+		.map((entries) => entries.map(serializeConfigEntry).join(",\n"))
 		.join(",\n\n");
 
 	return `{\n${body}\n}\n`;
 }
 
-/** One value of the override file; an object spreads over indented lines, one entry each. */
-function serializeConfigValue(value: unknown): string {
-	return JSON.stringify(value, undefined, 2).replaceAll("\n", "\n  ");
+/** One indented entry of the override file; an object value spreads over indented lines, one entry each. */
+function serializeConfigEntry([key, value]: ConfigEntry): string {
+	return `  ${JSON.stringify(key)}: ${JSON.stringify(value, undefined, 2).replaceAll("\n", "\n  ")}`;
 }
 
 /** Merge valid overrides onto the built-in defaults, reporting every ignored entry. */
@@ -496,8 +561,8 @@ function applyOverrides(raw: unknown): ConfigLoadResult {
 	// Resolved after the loop, so the selection never depends on the order of the two icon keys
 	if (config.iconStyleName !== undefined && !config.iconStyles.has(config.iconStyleName)) {
 		const names = [...config.iconStyles.keys()].map((name) => `"${name}"`).join(", ");
-		warnings.push(`Ignoring unknown icon style "${config.iconStyleName}" for "${ICON_STYLE_KEY}"; ` +
-			`expected one of: ${names}.`);
+		warnings.push(`Ignoring unknown icon style "${config.iconStyleName}" for "${ICON_STYLE_KEY}". ` +
+			`Expected one of: ${names}.`);
 	}
 
 	return {
@@ -538,7 +603,7 @@ function applyOverride(
 	if (categoryId !== undefined) {
 		const color = parseColor(value);
 		if (color === undefined) {
-			return `Ignoring invalid color for "${configuredKey}"; expected a theme color name or a hex value.`;
+			return `Ignoring invalid color for "${configuredKey}". Expected a theme color name or a hex value.`;
 		}
 		config.categoryColors.set(categoryId, color);
 		return undefined;
@@ -548,21 +613,21 @@ function applyOverride(
 	if (field !== undefined) {
 		const cells = parseMapDimension(value);
 		if (cells === undefined) {
-			return `Ignoring invalid size for "${configuredKey}"; ` +
-				`expected an integer between ${MINIMUM_MAP_CELLS} and ${MAXIMUM_MAP_CELLS}.`;
+			return `Ignoring invalid size for "${configuredKey}". ` +
+				`Expected an integer between ${MINIMUM_MAP_CELLS} and ${MAXIMUM_MAP_CELLS}.`;
 		}
 		config.mapSize[field] = cells;
 		return undefined;
 	}
 	if (resolvedKey === AUTO_PROBING_KEY) {
 		if (typeof value !== "boolean")
-			return `Ignoring invalid value for "${configuredKey}"; expected true or false.`;
+			return `Ignoring invalid value for "${configuredKey}". Expected true or false.`;
 		config.autoProbing = value;
 		return undefined;
 	}
 	if (resolvedKey === ICON_STYLE_KEY) {
 		if (typeof value !== "string")
-			return `Ignoring invalid value for "${configuredKey}"; expected an icon style name.`;
+			return `Ignoring invalid value for "${configuredKey}". Expected an icon style name.`;
 		config.iconStyleName = value;
 		return undefined;
 	}
@@ -578,9 +643,9 @@ function applyOverride(
  * styles, so the map always has glyphs to draw.
  */
 function applyIconStyles(configuredKey: string, value: unknown, config: ConfigDraft): string | undefined {
-	const expectation = `expected ${ICON_ROLES.length} glyphs, each one cell wide`;
+	const expectation = `Expected ${ICON_ROLES.length} glyphs, each one cell wide`;
 	if (typeof value !== "object" || value === null || Array.isArray(value))
-		return `Ignoring invalid value for "${configuredKey}"; expected an object of named icon styles.`;
+		return `Ignoring invalid value for "${configuredKey}". Expected an object of named icon styles.`;
 
 	const styles = new Map<string, IconStyle>();
 	const invalidNames: string[] = [];
@@ -592,13 +657,13 @@ function applyIconStyles(configuredKey: string, value: unknown, config: ConfigDr
 			styles.set(name, style);
 	}
 	if (styles.size === 0)
-		return `Ignoring "${configuredKey}" without a valid icon style; ${expectation}.`;
+		return `Ignoring "${configuredKey}" without a valid icon style. ${expectation}.`;
 
 	config.iconStyles = styles;
 	if (invalidNames.length === 0)
 		return undefined;
 
-	return `Ignoring invalid icon style ${invalidNames.join(", ")} in "${configuredKey}"; ${expectation}.`;
+	return `Ignoring invalid icon style ${invalidNames.join(", ")} in "${configuredKey}". ${expectation}.`;
 }
 
 /** Accept only a string of one glyph per map role, each one cell wide so the map grid stays aligned. */

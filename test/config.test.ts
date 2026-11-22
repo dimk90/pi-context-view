@@ -15,7 +15,7 @@ import { test, type TestContext } from "node:test";
 import {
 	AUTO_COMPACT_BUFFER_CATEGORY_ID,
 	ConfigStore,
-	createDefaultConfigFile,
+	writeConfigDefaults,
 	DEFAULT_CONFIG,
 	type ContextViewConfig,
 	DEFAULT_ICON_STYLE,
@@ -39,10 +39,10 @@ function createConfigPath(context: TestContext): string {
 	return join(directory, "pi-context-view.json");
 }
 
-test("createDefaultConfigFile atomically creates every built-in default", (context) => {
+test("writeConfigDefaults atomically creates every built-in default", (context) => {
 	const filePath = join(dirname(createConfigPath(context)), "extensions", "pi-context-view.json");
 
-	assert.deepEqual(createDefaultConfigFile(filePath), { type: "created", filePath });
+	assert.deepEqual(writeConfigDefaults(filePath), { type: "created", filePath });
 	const text = readFileSync(filePath, "utf8");
 	assert.ok(text.endsWith("\n"));
 
@@ -87,30 +87,78 @@ test("createDefaultConfigFile atomically creates every built-in default", (conte
 	assert.deepEqual(selectedIcons(loaded.config), DEFAULT_ICON_STYLE);
 	assert.equal(loaded.config.autoProbing, true);
 
-	// Repeating the command hits the write's EEXIST, the only branch that may report "exists"
-	assert.deepEqual(createDefaultConfigFile(filePath), { type: "exists", filePath });
+	// Repeating the command finds every key present and leaves the file byte for byte
+	assert.deepEqual(writeConfigDefaults(filePath), { type: "unchanged", filePath });
 	assert.equal(readFileSync(filePath, "utf8"), text);
 });
 
-test("createDefaultConfigFile reports an unusable path instead of claiming the file exists", (context) => {
+test("writeConfigDefaults reports an unusable path instead of updating a file", (context) => {
 	const blockingFile = createConfigPath(context);
 	writeFileSync(blockingFile, "not a directory");
 
 	const filePath = join(blockingFile, "pi-context-view.json");
 
-	// mkdir reports EEXIST for a parent that is a file; only the write may mean "exists"
-	const result = createDefaultConfigFile(filePath);
+	// mkdir reports EEXIST for a parent that is a file; only the write may mean the file exists
+	const result = writeConfigDefaults(filePath);
 	assert.equal(result.type, "failed");
 	assert.equal(result.filePath, filePath);
 });
 
-test("createDefaultConfigFile refuses to overwrite an existing file", (context) => {
+test("writeConfigDefaults adds only the missing keys to an existing file", (context) => {
 	const filePath = createConfigPath(context);
-	const existing = '{"futureSetting":true}\n';
+	// An invalid value, an old key name, and an unknown key must all survive as written
+	const existing = '{\n\t"mapCols": 99,\n\n\t"memoryColor": "accent",\n\t"futureSetting": true\n}\n';
 	writeFileSync(filePath, existing);
 
-	assert.deepEqual(createDefaultConfigFile(filePath), { type: "exists", filePath });
-	assert.equal(readFileSync(filePath, "utf8"), existing);
+	assert.deepEqual(writeConfigDefaults(filePath), { type: "completed", filePath });
+	const text = readFileSync(filePath, "utf8");
+	assert.ok(text.startsWith(existing.slice(0, existing.lastIndexOf("\n}"))), "the layout is kept");
+
+	const created = createConfigPath(context);
+	writeConfigDefaults(created);
+	const expectedAdded = Object.entries(JSON.parse(readFileSync(created, "utf8")))
+		.filter(([key]) => key !== "mapCols" && key !== "instructionFilesColor");
+	assert.deepEqual(Object.entries(JSON.parse(text)), [
+		["mapCols", 99],
+		["memoryColor", "accent"],
+		["futureSetting", true],
+		...expectedAdded,
+	]);
+	assert.equal(loadConfigFile(filePath).config.categoryColors.get("context-files"), "accent");
+
+	assert.deepEqual(writeConfigDefaults(filePath), { type: "unchanged", filePath });
+	assert.equal(readFileSync(filePath, "utf8"), text);
+});
+
+test("writeConfigDefaults fills an empty object and a file holding only a saved style", (context) => {
+	const filePath = createConfigPath(context);
+
+	writeFileSync(filePath, "{}\n");
+	assert.equal(writeConfigDefaults(filePath).type, "completed");
+	const filled = loadConfigFile(filePath);
+	assert.deepEqual(filled.warnings, []);
+	assert.deepEqual(filled.config.categoryColors, DEFAULT_CONFIG.categoryColors);
+
+	// The `i` key creates a file holding only `iconStyle`; the command then completes it
+	unlinkSync(filePath);
+	assert.equal(saveIconStyleName("Circle", filePath).type, "saved");
+	assert.equal(writeConfigDefaults(filePath).type, "completed");
+	const completed = loadConfigFile(filePath);
+	assert.deepEqual(completed.warnings, []);
+	assert.equal(completed.config.iconStyleName, "Circle");
+	assert.equal(Object.keys(JSON.parse(readFileSync(filePath, "utf8")))[0], "iconStyle");
+});
+
+test("writeConfigDefaults leaves a file it cannot parse untouched", (context) => {
+	const filePath = createConfigPath(context);
+
+	for (const text of ["{ not json", "[]", ""]) {
+		writeFileSync(filePath, text);
+		const result = writeConfigDefaults(filePath);
+
+		assert.equal(result.type, "failed", text);
+		assert.equal(readFileSync(filePath, "utf8"), text);
+	}
 });
 
 test("ConfigStore picks up a file created after its first load", (context) => {
@@ -118,7 +166,7 @@ test("ConfigStore picks up a file created after its first load", (context) => {
 	const store = new ConfigStore(filePath);
 	assert.equal(store.load().config, DEFAULT_CONFIG);
 
-	assert.equal(createDefaultConfigFile(filePath).type, "created");
+	assert.equal(writeConfigDefaults(filePath).type, "created");
 
 	const created = store.load();
 	assert.deepEqual(created.warnings, []);
@@ -258,7 +306,7 @@ test("loadConfigFile keeps the default for an unusable map size and warns once",
 
 		assert.deepEqual(result.config.mapSize, { columns: DEFAULT_CONFIG.mapSize.columns, rows: 12 }, reason);
 		assert.deepEqual(result.warnings, [
-			'Ignoring invalid size for "mapCols"; expected an integer between 4 and 64.',
+			'Ignoring invalid size for "mapCols". Expected an integer between 4 and 64.',
 		], reason);
 	}
 });
@@ -430,7 +478,7 @@ test("saveIconStyleName creates a file holding only the selected style", (contex
 
 test("saveIconStyleName changes only the style in an existing file", (context) => {
 	const filePath = createConfigPath(context);
-	assert.equal(createDefaultConfigFile(filePath).type, "created");
+	assert.equal(writeConfigDefaults(filePath).type, "created");
 	const created = readFileSync(filePath, "utf8");
 
 	assert.equal(saveIconStyleName("CC", filePath).type, "saved");

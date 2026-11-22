@@ -25,7 +25,7 @@ export function probeFailure(cause: ProbeFailureCause, detail = ""): ProbeFailur
 		timeout: "Silent probe timed out.",
 		"no-run": "Silent probe run did not start in time.",
 		"foreign-run": "Another agent run started before the silent probe was recognized.",
-		"nested-send": "Another extension sent a user message during the silent probe; neither run was stopped, " +
+		"nested-send": "Another extension sent a user message during the silent probe. Neither run was stopped, " +
 			"so the empty probe prompt may reach the model.",
 		shutdown: "Session ended before the silent probe completed.",
 		startup: detail,

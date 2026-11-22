@@ -582,7 +582,7 @@ test("InjectionsView preserves the request origin as its header reflows", () => 
 test("InjectionsView keeps every rendered line within the width", () => {
 	for (const width of [24, 40, 60, 80, 120]) {
 		const view = createView(8,
-			"Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.");
+			"Ignoring invalid color for \"skillsColor\". Expected a theme color name or a hex value.");
 		const listLines = view.render(width);
 		for (const line of listLines) {
 			assert.ok(visibleWidth(line) <= width, `line exceeds width ${width}: ${JSON.stringify(line)}`);
@@ -598,7 +598,7 @@ test("InjectionsView keeps every rendered line within the width", () => {
 
 test("InjectionsView reflows on height-only resize and bounds very short output", () => {
 	let terminalRows = 30;
-	const notice = "Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.";
+	const notice = "Ignoring invalid color for \"skillsColor\". Expected a theme color name or a hex value.";
 	const view = createView(30, notice, () => terminalRows);
 
 	const tall = view.render(40);

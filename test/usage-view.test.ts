@@ -314,7 +314,7 @@ test("UsageView renders sanitized notices above the dashboard and caps the block
 			notices: [
 				"Ignoring unknown pi-context-view.json key \"mapSize\".",
 				"Ignoring unknown pi-context-view.json key \u001b[31m\"evil\"\u001b[0m.",
-				"Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.",
+				"Ignoring invalid color for \"skillsColor\". Expected a theme color name or a hex value.",
 				"Ignoring unknown pi-context-view.json key \"mapColor\".",
 			],
 		},
@@ -1847,7 +1847,7 @@ test("UsageView hides model metadata instead of abbreviating it", () => {
 test("UsageView respects width and height changes", () => {
 	// Tall enough for the detailed map key to survive beside the complete legend at width 60
 	let rows = 36;
-	const notice = "Ignoring invalid color for \"skillsColor\"; expected a theme color name or a hex value.";
+	const notice = "Ignoring invalid color for \"skillsColor\". Expected a theme color name or a hex value.";
 	const view = createView(createTheme(), { usage: usage(), notices: [notice] }, () => {}, () => rows);
 
 	for (const width of [24, 40, 60, 80, 120]) {

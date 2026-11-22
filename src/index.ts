@@ -11,14 +11,14 @@
  */
 import { type ExtensionAPI, type ExtensionCommandContext, VERSION } from "@earendil-works/pi-coding-agent";
 
-import { type ConfigLoadResult, ConfigStore, createDefaultConfigFile } from "./config.ts";
+import { type ConfigLoadResult, ConfigStore, writeConfigDefaults } from "./config.ts";
 import {
 	CONTEXT_COMMAND_DESCRIPTION,
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
 	reportCompactionInProgress,
-	reportConfigCreation,
+	reportConfigDefaults,
 	reportIconStyleSave,
 	reportUnsupportedPi,
 	reportViewUnavailable,
@@ -166,9 +166,9 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportCommandMessage(ctx, command.message, "error");
 				return;
 			}
-			// Creating the file needs no UI, so it stays available in every run mode
+			// Writing the defaults needs no UI, so it stays available in every run mode
 			if (command.type === "config") {
-				reportConfigCreation(ctx, createDefaultConfigFile());
+				reportConfigDefaults(ctx, writeConfigDefaults());
 				return;
 			}
 			// Pi's mode says nothing about hosts that render custom components outside

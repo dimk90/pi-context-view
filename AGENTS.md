@@ -4,7 +4,7 @@ TypeScript pi extension (`src/index.ts`) with two overlay views and one utility 
 
 - `/context` or `/context usage` — estimate current context composition.
 - `/context injections` — inspect the latest request's injections with opt-in raw previews.
-- `/context config` — explicitly create the defaults-populated global config file.
+- `/context config` — explicitly create the defaults-populated global config file, or add its missing defaults.
 
 The command accepts only `usage`, `injections`, and `config`; keep both views unavailable without a UI or where the host never calls the `ctx.ui.custom()` factory, and `config` available in every run mode.
 
@@ -24,7 +24,7 @@ The command accepts only `usage`, `injections`, and `config`; keep both views un
 - **Privacy gate.** Keep captured raw content process-local and sanitized; expose it only on explicit user action (Enter preview, `c` copy), never automatically through logs, notifications, session files, or later requests.
 - **Module boundaries.** Keep `src/index.ts` to wiring: create the layers, call their `register*()` functions in the required order, and register the command. Put independently testable state, measurement, and rendering behavior in focused modules under `src/`, `src/capture/`, `src/probe/`, and `src/ui/`.
 - **Command contract.** Keep parsing, completions, registration text, README usage, and command tests synchronized whenever the `/context` grammar or mode guard changes.
-- **Config contract.** Keep user-configurable state override-only: defaults in code, no auto-created or default-backfilled config file, invalid entries degrading to defaults, writes only on explicit user action. `doc/architecture/privacy.md` holds the full load and write contract.
+- **Config contract.** Keep user-configurable state override-only: defaults in code, no auto-created or automatically backfilled config file, invalid entries degrading to defaults, writes only on explicit user action. `doc/architecture/privacy.md` holds the full load and write contract.
 - **UI contract.** Treat `doc/UI.md` and `doc/ui/` as canonical design rules. Update the owning page when design decisions, interaction contracts, or displayed meanings change; copy, spacing, and layout tuning alone need no doc update. Keep focused regression tests current.
 - **Changelog entries.** Keep the text of each `CHANGELOG.md` bullet, after its `[scope]` tag, to about 80 characters.
 - **Dependency contract.** Keep all four Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) as `"*"` peer dependencies and exact development pins matching `pi --version`; run `pnpm install` after changing any pin.

@@ -46,6 +46,10 @@ The config file created with `/context config` will contain:
 > built-in default.
 
 > [!TIP]
+> Run `/context config` again to add the keys a config file is missing, for
+> example after an update adds new settings. Existing values stay unchanged.
+
+> [!TIP]
 > Reopen `/context` to apply config changes. No need for pi `/reload`.
 
 > [!NOTE]

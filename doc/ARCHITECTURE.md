@@ -134,7 +134,7 @@ flowchart TD
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `src/index.ts`               | Create the layers, register them in order, and register the command; assemble view inputs.                    |
 | `src/command.ts`             | Parse commands; resolve the latest snapshot through the store and ProbeTrigger.                               |
-| `src/config.ts`              | Load, validate, cache, and explicitly create configuration.                                                   |
+| `src/config.ts`              | Load, validate, cache, and explicitly write configuration defaults.                                           |
 | `src/settings.ts`            | Read pi's own settings: live settings, the compaction reserve, and global warming mode.                       |
 | `src/capture/register.ts`    | Capture wiring: structured capture, payload pairing, dispatch events, and cleanup.                            |
 | `src/capture/tracker.ts`     | RequestTracker: number captures, pair payloads, and mark warm refreshes.                                      |

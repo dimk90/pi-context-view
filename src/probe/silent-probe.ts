@@ -25,8 +25,8 @@ const SETUP_ABORT_ERROR_MESSAGES = new Set([
 	"The operation was aborted.", // Bun
 ]);
 /** Reported once for a wrong claim; names no message, since raw content never reaches notifications. */
-const WRONG_CLAIM_WARNING = "Silent probe may have stopped another extension's message instead of its own; " +
-	"its empty prompt may reach the model.";
+const WRONG_CLAIM_WARNING = "Silent probe may have stopped another extension's message instead of its own. " +
+	"Its empty prompt may reach the model.";
 
 /**
  * Result of the one allowed silent-probe attempt. A settled run says nothing
