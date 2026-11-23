@@ -10,7 +10,7 @@
 * `[config]` Make `/context config` add missing defaults to an existing config file.
 * `[views]` Swap hotkey bar colors: brighter keys, dimmer descriptions.
 * `[views]` Pad view content on both sides, aligning descriptions and hints with titles.
-* `[usage]` Rename the "Used %" percentage scale to "Content %".
+* `[usage]` Rename the "Used" % scale to "Content" and name the scales in the `P` hint.
 * `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.
 
 ### Fixed

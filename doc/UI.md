@@ -38,6 +38,8 @@ Follow pi's native selector style rather than building a separate visual system:
 - Align comparable values and keep their columns stable while scrolling.
 - Keep hints concise and tied to actions available in the current state.
   Show progress counters only when content overflows.
+- A hint for a key that switches between modes lists the modes and marks the
+  active one bold and underlined, such as `P Window/Content %`.
 
 ### Color and casing
 

@@ -27,8 +27,16 @@ export interface Viewport {
 	showScroll: boolean;
 }
 
+/** Hint description naming the modes a key switches between, with the active one bold and underlined. */
+export interface ModeDescription {
+	readonly modes: readonly string[];
+	readonly active: string;
+	/** Plain text after the modes, such as a unit. */
+	readonly suffix?: string;
+}
+
 /** One hint pair; an optional hint is the first to go when the row is too narrow. */
-export type Hint = readonly [key: string, description: string, optional?: boolean];
+export type Hint = readonly [key: string, description: string | ModeDescription, optional?: boolean];
 
 /** A hint at the right edge of a hint row, shown as `key description: detail`. */
 export interface RightHint {
@@ -220,6 +228,22 @@ export function fitHintRow(theme: Theme, hints: readonly Hint[], width: number, 
 }
 
 /** Hint: slightly brighter (muted) key, dim description. */
-function hint(theme: Theme, key: string, description: string): string {
-	return theme.fg("muted", key) + theme.fg("dim", ` ${description}`);
+function hint(theme: Theme, key: string, description: string | ModeDescription): string {
+	if (typeof description === "string")
+		return theme.fg("muted", key) + theme.fg("dim", ` ${description}`);
+
+	return theme.fg("muted", key) + theme.fg("dim", " ") + modeDescription(theme, description);
+}
+
+/**
+ * Dim `mode/mode suffix` text. Each part is painted on its own, so the bold
+ * reset after the active mode cannot clear a faint dim style from the rest.
+ */
+function modeDescription(theme: Theme, description: ModeDescription): string {
+	const modes = description.modes.map((mode) => mode === description.active
+		? theme.fg("dim", theme.bold(theme.underline(mode)))
+		: theme.fg("dim", mode));
+	const suffix = description.suffix === undefined ? "" : theme.fg("dim", ` ${description.suffix}`);
+
+	return modes.join(theme.fg("dim", "/")) + suffix;
 }

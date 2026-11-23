@@ -140,7 +140,7 @@ test("UsageView renders the 16x16 map and matching category legend with semantic
 	assert.ok(lines[2]?.includes(theme.fg("accent", theme.bold("Context Usage"))));
 	assert.ok(lines[2]?.includes(theme.getFgAnsi("muted") + "claude-opus-4-8"));
 	assert.doesNotMatch(plain[2] ?? "", /\btokens\b|Model:/);
-	assert.match(plain[4] ?? "", /^[■◧▦⛶]( [■◧▦⛶]){15}\s+Category:\s+Window %$/);
+	assert.match(plain[4] ?? "", /^[■◧▦⛶]( [■◧▦⛶]){15}\s+Category:$/);
 	// The key trails the more important legend, separated by one empty detail row
 	const mapKeyIndex = plain.findIndex((line) => line.includes("Map:"));
 	assert.ok(mapKeyIndex > plain.findIndex((line) => line.includes("Free Space")));
@@ -352,14 +352,27 @@ test("UsageView explains disabled probing in its description, not as a notice", 
 test("UsageView switches legend percentages from window to current context content", () => {
 	// The reported total differs from the 43.8k category sum, so Content must divide by the estimate
 	const contentUsage = { ...usage(50_000), autoCompactReserveTokens: 16_384 };
-	const view = createView(createTheme(), { usage: contentUsage }, () => {}, () => 80);
-	const windowPlain = view.render(100).map(stripSgr);
+	const theme = createTheme();
+	// Bold and underline must remain observable when Chalk detects no terminal
+	theme.bold = (text) => `\u001b[1m${text}\u001b[22m`;
+	theme.underline = (text) => `\u001b[4m${text}\u001b[24m`;
+	/** The hint naming the scales, with only the active one bold and underlined. */
+	const scaleHint = (active: "Window" | "Content"): string => {
+		const [first, second] = ["Window", "Content"].map((mode) =>
+			theme.fg("dim", mode === active ? theme.bold(theme.underline(mode)) : mode));
+		return `${theme.fg("muted", "P")}${theme.fg("dim", " ")}${first}${theme.fg("dim", "/")}${second}${theme.fg("dim", " %")}`;
+	};
+	const view = createView(theme, { usage: contentUsage }, () => {}, () => 80);
+	const windowFrame = view.render(100);
+	const windowPlain = windowFrame.map(stripSgr);
 	assert.ok(windowPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+0\.4%/.test(line)));
-	assert.ok(windowPlain.some((line) => /Category:\s+Window %$/.test(line)));
-	assert.ok(windowPlain.some((line) => line.includes("P %")));
+	// The hint row is the only place that names the scale
+	assert.ok(windowPlain.some((line) => /Category:$/.test(line)));
+	assert.ok(windowFrame.some((line) => line.includes(scaleHint("Window"))));
 
 	view.handleInput("p");
-	const contentPlain = view.render(100).map(stripSgr);
+	const contentFrame = view.render(100);
+	const contentPlain = contentFrame.map(stripSgr);
 	// Category shares norm to the estimated content total, so the categories add up to about 100%
 	assert.ok(contentPlain.some((line) => /System Prompt \.{2,}\s+3\.7k\s+8\.4%/.test(line)));
 	assert.ok(contentPlain.some((line) => /Tool Output \.{2,}\s+5k\s+11%/.test(line)));
@@ -367,18 +380,8 @@ test("UsageView switches legend percentages from window to current context conte
 	assert.ok(contentPlain.some((line) => /Auto-Compact Buffer \.{2,}\s+16\.4k/.test(line)));
 	assert.ok(contentPlain.some((line) => /Free Space \.{2,}\s+939\.8k/.test(line)));
 	assert.ok(!contentPlain.some((line) => /Auto-Compact Buffer|Free Space/.test(line) && line.includes("%")));
-	assert.ok(contentPlain.some((line) => /Category:\s+Content %$/.test(line)));
-	assert.ok(contentPlain.some((line) => line.includes("P %")));
-
-	// The scale label is centered over the percentage column, not pushed to the frame edge
-	for (const [plain, label] of [[windowPlain, "Window %"], [contentPlain, "Content %"]] as const) {
-		const labelStart = plain.find((line) => line.includes("Category:"))?.indexOf(label) ?? -1;
-		const percentRows = plain.map((line) => line.trimEnd()).filter((line) => /\.{2,}.*\s\S+%$/.test(line));
-		const percentStart = Math.min(...percentRows.map((line) => line.lastIndexOf(" ") + 1));
-		const percentEnd = Math.max(...percentRows.map((line) => line.length));
-		const offset = labelStart + label.length / 2 - (percentStart + percentEnd) / 2;
-		assert.ok(offset > -1 && offset <= 0, `label offset ${offset}`);
-	}
+	assert.ok(contentPlain.some((line) => /Category:$/.test(line)));
+	assert.ok(contentFrame.some((line) => line.includes(scaleHint("Content"))));
 
 	view.handleInput("p");
 	assert.deepEqual(view.render(100).map(stripSgr), windowPlain);
@@ -390,22 +393,22 @@ test("UsageView switches legend percentages from window to current context conte
 	assert.ok(previewPlain.some((line) => /System Prompt\s+3\.7k · 8\.4%/.test(line)));
 });
 
-test("UsageView keeps the percentage binding when its optional hint drops out", () => {
-	// A nearly full window offers no Zoom, so the whole hint row fits in 60 columns
+test("UsageView keeps the percentage hint when optional hints drop out", () => {
+	// A nearly full window offers no Zoom, so the hint row holds only Copy as an optional hint
 	const fullUsage: ContextUsageSnapshot = {
 		...usage(900_000),
 		categories: [{ id: "user-messages", label: "User Messages", tokens: 900_000 }],
 		estimatedTokens: 900_000,
 	};
 	const view = createView(createTheme(), { usage: fullUsage }, () => {}, () => 80);
-	assert.ok(view.render(60).map(stripSgr).some((line) => line.includes("P % · Esc Close")));
+	/** The hint row at one width. */
+	const hints = (width: number): string => plainFrame(view, width).find((line) => line.includes("Navigate")) ?? "";
+	assert.match(hints(120), /C Copy · P Window\/Content % · Esc Close/);
 
-	const narrow = view.render(40).map(stripSgr);
-	assert.ok(!narrow.some((line) => line.includes("P %")));
-	assert.ok(narrow.some((line) => /Category:\s+Window %$/.test(line)));
-
-	view.handleInput("p");
-	assert.ok(view.render(40).map(stripSgr).some((line) => /Category:\s+Content %$/.test(line)));
+	// Wide enough for the required hints, too narrow to add Copy
+	const narrow = hints(70);
+	assert.doesNotMatch(narrow, /Copy/);
+	assert.match(narrow, /P Window\/Content % · Esc Close$/);
 });
 
 test("UsageView hides the percentage hint and binding without any denominator", () => {
@@ -417,7 +420,7 @@ test("UsageView hides the percentage hint and binding without any denominator", 
 	};
 	const view = createView(createTheme(), { usage: empty }, () => {}, () => 30);
 	const frame = view.render(100);
-	assert.ok(!frame.map(stripSgr).some((line) => line.includes("P %")));
+	assert.ok(!frame.map(stripSgr).some((line) => line.includes("Window/Content")));
 
 	view.handleInput("p");
 	assert.deepEqual(view.render(100), frame);
@@ -432,7 +435,7 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	const windowCells = windowMap.flatMap((line) => line.slice(0, 16 * 2 - 1).split(" "));
 
 	assert.ok(!windowPlain.some((line) => line.includes("Zoom 1M")));
-	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · P % · Esc Close")));
+	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · P Window/Content % · Esc Close")));
 	assert.ok(windowCells.includes("⛝"));
 
 	view.handleInput("z");
@@ -1857,7 +1860,7 @@ test("UsageView respects width and height changes", () => {
 	}
 
 	const compactMap = view.render(60).map(stripSgr);
-	assert.ok(compactMap.some((line) => /^[■◧▦⛶]{16}\s+Category:\s+Window %$/.test(line)));
+	assert.ok(compactMap.some((line) => /^[■◧▦⛶]{16}\s+Category:$/.test(line)));
 	assert.ok(compactMap.some((line) => /\s+Map:$/.test(line)));
 	assert.ok(compactMap.some((line) => line.endsWith("⛶ - Block Size: 3.9k (0.4%)")));
 	assert.match(compactMap[2] ?? "", /^Context Usage\s+claude-opus-4-8 · 43\.8k\/1M \(4\.4%\)$/);
@@ -2083,7 +2086,7 @@ test("UsageView copies the highlighted category, block, and open content", async
 		schedule: KEEP_NOTICE,
 	});
 	selectCategory(view, "Tool Output");
-	assert.match(plainFrame(view).find((line) => line.includes("Navigate")) ?? "", /C Copy/);
+	assert.match(plainFrame(view, 100).find((line) => line.includes("Navigate")) ?? "", /C Copy/);
 
 	view.handleInput("c");
 	await settleCopy();
@@ -2187,7 +2190,7 @@ test("UsageView drops the copy hint whole when the dashboard hint row is narrow"
 	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	// The copy hint is optional and the Zoom hint is not, so a width that fits the
 	// rest of the row must drop the copy hint whole rather than cut "Esc Close"
-	const hints = plainFrame(view, 58).find((line) => line.includes("Navigate")) ?? "";
+	const hints = plainFrame(view, 76).find((line) => line.includes("Navigate")) ?? "";
 	assert.match(hints, /Esc Close/);
 	assert.doesNotMatch(hints, /C Copy/);
 });
@@ -2246,18 +2249,18 @@ test("UsageView shortens and then drops the icon style hint on narrow rows", () 
 	const gap = 3;
 
 	const wide = hints(120);
-	assert.match(wide, /C Copy.* P % · Esc Close\s+I Icons: Square$/);
+	assert.match(wide, /C Copy.* P Window\/Content % · Esc Close\s+I Icons: Square$/);
 	const detailedWidth = leftWidth(wide) + gap + visibleWidth("I Icons: Square");
 	assert.match(hints(detailedWidth), /Esc Close   I Icons: Square$/);
 
 	// The style name goes first, so every other hint stays
-	assert.match(hints(detailedWidth - 1), /C Copy.* P % · Esc Close\s+I Icons$/);
+	assert.match(hints(detailedWidth - 1), /C Copy.* P Window\/Content % · Esc Close\s+I Icons$/);
 	const shortWidth = leftWidth(wide) + gap + visibleWidth("I Icons");
 
 	// Then the whole hint goes, before any other hint does
 	const withoutSwitch = hints(shortWidth - 1);
 	assert.doesNotMatch(withoutSwitch, /Icons/);
-	assert.match(withoutSwitch, /C Copy.* P % · Esc Close$/);
+	assert.match(withoutSwitch, /C Copy.* P Window\/Content % · Esc Close$/);
 
 	view.handleInput("i");
 	assert.match(hints(120), /I Icons: (?!Square)\S+$/, "the binding outlives its hint");

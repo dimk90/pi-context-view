@@ -1,7 +1,7 @@
 
 # v0.9.0
 
-- [ ] Move "Window/Content" % to back to hotkey bar:
+- [x] Move "Window/Content" % to back to hotkey bar:
   - to reduce visual noise.
   - use underline for the current mode.
 

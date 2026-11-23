@@ -73,16 +73,17 @@ Use pi's terminology and request-assembly order, with consistent names across
 both views. Keep estimates and percentages aligned. Category colors identify
 markers and map cells, not selected labels or values.
 
-Legend percentages share one scale, named in the Category header right above
-the percentage column: Window or Content. Window gives each row's share of the context window.
+Legend percentages share one scale: Window or Content. Window gives each row's
+share of the context window.
 Content norms category shares to the estimated content total, so the categories read
 as parts of one whole; capacity rows hide their percentages there, since a
 window-relative share inside the same column would read as more than a whole.
-The `p` toggle is local to the open view and starts at Window. The header label
-names the active mode; the hint only names the toggle. Unlike `z`, the hint is
-optional and drops out first on narrow rows while the binding stays active,
-since the label always shows the scale. Hide both when neither scale has a
-denominator.
+The `p` toggle is local to the open view and starts at Window. Its hint lists
+both scales and marks the active one bold and underlined, so it is the only
+place that names the scale. The Category header stays free of it to reduce
+visual noise. Since nothing else shows the scale, the hint is required and is
+never dropped before optional hints. Hide the hint and the binding together
+when neither scale has a denominator.
 
 Favor a compact top-level composition. Tool Output exposes its per-tool
 breakdown for direct inspection; other aggregate breakdowns stay collapsed.

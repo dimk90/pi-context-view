@@ -109,6 +109,8 @@ const MAP_KEY_SIZE_LABEL = "Block Size";
 const MAP_KEY_DETAILED_SPARE_ROWS = 5;
 /** Rows the single-line key costs beside the complete legend: one separator plus one key row. */
 const MAP_KEY_COMPACT_SPARE_ROWS = 2;
+/** Hint-row names of the percentage scales, in toggle order. */
+const PERCENTAGE_SCALE_LABELS = ["Window", "Content"];
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -157,11 +159,10 @@ interface FreeLegendRow {
 /** One row of the legend beside the map. */
 type LegendRow = CategoryLegendRow | BufferLegendRow | FreeLegendRow;
 
-/** Shared legend alignment: the token value column and the widths of its two fields. */
+/** Shared legend alignment: the token value column and the token field width. */
 interface LegendColumns {
 	readonly value: number;
 	readonly tokenWidth: number;
-	readonly percentWidth: number;
 }
 
 /** One navigable preview block: an entry header plus its capped content lines. */
@@ -586,9 +587,9 @@ export class UsageView {
 			hints.push(COPY_HINT);
 		if (this.canToggleMapScale(width))
 			hints.push(["Z", "Zoom"]);
-		// Optional, so it drops out first on narrow rows; the binding stays active and the header names the scale
+		// Required, since it is the only place that names the active percentage scale
 		if (this.canTogglePercentageScale())
-			hints.push(["P", "%", true]);
+			hints.push(["P", { modes: PERCENTAGE_SCALE_LABELS, active: this.percentageScaleLabel(), suffix: "%" }]);
 		hints.push(["Esc", "Close"]);
 
 		return hints;
@@ -678,7 +679,7 @@ export class UsageView {
 
 		const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
 		const columns = this.legendColumns(rowWidth);
-		const headingRow = this.legendHeadingRow(columns, width);
+		const headingRow = theme.fg("mdHeading", theme.bold("Category:"));
 		const visibleRows: string[] = [];
 		const start = this.navigator.offset;
 		for (let index = start; index < start + this.navigator.windowSize; index++) {
@@ -850,7 +851,6 @@ export class UsageView {
 		return {
 			value: Math.max(1, Math.min(idealValue, width - rightWidth)),
 			tokenWidth,
-			percentWidth,
 		};
 	}
 
@@ -865,7 +865,7 @@ export class UsageView {
 		const percent = this.plainLegendPercent(row, legendTokens(row));
 		const percentPart = percent === ""
 			? ""
-			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "muted", percent)}`;
+			: `${" ".repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? "accent" : "dim", percent)}`;
 
 		return fitLine(
 			`${left}${leader}${this.theme.fg(valueColor, tokens)}${tokenPadding}${percentPart}`,
@@ -932,30 +932,9 @@ export class UsageView {
 		return formatPercent(tokens / contextWindow);
 	}
 
-	/** Category heading with the active percentage scale named above the percentage column. */
-	private legendHeadingRow(columns: LegendColumns, width: number): string {
-		const heading = this.theme.fg("mdHeading", this.theme.bold("Category:"));
-		const scaleLabel = this.percentageColumnLabel();
-		if (scaleLabel === undefined)
-			return heading;
-
-		// Legend rows start after the cursor column; center the label over the percentage column
-		const percentStart = CURSOR_COLUMN_WIDTH + columns.value + columns.tokenWidth + LEGEND_VALUE_GAP;
-		const labelStart = percentStart + Math.floor((columns.percentWidth - visibleWidth(scaleLabel)) / 2);
-		const labelEnd = labelStart + visibleWidth(scaleLabel);
-
-		return spreadLine(heading, this.theme.fg("dim", scaleLabel), Math.min(width, labelEnd));
-	}
-
-	/** Label naming the active percentage scale, undefined without a denominator. */
-	private percentageColumnLabel(): string | undefined {
-		if (this.percentageScale === "content") {
-			return this.usage.estimatedTokens > 0 ? "Content %" : undefined;
-		}
-
-		const contextWindow = this.usage.reported?.contextWindow;
-
-		return contextWindow !== undefined && contextWindow > 0 ? "Window %" : undefined;
+	/** Hint-row name of the active percentage scale. */
+	private percentageScaleLabel(): string {
+		return this.percentageScale === "content" ? "Content" : "Window";
 	}
 
 	/** Colored occupied/partial/buffer/free glyph for one map cell. */
