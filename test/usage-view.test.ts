@@ -844,15 +844,17 @@ test("UsageView opens every single-entry category directly without a block cap o
 
 			const content = view.render(80);
 			const plain = stripSgr(content.join("\n"));
+			// Without an entry header, System Prompt content sits one level under the category header
+			const bodyIndent = id === "system-prompt" ? "  " : "    ";
 			if (id === "system-prompt") {
 				assert.doesNotMatch(plain, /\[Only entry\]/);
-				assert.equal(stripSgr(content[4] ?? ""), "    line 1");
+				assert.equal(stripSgr(content[4] ?? ""), `${bodyIndent}line 1`);
 				if (lineCount > 1)
 					assert.match(plain, /\(15\/30\)/);
 			} else {
 				assert.match(plain, /\[Only entry\] 42/);
 			}
-			assert.match(plain, /    line 1\b/);
+			assert.match(plain, new RegExp(`^${bodyIndent}line 1\\b`, "m"));
 			assert.match(plain, /^ *\/ Search · C Copy · Esc Back$/m);
 			assert.doesNotMatch(plain, /┃|… \+|Enter|unsafe|\u0007/);
 			view.handleInput("\r");
@@ -860,7 +862,7 @@ test("UsageView opens every single-entry category directly without a block cap o
 			view.handleInput("\u001b[F");
 
 			const ending = stripSgr(view.render(80).join("\n"));
-			assert.ok(ending.includes(`    line ${lineCount}\n`));
+			assert.ok(ending.includes(`\n${bodyIndent}line ${lineCount}\n`));
 			if (lineCount > 1)
 				assert.match(ending, /\(30\/30\)/);
 			else
@@ -1599,7 +1601,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	const snapshotPreview = view.render(100).map((line) => stripSgr(line).trimEnd());
 	assert.match(snapshotPreview[2] ?? "", /^System Prompt\s+1k/);
 	assert.equal(snapshotPreview[3], "");
-	assert.equal(snapshotPreview[4], "    You are pi.");
+	assert.equal(snapshotPreview[4], "  You are pi.");
 	assert.doesNotMatch(snapshotPreview.join("\n"), /\[System Prompt\]|\[\d{2}-\d{2}-\d{4}/);
 });
 

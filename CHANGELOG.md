@@ -16,6 +16,7 @@
 
 ### Fixed
 * `[usage]` Count only visible thinking for OpenAI Completions, which never replays the rest.
+* `[usage]` Indent System Prompt content one level under its header, like other views.
 
 
 ## [0.8.4] - 10.11.2026

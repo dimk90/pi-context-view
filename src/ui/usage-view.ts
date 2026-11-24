@@ -1260,8 +1260,9 @@ export class UsageView {
 	): string[] {
 		const theme = this.theme;
 		const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-		const body = this.blockBodyLines(width, row, entry);
 		const showEntryHeader = row.rootId !== "system-prompt" || this.openBlockIndex !== undefined;
+		// Without the entry header, the body sits one level under the category header instead
+		const body = this.blockBodyLines(width, row, entry, showEntryHeader ? BODY_INDENT : "");
 		const fixedLineCount = (showEntryHeader ? BLOCK_FIXED_LINE_COUNT : PREVIEW_FIXED_LINE_COUNT) +
 			this.search.promptRowCount;
 		const descriptionLines = row.rootId === "assistant-thinking" && this.openBlockIndex === undefined
@@ -1435,18 +1436,23 @@ export class UsageView {
 	}
 
 	/**
-	 * Cached uncapped content of the open block, indented in place of the stream gutter. These lines
+	 * Cached uncapped content of the open block, with `indent` in place of the stream gutter. These lines
 	 * are already fitted, so the cache key is the terminal width: narrow widths share a clamped wrap
-	 * width while still needing their own truncation.
+	 * width while still needing their own truncation. The indent stays fixed until the block changes.
 	 */
-	private blockBodyLines(width: number, row: CategoryLegendRow, entry: UsagePreviewEntry): readonly string[] {
+	private blockBodyLines(
+		width: number,
+		row: CategoryLegendRow,
+		entry: UsagePreviewEntry,
+		indent: string,
+	): readonly string[] {
 		if (this.cachedBlockBody !== undefined && this.cachedBlockBody.width === width) {
 			return this.cachedBlockBody.lines;
 		}
 
 		const wrapWidth = previewWrapWidth(width);
 		const content = this.entryContentLines(entry, wrapWidth, row.rootId === "user-messages");
-		const lines = content.map((line) => line === "" ? "" : this.fit(`${BODY_INDENT}${line}`, width));
+		const lines = content.map((line) => line === "" ? "" : this.fit(`${indent}${line}`, width));
 		this.cachedBlockBody = { width, lines };
 
 		return lines;
