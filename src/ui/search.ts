@@ -18,7 +18,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
-import { BODY_INDENT, fitLine, type Hint, spreadLine, STEP_KEY_HINT } from "./layout.ts";
+import { BODY_INDENT, fitLine, type Hint, spreadLine } from "./layout.ts";
 
 /** Hint-row key label that opens the search prompt in either view. */
 export const SEARCH_KEY = "/";
@@ -168,22 +168,17 @@ export function isSearchNavigationKey(data: string): boolean {
 
 /**
  * Preview hints for plain navigation, an open search prompt, or a kept search.
+ * Standard keys (arrows, paging, Enter to confirm) get no hint.
  * `extra` sits before the closing hint; both views pass their copy action.
  */
-export function searchHints(prompt: SearchPrompt, stepLabel: string, extra?: Hint): Hint[] {
+export function searchHints(prompt: SearchPrompt, extra?: Hint): Hint[] {
 	const close: Hint[] = extra === undefined ? [["Esc", "Back"]] : [extra, ["Esc", "Back"]];
 	if (prompt.editing)
-		return [["↑↓", stepLabel], ["Enter", "Done"], ["Esc", "Clear"]];
-	if (prompt.active) {
-		return [
-			[STEP_KEY_HINT, stepLabel],
-			[MATCH_STEP_KEY_HINT, "Next/Prev"],
-			[SEARCH_KEY, "Search", true],
-			...close,
-		];
-	}
+		return [["Esc", "Clear"]];
+	if (prompt.active)
+		return [[MATCH_STEP_KEY_HINT, "Next/Prev"], [SEARCH_KEY, "Search", true], ...close];
 
-	return [[STEP_KEY_HINT, stepLabel], ["PgUp/PgDn", "Page"], [SEARCH_KEY, "Search", true], ...close];
+	return [[SEARCH_KEY, "Search", true], ...close];
 }
 
 /** Selection change waiting for the next render, which knows the wrapped lines. */

@@ -49,7 +49,6 @@ import {
 	isStepForwardKey,
 	normalizeTerminalRows,
 	spreadLine,
-	STEP_KEY_HINT,
 } from "./layout.ts";
 import {
 	type DiffBase,
@@ -497,19 +496,18 @@ export class InjectionsView {
 		if (this.filter.editing) {
 			// The prompt shows both modes; the hint only names the key that switches them
 			return [
-				["↑↓", "Navigate"],
 				["Tab", "Mode"],
 				["Enter", "Preview"],
 				["Esc", "Clear"],
 			];
 		}
 
+		// Standard keys (arrows, Esc to close) get no hint, but Esc that clears a filter does
 		return [
-			[STEP_KEY_HINT, "Navigate"],
 			["Enter", "Preview"],
 			[SEARCH_KEY, "Filter", true],
 			...(this.navigator.selectableCount > 0 ? [COPY_HINT] : []),
-			["Esc", this.filter.active ? "Clear" : "Close"],
+			...(this.filter.active ? [["Esc", "Clear"] as const] : []),
 		];
 	}
 
@@ -683,7 +681,7 @@ export class InjectionsView {
 		if (descriptionLines.length > 0)
 			lines.push("", ...descriptionLines);
 		lines.push("");
-		lines.push(fitHintRow(this.theme, searchHints(search.prompt, "Scroll", COPY_HINT), width));
+		lines.push(fitHintRow(this.theme, searchHints(search.prompt, COPY_HINT), width));
 		lines.push("", border);
 
 		return fitToTerminalHeight(lines, terminalRows, border);

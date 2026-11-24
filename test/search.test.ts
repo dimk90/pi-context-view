@@ -178,10 +178,10 @@ test("searchHints closes with one Back hint, after an optional extra hint", () =
 	const prompt = new SearchPrompt();
 	const backHints = (hints: ReturnType<typeof searchHints>) =>
 		hints.filter(([key, label]) => key === "Esc" && label === "Back");
-	assert.equal(backHints(searchHints(prompt, "Scroll")).length, 1);
+	assert.equal(backHints(searchHints(prompt)).length, 1);
 
 	const extra = ["c", "Copy", true] as const;
-	const withExtra = searchHints(prompt, "Scroll", extra);
+	const withExtra = searchHints(prompt, extra);
 	assert.equal(backHints(withExtra).length, 1);
 	assert.deepEqual(withExtra.slice(-2), [extra, ["Esc", "Back"]]);
 });

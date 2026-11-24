@@ -55,7 +55,6 @@ import {
 	normalizeTerminalRows,
 	type RightHint,
 	spreadLine,
-	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
 import { forcedMarker } from "./markers.ts";
@@ -577,12 +576,9 @@ export class UsageView {
 		);
 	}
 
-	/** Dashboard hints with Zoom immediately before Close when the binding is active. */
+	/** Dashboard hints; standard keys (arrows, Esc to close) get no hint. */
 	private dashboardHints(width: number): Hint[] {
-		const hints: Hint[] = [
-			[STEP_KEY_HINT, "Navigate"],
-			["Enter", "Preview"],
-		];
+		const hints: Hint[] = [["Enter", "Preview"]];
 		if (this.legendRows[this.navigator.selected]?.type === "category")
 			hints.push(COPY_HINT);
 		if (this.canToggleMapScale(width))
@@ -590,7 +586,6 @@ export class UsageView {
 		// Required, since it is the only place that names the active percentage scale
 		if (this.canTogglePercentageScale())
 			hints.push(["P", { modes: PERCENTAGE_SCALE_LABELS, active: this.percentageScaleLabel(), suffix: "%" }]);
-		hints.push(["Esc", "Close"]);
 
 		return hints;
 	}
@@ -1253,7 +1248,7 @@ export class UsageView {
 		if (blockCount === 0)
 			return [["Esc", "Back"]];
 
-		return searchHints(this.search.prompt, "Navigate", COPY_HINT);
+		return searchHints(this.search.prompt, COPY_HINT);
 	}
 
 	/** Full content with an identity header unless the System Prompt category already identifies it. */
@@ -1311,7 +1306,7 @@ export class UsageView {
 		if (descriptionLines.length > 0)
 			lines.push("", ...descriptionLines);
 		lines.push("");
-		lines.push(fitHintRow(theme, searchHints(this.search.prompt, "Scroll", COPY_HINT), width));
+		lines.push(fitHintRow(theme, searchHints(this.search.prompt, COPY_HINT), width));
 		lines.push("", border);
 
 		return fitToTerminalHeight(lines, terminalRows, border);

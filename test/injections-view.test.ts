@@ -193,7 +193,7 @@ test("InjectionsView follows pi selector styling and cursor alignment", () => {
 	assert.ok(selectedChild.includes(theme.fg("accent", "20")));
 
 	const descriptionIndex = noteIndex(lines);
-	const hintsIndex = lines.findIndex((line) => stripSgr(line).includes("↑↓/jk"));
+	const hintsIndex = lines.findIndex((line) => stripSgr(line).includes("Enter Preview"));
 	assert.ok(descriptionIndex > 0 && hintsIndex > descriptionIndex);
 	assert.ok(containsBlock(lines, noteLines("overview", 80)));
 	assert.ok(lines[descriptionIndex]?.includes(theme.getFgAnsi("dim")));
@@ -652,7 +652,7 @@ test("InjectionsView preview opens on items, scrolls, and returns to the same ro
 	assert.equal(stripSgr(previewLines[firstContentIndex] ?? "").indexOf("pi-1"), 2);
 	assert.equal(previewLines[previewHeaderIndex + 1], "");
 
-	const hintIndex = previewLines.findIndex((line) => stripSgr(line).includes("↑↓/jk Scroll"));
+	const hintIndex = previewLines.findIndex((line) => stripSgr(line).includes("Esc Back"));
 	assert.ok(hintIndex > 0);
 	assert.equal(previewLines[hintIndex - 1], "");
 
@@ -1035,9 +1035,6 @@ test("InjectionsView accepts j/k wherever it accepts the arrow keys", () => {
 	vim.handleInput("k");
 	assert.equal(frame(vim), frame(arrows));
 	assert.equal(closed, false);
-
-	const hints = frame(vim).split("\n").map(stripSgr);
-	assert.ok(hints.some((line) => line.includes("↑↓/jk Scroll")));
 });
 
 test("InjectionsView accepts Ctrl+u/d wherever it accepts the page keys", () => {
@@ -1743,7 +1740,7 @@ test("InjectionsView fills the terminal height with empty rows between the bar a
 			const plain = view.render(width).map(stripSgr);
 			assert.equal(plain.length, height, `${width}x${height}: the frame fills the terminal`);
 
-			const hints = plain.findIndex((line) => line.includes("Navigate · Enter Preview"));
+			const hints = plain.findIndex((line) => line.includes("Enter Preview"));
 			assert.equal(hints, height - 3, `${width}x${height}: hints and the border stay at the bottom`);
 			if (height === 16)
 				continue;
@@ -1809,7 +1806,7 @@ test("InjectionsView reserves the tallest bar's height, so the list keeps its si
 	const unchanged = view.render(120).map(stripSgr);
 	assert.deepEqual(expectedStatus(modified, 2), [], "an unchanged row has no status text");
 
-	const hints = unchanged.findIndex((line) => line.includes("↑↓/jk Navigate"));
+	const hints = unchanged.findIndex((line) => line.includes("Enter Preview"));
 	assert.deepEqual(unchanged.slice(hints - 4, hints), ["", "", "", ""], "the bar's empty lines between its spacers");
 
 	const visibleCount = (lines: readonly string[]) =>
@@ -2182,14 +2179,14 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	const view = new InjectionsView(theme, { snapshot: searchSnapshot() }, () => {
 		closed = true;
 	}, () => 30);
-	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · C Copy · Esc Close/);
+	assert.match(plainFrame(view).join("\n"), /\n *Enter Preview · \/ Filter · C Copy\n/);
 
 	view.handleInput("/");
 	let plain = plainFrame(view);
 	const promptIndex = plain.findIndex((line) => line.startsWith("  ◉ Name | ○ Content >"));
 	assert.equal(promptIndex, 4, "the prompt sits below the header and its blank row");
 	assert.equal(plain[promptIndex + 1], "");
-	assert.match(plain.join("\n"), /↑↓ Navigate · Tab Mode · Enter Preview · Esc Clear/);
+	assert.match(plain.join("\n"), /\n *Tab Mode · Enter Preview · Esc Clear\n/);
 
 	typeKeys(view, "cym");
 	const lines = view.render(80);
@@ -2210,7 +2207,7 @@ test("InjectionsView filters rows by name, keeps ancestors, and Escape steps bac
 	view.handleInput("\u001b");
 	plain = plainFrame(view);
 	assert.match(plain[promptIndex] ?? "", /^ {2}◉ Name \| ○ Content > cym +1 match$/);
-	assert.match(plain.join("\n"), /↑↓\/jk Navigate · Enter Preview · \/ Filter · C Copy · Esc Clear/);
+	assert.match(plain.join("\n"), /\n *Enter Preview · \/ Filter · C Copy · Esc Clear\n/);
 
 	// Escape drops the filter but keeps the selected row, then closes the view
 	view.handleInput("\u001b");
@@ -2296,7 +2293,7 @@ test("InjectionsView content filter carries its query into the preview search", 
 
 	let plain = plainFrame(view);
 	assert.match(plain.join("\n"), /○ Name \| ◉ Content > tree-sitter +2 matches/);
-	assert.match(plain.join("\n"), /↑↓ Navigate · Tab Mode · Enter Preview · Esc Clear/);
+	assert.match(plain.join("\n"), /\n *Tab Mode · Enter Preview · Esc Clear\n/);
 	assert.ok(plain.some((line) => line.startsWith("→    └─ cymbal")));
 	assert.ok(plain.some((line) => line.includes("└─ web_search")));
 	assert.ok(!plain.some((line) => line.includes("agent-browser")));
@@ -2311,7 +2308,7 @@ test("InjectionsView content filter carries its query into the preview search", 
 	assert.ok(matchRow > 0);
 	assert.ok((lines[matchRow] ?? "").includes(SEARCH_MATCH_BG));
 	assert.ok(!plain.some((line) => line.includes("Navigate code.")), "scrolled to the match");
-	assert.match(plain.join("\n"), /↑↓\/jk Scroll · n\/N Next\/Prev · \/ Search · C Copy · Esc Back/);
+	assert.match(plain.join("\n"), /\n *n\/N Next\/Prev · \/ Search · C Copy · Esc Back\n/);
 
 	view.handleInput("n");
 	plain = plainFrame(view);
@@ -2336,7 +2333,7 @@ test("InjectionsView preview search types live, keeps the query on Enter, and dr
 		"a name filter starts the preview unsearched");
 
 	view.handleInput("/");
-	assert.match(plainFrame(view).join("\n"), /↑↓ Scroll · Enter Done · Esc Clear/);
+	assert.match(plainFrame(view).join("\n"), /\n *Esc Clear\n/);
 	typeKeys(view, "again");
 	let plain = plainFrame(view);
 	assert.match(plain[4] ?? "", /^ {2}Search: again +1\/1$/);
@@ -2354,14 +2351,15 @@ test("InjectionsView preview search types live, keeps the query on Enter, and dr
 	view.handleInput("\u001b");
 	plain = plainFrame(view);
 	assert.ok(!plain.some((line) => line.includes("Search:")));
-	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
+	assert.match(plain.join("\n"), /\n *\/ Search · C Copy · Esc Back\n/);
 });
 
 test("InjectionsView search stays within the width and drops the filter hint before others", () => {
 	const view = new InjectionsView(createTheme(), { snapshot: searchSnapshot() }, () => {}, () => 30);
-	const narrow = plainFrame(view, 50);
-	const hints = narrow.find((line) => line.includes("Navigate"));
-	assert.equal(hints, "↑↓/jk Navigate · Enter Preview · Esc Close");
+	assert.ok(plainFrame(view, 50).includes("Enter Preview · / Filter · C Copy"));
+	const narrow = plainFrame(view, 30);
+	const hints = narrow.find((line) => line.includes("Enter Preview"));
+	assert.equal(hints, "Enter Preview");
 
 	view.handleInput("/");
 	view.handleInput("\t");
@@ -2413,7 +2411,7 @@ test("InjectionsView copies a highlighted group, item, and open preview", async 
 	const view = createView(8, undefined, () => 24, actions);
 
 	// The first highlighted row is the pi group; copy every item in it
-	assert.match(plainFrame(view).find((line) => line.includes("Navigate")) ?? "", /C Copy/);
+	assert.match(plainFrame(view).find((line) => line.includes("Enter Preview")) ?? "", /C Copy/);
 	view.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[0]?.split("\n\n").length, 8);
@@ -2429,7 +2427,7 @@ test("InjectionsView copies a highlighted group, item, and open preview", async 
 
 	// Its open preview copies the same item text
 	view.handleInput("\r");
-	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
+	assert.match(plainFrame(view).join("\n"), /\n *\/ Search · C Copy · Esc Back\n/);
 	view.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[2], itemText);

@@ -84,7 +84,7 @@ function assertLegendBullets(lines: readonly string[], theme: Theme, markers: re
 function assertLegend(lines: readonly string[], theme: Theme, markers: readonly ContextMarker[]): void {
 	const start = assertLegendBullets(lines, theme, markers);
 	const rendered = plain(lines).split("\n");
-	assert.equal(rendered.findIndex((line) => line.includes("↑↓/jk")), lines.length - 3);
+	assert.equal(rendered.findIndex((line) => line.includes("Esc Back")), lines.length - 3);
 	assert.equal(rendered[start - 1], "");
 }
 

@@ -7,9 +7,6 @@
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-/** Hint-row key label for the single-step navigation keys both views accept. */
-export const STEP_KEY_HINT = "↑↓/jk";
-
 /** Narrowest gap between the hints and a right-aligned hint, as wide as the hint separator. */
 const RIGHT_HINT_GAP = 3;
 

@@ -8,9 +8,10 @@
 
 ### Changed
 * `[config]` Make `/context config` add missing defaults to an existing config file.
-* `[views]` Swap hotkey bar colors: brighter keys, dimmer descriptions.
+* `[views]` Drop hints for standard/obvious keys: arrows, paging, etc.
 * `[views]` Pad view content on both sides, aligning descriptions and hints with titles.
 * `[usage]` Rename the "Used" % scale to "Content" and name the scales in the `P` hint.
+* `[views]` Swap hotkey bar colors: brighter keys, dimmer descriptions.
 * `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.
 
 ### Fixed

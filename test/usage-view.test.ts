@@ -201,13 +201,13 @@ test("UsageView renders the 16x16 map and matching category legend with semantic
 	assert.match(instructionsLine ?? "", /Instruction Files \.{2,}\s+1\.5k/);
 
 	const descriptionIndex = plain.findIndex((line) => line.trim() === stripSgr(usageDescription(80)[0] ?? "").trim());
-	const hintsIndex = plain.findIndex((line) => line.includes("↑↓/jk"));
+	const hintsIndex = plain.findIndex((line) => line.includes("Enter Preview"));
 	assert.ok(descriptionIndex > 0 && hintsIndex > descriptionIndex);
 	assert.ok(containsBlock(lines, usageDescription(80)));
 	assert.ok(lines[descriptionIndex]?.includes(theme.getFgAnsi("dim")));
-	for (const key of ["↑↓/jk", "Enter", "Z", "Esc"])
+	for (const key of ["Enter", "Z", "P"])
 		assert.ok(plain[hintsIndex]?.includes(key));
-	assert.ok(lines[hintsIndex]?.includes(theme.fg("muted", "Esc")));
+	assert.ok(lines[hintsIndex]?.includes(theme.fg("muted", "Enter")));
 	assert.ok(lines[hintsIndex]?.includes(theme.getFgAnsi("dim")));
 
 	// The first category row starts selected: fixed-column accent cursor and accent label/values
@@ -402,13 +402,13 @@ test("UsageView keeps the percentage hint when optional hints drop out", () => {
 	};
 	const view = createView(createTheme(), { usage: fullUsage }, () => {}, () => 80);
 	/** The hint row at one width. */
-	const hints = (width: number): string => plainFrame(view, width).find((line) => line.includes("Navigate")) ?? "";
-	assert.match(hints(120), /C Copy · P Window\/Content % · Esc Close/);
+	const hints = (width: number): string => plainFrame(view, width).find((line) => line.includes("Enter Preview")) ?? "";
+	assert.match(hints(120), /C Copy · P Window\/Content %/);
 
 	// Wide enough for the required hints, too narrow to add Copy
-	const narrow = hints(70);
+	const narrow = hints(42);
 	assert.doesNotMatch(narrow, /Copy/);
-	assert.match(narrow, /P Window\/Content % · Esc Close$/);
+	assert.match(narrow, /Enter Preview · P Window\/Content %$/);
 });
 
 test("UsageView hides the percentage hint and binding without any denominator", () => {
@@ -435,7 +435,7 @@ test("UsageView toggles a view-local Fit map and clears its cached frame", () =>
 	const windowCells = windowMap.flatMap((line) => line.slice(0, 16 * 2 - 1).split(" "));
 
 	assert.ok(!windowPlain.some((line) => line.includes("Zoom 1M")));
-	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · P Window/Content % · Esc Close")));
+	assert.ok(windowPlain.some((line) => line.includes("Z Zoom · P Window/Content %")));
 	assert.ok(windowCells.includes("⛝"));
 
 	view.handleInput("z");
@@ -794,9 +794,9 @@ test("UsageView opens a category block stream and skips full previews for comple
 	assert.equal(plain[readHeader + 2], "    second line");
 	assert.ok(!plain.some((line) => /[■◧▦⛶]( [■◧▦⛶]){15}/.test(line)));
 
-	const hintIndex = plain.findIndex((line) => line.includes("↑↓/jk Navigate"));
+	const hintIndex = plain.findIndex((line) => line.includes("Esc Back"));
 	assert.ok(hintIndex > 0);
-	assert.match(plain[hintIndex] ?? "", /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
+	assert.match(plain[hintIndex] ?? "", /^ *\/ Search · C Copy · Esc Back$/);
 	assert.ok(!plain[hintIndex]?.includes("Enter"));
 
 	// Down moves the gutter to the next block without touching the entry order
@@ -853,7 +853,7 @@ test("UsageView opens every single-entry category directly without a block cap o
 				assert.match(plain, /\[Only entry\] 42/);
 			}
 			assert.match(plain, /    line 1\b/);
-			assert.match(plain, /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
+			assert.match(plain, /^ *\/ Search · C Copy · Esc Back$/m);
 			assert.doesNotMatch(plain, /┃|… \+|Enter|unsafe|\u0007/);
 			view.handleInput("\r");
 			assert.deepEqual(view.render(80), content, `${id}: Enter never adds another level`);
@@ -1204,9 +1204,6 @@ test("UsageView accepts j/k wherever it accepts the arrow keys", () => {
 	arrows.handleInput("\u001b[A");
 	vim.handleInput("k");
 	assert.equal(frame(vim), frame(arrows));
-
-	const hints = frame(vim).split("\n").map(stripSgr);
-	assert.ok(hints.some((line) => line.includes("↑↓/jk Navigate")));
 });
 
 test("UsageView accepts Ctrl+u/d wherever it accepts the page keys", () => {
@@ -1564,7 +1561,7 @@ test("UsageView caps long entries, sanitizes content, and omits snapshot datetim
 	assert.ok(capped[marker]?.includes(createTheme().getFgAnsi("dim")));
 	assert.ok(capped[marker]?.includes(createTheme().getFgAnsi("accent") + "Enter"));
 
-	const cappedHints = plainCapped.find((line) => line.includes("↑↓/jk Navigate"));
+	const cappedHints = plainCapped.find((line) => line.includes("Esc Back"));
 	assert.ok(cappedHints !== undefined && !cappedHints.includes("Enter"));
 	assert.ok(!capped.some((line) => line.includes("\u0007") || line.includes("evil")));
 	for (const width of [24, 40, 100]) {
@@ -1959,7 +1956,7 @@ function searchUsage(): ContextUsageSnapshot {
 test("UsageView dashboard has no category filter: / neither opens a prompt nor is advertised", () => {
 	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
 	const before = view.render(80);
-	const hints = plainFrame(view).find((line) => line.includes("↑↓/jk")) ?? "";
+	const hints = plainFrame(view).find((line) => line.includes("Enter Preview")) ?? "";
 	assert.doesNotMatch(hints, /(^| )\/ /, "no / hint on the dashboard");
 	view.handleInput("/");
 	assert.deepEqual(view.render(80), before);
@@ -1973,7 +1970,7 @@ test("UsageView block stream search selects the matching block and opens a cappe
 
 	let plain = plainFrame(view);
 	assert.match(plain[2] ?? "", /^Tool Output/);
-	assert.match(plain.join("\n"), /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
+	assert.match(plain.join("\n"), /^ *\/ Search · C Copy · Esc Back$/m);
 
 	view.handleInput("/");
 	typeKeys(view, "needle");
@@ -1984,7 +1981,7 @@ test("UsageView block stream search selects the matching block and opens a cappe
 	const selectedHeader = plain.find((line) => line.startsWith("┃ ["));
 	assert.match(selectedHeader ?? "", /:02:00\]/);
 	assert.ok(!plain.some((line) => line.includes("the needle is here")));
-	assert.match(plain.join("\n"), /↑↓\/jk Navigate · n\/N Next\/Prev · \/ Search · C Copy · Esc Back/);
+	assert.match(plain.join("\n"), /^ *n\/N Next\/Prev · \/ Search · C Copy · Esc Back$/m);
 
 	view.handleInput("\r");
 	const lines = view.render(80);
@@ -2019,7 +2016,7 @@ test("UsageView searches single-entry content and keeps every line within the wi
 
 	let plain = plainFrame(view);
 	assert.match(plain[2] ?? "", /^read/);
-	assert.match(plain.join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
+	assert.match(plain.join("\n"), /^ *\/ Search · C Copy · Esc Back$/m);
 
 	view.handleInput("/");
 	typeKeys(view, "SECOND");
@@ -2029,7 +2026,7 @@ test("UsageView searches single-entry content and keeps every line within the wi
 
 	const matchRow = plain.findIndex((line) => line.includes("second line"));
 	assert.ok((lines[matchRow] ?? "").includes(SEARCH_MATCH_BG));
-	assert.match(plain.join("\n"), /↑↓ Scroll · Enter Done · Esc Clear/);
+	assert.match(plain.join("\n"), /\n *Esc Clear\n/);
 	for (const width of [20, 51, 80, 120]) {
 		for (const line of view.render(width))
 			assert.ok(visibleWidth(line) <= width, `width ${width}`);
@@ -2086,7 +2083,7 @@ test("UsageView copies the highlighted category, block, and open content", async
 		schedule: KEEP_NOTICE,
 	});
 	selectCategory(view, "Tool Output");
-	assert.match(plainFrame(view, 100).find((line) => line.includes("Navigate")) ?? "", /C Copy/);
+	assert.match(plainFrame(view, 100).find((line) => line.includes("Enter Preview")) ?? "", /C Copy/);
 
 	view.handleInput("c");
 	await settleCopy();
@@ -2099,7 +2096,7 @@ test("UsageView copies the highlighted category, block, and open content", async
 	assert.ok(topBorderText(view).includes(copiedNotice(copied[0] ?? "").text));
 
 	openCategory(view, "Tool Output");
-	assert.match(plainFrame(view).join("\n"), /↑↓\/jk Navigate · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
+	assert.match(plainFrame(view).join("\n"), /^ *\/ Search · C Copy · Esc Back$/m);
 	view.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[1], "first result");
@@ -2110,7 +2107,7 @@ test("UsageView copies the highlighted category, block, and open content", async
 		schedule: KEEP_NOTICE,
 	});
 	openCategory(single, "read");
-	assert.match(plainFrame(single).join("\n"), /↑↓\/jk Scroll · PgUp\/PgDn Page · \/ Search · C Copy · Esc Back/);
+	assert.match(plainFrame(single).join("\n"), /^ *\/ Search · C Copy · Esc Back$/m);
 	single.handleInput("c");
 	await settleCopy();
 	assert.equal(copied[2], "read result content line\nsecond line");
@@ -2186,15 +2183,6 @@ test("UsageView stops redrawing a copy result after the host disposes it", async
 	assert.equal(topBorderText(view), plainBorder(view));
 });
 
-test("UsageView drops the copy hint whole when the dashboard hint row is narrow", () => {
-	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 30);
-	// The copy hint is optional and the Zoom hint is not, so a width that fits the
-	// rest of the row must drop the copy hint whole rather than cut "Esc Close"
-	const hints = plainFrame(view, 76).find((line) => line.includes("Navigate")) ?? "";
-	assert.match(hints, /Esc Close/);
-	assert.doesNotMatch(hints, /C Copy/);
-});
-
 test("UsageView cycles icon styles with i and reports each one for saving", () => {
 	const iconStyles = new Map([
 		["First", { buffer: "a", free: "b", partial: "c", full: "d", compacted: "e" }],
@@ -2208,10 +2196,10 @@ test("UsageView cycles icon styles with i and reports each one for saving", () =
 		() => 40,
 	);
 	/** The hint row of the current frame. */
-	const hints = (): string => plainFrame(view, 100).find((line) => line.includes("Navigate")) ?? "";
+	const hints = (): string => plainFrame(view, 100).find((line) => line.includes("Enter Preview")) ?? "";
 
 	assert.ok(plainFrame(view, 100).some((line) => line.includes("d System Prompt ")));
-	assert.match(hints(), /Esc Close\s+I Icons: First$/, "the hint sits at the right edge");
+	assert.match(hints(), /P Window\/Content %\s+I Icons: First$/, "the hint sits at the right edge");
 	assert.equal(visibleWidth(hints()), 100);
 
 	view.handleInput("i");
@@ -2243,24 +2231,24 @@ test("UsageView offers no icon style switch for a single style", () => {
 test("UsageView shortens and then drops the icon style hint on narrow rows", () => {
 	const view = createView(createTheme(), { usage: usage() }, () => {}, () => 40);
 	/** The hint row at one width. */
-	const hints = (width: number): string => plainFrame(view, width).find((line) => line.includes("Navigate")) ?? "";
+	const hints = (width: number): string => plainFrame(view, width).find((line) => line.includes("Enter Preview")) ?? "";
 	/** Columns the hints left of the icon style hint occupy. */
 	const leftWidth = (row: string): number => visibleWidth(row.replace(/\s+I Icons.*$/, ""));
 	const gap = 3;
 
 	const wide = hints(120);
-	assert.match(wide, /C Copy.* P Window\/Content % · Esc Close\s+I Icons: Square$/);
+	assert.match(wide, /C Copy.* P Window\/Content %\s+I Icons: Square$/);
 	const detailedWidth = leftWidth(wide) + gap + visibleWidth("I Icons: Square");
-	assert.match(hints(detailedWidth), /Esc Close   I Icons: Square$/);
+	assert.match(hints(detailedWidth), /Content % {3}I Icons: Square$/);
 
 	// The style name goes first, so every other hint stays
-	assert.match(hints(detailedWidth - 1), /C Copy.* P Window\/Content % · Esc Close\s+I Icons$/);
+	assert.match(hints(detailedWidth - 1), /C Copy.* P Window\/Content %\s+I Icons$/);
 	const shortWidth = leftWidth(wide) + gap + visibleWidth("I Icons");
 
 	// Then the whole hint goes, before any other hint does
 	const withoutSwitch = hints(shortWidth - 1);
 	assert.doesNotMatch(withoutSwitch, /Icons/);
-	assert.match(withoutSwitch, /C Copy.* P Window\/Content % · Esc Close$/);
+	assert.match(withoutSwitch, /C Copy.* P Window\/Content %$/);
 
 	view.handleInput("i");
 	assert.match(hints(120), /I Icons: (?!Square)\S+$/, "the binding outlives its hint");
