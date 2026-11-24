@@ -1322,7 +1322,8 @@ export class UsageView {
 		const theme = this.theme;
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(row.category.label)));
 		const percent = this.plainLegendPercent(row, row.category.tokens);
-		const meta = theme.fg("muted", `${formatTokens(row.category.tokens)}${percent === "" ? "" : ` · ${percent}`}`);
+		const tokens = theme.fg("muted", formatTokens(row.category.tokens));
+		const meta = percent === "" ? tokens : `${tokens}${theme.fg("dim", " · ")}${theme.fg("muted", percent)}`;
 		const forced = this.previewEntries(row).some((entry) => entry.change === "forced");
 		const marker = forced ? forcedMarker(theme) : "";
 		const fitsMarker = visibleWidth(title) + visibleWidth(meta) + visibleWidth(marker) + 2 <= width;

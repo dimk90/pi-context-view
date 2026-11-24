@@ -778,7 +778,7 @@ test("InjectionsView preview labels every known section", () => {
 	assert.ok(definitionIndex > guidelinesIndex, "Definition does not follow Guidelines");
 	// Parts use syntaxKeyword, leaving mdHeading to the headings they nest under
 	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("syntaxKeyword", theme.bold("Guidelines"))));
-	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("muted", " · 17 tokens")));
+	assert.ok((lines[guidelinesIndex] ?? "").includes(theme.fg("dim", " · ") + theme.fg("muted", "17 tokens")));
 	// Section bodies start directly below their subheader, separated only between sections
 	assert.equal(plainLines[snippetIndex + 1], "  - search: Search the web");
 	assert.equal(plainLines[guidelinesIndex + 1], "  - Use search when the user asks for current information");
@@ -1941,7 +1941,7 @@ test("InjectionsView lists messages in one unattributed row and previews one par
 		"an addition reads like plain content, its +4 already says it is new");
 
 	const styled = view.render(100);
-	assert.ok(styled.some((line) => line.includes(theme.fg("muted", " · user prompt #1"))));
+	assert.ok(styled.some((line) => line.includes(theme.fg("dim", " · ") + theme.fg("muted", "user prompt #1"))));
 	assert.ok(styled.some((line) => line.includes(theme.inverse("original"))));
 	assert.ok(styled.some((line) => line.includes(theme.inverse("edited"))));
 	assert.doesNotMatch(preview.join("\n"), /· session|#0/);

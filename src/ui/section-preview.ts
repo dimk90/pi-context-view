@@ -281,10 +281,11 @@ function sectionHeaderLines(theme: Theme, section: InjectionSection, wrapWidth: 
 	const prefix = section.toolDeclaration === true ? theme.fg("dim", TOOL_LABEL_PREFIX) : "";
 	const label = prefix + theme.fg("syntaxKeyword", theme.bold(normalizeInlineText(section.label)));
 	const prompt = section.message?.userPrompt;
-	const number = prompt === undefined ? "" : theme.fg("muted", ` · user prompt #${prompt}`);
+	const separator = theme.fg("dim", " · ");
+	const number = prompt === undefined ? "" : separator + theme.fg("muted", `user prompt #${prompt}`);
 	const tokens = section.diffOnly === true
 		? ""
-		: theme.fg("muted", ` · ${section.tokens.toLocaleString("en-US")} tokens`);
+		: separator + theme.fg("muted", `${section.tokens.toLocaleString("en-US")} tokens`);
 	const guess = section.attribution === "guess" ? guessMarker(theme) : "";
 	const markers = `${diffMarker(theme, section.diff)}${guess}${stateMarkers(theme, section)}`;
 	const header = `${label}${number}${tokens}${markers}`;

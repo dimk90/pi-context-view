@@ -651,9 +651,10 @@ export class InjectionsView {
 		const lines: string[] = [this.copy.topBorder(theme, width), ""];
 		const title = theme.fg("accent", theme.bold(normalizeInlineText(item.label)));
 		const source = normalizeInlineText(item.source.label);
-		const meta = theme.fg("muted", item.diffOnly === true
-			? source
-			: `${source} · ${item.tokens.toLocaleString("en-US")} tokens`);
+		const meta = item.diffOnly === true
+			? theme.fg("muted", source)
+			: theme.fg("muted", source) + theme.fg("dim", " · ")
+				+ theme.fg("muted", `${item.tokens.toLocaleString("en-US")} tokens`);
 		const diff = diffMarker(theme, item.diff);
 		const note = item.diffOnly === true
 			? theme.fg("dim", " · ") + theme.fg("muted", DIFF_ONLY_NOTE)
