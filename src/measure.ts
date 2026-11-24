@@ -39,9 +39,9 @@ import {
 	type PromptSection,
 } from "./prompt-blocks.ts";
 
-/** Part names shared by a tool's prompt lines and pi's own prompt blocks. */
-const AVAILABLE_TOOLS_LABEL = AVAILABLE_TOOLS_BLOCK.label;
-const GUIDELINES_LABEL = GUIDELINES_BLOCK.label;
+/** Tool-preview names of a tool's prompt lines: the System Prompt part that holds them. */
+const AVAILABLE_TOOLS_LABEL = `${SYSTEM_PROMPT_LABEL} › ${AVAILABLE_TOOLS_BLOCK.label}`;
+const GUIDELINES_LABEL = `${SYSTEM_PROMPT_LABEL} › ${GUIDELINES_BLOCK.label}`;
 
 /** System Prompt part holding the unwrapped text extensions added around pi's sections. */
 const EXTENSION_ADDITIONS_BLOCK = { id: "base-prompt:additions", label: "Extension Additions" };

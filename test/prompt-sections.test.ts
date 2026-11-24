@@ -59,8 +59,8 @@ test("a custom prefix can restore selected native XML sections without marking t
 	assert.deepEqual(
 		tool?.sections?.map((part) => [part.label, part.dropped, part.countedInSystemPrompt, part.tokens > 0]),
 		[
-			["Tools", undefined, true, false],
-			["Rules", true, undefined, false],
+			["System Prompt › Tools", undefined, true, false],
+			["System Prompt › Rules", true, undefined, false],
 			["Definition", undefined, undefined, true],
 		],
 	);

@@ -174,7 +174,7 @@ test("analyzeSystemPrompt counts a tool's definition and leaves its prompt lines
 	// The rendered lines show on the tool for reference, counted only in System Prompt
 	assert.deepEqual(
 		search?.sections?.map((section) => [section.label, section.countedInSystemPrompt, section.tokens]),
-		[["Tools", true, 0], ["Rules", true, 0], ["Definition", undefined, search?.tokens]],
+		[["System Prompt › Tools", true, 0], ["System Prompt › Rules", true, 0], ["Definition", undefined, search?.tokens]],
 	);
 	assert.equal(search?.sections?.[1]?.text, `\n- ${guidelines[0]}\n- ${guidelines[1]}`);
 	assert.equal(search?.text, 'search: Search\n{"q":"string"}');
@@ -187,7 +187,7 @@ test("analyzeSystemPrompt counts a tool's definition and leaves its prompt lines
 
 	const builtin = items.find((entry) => entry.id === "tool:builtin")?.children?.[0];
 	assert.deepEqual(builtin?.sections?.map((section) => [section.label, section.tokens]),
-		[["Tools", 0], ["Definition", builtin?.tokens]]);
+		[["System Prompt › Tools", 0], ["Definition", builtin?.tokens]]);
 
 	// The aggregate part still marks the schema, since only the definition is in the child text
 	const part = items.find((entry) => entry.id === "tool:builtin")?.sections?.[0];
@@ -720,11 +720,11 @@ test("analyzeSystemPrompt marks the parts a replaced prompt drops without counti
 	}
 	assert.deepEqual(
 		findItem(items, "tool:npm:web:search")?.sections?.map((section) => section.label),
-		["Tools", "Rules", "Definition"],
+		["System Prompt › Tools", "System Prompt › Rules", "Definition"],
 	);
 	assert.deepEqual(
 		findItem(items, "tool:builtin:read")?.sections?.map((section) => section.label),
-		["Tools", "Definition"],
+		["System Prompt › Tools", "Definition"],
 	);
 });
 

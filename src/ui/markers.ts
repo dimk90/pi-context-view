@@ -86,7 +86,7 @@ const MARKER_LEGENDS: Record<Exclude<ContextMarker, "diff">, MarkerLegend> = {
 	"counted-in-system-prompt": {
 		keyword: "Counted in System Prompt",
 		color: "muted",
-		explanation: " parts are already counted in the System Prompt part with the same name.",
+		explanation: " parts are already counted in the System Prompt part they name.",
 	},
 	moved: {
 		keyword: "Moved",
