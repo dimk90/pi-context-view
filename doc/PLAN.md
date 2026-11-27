@@ -7,7 +7,7 @@
   - `renderExpectedUnits()` in `src/capture/adjustments.ts` uses `grammarInputs.declared` whenever system messages are kept. Check whether this case needs `grammarInputs.current`, as `gpt-5.3-codex` has `supportsOpenAIGrammarTools`.
   - Add a test that activates, removes, and redefines tools on such a model: both diffs stay empty. Update the "Inline tool changes" row in `doc/architecture/validation.md` and the Tool-Declaration Channel in `doc/architecture/payload-guard.md`.
 
-- [ ] **Update Copilot Completions reasoning in `doc/THINKING.md`**:
+- [x] **Update Copilot Completions reasoning in `doc/THINKING.md`**:
   - Since Pi 1.7.0, Copilot `openai-completions` models replay the latest `reasoning_opaque` value ([#12418](https://github.com/earendil-works/pi/issues/12418)). Their `thinkingSignature` is a JSON envelope (`{ field, reasoning_opaque }`), not a field name.
   - `doc/THINKING.md` says hidden reasoning is never sent back for Completions and that the signature holds a field name. Fix both statements.
   - Decide whether to keep these messages visible-only until the opaque cost is measured, as for OpenRouter `reasoning_details`.
@@ -28,4 +28,10 @@
   - OpenAI Completions messages count visible thinking only, so encrypted reasoning that OpenRouter replays in `reasoning_details` is not counted. See `doc/THINKING.md`.
   - Measure first: send the same history twice, with and without `reasoning_details`, to an Anthropic keep-all model with caching off, and compare `prompt_tokens` with `usage.reasoning`.
   - If they match, count `usage.reasoning` for messages whose details all have `format: "anthropic-claude-v1"`. Keep other formats visible-only until they are measured too.
+  - Record the measurements in `doc/THINKING.md`.
+
+- [ ] **Measure Copilot `reasoning_opaque` replay**:
+  - Copilot Completions messages (Gemini, Kimi) count visible thinking only, so the replayed `reasoning_opaque` is not counted. See `doc/THINKING.md`.
+  - Measure first: send the same history twice, with and without `reasoning_opaque`, and compare `prompt_tokens` with `usage.reasoning` and the opaque length.
+  - Only the latest opaque value per message is replayed, so `usage.reasoning` may cover more reasoning than the replay holds.
   - Record the measurements in `doc/THINKING.md`.

@@ -16,7 +16,7 @@
 
 ### Fixed
 * `[probe]` Store only new probe identities per session entry, not every known one.
-* `[usage]` Count only visible thinking for OpenAI Completions, which never replays the rest.
+* `[usage]` Count only visible thinking for OpenAI Completions, not its generated reasoning.
 * `[usage]` Indent System Prompt content one level under its header, like other views.
 
 

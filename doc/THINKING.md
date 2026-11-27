@@ -62,22 +62,32 @@ across the message and then allocated back to the individual preview entries.
 
 For `openai-completions` messages, the estimator ignores both
 `usage.reasoning` and signatures, so `countedTokens = visibleTokens` and no
-invisible-reasoning annotation is shown. Checked against Pi 1.6.0:
+invisible-reasoning annotation is shown. Checked against Pi 1.7.0:
 
-- Pi replays only the visible thinking text, in the field that
-  `thinkingSignature` names (`reasoning_content`, `reasoning`, or
-  `reasoning_text`). Hidden reasoning is never sent back.
+- `thinkingSignature` holds replay data, not an envelope that Pi tokenizes.
+  It has one of three forms: a field name (`reasoning_content`, `reasoning`,
+  or `reasoning_text`), a JSON array of OpenRouter `reasoning_details`, or a
+  GitHub Copilot JSON object `{ field, reasoning_opaque }`. Its length is not
+  a reasoning proxy.
+- Pi replays the visible thinking text in the named field. The two JSON forms
+  can also send hidden reasoning back, see below.
 - `usage.reasoning` comes from `completion_tokens_details.reasoning_tokens`
   or top-level `reasoning_tokens`. It counts the reasoning the model
   generated, not its later context cost. Since Pi 1.6.0, GitHub Copilot Gemini
   and Kimi models report it, often well above the visible summary.
 - Pi sets the field to `0` when the provider reports nothing, so it never
   signals an absent count.
-- `thinkingSignature` usually holds a field name, not an envelope, so its
-  length is not a reasoning proxy.
 
-OpenRouter `reasoning_details` replay can carry encrypted reasoning, but its
-cost is unmeasured, so it is not estimated either.
+Two replay paths can carry hidden reasoning. Their cost is unmeasured, so
+these messages also stay visible-only:
+
+- OpenRouter `reasoning_details` can carry encrypted reasoning.
+- Since Pi 1.7.0, GitHub Copilot Completions models (Gemini and Kimi) replay
+  `reasoning_opaque`
+  ([#12418](https://github.com/earendil-works/pi/issues/12418)). Copilot
+  streams one opaque value per reasoning segment, and Pi replays only the
+  latest one with the joined visible text. It sends the value even when the
+  thinking text is empty.
 
 Since Pi 1.3.0, a request drops the thinking blocks of assistant messages from
 another provider, API, or model, and their tool calls' `thoughtSignature`.
@@ -156,7 +166,7 @@ because a short summary can front an arbitrarily long encoded reasoning trace.
 
 Prefer `usage.reasoning`; fall back to the signature proxy only when it is
 absent, and present the fallback as approximate. These measurements cover
-Anthropic only. OpenAI Completions does not replay hidden reasoning, see
+Anthropic only. OpenAI Completions hidden-reasoning replay is unmeasured, see
 [above](#openai-completions-counts-visible-thinking-only).
 
 ## Preview presentation
