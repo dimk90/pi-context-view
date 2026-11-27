@@ -105,8 +105,8 @@ Within an event, handlers run in extension order and see previous handlers'
 results. Across preparation events, the sequence is fixed regardless of load
 order. Capture relies on that separation, not on being first or last.
 
-On the response side, `after_provider_response` reports the HTTP status; the
-OpenAI and Anthropic adapters skip it for error statuses their SDK rejects.
+On the response side, `after_provider_response` reports the HTTP status; since
+Pi 1.6.1, it also fires for error statuses and for each retried attempt.
 Both `provider_stream_event` and assistant `message_start` identify the
 dispatched provider, API, and model, in no fixed order. Assistant `message_end`
 carries that identity too, including for failures. Pi emits

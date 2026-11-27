@@ -1,9 +1,18 @@
 
-# v0.9.0
+# Backlog
 
-- [x] Move "Window/Content" % to back to hotkey bar:
-  - to reduce visual noise.
-  - use underline for the current mode.
+- [x] **Update to Pi 1.6.1**:
+  - Bump the four Pi development pins to `1.6.1` and run `pnpm install`.
+  - Pi 1.6.1 fires `after_provider_response` for HTTP 4xx/5xx responses and for each retried attempt on OpenAI, Azure OpenAI, Anthropic, and Google models ([#12376](https://github.com/earendil-works/pi/issues/12376)).
+  - Fix `test/dispatch-runtime.test.ts` ("assistant events carry the dispatch identity, also for a failure"): the HTTP 500 case now expects `after_provider_response` before the assistant events.
+  - Update `doc/architecture/payload-guard.md` (Event order) and `doc/architecture/pi-requests.md` (response side), which say error responses skip `after_provider_response`.
+  - Run `pnpm check`.
+
+- [ ] **Stop repeating probe identities in the session**:
+  - Each `pi-context-view:probe-identities` entry stores every known identity, restored ones included (`SilentProbe.persistIdentities()`), so the session file grows quadratically with probe count.
+  - Seen in a long session: 369 entries took 6.2 MB of 9.7 MB, and the last one alone held all 752 identities.
+  - Write only the identities recorded since the last write. `session_start` already merges every entry, so old sessions keep working.
+  - Update `doc/architecture/probe.md` and the persistence tests.
 
 - [ ] Fix more than 100% context windows:
   - Discuss what to do.

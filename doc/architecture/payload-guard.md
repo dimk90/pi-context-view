@@ -321,8 +321,8 @@ adapters. Other adapters were checked in the source only.
   resolves, the first `provider_stream_event` often reaches handlers first.
   `after_provider_response` came before both, and assistant `message_end` after
   both. Without a `provider_stream_event` handler, the order was
-  `after_provider_response`, assistant `message_start`, assistant `message_end`. A failure before streaming (HTTP 500) had only assistant
-  `message_start` and `message_end`, both with the identity, and no
+  `after_provider_response`, assistant `message_start`, assistant `message_end`. A failure before streaming (HTTP 500) had the same order, with
+  the identity on both assistant events. Before Pi 1.6.1, it had no
   `after_provider_response`. In the source, Bedrock and Pi Messages emit
   `provider_stream_event` before they push the start.
 - **Routed models.** Under a virtual selection, `ctx.model` in

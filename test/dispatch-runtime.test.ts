@@ -133,8 +133,9 @@ suite("request model on a physical selection", { concurrency: true }, () => {
 			const dispatched = identity(api, "vision");
 			assert.deepEqual(delayed.events,
 				["after_provider_response", `message_start ${dispatched}`, `message_end ${dispatched}`]);
-			assert.deepEqual(failed.events, [`message_start ${dispatched}`, `message_end ${dispatched}`],
-				"a failure before streaming has only the assistant events, and no after_provider_response");
+			assert.deepEqual(failed.events,
+				["after_provider_response", `message_start ${dispatched}`, `message_end ${dispatched}`],
+				"an HTTP error response also reaches after_provider_response before the assistant events");
 		});
 	}
 
