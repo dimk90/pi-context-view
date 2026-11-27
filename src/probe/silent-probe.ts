@@ -13,7 +13,12 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import { probeFailure, type ProbeFailure, type ProbeFailureCause } from "./failure.ts";
-import { type PersistedIdentities, PROBE_IDENTITIES_CUSTOM_TYPE, type ProbeFilter } from "./filter.ts";
+import {
+	type PersistedIdentities,
+	PROBE_IDENTITIES_CUSTOM_TYPE,
+	type ProbeFilter,
+	type SyntheticMessageIdentity,
+} from "./filter.ts";
 import { createProbeToken, type ProbeToken, readProbeToken } from "./token.ts";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
@@ -104,7 +109,7 @@ export class SilentProbe {
 	/** Whether a wrong claim was reported; runs started from the probe's handlers inherit the token too. */
 	private wrongClaimReported = false;
 	/** Identities this runtime recorded since its last persisted entry. */
-	private unpersistedCount = 0;
+	private unpersisted: SyntheticMessageIdentity[] = [];
 
 	/** Record probe identities in `filter`, which also holds those of earlier runtimes. */
 	public constructor(filter: ProbeFilter) {
@@ -218,8 +223,9 @@ export class SilentProbe {
 		} else if (message.role !== "assistant") {
 			return;
 		}
-		if (this.filter.record({ role: message.role, timestamp: message.timestamp }))
-			this.unpersistedCount++;
+		const identity = { role: message.role, timestamp: message.timestamp };
+		if (this.filter.record(identity))
+			this.unpersisted.push(identity);
 	}
 
 	/**
@@ -281,14 +287,15 @@ export class SilentProbe {
 	}
 
 	/**
-	 * Write every known identity, restored ones included, once this runtime
-	 * recorded new ones since its last write. Records never contain content.
+	 * Write only the identities recorded since this runtime's last write, if
+	 * any: `session_start` merges every entry, and repeating known identities
+	 * would grow the session quadratically. Records never contain content.
 	 */
 	public persistIdentities(write: (data: PersistedIdentities) => void): void {
-		if (this.unpersistedCount === 0)
+		if (this.unpersisted.length === 0)
 			return;
-		write({ messages: this.filter.syntheticMessages });
-		this.unpersistedCount = 0;
+		write({ messages: this.unpersisted });
+		this.unpersisted = [];
 	}
 
 	/**

@@ -329,8 +329,11 @@ disappears on reload or resume. Nothing of that text is sent or stored.
 
 Persist only role-and-timestamp identities in
 `pi-context-view:probe-identities` custom entries on `agent_settled` and
-`session_shutdown`. Restore all prior identities on `session_start`, including
-after resume, reload, and fork. Omission edits persist only target entry IDs
+`session_shutdown`. Each entry holds only the identities recorded since the
+runtime's last write, so the session grows linearly with probe count. Restore
+all prior identities on `session_start` by merging every entry, including
+after resume, reload, and fork. A fork keeps them: each entry follows its
+probe's messages on the same branch. Omission edits persist only target entry IDs
 and `null`. Neither record stores content.
 
 ## Preconditions, Failures, and Fallback

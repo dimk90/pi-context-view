@@ -15,6 +15,7 @@
 * `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.
 
 ### Fixed
+* `[probe]` Store only new probe identities per session entry, not every known one.
 * `[usage]` Count only visible thinking for OpenAI Completions, which never replays the rest.
 * `[usage]` Indent System Prompt content one level under its header, like other views.
 

@@ -339,7 +339,7 @@ test("SilentProbe filters restored identities without consuming the probe attemp
 	probe.fail("shutdown");
 });
 
-test("SilentProbe persists every known identity only after recording new ones", () => {
+test("SilentProbe persists only identities recorded since its last write", () => {
 	const { filter, probe } = createProbe();
 	const written: PersistedIdentities[] = [];
 	const write = (data: PersistedIdentities) => { written.push(data); };
@@ -355,13 +355,13 @@ test("SilentProbe persists every known identity only after recording new ones", 
 	probe.recordMessage(probeUser);
 	probe.persistIdentities(write);
 	probe.persistIdentities(write);
-	assert.deepEqual(written, [{ messages: [{ role: "user", timestamp: 1 }, { role: "user", timestamp: 10 }] }],
-		"one entry keeps restored identities beside the new one");
+	assert.deepEqual(written, [{ messages: [{ role: "user", timestamp: 10 }] }],
+		"one entry holds only the new identity, not restored ones");
 
 	probe.recordMessage(assistantMessage("error", 11, "This operation was aborted"));
 	probe.persistIdentities(write);
-	assert.equal(written.length, 2);
-	assert.deepEqual(written[1].messages.at(-1), { role: "assistant", timestamp: 11 });
+	assert.deepEqual(written[1], { messages: [{ role: "assistant", timestamp: 11 }] },
+		"a later entry does not repeat earlier written identities");
 	probe.settle();
 });
 
