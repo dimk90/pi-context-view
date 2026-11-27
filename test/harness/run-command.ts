@@ -35,7 +35,9 @@ export async function runCommand(
 	let stderr = "";
 	child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
 	child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+
 	// `once` rejects on the "error" event, such as a missing executable
 	const [status] = await once(child, "close") as [number | null];
+
 	return { status, stdout, stderr };
 }

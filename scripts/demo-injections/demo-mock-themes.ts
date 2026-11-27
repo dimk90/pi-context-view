@@ -12,25 +12,34 @@ export interface MockThemeOptions extends MockResourceOptions {
 }
 
 /** Copy the selected custom theme, or both members of an automatic light/dark pair, without installing packages. */
-export async function copySelectedThemes({ sourceDir, agentDir, settings, resources }: MockThemeOptions): Promise<void> {
-	const selected = new Set(typeof settings.theme === "string" ? settings.theme.split("/").map((name) => name.trim()) : []);
+export async function copySelectedThemes({
+	sourceDir, agentDir, settings, resources,
+}: MockThemeOptions): Promise<void> {
+	const selected = new Set(typeof settings.theme === "string"
+		? settings.theme.split("/").map((name) => name.trim())
+		: []);
 	selected.delete("system");
 	selected.delete("");
-	if (selected.size === 0) return;
+	if (selected.size === 0)
+		return;
+
 	const resolved = resources ?? await resolveMockResources({ sourceDir, agentDir, settings });
 	const loader = new DefaultResourceLoader({
 		cwd: agentDir, agentDir, settingsManager: SettingsManager.inMemory(),
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noContextFiles: true, noThemes: true,
-		additionalThemePaths: resolved.themes.filter((resource) => resource.enabled && resource.metadata.scope === "user")
+		additionalThemePaths: resolved.themes
+			.filter((resource) => resource.enabled && resource.metadata.scope === "user")
 			.map((resource) => resource.path),
 	});
 	await loader.reload();
 	for (const theme of loader.getThemes().themes) {
-		if (theme.name === undefined || theme.sourcePath === undefined || !selected.has(theme.name)) continue;
+		if (theme.name === undefined || theme.sourcePath === undefined || !selected.has(theme.name))
+			continue;
 		await mkdir(join(agentDir, "themes"), { recursive: true });
 		// Use the declared name for Pi's user-theme lookup and watcher, not a package-specific filename
 		await copyFile(theme.sourcePath, join(agentDir, "themes", `${theme.name}.json`));
 		selected.delete(theme.name);
-		if (selected.size === 0) break;
+		if (selected.size === 0)
+			break;
 	}
 }

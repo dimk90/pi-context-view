@@ -15,7 +15,9 @@ test("normalizePreviewText normalizes whitespace and removes terminal controls",
 });
 
 test("normalizePreviewText strips every terminal string form and preserves incomplete payloads", () => {
-	const starts = ["\u001b]", "\u001bP", "\u001bX", "\u001b^", "\u001b_", "\u0090", "\u0098", "\u009d", "\u009e", "\u009f"];
+	const starts = [
+		"\u001b]", "\u001bP", "\u001bX", "\u001b^", "\u001b_", "\u0090", "\u0098", "\u009d", "\u009e", "\u009f",
+	];
 	for (const start of starts) {
 		for (const end of ["\u0007", "\u001b\\", "\u009c"]) {
 			assert.equal(normalizePreviewText(`before${start}hidden${start}nested${end}after`), "beforeafter");

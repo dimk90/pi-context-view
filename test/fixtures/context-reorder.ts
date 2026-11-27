@@ -19,9 +19,12 @@ export default function (pi: ExtensionAPI): void {
 		const marked = event.messages.findIndex((message) => message.role === "user"
 			&& JSON.stringify(message.content).includes(CONTEXT_REORDER_MARKER));
 		const latest = event.messages.findLastIndex((message) => message.role === "user");
-		if (marked === -1 || marked === latest) return undefined;
+		if (marked === -1 || marked === latest)
+			return undefined;
+
 		const messages = [...event.messages];
 		[messages[marked], messages[latest]] = [messages[latest], messages[marked]];
+
 		return { messages };
 	});
 }

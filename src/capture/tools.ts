@@ -38,7 +38,8 @@ export function compareToolDeclarations(input: ToolComparisonInput): GuardFindin
 	const findings: GuardFinding[] = [];
 
 	for (const tool of input.expected) {
-		if (declaredNames.has(tool.name)) continue;
+		if (declaredNames.has(tool.name))
+			continue;
 		findings.push({
 			type: "payload-tool-change",
 			change: "deleted",
@@ -50,7 +51,8 @@ export function compareToolDeclarations(input: ToolComparisonInput): GuardFindin
 		const tool = expectedByName.get(declaration.name);
 		const before = tool?.description ?? "";
 		const after = declaration.description ?? "";
-		if (tool !== undefined && normalizeText(before) === normalizeText(after)) continue;
+		if (tool !== undefined && normalizeText(before) === normalizeText(after))
+			continue;
 		findings.push({
 			type: "payload-tool-change",
 			change: tool === undefined ? "added" : "modified",
@@ -58,12 +60,16 @@ export function compareToolDeclarations(input: ToolComparisonInput): GuardFindin
 			lines: diffLines(before, after),
 		});
 	}
+
 	return findings;
 }
 
 /** The expected name a payload name stands for; itself when it matches exactly or nothing matches. */
 function resolveName(name: string, expected: ReadonlyMap<string, unknown>, ignoreCase: boolean): string {
-	if (!ignoreCase || expected.has(name)) return name;
+	if (!ignoreCase || expected.has(name))
+		return name;
+
 	const lower = name.toLowerCase();
+
 	return [...expected.keys()].find((candidate) => candidate.toLowerCase() === lower) ?? name;
 }

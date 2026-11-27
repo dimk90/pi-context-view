@@ -20,10 +20,18 @@ function section(before: string, after: string): InjectionSection {
 
 test("message diffs keep context once and highlight words across multiple changed lines", () => {
 	const theme = createTheme();
-	const part = section("context\nfirst old rule\nsecond old rule\nend", "context\nfirst new rule\nsecond new rule\nend");
+	const part = section(
+		"context\nfirst old rule\nsecond old rule\nend",
+		"context\nfirst new rule\nsecond new rule\nend",
+	);
 	const rows = messageDiffLines(theme, part, 100);
 	assert.deepEqual(plain(rows), [
-		"    context", "  - first old rule", "  + first new rule", "  - second old rule", "  + second new rule", "    end",
+		"    context",
+		"  - first old rule",
+		"  + first new rule",
+		"  - second old rule",
+		"  + second new rule",
+		"    end",
 	]);
 	assert.equal(rows.filter((line) => line.includes(theme.inverse("old"))).length, 2);
 	assert.equal(rows.filter((line) => line.includes(theme.inverse("new"))).length, 2);
@@ -63,6 +71,7 @@ test("message diff bodies expand both marked JSON versions without changing the 
 	]);
 	assert.ok(rows.some((line) => line.includes(theme.inverse("new"))));
 	assert.deepEqual(part, copy);
+
 	const rawJson = messageDiffLines(theme, section(before, after), 100);
 	assert.equal(rawJson.length, 2, "unmarked JSON-looking strings stay plain");
 });
@@ -91,6 +100,7 @@ test("diffs sanitize each whole side before inserting styles, and preserve Unico
 		assert.ok(rows.some((line) => line.includes("\u001b[7m")));
 		assert.ok(plain(rows).some((line) => line.startsWith("    ")), "continuations hang after the gutter");
 	}
+
 	const payload = payloadDiffLines(theme, [{ type: "added", text: "a\rb\u001b[2J" }], 100);
 	assert.deepEqual(plain(payload), ["  + a b"]);
 });

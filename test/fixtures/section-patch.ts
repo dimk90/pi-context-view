@@ -9,13 +9,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export const SECTION_PATCH_NAME = "context-view-fixture";
-export const SECTION_PATCH_TEXT = "<context-view-fixture>XYZZY_SECTION_PATCH: request-only section.</context-view-fixture>";
+export const SECTION_PATCH_TEXT =
+	"<context-view-fixture>XYZZY_SECTION_PATCH: request-only section.</context-view-fixture>";
 
 /** Request-only sections with distinct content for preview assertions. */
 export const SECTION_PATCH_SECTIONS = {
 	[SECTION_PATCH_NAME]: SECTION_PATCH_TEXT,
 	"context-view-fixture-checklist": "<context-view-fixture-checklist>\nXYZZY_SECTION_PATCH_CHECKLIST:\n"
-		+ "- Read the affected files before editing.\n- Run focused tests after the change.\n</context-view-fixture-checklist>",
+		+ "- Read the affected files before editing.\n- Run focused tests after the change.\n"
+		+ "</context-view-fixture-checklist>",
 	"context-view-fixture-summary": "<context-view-fixture-summary>\nXYZZY_SECTION_PATCH_SUMMARY:\n"
 		+ "Summarize the change, checks run, and any remaining limitations.\n</context-view-fixture-summary>",
 };

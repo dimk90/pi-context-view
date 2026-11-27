@@ -19,6 +19,7 @@ export default function (pi: ExtensionAPI): void {
 		if (saved.some((message) => message.role === "custom" && message.customType === CONTEXT_DELETE_TYPE)) {
 			return undefined;
 		}
+
 		return { message: { customType: CONTEXT_DELETE_TYPE, content: CONTEXT_DELETE_TEXT, display: false } };
 	});
 	pi.on("context", (event) => ({

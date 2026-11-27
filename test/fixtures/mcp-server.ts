@@ -4,7 +4,9 @@ import { createInterface } from "node:readline";
 const lines = createInterface({ input: process.stdin });
 lines.on("line", (line) => {
 	const request = JSON.parse(line) as { id?: number | string; method?: string };
-	if (request.id === undefined) return;
+	if (request.id === undefined)
+		return;
+
 	const result = respond(request.method);
 	process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
 });
@@ -18,7 +20,11 @@ function respond(method: string | undefined): unknown {
 				serverInfo: { name: "context-guard-fixture", version: "1" }, instructions: "Test tools only.",
 			};
 		case "tools/list":
-			return { tools: [{ name: "echo", description: "Fixture echo.", inputSchema: { type: "object", properties: {} } }] };
+			return {
+				tools: [{
+					name: "echo", description: "Fixture echo.", inputSchema: { type: "object", properties: {} },
+				}],
+			};
 		case "tools/call":
 			return { content: [{ type: "text", text: "ok" }] };
 		default:

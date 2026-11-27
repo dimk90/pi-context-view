@@ -17,6 +17,7 @@ const SIGNATURE = "OPAQUE_SIGNATURE_BYTES";
 /** A capture with one user baseline message and the given request messages. */
 function request(id: number, messages: RequestMessage[]): CapturedRequest {
 	const baseline: BaselineMessage[] = [{ entryId: "u1", message: { role: "user", content: "hello", timestamp: 1 } }];
+
 	return {
 		id, origin: "real-turn",
 		baseline: { leafId: "leaf", messages: baseline }, effectivePrompt: "",
@@ -62,12 +63,16 @@ test("redaction removes image payloads and signature bytes without changing esti
 		content: [
 			{ type: "thinking", thinking: "plan", thinkingSignature: SIGNATURE },
 			{ type: "text", text: "answer", textSignature: SIGNATURE },
-			{ type: "toolCall", id: "c", name: "read", arguments: { thoughtSignature: "kept" }, thoughtSignature: SIGNATURE },
+			{
+				type: "toolCall", id: "c", name: "read", arguments: { thoughtSignature: "kept" },
+				thoughtSignature: SIGNATURE,
+			},
 		],
 	};
 	const assistant = redactMessage(original);
 	assert.doesNotMatch(JSON.stringify(assistant), /OPAQUE/);
 	assert.ok(assistant.role === "assistant");
+
 	const [thinking, text, call] = assistant.content;
 	assert.ok(thinking.type === "thinking" && text.type === "text" && call.type === "toolCall");
 	assert.equal(thinking.thinkingSignature?.length, SIGNATURE.length, "the reasoning proxy keeps the length");
@@ -93,6 +98,7 @@ test("a snapshot keeps redacted, attributed changes and entry references", () =>
 		["modified", {}],
 		["added", { customType: "note" }],
 	]);
+
 	const [modified] = snapshot.changes.conversation;
 	assert.ok(modified.type === "modified");
 	assert.equal(modified.entryId, "u1");
@@ -110,7 +116,8 @@ test("a request copy keeps only the differing messages and the replayed system s
 		{ entryId: "u2", message: { role: "user", content: "two", timestamp: 2 } },
 	];
 	const unchanged = copyRequest(baseline, structuredClone(baseline.map(({ message }) => message)));
-	assert.deepEqual(unchanged.conversation, { prefix: 2, baseline: [], request: [] }, "an unchanged request copies no message");
+	assert.deepEqual(unchanged.conversation, { prefix: 2, baseline: [], request: [] },
+		"an unchanged request copies no message");
 
 	const messages: RequestMessage[] = [
 		structuredClone(system),
@@ -126,19 +133,23 @@ test("a request copy keeps only the differing messages and the replayed system s
 	const [requestSystem, , edited] = messages;
 	assert.ok(requestSystem.role === "system" && edited.role === "user");
 	edited.content = "changed after capture";
+
 	const schema = requestSystem.toolsAdded?.[0].parameters as { properties: Record<string, unknown> } | undefined;
 	assert.ok(schema);
 	schema.properties.path = { type: "string" };
-	if (requestSystem.sections) requestSystem.sections.cwd = "<cwd>/changed</cwd>";
+	if (requestSystem.sections)
+		requestSystem.sections.cwd = "<cwd>/changed</cwd>";
 	requestSystem.toolsAdded?.push({ name: "added_after_capture", description: "", parameters: {} });
 	assert.deepEqual(copy.systemTexts, [{
 		position: 0, content: "Prompt", sections: { cwd: "<cwd>/a</cwd>" }, toolNames: { added: ["read"], removed: [] },
 	}], "system texts are owned copies");
+
 	const snapshot = buildRequestSnapshot({
 		id: 1, origin: "real-turn", baseline: { leafId: "leaf", messages: baseline }, ...copy,
 		effectivePrompt: getCurrentSystemPrompt(baseline.map(({ message }) => message)),
 	}, { status: "pending" });
 	assert.deepEqual(snapshot.changes.system, [], "the captured tool schema is unchanged");
+
 	const [modified] = snapshot.changes.conversation;
 	assert.ok(modified.type === "modified" && modified.message.role === "user");
 	assert.equal(modified.message.content, "two, edited");
@@ -166,9 +177,12 @@ test("a request copy reuses the baseline's equal declarations and copies only di
 
 	redefined.description = "changed after capture";
 	const snapshot = buildRequestSnapshot({
-		id: 1, origin: "real-turn", baseline: { leafId: "leaf", messages: baseline }, ...copy, effectivePrompt: "Prompt",
+		id: 1, origin: "real-turn", baseline: { leafId: "leaf", messages: baseline }, ...copy,
+		effectivePrompt: "Prompt",
 	}, { status: "pending" });
-	assert.deepEqual(snapshot.changes.system.map((change) => change.type === "tool" && change.declaration?.description), [
+	const descriptions = snapshot.changes.system
+		.map((change) => change.type === "tool" && change.declaration?.description);
+	assert.deepEqual(descriptions, [
 		"Write any file",
 		"Fetch a page",
 	]);
@@ -219,7 +233,9 @@ test("a dispatch mismatch replaces an already settled guard", async () => {
 	const builder = new SnapshotBuilder({ publish: (snapshot) => published.push(snapshot) });
 	builder.build({ ...request(1, []), hiddenTools: ["read"] });
 	await flushImmediates();
-	builder.settleGuard(1, { status: "complete", dispatch: { provider: "mock", api: "api", model: "m" }, findings: [] });
+	builder.settleGuard(1, {
+		status: "complete", dispatch: { provider: "mock", api: "api", model: "m" }, findings: [],
+	});
 	assert.equal(published.at(-1)?.guard.status, "complete");
 	builder.settleGuard(1, { status: "incomplete", reason: "Dispatch mismatch." });
 	builder.release(1);
@@ -254,6 +270,7 @@ test("a capture's forced prompt is resolved once for the builder and the guard",
 	// A second resolution reuses the first instead of replaying the baseline again
 	unforced.effectivePrompt = "Changed.";
 	assert.equal(resolveForcedPrompt(unforced), undefined);
+
 	const forced = { effectivePrompt: "Forced.", baseline: { messages: [head] } };
 	assert.equal(resolveForcedPrompt(forced), "Forced.");
 	forced.effectivePrompt = "Base.";

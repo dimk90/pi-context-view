@@ -16,6 +16,7 @@ export class DispatchConfirmer<Request> {
 	public expect(request: Request): Request | undefined {
 		const previous = this.awaiting;
 		this.awaiting = request;
+
 		return previous;
 	}
 
@@ -26,6 +27,7 @@ export class DispatchConfirmer<Request> {
 	public take(): Request | undefined {
 		const request = this.awaiting;
 		this.awaiting = undefined;
+
 		return request;
 	}
 

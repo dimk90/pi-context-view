@@ -16,6 +16,7 @@ const FORBIDDEN_DIRECTORIES = ["src/capture/", "src/probe/"];
 function relativeImports(file: string): string[] {
 	const source = readFileSync(file, "utf8");
 	const specifiers = [...source.matchAll(/^(?:import|export)\b[^;]*?["'](\.{1,2}\/[^"']+)["']/gms)];
+
 	return specifiers.map((match) => resolve(dirname(file), match[1]))
 		.filter((path) => !relative(ROOT, path).startsWith("node_modules/"));
 }
@@ -26,10 +27,12 @@ function reachableModules(entry: string): Set<string> {
 	const pending = [resolve(ROOT, entry)];
 	while (pending.length > 0) {
 		const file = pending.pop();
-		if (file === undefined || seen.has(file)) continue;
+		if (file === undefined || seen.has(file))
+			continue;
 		seen.add(file);
 		pending.push(...relativeImports(file));
 	}
+
 	return new Set([...seen].map((file) => relative(ROOT, file)));
 }
 

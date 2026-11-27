@@ -99,7 +99,8 @@ outcome.
 
 Use `sendUserMessage("")`, not `pi.sendMessage(..., { triggerTurn: true })`:
 a custom-message run skips `input` and handlers limited to
-`messageType === "user"`, so it is a worse approximation of a user prompt.
+`messageType === "user"`, so it is a worse approximation of a user prompt
+([rejected alternative](#rejected-alternative-custom-message-probe)).
 Abort at `turn_start`, not `before_provider_request`:
 some transports skip the payload hook, and a standard probe never reaches it
 ([below](#what-a-probe-run-reaches)).
@@ -174,7 +175,8 @@ that run continue: it may be the user's prompt or another extension's message,
 so never abort or rewrite it.
 
 Keep watching for the probe run after the attempt ends. The attempt can end
-early, on timeout or because a foreign run failed it, while the probe's own run
+early, on timeout, on a passed stage limit, or because a foreign run failed it,
+while the probe's own run
 is still on its way. That run still carries the token, so it is still claimed,
 aborted, and sanitized.
 
@@ -229,6 +231,28 @@ fail-safe**, however: nested user-message sends can still be mistaken for the
 probe when the sender's `input` handler runs first, including non-empty sends
 that the old checks would have left alone. A timeout or fallback does not fix
 that ownership mistake or guarantee that the original probe is aborted.
+
+### Rejected Alternative: Custom-Message Probe
+
+A probe started with
+`pi.sendMessage({ customType, display: false }, { triggerTurn: true })` works
+on Pi 1.5.2: `before_agent_start` carries the message, a `message_end`
+replacement blanks it, a `context_edit` omits its `custom_message` entry, and
+`ctx.abort()` at `turn_start` ends the run without a provider request.
+
+| Gain                                                                                   | Cost                                                                                                                              |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `customType` identifies the run exactly: no token, `input` reset, or nested-send limit | `input` handlers and handlers limited to `messageType === "user"` do not run, so the snapshot misses their contributions          |
+| No row on screen: the TUI skips a `display: false` custom message                      | A handler that reads `event.prompt` without checking `messageType` throws; Pi shows the error and drops that handler's result     |
+| No `input` handler can return `handled`, and Pi's prompt authentication check is skipped | While another run is active, Pi steers the message into that run instead of rejecting the send; Pi has no compaction guard here |
+|                                                                                        | Pi before 1.2.0 fires no `before_agent_start` for a custom-message run                                                            |
+
+The aborted assistant message has no `customType`, so role-and-timestamp
+identities and their persisted entry would stay in either design.
+
+Keep the user-message probe: nested sends are rare, while Pi's documentation
+tells handlers that act on prompts to check `messageType === "user"`, so the
+custom-message snapshot would miss the injections the views exist to show.
 
 ## Keeping Probe Messages Out of Real Context
 
@@ -305,8 +329,11 @@ disappears on reload or resume. Nothing of that text is sent or stored.
 
 Persist only role-and-timestamp identities in
 `pi-context-view:probe-identities` custom entries on `agent_settled` and
-`session_shutdown`. Restore all prior identities on `session_start`, including
-after resume, reload, and fork. Omission edits persist only target entry IDs
+`session_shutdown`. Each entry holds only the identities recorded since the
+runtime's last write, so the session grows linearly with probe count. Restore
+all prior identities on `session_start` by merging every entry, including
+after resume, reload, and fork. A fork keeps them: each entry follows its
+probe's messages on the same branch. Omission edits persist only target entry IDs
 and `null`. Neither record stores content.
 
 ## Preconditions, Failures, and Fallback
@@ -380,7 +407,7 @@ limitation also remains. Strict zero-provider-request guarantees require
 passive capture.
 
 Any skipped precondition above, a missing model, missing authentication, a
-startup failure, a timeout, a nested send, or a probe that settles without a
+startup failure, a timeout, a run that did not start in time, a nested send, or a probe that settles without a
 request snapshot reports a precise reason. Each failure also carries a typed cause from `src/probe/failure.ts`;
 callers and tests branch on the cause, while the reason is diagnostic text
 that neither view shows.
@@ -396,11 +423,23 @@ throw. No run starts, and no event reports it, when:
 - Pi rejects the prompt, for example because compaction or another run started
   after the preconditions passed, or authentication stopped resolving.
 
-The attempt then waits for its full 5-second timeout and reports `timeout`,
-without the real reason.
+Two stage limits stand in for the missing signal, so the attempt does not wait
+for its full 5-second timeout. Passing either one fails the attempt with the
+`no-run` cause:
 
-Always restore the working-row state in `finally`. If the probe times out,
-keep tracking its run until it settles: delayed synthetic messages must still
+| Stage                                                 | Limit | Runs inside it                                                                                                                 |
+| ----------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Send to this extension's `input` handler              | 1 s   | Earlier extensions' `input` handlers                                                                                           |
+| That `input` to this extension's `before_agent_start` | 2 s   | Later `input` handlers, Pi's authentication and pre-prompt compaction checks, earlier extensions' `before_agent_start` handlers |
+
+The limits are a guess, not a signal: `no-run` does not tell a `handled` input
+from a rejected prompt, and a slow handler inside a stage fails a probe that
+would have started. The second limit is longer because `before_agent_start`
+handlers may do slow work. Claiming the run ends the stage limits; the
+5-second timeout then covers the run until it settles.
+
+Always restore the working-row state in `finally`. If the probe times out or
+passes a stage limit, keep tracking its run until it settles: delayed synthetic messages must still
 be sanitized and filtered.
 
 ## Side Effects

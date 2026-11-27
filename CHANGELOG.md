@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.9.0] - 27.11.2026
+
+Adds selectable usage map icon styles and a cleaner, more aligned look for both views,
+plus faster probe fallback and more accurate thinking counts.
+
+### New
+* `[usage]` Add `iconStyle` and `iconStyles` to pick or define the usage map glyphs.
+* `[usage]` Add `i` to cycle the usage map icon styles and save the selected one.
+
+### Changed
+* `[config]` Make `/context config` add missing defaults to an existing config file.
+* `[views]` Drop hints for standard/obvious keys: arrows, paging, etc.
+* `[views]` Pad view content on both sides, aligning descriptions and hints with titles.
+* `[usage]` Rename the "Used" % scale to "Content" and name the scales in the `P` hint.
+* `[views]` Swap hotkey bar colors: brighter keys, dimmer descriptions.
+* `[probe]` Open the fallback within 1–2 s, not 5 s, when the probe run never starts.
+
+### Fixed
+* `[probe]` Store only new probe identities per session entry, not every known one.
+* `[usage]` Count only visible thinking for OpenAI Completions, not its generated reasoning.
+* `[usage]` Indent System Prompt content one level under its header, like other views.
+
+---
+
+<img alt="v0.9.0 icons demo" width="800" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/a553932768bba22995a70a6c2f9fa4f4f50d8dee/doc/images/icon-styles.gif" />
+
+
 ## [0.8.4] - 10.11.2026
 
 ### Changed

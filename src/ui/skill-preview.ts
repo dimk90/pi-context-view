@@ -13,11 +13,13 @@ export type SkillPreviewSegment =
 	| { readonly type: "text"; readonly text: string }
 	| { readonly type: "skill"; readonly name: string };
 
+/** Character range of one matched tag in the message text. */
 interface TagSpan {
 	readonly start: number;
 	readonly end: number;
 }
 
+/** An opening skill tag and the skill name it carries. */
 interface SkillOpenTag extends TagSpan {
 	readonly name: string;
 }
@@ -39,16 +41,22 @@ export function splitSkillPreview(text: string): SkillPreviewSegment[] {
 
 	for (let openingIndex = 0; openingIndex < openings.length; openingIndex++) {
 		const opening = openings[openingIndex];
-		if (opening === undefined || opening.start < textStart) continue;
-		while ((closings[closingIndex]?.start ?? text.length) < opening.end) closingIndex++;
+		if (opening === undefined || opening.start < textStart)
+			continue;
+		while ((closings[closingIndex]?.start ?? text.length) < opening.end)
+			closingIndex++;
+
 		const closing = closings[closingIndex];
-		if (closing === undefined) continue;
+		if (closing === undefined)
+			continue;
 
 		while ((openingBoundaries[openingBoundaryIndex]?.start ?? text.length) <= opening.start) {
 			openingBoundaryIndex++;
 		}
+
 		const nextOpening = openingBoundaries[openingBoundaryIndex];
-		if (nextOpening !== undefined && nextOpening.start < closing.start) continue;
+		if (nextOpening !== undefined && nextOpening.start < closing.start)
+			continue;
 
 		pushTextSegment(segments, text.slice(textStart, opening.start));
 		segments.push({ type: "skill", name: opening.name });
@@ -57,6 +65,7 @@ export function splitSkillPreview(text: string): SkillPreviewSegment[] {
 	}
 
 	pushTextSegment(segments, text.slice(textStart));
+
 	return segments;
 }
 
@@ -79,5 +88,6 @@ function collectTagSpans(text: string, expression: RegExp): TagSpan[] {
 
 /** Append non-empty ordinary text without merging it into skill segments. */
 function pushTextSegment(segments: SkillPreviewSegment[], text: string): void {
-	if (text.length > 0) segments.push({ type: "text", text });
+	if (text.length > 0)
+		segments.push({ type: "text", text });
 }

@@ -38,6 +38,11 @@ Follow pi's native selector style rather than building a separate visual system:
 - Align comparable values and keep their columns stable while scrolling.
 - Keep hints concise and tied to actions available in the current state.
   Show progress counters only when content overflows.
+- Give standard keys no hint: arrows, `j`/`k`, paging, Enter that confirms a
+  prompt, and Escape that closes a view. Hint Escape only when it does
+  something else, such as Back or Clear.
+- A hint for a key that switches between modes lists the modes and marks the
+  active one bold and underlined, such as `P Window/Content %`.
 
 ### Color and casing
 

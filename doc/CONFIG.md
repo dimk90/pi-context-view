@@ -29,6 +29,14 @@ The config file created with `/context config` will contain:
   "mapCols": 16,
   "mapRows": 16,
 
+  "iconStyle": "Square",
+  "iconStyles": {
+    "CC": "⛝⛶⛂⛃⛃",
+    "Nerd": "󰅗⛶󰆼",
+    "Circle": "⮾·◕●♼",
+    "Square": "⛝⛶◧■▦"
+  },
+
   "autoProbing": true
 }
 ```
@@ -36,6 +44,10 @@ The config file created with `/context config` will contain:
 > [!TIP]
 > The config file holds overrides only: remove a key to fall back to the
 > built-in default.
+
+> [!TIP]
+> Run `/context config` again to add the keys a config file is missing, for
+> example after an update adds new settings. Existing values stay unchanged.
 
 > [!TIP]
 > Reopen `/context` to apply config changes. No need for pi `/reload`.
@@ -65,8 +77,8 @@ A value is either a Pi theme color name or a literal hex color:
   values in its own theme files.
 
 > [!NOTE]
-> `autoCompactBufferColor` and `freeSpaceColor` also color the `⛝`
-> and `⛶` glyphs in the Block Size key.
+> `autoCompactBufferColor` and `freeSpaceColor` also color the buffer and free
+> glyphs (`⛝` and `⛶` in the default icon style) in the Block Size key.
 
 
 ## Map Size
@@ -80,6 +92,46 @@ configured size that still fits, dropping columns before the legend becomes
 narrower than 32 columns and rows before the map outgrows the terminal height.
 A clamped map is rebuilt at the smaller size, so it still maps the whole context
 window.
+
+
+## Icon Styles
+
+`iconStyle` names the icon style that draws the `Context Usage` map, its legend
+markers and the map key. `iconStyles` lists the styles to choose from.
+
+Each style is a string of exactly 5 glyphs, in this order:
+
+| Position | Glyph in `Square` | Meaning                                |
+| -------- | ----------------- | -------------------------------------- |
+| 1        | `⛝`               | Auto-compact buffer                    |
+| 2        | `⛶`               | Free space                             |
+| 3        | `◧`               | Block shared by several categories     |
+| 4        | `■`               | Block of a single category             |
+| 5        | `▦`               | Compacted data                         |
+
+Press `i` in `Context Usage` to switch to the next style in the list. The
+selected style is saved to `iconStyle` when the view closes. Without a config
+file, this creates one that holds only `iconStyle`.
+
+Add your own style under any name and select it with `iconStyle`:
+
+```json
+{
+  "iconStyle": "Ascii",
+  "iconStyles": {
+    "Ascii": "x.+#%",
+    "Square": "⛝⛶◧■▦"
+  }
+}
+```
+
+- `iconStyles` replaces the whole list, so keep the pre-defined styles you
+  still want. Without the key, the four pre-defined styles stay available.
+- Every glyph must be one terminal cell wide; a style that is not exactly 5
+  such glyphs is ignored with a warning shown above the map.
+- When `iconStyle` is omitted or names an unknown style, the map uses `Square`,
+  or the first listed style when the list has no `Square`.
+- `Nerd` needs a [Nerd Font](https://www.nerdfonts.com/) in the terminal.
 
 
 ## Silent Probe

@@ -24,6 +24,7 @@ async function runMock(codemodeOnly: boolean, localExtensions: boolean, args: st
 		interrupted = signal;
 		child?.kill(signal);
 	}
+
 	const onInterrupt = () => interrupt("SIGINT");
 	const onTerminate = () => interrupt("SIGTERM");
 	process.on("SIGINT", onInterrupt);
@@ -35,10 +36,12 @@ async function runMock(codemodeOnly: boolean, localExtensions: boolean, args: st
 		process.env.PI_OFFLINE = "1";
 		provider = await startDemoMockProvider();
 		await writeMockConfig({ agentDir, sourceDir, baseUrl: provider.baseUrl, codemodeOnly, localExtensions });
-		if (interrupted) return 128 + constants.signals[interrupted];
+		if (interrupted)
+			return 128 + constants.signals[interrupted];
 		child = spawn("pi", [
 			"--offline", "--no-approve", "--no-session", "--model", MODEL, "--models", MODEL, ...args,
 		], { stdio: "inherit", env: mockEnvironment(agentDir) });
+
 		const [code, signal] = await once(child, "close") as [number | null, NodeJS.Signals | null];
 		return code ?? (signal ? 128 + constants.signals[signal] : 1);
 	} finally {
@@ -47,7 +50,8 @@ async function runMock(codemodeOnly: boolean, localExtensions: boolean, args: st
 		try {
 			await provider?.close();
 		} finally {
-			if (agentDir) await rm(agentDir, { recursive: true, force: true });
+			if (agentDir)
+				await rm(agentDir, { recursive: true, force: true });
 		}
 	}
 }
@@ -58,7 +62,9 @@ function mockEnvironment(agentDir: string): NodeJS.ProcessEnv {
 		...process.env, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
 		TMPDIR: agentDir,
 	};
-	for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]) delete env[key];
+	for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"])
+		delete env[key];
+
 	return env;
 }
 

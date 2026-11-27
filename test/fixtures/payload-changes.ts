@@ -36,9 +36,12 @@ export default function (pi: ExtensionAPI): void {
 		const payload = event.payload as { messages?: unknown; input?: unknown };
 		const key = Array.isArray(payload.input) ? "input" : "messages";
 		const source = payload[key];
-		if (!Array.isArray(source)) return undefined;
+		if (!Array.isArray(source))
+			return undefined;
+
 		const messages: PayloadMessage[] = source;
 		const blockType = key === "input" ? "input_text" : "text";
+
 		return {
 			...payload,
 			[key]: [
@@ -54,9 +57,14 @@ export default function (pi: ExtensionAPI): void {
 
 /** Match only a complete synthetic user message, never a marker inside a real prompt. */
 function hasText(message: PayloadMessage, text: string): boolean {
-	if (message.role !== "user") return false;
-	if (message.content === text) return true;
-	if (!Array.isArray(message.content) || message.content.length !== 1) return false;
+	if (message.role !== "user")
+		return false;
+	if (message.content === text)
+		return true;
+	if (!Array.isArray(message.content) || message.content.length !== 1)
+		return false;
+
 	const block = message.content[0];
+
 	return (block?.type === "text" || block?.type === "input_text") && block.text === text;
 }

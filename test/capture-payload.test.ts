@@ -22,8 +22,10 @@ function harness(probe = false) {
 	const snapshots = new SnapshotStore();
 	const published: RequestSnapshot[] = [];
 	snapshots.subscribe((snapshot) => published.push(snapshot));
+
 	const sessionManager = SessionManager.inMemory();
 	sessionManager.appendMessage({ ...SYSTEM, toolsAdded: [TOOL] });
+
 	const context = {
 		hasUI: true, sessionManager, model: { ...MODEL }, getSystemPrompt: () => "prompt",
 		modelRegistry: { find: () => MODEL },
@@ -33,11 +35,16 @@ function harness(probe = false) {
 			handlers.set(event, [...handlers.get(event) ?? [], handler]);
 		},
 	} as unknown as ExtensionAPI;
-	registerCapture(pi, { isCurrentRun: probe, filterMessages: (messages) => messages }, new SnapshotBuilder(snapshots));
+	registerCapture(pi,
+		{ isCurrentRun: probe, filterMessages: (messages) => messages },
+		new SnapshotBuilder(snapshots),
+	);
+
 	return {
 		snapshots, published, context,
 		/** Event types with a registered handler. */
 		handled: () => [...handlers.keys()],
+		/** Run every handler for the event, asserting each returns nothing. */
 		emit(event: ExtensionEvent) {
 			for (const handler of handlers.get(event.type) ?? []) {
 				assert.equal(handler(event, context), undefined, "capture handlers observe only");
@@ -75,7 +82,8 @@ for (const first of ["message_start", "message_end"] as const) {
 		// Capture reads only the hidden tools of Pi's normalized options
 		const options = { hiddenTools: ["read"] } as unknown as BeforeAgentStartEvent["systemPromptOptions"];
 		h.emit({
-			type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt", systemPromptOptions: options,
+			type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt",
+			systemPromptOptions: options,
 		});
 		h.emit({ type: "context_with_system", messages });
 		h.emit({ type: "before_provider_request", payload });
@@ -83,11 +91,13 @@ for (const first of ["message_start", "message_end"] as const) {
 		assert.deepEqual(payload, beforePayload);
 		h.emit({ type: first, message: assistant() });
 		await flush();
+
 		const snapshot = h.snapshots.latest();
 		assert.equal(snapshot?.origin, "synthetic-probe");
 		assert.ok(snapshot?.guard.status === "complete");
 		assert.deepEqual(snapshot.guard.findings, [], "the tool Pi hid is not a payload removal");
 		assert.deepEqual(snapshot.hiddenTools, ["read"]);
+
 		const count = h.published.length;
 		h.emit({ type: "message_start", message: assistant() });
 		h.emit({ type: "message_end", message: assistant() });
@@ -100,17 +110,20 @@ test("hidden names are copied at the event boundary and reset by an empty list o
 	const h = harness(true);
 	const options = { hiddenTools: ["read"] } as unknown as BeforeAgentStartEvent["systemPromptOptions"];
 	h.emit({
-		type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt", systemPromptOptions: options,
+		type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt",
+		systemPromptOptions: options,
 	});
 	options.hiddenTools.length = 0;
 	h.emit({ type: "context_with_system", messages: [{ ...SYSTEM, toolsAdded: [TOOL] }] });
 	await flush();
+
 	const first = h.snapshots.latest();
 	assert.equal(first?.guard.status, "pending");
 	assert.deepEqual(first?.hiddenTools, ["read"], "owned even before any payload");
 
 	h.emit({
-		type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt", systemPromptOptions: options,
+		type: "before_agent_start", messageType: "user", prompt: "", systemPrompt: "prompt",
+		systemPromptOptions: options,
 	});
 	h.emit({ type: "context_with_system", messages: [{ ...SYSTEM, toolsAdded: [TOOL] }] });
 	await flush();
@@ -123,14 +136,17 @@ test("a new capture settles an earlier unpaired one and cannot inherit its reque
 	const h = harness();
 	h.emit({ type: "context_with_system", messages: [] });
 	// A later handler mutates the model object: capture owns its original identity
-	if (h.context.model) h.context.model.id = "changed";
+	if (h.context.model)
+		h.context.model.id = "changed";
 	h.emit({ type: "context_with_system", messages: [] });
 	await flush();
+
 	const earlier = h.published.findLast((snapshot) => snapshot.id === 1);
 	assert.deepEqual(earlier?.guard, { status: "incomplete", reason: NO_PAYLOAD_REASON });
 	assert.equal(h.snapshots.latest()?.id, 2);
 	assert.equal(h.snapshots.latest()?.guard.status, "pending");
 	h.emit({ type: "session_shutdown", reason: "quit" });
+
 	const count = h.published.length;
 	await flush();
 	assert.equal(h.published.length, count);

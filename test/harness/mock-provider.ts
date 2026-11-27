@@ -60,9 +60,12 @@ export async function startMockProvider(): Promise<MockProvider> {
 			response.writeHead(404).end();
 			return;
 		}
+
 		const body = JSON.parse(await readBody(request)) as Record<string, unknown>;
 		requests.push({ body });
-		for (const notify of waiters) notify();
+		for (const notify of waiters)
+			notify();
+
 		const reply = replies.shift() ?? DEFAULT_REPLY;
 		replyCount++;
 		if (reply.type === "error") {
@@ -72,7 +75,9 @@ export async function startMockProvider(): Promise<MockProvider> {
 		}
 		response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
 		response.flushHeaders();
-		if (reply.type === "text" && reply.delayMs) await sleep(reply.delayMs);
+		if (reply.type === "text" && reply.delayMs)
+			await sleep(reply.delayMs);
+
 		const model = typeof body.model === "string" ? body.model : "mock";
 		response.end(streamEvents(api, reply, model, replyCount).join(""));
 	}
@@ -80,22 +85,32 @@ export async function startMockProvider(): Promise<MockProvider> {
 	server.listen(0, "127.0.0.1");
 	await once(server, "listening");
 	const address = server.address();
-	if (!address || typeof address === "string") throw new Error("Mock provider has no TCP address");
+	if (!address || typeof address === "string")
+		throw new Error("Mock provider has no TCP address");
+
 	const origin = `http://127.0.0.1:${address.port}`;
 
 	return {
-		baseUrls: { "openai-completions": `${origin}/v1`, "openai-responses": `${origin}/v1`, "anthropic-messages": origin },
+		baseUrls: {
+			"openai-completions": `${origin}/v1`,
+			"openai-responses": `${origin}/v1`,
+			"anthropic-messages": origin,
+		},
 		requests,
 		enqueue: (...next) => { replies.push(...next); },
 		clearReplies: () => { replies.length = 0; },
 		waitForRequests: (count, timeoutMs = DEFAULT_WAIT_MS) => new Promise((resolve, reject) => {
-			if (requests.length >= count) return resolve();
+			if (requests.length >= count)
+				return resolve();
+
 			const timer = setTimeout(() => {
 				waiters.delete(check);
 				reject(new Error(`Expected ${count} provider requests, got ${requests.length}`));
 			}, timeoutMs);
-			function check() {
-				if (requests.length < count) return;
+			/** Resolve once enough requests arrived. */
+			function check(): void {
+				if (requests.length < count)
+					return;
 				clearTimeout(timer);
 				waiters.delete(check);
 				resolve();
@@ -112,16 +127,22 @@ export async function startMockProvider(): Promise<MockProvider> {
 /** Map a request path to the API that uses it; the Anthropic SDK may append a query. */
 function apiForPath(path: string): MockApi | undefined {
 	const pathname = path.split("?")[0];
-	if (pathname === "/v1/chat/completions") return "openai-completions";
-	if (pathname === "/v1/responses") return "openai-responses";
-	if (pathname === "/v1/messages") return "anthropic-messages";
+	if (pathname === "/v1/chat/completions")
+		return "openai-completions";
+	if (pathname === "/v1/responses")
+		return "openai-responses";
+	if (pathname === "/v1/messages")
+		return "anthropic-messages";
+
 	return undefined;
 }
 
 /** Read the whole request body as UTF-8 text. */
 async function readBody(request: IncomingMessage): Promise<string> {
 	const chunks: Buffer[] = [];
-	for await (const chunk of request) chunks.push(chunk as Buffer);
+	for await (const chunk of request)
+		chunks.push(chunk as Buffer);
+
 	return Buffer.concat(chunks).toString("utf8");
 }
 
@@ -133,7 +154,12 @@ function errorBody(api: MockApi, message: string): unknown {
 }
 
 /** SSE frames of a text or tool-call reply in the API's streaming format. */
-function streamEvents(api: MockApi, reply: Exclude<MockReply, { type: "error" }>, model: string, sequence: number): string[] {
+function streamEvents(
+	api: MockApi,
+	reply: Exclude<MockReply, { type: "error" }>,
+	model: string,
+	sequence: number,
+): string[] {
 	switch (api) {
 		case "openai-completions": return openAiEvents(reply, model, sequence);
 		case "openai-responses": return responsesEvents(reply, model, sequence);
@@ -159,6 +185,7 @@ function openAiEvents(reply: Exclude<MockReply, { type: "error" }>, model: strin
 			}],
 		}, null);
 	const last = chunk({}, reply.type === "text" ? "stop" : "tool_calls", usage);
+
 	return [first, last].map((data) => `data: ${JSON.stringify(data)}\n\n`).concat("data: [DONE]\n\n");
 }
 
@@ -175,11 +202,14 @@ function responsesEvents(reply: Exclude<MockReply, { type: "error" }>, model: st
 			},
 		}
 		: {
-			added: { type: "function_call", id: `fc_${sequence}`, call_id: `call_${sequence}`, name: reply.name, arguments: "" },
+			added: {
+				type: "function_call", id: `fc_${sequence}`, call_id: `call_${sequence}`, name: reply.name,
+				arguments: "",
+			},
 			delta: { type: "response.function_call_arguments.delta", output_index: 0, delta: args },
 			done: {
-				type: "function_call", id: `fc_${sequence}`, call_id: `call_${sequence}`, name: reply.name, arguments: args,
-				status: "completed",
+				type: "function_call", id: `fc_${sequence}`, call_id: `call_${sequence}`, name: reply.name,
+				arguments: args, status: "completed",
 			},
 		};
 	const response = { id: `resp_${sequence}`, object: "response", model, output: [] as unknown[] };
@@ -196,6 +226,7 @@ function responsesEvents(reply: Exclude<MockReply, { type: "error" }>, model: st
 			},
 		},
 	];
+
 	return events.map((data) => `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
@@ -225,6 +256,7 @@ function anthropicEvents(reply: Exclude<MockReply, { type: "error" }>, model: st
 		}],
 		["message_stop", { type: "message_stop" }],
 	];
+
 	return events.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 

@@ -14,16 +14,21 @@ export const MIN_PI_VERSION = "1.3.0";
 export function isSupportedPiVersion(version: string): boolean {
 	const current = parseVersionCore(version);
 	const minimum = parseVersionCore(MIN_PI_VERSION);
-	if (current === undefined || minimum === undefined) return true;
+	if (current === undefined || minimum === undefined)
+		return true;
 	for (const [index, part] of current.entries()) {
-		if (part !== minimum[index]) return part > minimum[index];
+		if (part !== minimum[index])
+			return part > minimum[index];
 	}
+
 	return true;
 }
 
 /** Numeric `[major, minor, patch]` of a version string, or undefined when it has none. */
 function parseVersionCore(version: string): [number, number, number] | undefined {
 	const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
-	if (match === null) return undefined;
+	if (match === null)
+		return undefined;
+
 	return [Number(match[1]), Number(match[2]), Number(match[3])];
 }

@@ -56,6 +56,7 @@ export function buildNativeSnapshot(input: NativeSnapshotInput): InjectionSnapsh
 		input.options.hiddenTools);
 	const prompt = input.forcedPrompt ?? input.systemPrompt;
 	const items = analyzeSystemPrompt(prompt, options, tools.declared, { sources: input.promptSources });
+
 	return { ...buildSnapshot(markForcedPrompt(items, input.forcedPrompt)), hiddenTools: tools.hiddenNames };
 }
 
@@ -70,7 +71,9 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InjectionSnapshot
 	const forced = input.forcedPrompt;
 	const base = getCurrentSystemMessage(input.messages);
 	// Undefined means a branch with no recorded system message yet, not an explicitly empty state
-	if (base === undefined) return buildNativeSnapshot(input);
+	if (base === undefined)
+		return buildNativeSnapshot(input);
+
 	const request = applySystemChanges(base, input.systemChanges ?? []);
 	const declarations = splitHiddenTools(request.declarations, input.options.hiddenTools);
 	const tools = replayedToolSlices(request.state, declarations.declared, input.allTools);
@@ -81,6 +84,7 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InjectionSnapshot
 		customPrompt: undefined, sections: undefined,
 		// The replayed layout locates inline or unwrapped request sections; Usage marks no section changes
 	}, tools, { sources: input.promptSources }, forced === undefined ? { replayed: request.prompt.replayed } : {});
+
 	return { ...buildSnapshot(markForcedPrompt(items, forced)), hiddenTools: declarations.hiddenNames };
 }
 
@@ -97,15 +101,20 @@ export function splitHiddenTools<T extends { readonly name: string }>(
 	const declared: T[] = [];
 	const hiddenNames: string[] = [];
 	for (const tool of tools) {
-		if (hidden.has(tool.name)) hiddenNames.push(tool.name);
-		else declared.push(tool);
+		if (hidden.has(tool.name))
+			hiddenNames.push(tool.name);
+		else
+			declared.push(tool);
 	}
+
 	return { declared, hiddenNames };
 }
 
 /** Items with the System Prompt marked `forced` when the request carried a forced prompt. */
 export function markForcedPrompt(items: InjectionItem[], forced: string | undefined): InjectionItem[] {
-	if (forced === undefined) return items;
+	if (forced === undefined)
+		return items;
+
 	return items.map((item) => item.id === SYSTEM_PROMPT_ITEM_ID ? { ...item, change: "forced" } : item);
 }
 
@@ -128,7 +137,8 @@ export function applySystemChanges(base: SystemMessage, changes: readonly System
 			case "section": {
 				const previous = sections[change.name];
 				if (change.text === null) {
-					if (typeof previous === "string") deletedSections.push({ name: change.name, text: previous });
+					if (typeof previous === "string")
+						deletedSections.push({ name: change.name, text: previous });
 					delete sections[change.name];
 					break;
 				}
@@ -139,7 +149,8 @@ export function applySystemChanges(base: SystemMessage, changes: readonly System
 			case "tool": {
 				const index = declarations.findIndex((tool) => tool.name === change.name);
 				if (change.declaration === null) {
-					if (index !== -1) deletedTools.push(...declarations.splice(index, 1));
+					if (index !== -1)
+						deletedTools.push(...declarations.splice(index, 1));
 				} else if (index === -1) {
 					declarations.push(change.declaration);
 					toolChanges.set(change.name, "added");
@@ -151,6 +162,7 @@ export function applySystemChanges(base: SystemMessage, changes: readonly System
 			}
 		}
 	}
+
 	return {
 		state: { content, sections },
 		declarations,
@@ -180,6 +192,7 @@ export function captureActiveTools(
 	options: { readonly toolSnippets?: Readonly<Record<string, string>> },
 ): ToolSlice[] {
 	const byName = new Map(allTools.map((tool) => [tool.name, tool]));
+
 	return [...new Set(activeToolNames)]
 		.map((name) => byName.get(name))
 		.filter((tool) => tool !== undefined)
@@ -207,9 +220,11 @@ export function replayedToolSlices(
 ): ToolSlice[] {
 	const registered = new Map(allTools.map((tool) => [tool.name, tool]));
 	const snippetLines = state.sections?.tools?.split("\n") ?? [];
+
 	return declarations.map((tool) => {
 		const metadata = registered.get(tool.name);
 		const snippetLine = snippetLines.find((line) => line.startsWith(`- ${tool.name}: `));
+
 		return {
 			name: tool.name,
 			description: tool.description,
@@ -229,6 +244,8 @@ function contentText(content: SystemMessage["content"]): string {
 
 /** Normalize the string-or-array promptGuidelines field to an owned array. */
 function normalizeGuidelines(guidelines: string | string[] | undefined): string[] {
-	if (guidelines === undefined) return [];
+	if (guidelines === undefined)
+		return [];
+
 	return Array.isArray(guidelines) ? [...guidelines] : [guidelines];
 }

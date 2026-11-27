@@ -37,11 +37,15 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("context_with_system", (event) => {
 		const current = getCurrentSystemMessage(event.messages)?.sections;
 		const sections: Record<string, string> = {};
-		if (current?.cwd) sections.cwd = current.cwd.replace("\n</cwd>", `\n${SECTION_MODIFY_TEXT}\n</cwd>`);
+		if (current?.cwd)
+			sections.cwd = current.cwd.replace("\n</cwd>", `\n${SECTION_MODIFY_TEXT}\n</cwd>`);
 		for (const { name, original, text } of SECTION_MODIFY_SECTIONS) {
-			if (current?.[name]) sections[name] = current[name].replace(original, text);
+			if (current?.[name])
+				sections[name] = current[name].replace(original, text);
 		}
-		if (Object.keys(sections).length === 0) return undefined;
+		if (Object.keys(sections).length === 0)
+			return undefined;
+
 		return {
 			messages: [...event.messages, { role: "system", content: "", sections, timestamp: Date.now() }],
 		};

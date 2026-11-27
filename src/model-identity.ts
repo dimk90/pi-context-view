@@ -37,12 +37,16 @@ export function resolveNextRequestModel(
 	selected: ModelIdentity | undefined,
 	messages: readonly RequestMessage[],
 ): ModelIdentity | undefined {
-	if (selected === undefined) return undefined;
+	if (selected === undefined)
+		return undefined;
 	if (selected.api !== VIRTUAL_MODEL_API) {
 		return { provider: selected.provider, api: selected.api, id: selected.id };
 	}
+
 	const latest = messages.findLast((message) => message.role === "assistant"
 		&& message.stopReason !== "error" && message.stopReason !== "aborted");
-	if (latest?.role !== "assistant") return undefined;
+	if (latest?.role !== "assistant")
+		return undefined;
+
 	return { provider: latest.provider, api: latest.api, id: latest.model };
 }

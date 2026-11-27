@@ -14,6 +14,7 @@ const BG_COLORS = [
 function createTheme(mode: "truecolor" | "256color"): Theme {
 	const fgColors = Object.fromEntries(THEME_COLOR_NAMES.map((color: ThemeColor) => [color, "#aabbcc"]));
 	const bgColors = Object.fromEntries(BG_COLORS.map((color) => [color, "#112233"]));
+
 	return new Theme(
 		fgColors as ConstructorParameters<typeof Theme>[0],
 		bgColors as ConstructorParameters<typeof Theme>[1],

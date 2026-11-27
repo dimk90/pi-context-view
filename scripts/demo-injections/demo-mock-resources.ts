@@ -12,7 +12,9 @@ export interface MockResourceOptions {
 }
 
 /** Honor Pi manifests, relative paths, and resource filters, but never install a missing configured source. */
-export async function resolveMockResources({ sourceDir, agentDir, settings }: MockResourceOptions): Promise<ResolvedPaths> {
+export async function resolveMockResources({
+	sourceDir, agentDir, settings,
+}: MockResourceOptions): Promise<ResolvedPaths> {
 	// Only resource declarations are needed; do not inherit executable settings such as npmCommand
 	const resources: Record<string, unknown> = {
 		packages: settings.packages, extensions: settings.extensions, themes: settings.themes,
@@ -21,6 +23,7 @@ export async function resolveMockResources({ sourceDir, agentDir, settings }: Mo
 		cwd: agentDir, agentDir: sourceDir, settingsManager: SettingsManager.inMemory(resources),
 		builtinExtensions: BUILTIN_EXTENSIONS,
 	});
+
 	return packageManager.resolve(async () => "skip");
 }
 

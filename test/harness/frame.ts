@@ -22,6 +22,7 @@ export function createTheme(): Theme {
 	}, "truecolor");
 	// Inverse must remain observable when Chalk detects no terminal
 	theme.inverse = (text) => `\u001b[7m${text}\u001b[27m`;
+
 	return theme;
 }
 
@@ -44,6 +45,7 @@ export function frameText(lines: readonly string[]): string {
 export function containsBlock(lines: readonly string[], block: readonly string[]): boolean {
 	const expected = frameText(block);
 	assert.notEqual(expected, "", "an empty block cannot prove rendering");
+
 	return frameText(lines).includes(expected);
 }
 
@@ -51,11 +53,13 @@ export function containsBlock(lines: readonly string[], block: readonly string[]
 export function wholeOrAbsent(lines: readonly string[], block: readonly string[]): boolean {
 	const expected = block.map(stripSgr).map((line) => line.trim()).filter(Boolean);
 	assert.ok(expected.length > 0, "a collapse assertion needs content");
+
 	const text = frameText(lines);
 	const present = containsBlock(lines, block);
 	for (const line of expected) {
 		assert.equal(text.includes(line.replace(/\s+/g, " ")), present, "partial description block");
 	}
+
 	return present;
 }
 

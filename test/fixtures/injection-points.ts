@@ -34,8 +34,10 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("context_with_system", (event) => {
 		event.messages.push({
-			role: "custom", customType: POINT_SYSTEM_TYPE, content: POINT_SYSTEM_TEXT, display: false, timestamp: Date.now(),
+			role: "custom", customType: POINT_SYSTEM_TYPE, content: POINT_SYSTEM_TEXT, display: false,
+			timestamp: Date.now(),
 		});
+
 		return { messages: event.messages };
 	});
 
@@ -44,8 +46,11 @@ export default function (pi: ExtensionAPI): void {
 		// OpenAI Responses sends `input` items instead of `messages`
 		const responses = Array.isArray(payload.input);
 		const messages = responses ? payload.input : payload.messages;
-		if (!Array.isArray(messages)) return;
+		if (!Array.isArray(messages))
+			return;
 		// Edit in place and return nothing: a returned value replaces the payload for later handlers
-		messages.push({ role: "user", content: [{ type: responses ? "input_text" : "text", text: POINT_PAYLOAD_TEXT }] });
+		messages.push({
+			role: "user", content: [{ type: responses ? "input_text" : "text", text: POINT_PAYLOAD_TEXT }],
+		});
 	});
 }

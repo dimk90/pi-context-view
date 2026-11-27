@@ -17,6 +17,7 @@ test("readProbeToken sees the token only inside its own call scope", async () =>
 		const beforeAwait = readProbeToken();
 		await Promise.resolve();
 		await new Promise((resolve) => setTimeout(resolve, 1));
+
 		return { beforeAwait, afterAwait: readProbeToken() };
 	});
 

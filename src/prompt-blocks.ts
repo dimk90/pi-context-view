@@ -29,32 +29,44 @@ export function findPromptSections(prompt: string): PromptSection[] {
 	for (let match = pattern.exec(prompt); match !== null; match = pattern.exec(prompt)) {
 		const marker = match[2];
 		if (marker !== undefined) {
-			if (fence === undefined) fence = marker;
-			else if (marker[0] === fence[0] && marker.length >= fence.length && match[3].trim() === "") fence = undefined;
+			if (fence === undefined)
+				fence = marker;
+			else if (marker[0] === fence[0] && marker.length >= fence.length && match[3].trim() === "")
+				fence = undefined;
 			continue;
 		}
-		if (fence !== undefined) continue;
+		if (fence !== undefined)
+			continue;
+
 		const name = match[1];
 		const closing = `\n</${name}>`;
 		const end = prompt.indexOf(closing, pattern.lastIndex);
-		if (end === -1) continue;
+		if (end === -1)
+			continue;
+
 		const after = end + closing.length;
-		if (after < prompt.length && prompt[after] !== "\n") continue;
+		if (after < prompt.length && prompt[after] !== "\n")
+			continue;
 		sections.push({ name, start: match.index, end: after, body: { start: pattern.lastIndex - 1, end } });
 		pattern.lastIndex = after;
 	}
+
 	return sections;
 }
 
 /** Locate native XML tool surfaces with bounded, consecutive bullet regions and positional markers. */
 export function findSectionToolBlocks(prompt: string, sections: readonly PromptSection[]): LocatedPromptBlock[] {
 	const order = ["tools", "rules", "docs", "addendum", "project_context", "skills", "cwd"];
+
 	return sections.flatMap((section): LocatedPromptBlock[] => {
-		if (section.name !== "tools" && section.name !== "rules") return [];
+		if (section.name !== "tools" && section.name !== "rules")
+			return [];
+
 		const block = section.name === "tools" ? AVAILABLE_TOOLS_BLOCK : GUIDELINES_BLOCK;
 		const moved = sections.some((other) => other.start < section.start &&
 			order.indexOf(other.name) > order.indexOf(section.name));
 		const bullets = findBulletSpan(prompt, section.body.start);
+
 		return [{ ...block, ...section.body, bullets, moved: moved || undefined }];
 	});
 }
@@ -76,5 +88,6 @@ function findBulletSpan(prompt: string, start: number): TextSpan | undefined {
 		const newline = prompt.indexOf("\n", end + 1);
 		end = newline === -1 ? prompt.length : newline;
 	}
+
 	return end === start ? undefined : { start, end };
 }

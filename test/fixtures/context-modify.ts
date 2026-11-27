@@ -16,12 +16,15 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("context", (event) => {
 		const index = event.messages.findLastIndex((message) => message.role === "user");
 		const target = event.messages[index];
-		if (target?.role !== "user") return undefined;
+		if (target?.role !== "user")
+			return undefined;
+
 		const text = typeof target.content === "string"
 			? target.content
 			: target.content.map((block) => block.type === "text" ? block.text : "").join("");
 		const messages = [...event.messages];
 		messages[index] = { ...target, content: `${CONTEXT_MODIFY_PREFIX} ${text}` };
+
 		return { messages };
 	});
 }

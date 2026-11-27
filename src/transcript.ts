@@ -15,5 +15,7 @@ export function systemMessageText(message: Pick<SystemMessage, "content" | "sect
 
 /** Extract plain text without copying opaque text-block signatures. */
 function systemContentText(message: Pick<SystemMessage, "content">): string {
-	return typeof message.content === "string" ? message.content : message.content.map((block) => block.text).join("\n");
+	return typeof message.content === "string"
+		? message.content
+		: message.content.map((block) => block.text).join("\n");
 }

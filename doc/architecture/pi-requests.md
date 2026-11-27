@@ -5,7 +5,7 @@ behavior that capture and the probe rely on: the request flow, handler order,
 the supported Pi versions, the Pi APIs this extension reads, and why running
 request preparation has side effects.
 
-Last checked in full against Pi `1.3.0`. Behavior of a later Pi is named with
+Last checked in full against Pi `1.5.2`. Behavior of a later Pi is named with
 its version. [validation.md](validation.md#after-a-pi-upgrade) lists what to
 recheck after an upgrade.
 
@@ -39,7 +39,7 @@ flowchart TD
         COMPACT -.-> CONTEXT
     end
     BEFORE --> TURN
-    AUTH -.->|"standard probe:<br/>already-aborted signal"| ABORT["No provider request<br/>assistant error"]
+    AUTH -.->|"standard probe:<br/>already-aborted signal"| ABORT["No provider request<br/>aborted assistant message"]
     ABORT --> ASSISTANT["Assistant message_start/end"]
     WARM["Cache-warm refresh<br/>cache_warming_decision"] -.->|"reuse prepared context"| AUTH
     PAYLOAD --> PROVIDER(["Send to provider"])
@@ -72,7 +72,8 @@ flowchart TD
 A standard [silent probe](probe.md#what-a-probe-run-reaches) reaches capture
 and both conversion steps. Authentication then rejects its already-aborted
 signal. It produces assistant events but no provider request or provider
-stream events.
+stream events. The assistant message's stop reason is `aborted` since Pi 1.5.1
+and `error` before ([abort form](probe.md#keeping-probe-messages-out-of-real-context)).
 
 This is a simplified flow. Pi rebuilds each request from the canonical session
 projection. It can also compact history, route virtual models, and deliver
@@ -104,8 +105,8 @@ Within an event, handlers run in extension order and see previous handlers'
 results. Across preparation events, the sequence is fixed regardless of load
 order. Capture relies on that separation, not on being first or last.
 
-On the response side, `after_provider_response` reports the HTTP status; the
-OpenAI and Anthropic adapters skip it for error statuses their SDK rejects.
+On the response side, `after_provider_response` reports the HTTP status; since
+Pi 1.6.1, it also fires for error statuses and for each retried attempt.
 Both `provider_stream_event` and assistant `message_start` identify the
 dispatched provider, API, and model, in no fixed order. Assistant `message_end`
 carries that identity too, including for failures. Pi emits
@@ -114,7 +115,18 @@ extension handles it.
 
 A cache-warm refresh resends the latest request after a
 `cache_warming_decision`. It fires `before_provider_request` and provider
-events, but no context, turn, or assistant-message events.
+events, but no context, turn, or assistant-message events. Since Pi 1.5.1,
+warming also runs between agent runs by default, and Pi starts a warm run for
+every session request before it resolves authentication
+([idle cache warming](probe.md#idle-cache-warming)).
+
+Since Pi 1.5.1, the Anthropic adapter can send a request as a message thread:
+only the new messages, without `system` and `tools`. It is on by default for
+the `anthropic` provider on `api.anthropic.com`. Pi makes this cut after
+`before_provider_request`, so the hook and the guard still see the full
+payload. The reported usage still covers the whole context: the provider counts
+the messages that were not sent as cache tokens, so `ctx.getContextUsage()`
+matches a full request.
 
 Compaction and branch-summary requests, nested calls through
 `ctx.modelRegistry`, router classifier calls, and image generation are separate
@@ -131,9 +143,10 @@ exists. Handlers follow configured resource order, not factory execution time:
 1. Command-line `-e` extensions, in the given order; explicit `builtin:<name>`
    entries follow other command-line extensions.
 2. Project `extensions` settings entries.
-3. Project `.pi/extensions/` auto-discovery, in file-name order.
+3. Project `.pi/extensions/` auto-discovery, in the order the file system
+   lists the directory; Pi does not sort it.
 4. Personal `extensions` settings entries.
-5. Agent-directory `extensions/` auto-discovery, in file-name order.
+5. Agent-directory `extensions/` auto-discovery, in the same directory order.
 6. Packages: project, then personal, each in settings order; files within a
    package follow manifest order.
 7. Remaining built-ins: llama.cpp, codemode, tool-search, mcp.

@@ -1,12 +1,13 @@
 #!/bin/bash
 #
 # Re-record every committed demo asset: the s-vhs recordings under doc/images
-# and the palette and map-size panel composites.
+# and the palette, map-size and icon-style panel composites.
 #
 # Each target pins its own session, size and palette, so this script only runs
 # them in a fixed order, keeps going after a failure, and reports what broke.
 #
-# Produces doc/images/*.gif, doc/images/palettes.png, and doc/images/map-sizes.png
+# Produces doc/images/*.gif, doc/images/palettes.png, doc/images/map-sizes.png,
+# and doc/images/icon-styles.png
 #
 
 set -uo pipefail
@@ -14,16 +15,20 @@ set -uo pipefail
 _RECORD_REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 readonly _RECORD_REPO_ROOT
 
-# Single-panel recorders (scripts/palette.rec.sh and scripts/map-size.rec.sh)
+# Single-panel recorders (scripts/palette.rec.sh, scripts/map-size.rec.sh and
+# scripts/icon-style.rec.sh)
 # are left out: their respective composite scripts already drive every variant
 readonly _RECORD_TARGETS=(
     'doc/images/context-usage.rec.sh'
     'doc/images/context-injections.rec.sh'
+    'doc/images/filtering.rec.sh'
     'doc/images/zoom.rec.sh'
     'doc/images/palettes.rec.sh'
     'doc/images/map-sizes.rec.sh'
+    'doc/images/icon-styles.rec.sh'
     'scripts/palettes-panel.sh'
     'scripts/map-sizes-panel.sh'
+    'scripts/icon-styles-panel.sh'
 )
 
 

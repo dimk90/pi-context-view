@@ -32,7 +32,9 @@ const literalThemes = new Map<string, Theme>();
 
 /** Paint text with one configured color, whether it names a theme color or a literal value. */
 export function colorize(theme: Theme, color: CategoryColor, text: string): string {
-	if (!isHexColor(color)) return theme.fg(color, text);
+	if (!isHexColor(color))
+		return theme.fg(color, text);
+
 	return literalTheme(color, theme.getColorMode()).fg(LITERAL_SLOT, text);
 }
 
@@ -40,9 +42,12 @@ export function colorize(theme: Theme, color: CategoryColor, text: string): stri
 function literalTheme(color: HexColor, mode: ReturnType<Theme["getColorMode"]>): Theme {
 	const key = `${mode} ${color}`;
 	const cached = literalThemes.get(key);
-	if (cached !== undefined) return cached;
+	if (cached !== undefined)
+		return cached;
+
 	const created = new Theme(uniformForeground(color), LITERAL_BACKGROUNDS, mode);
 	literalThemes.set(key, created);
+
 	return created;
 }
 

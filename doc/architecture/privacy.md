@@ -91,7 +91,8 @@ Defaults live in code. The global file at
 `getAgentDir()/extensions/pi-context-view.json` holds overrides, so omitted
 keys follow later default changes.
 
-Never auto-create the file or write missing defaults into an existing file.
+Never auto-create the file or write missing defaults into it on your own.
+Only an [explicit write](#explicit-writes) creates or changes it.
 Load it only when a view opens, before the snapshot is resolved, because
 `autoProbing` decides whether that view may start the silent probe. Never load
 it in the extension factory: the factory also runs in commands that never start
@@ -102,19 +103,44 @@ changes.
 - An unreadable or unparseable file, unknown key, invalid color, or
   out-of-range value falls back to the applicable default. Warn once per file
   revision, never fail the view.
+- `iconStyles` replaces the pre-defined list instead of merging into it. Invalid
+  styles are dropped; a list without one valid style keeps the pre-defined
+  list. An omitted or unknown `iconStyle` selects the built-in style, or the
+  first listed style when the list no longer has it.
 - A renamed key keeps its old name as a silently accepted alias. If both names
   are present, the current name wins.
 
 ### Explicit Writes
 
-`/context config` is the create-only action. It writes every default with one
-atomic `O_EXCL` create and never overwrites or modifies an existing path. It
-works in every run mode on a
+`/context config` writes the defaults. Without a file, it writes every default
+with one atomic `O_EXCL` create. With a file, it adds only the missing keys:
+
+- Append them after the last entry, in the order a created file lists them,
+  and keep the file's layout.
+- Never change a present value, even an invalid one, and never merge into
+  `iconStyles`.
+- Count an old name of a renamed key as present, so the added default never
+  overrides the value the alias sets. Leave aliases as they are.
+- Leave a complete or unparseable file untouched and report the outcome.
+
+Added keys no longer follow later default changes.
+The command works in every run mode on a
 [supported Pi](pi-requests.md#supported-pi-versions). Only the views require
 a UI that calls the `ctx.ui.custom()` factory.
 
-Any later action that updates an existing file must debounce writes and merge
-over a fresh read, preserving concurrent edits and unknown keys.
+The `i` key of the Usage view saves the selected icon style as the `iconStyle`
+override. Without a file it creates one holding only that key, so every other
+setting still follows the defaults.
+
+- Write once, when the view closes or the session shuts down, however many
+  styles the user cycled through. Skip the write when the selection ends on the
+  style the view opened with.
+- Merge the key over a fresh read and keep the file's layout, preserving
+  concurrent edits and unknown keys.
+- Leave an unparseable file untouched and report the failure as a notification
+  after the view closes.
+
+Any later action that updates the file must follow the same rules.
 
 Configuration stores preferences only, never captured prompts or messages.
 See [CONFIG.md](../CONFIG.md) for the settings,

@@ -31,6 +31,7 @@ test("SnapshotStore keeps only the snapshot with the highest ID, of either origi
 		store.publish(turn);
 		assert.equal(store.latest(), turn);
 	}
+
 	const probe = snapshot(3, "synthetic-probe");
 	store.publish(probe);
 	assert.equal(store.latest(), probe);
@@ -45,6 +46,7 @@ test("SnapshotStore releases the probe snapshot once a real request's snapshot i
 	const real = snapshot(2, "real-turn");
 	store.publish(real);
 	assert.equal(store.latest(), real, "a pending real-turn snapshot replaces the settled probe snapshot");
+
 	const settled = snapshot(2, "real-turn", COMPLETE);
 	store.publish(settled);
 	assert.equal(store.latest(), settled);
@@ -53,6 +55,7 @@ test("SnapshotStore releases the probe snapshot once a real request's snapshot i
 test("SnapshotStore replaces the kept snapshot with a guard update of the same ID", () => {
 	const store = new SnapshotStore();
 	store.publish(snapshot(1, "real-turn"));
+
 	const settled = snapshot(1, "real-turn", { status: "incomplete", reason: "No payload was observed." });
 	store.publish(settled);
 	assert.equal(store.latest(), settled);
@@ -63,8 +66,10 @@ test("SnapshotStore keeps a newer snapshot when an older one's guard settles", (
 	const seen: RequestSnapshot[] = [];
 	store.subscribe((published) => seen.push(published));
 	store.publish(snapshot(1, "real-turn"));
+
 	const newer = snapshot(2, "real-turn");
 	store.publish(newer);
+
 	const olderUpdate = snapshot(1, "real-turn", { status: "incomplete", reason: "No payload was observed." });
 	store.publish(olderUpdate);
 	assert.equal(store.latest(), newer);
@@ -120,5 +125,6 @@ test("src/snapshot.ts has no runtime imports", () => {
 	const source = readFileSync(new URL("../src/snapshot.ts", import.meta.url), "utf8");
 	const imports = source.split("\n").filter((line) => /^import\b/.test(line));
 	assert.ok(imports.length > 0);
-	for (const line of imports) assert.match(line, /^import type /);
+	for (const line of imports)
+		assert.match(line, /^import type /);
 });

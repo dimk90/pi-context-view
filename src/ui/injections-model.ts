@@ -135,9 +135,11 @@ export function collectItemsById(snapshot: InjectionSnapshot): Map<string, Injec
 	for (const group of snapshot.groups) {
 		for (const item of group.items) {
 			items.set(item.id, item);
-			for (const child of item.children ?? []) items.set(child.id, child);
+			for (const child of item.children ?? [])
+				items.set(child.id, child);
 		}
 	}
+
 	return items;
 }
 
@@ -153,16 +155,23 @@ export function filterInjections(snapshot: InjectionSnapshot, filter: InjectionF
 	const matched = new Set<string>();
 	for (const group of snapshot.groups) {
 		const wholeGroup = filter.mode === "name" && filter.nameMatches(group.source.label);
-		if (wholeGroup) matched.add(groupKey(group));
+		if (wholeGroup)
+			matched.add(groupKey(group));
+
 		let groupKept = wholeGroup;
 		for (const item of group.items) {
 			const result = filterItem(item, filter, wholeGroup);
-			for (const id of result.kept) kept.add(id);
-			for (const id of result.matched) matched.add(id);
-			if (result.kept.length > 0) groupKept = true;
+			for (const id of result.kept)
+				kept.add(id);
+			for (const id of result.matched)
+				matched.add(id);
+			if (result.kept.length > 0)
+				groupKept = true;
 		}
-		if (groupKept) kept.add(groupKey(group));
+		if (groupKept)
+			kept.add(groupKey(group));
 	}
+
 	return { kept, matched };
 }
 
@@ -183,8 +192,11 @@ function filterItem(item: InjectionItem, filter: InjectionFilter, whole: boolean
 			matched: itemMatched ? [item.id, ...matchedChildIds] : matchedChildIds,
 		};
 	}
-	if (matchedChildIds.length > 0) return { kept: [item.id, ...matchedChildIds], matched: matchedChildIds };
-	if (filter.mode === "content" && itemMatched) return { kept: [item.id], matched: [item.id] };
+	if (matchedChildIds.length > 0)
+		return { kept: [item.id, ...matchedChildIds], matched: matchedChildIds };
+	if (filter.mode === "content" && itemMatched)
+		return { kept: [item.id], matched: [item.id] };
+
 	return { kept: [], matched: [] };
 }
 
@@ -208,7 +220,8 @@ export function buildInjectionRows(snapshot: InjectionSnapshot, filter?: Injecti
 	const matched = (key: string): boolean | undefined => filter?.matched.has(key);
 	const rows: InjectionRow[] = [];
 	for (const group of snapshot.groups) {
-		if (!shown(groupKey(group))) continue;
+		if (!shown(groupKey(group)))
+			continue;
 		rows.push({
 			kind: "group",
 			groupKey: groupKey(group),
@@ -219,6 +232,7 @@ export function buildInjectionRows(snapshot: InjectionSnapshot, filter?: Injecti
 			scope: combineScopes(group.items.filter((item) => item.diffOnly !== true).map(itemScope)),
 			matched: matched(groupKey(group)),
 		});
+
 		const items = group.items.filter((item) => shown(item.id));
 		items.forEach((item, itemIndex) => {
 			const isLastItem = itemIndex === items.length - 1;
@@ -241,6 +255,7 @@ export function buildInjectionRows(snapshot: InjectionSnapshot, filter?: Injecti
 				itemId: item.id,
 				matched: matched(item.id),
 			});
+
 			const children = (item.children ?? []).filter((child) => shown(child.id));
 			children.forEach((child, childIndex) => {
 				rows.push({
@@ -265,6 +280,7 @@ export function buildInjectionRows(snapshot: InjectionSnapshot, filter?: Injecti
 	}
 	rows.push({ kind: "separator", label: "", tokens: 0, depth: 0 });
 	rows.push({ kind: "total", label: "TOTAL (Prompt, Tools, Injections)", tokens: snapshot.totalTokens, depth: 0 });
+
 	return rows;
 }
 
@@ -280,8 +296,11 @@ function forcedEditField(item: InjectionItem): { forcedEdit?: Pick<ForcedEdit, "
  */
 function rowStatus(item: InjectionItem): { scope?: ChangeScope; editors?: readonly ChangeEditor[] } {
 	const scope = itemScope(item);
-	if (scope === undefined) return {};
+	if (scope === undefined)
+		return {};
+
 	const leaf = (item.children ?? []).length === 0 && item.diffOnly !== true;
+
 	return leaf ? { scope, editors: item.editors ?? [UNKNOWN_EDITOR] } : { scope };
 }
 
@@ -294,18 +313,25 @@ function rowStatus(item: InjectionItem): { scope?: ChangeScope; editors?: readon
  */
 function itemScope(item: InjectionItem): ChangeScope | undefined {
 	const children = item.children ?? [];
-	if (children.length > 0) return combineScopes(children.map(itemScope), removesChildren(item, children));
-	if (item.kind === "payload-change") return "payload";
-	if (item.kind === "message") return item.requestOnly === true ? "request" : undefined;
+	if (children.length > 0)
+		return combineScopes(children.map(itemScope), removesChildren(item, children));
+	if (item.kind === "payload-change")
+		return "payload";
+	if (item.kind === "message")
+		return item.requestOnly === true ? "request" : undefined;
 	if (item.diffOnly === true) {
-		if (item.requestOnly !== true) return item.diff === undefined ? undefined : "saved";
+		if (item.requestOnly !== true)
+			return item.diff === undefined ? undefined : "saved";
 		return item.savedChange === true ? "partly" : "request";
 	}
 	if (item.requestOnly === true) {
-		if (item.savedChange === true) return "saved-and-edit";
+		if (item.savedChange === true)
+			return "saved-and-edit";
 		return item.change === "added" || item.sessionOriginal === false ? "request-new" : "request-edit";
 	}
-	if (item.change === "forced") return "request-edit";
+	if (item.change === "forced")
+		return "request-edit";
+
 	return item.diff === undefined ? undefined : "saved";
 }
 
@@ -324,16 +350,22 @@ function combineScopes(scopes: ReadonlyArray<ChangeScope | undefined>, request =
 	let saved = false;
 	let payload = false;
 	for (const scope of scopes) {
-		if (scope === undefined) continue;
+		if (scope === undefined)
+			continue;
 		if (scope === "payload") {
 			payload = true;
 			continue;
 		}
-		if (scope === "saved" || scope === "saved-and-edit" || scope === "partly") saved = true;
-		if (scope !== "saved") request = true;
+		if (scope === "saved" || scope === "saved-and-edit" || scope === "partly")
+			saved = true;
+		if (scope !== "saved")
+			request = true;
 	}
-	if (saved) return request || payload ? "partly" : "saved";
-	if (request) return "request";
+	if (saved)
+		return request || payload ? "partly" : "saved";
+	if (request)
+		return "request";
+
 	return payload ? "payload" : undefined;
 }
 
@@ -348,28 +380,34 @@ export class ListNavigator {
 	private selectedIndex = 0;
 	private scrollOffset = 0;
 
+	/** Starts at the first row; only the first `selectableRowCount` rows can be selected. */
 	public constructor(rowCount: number, visibleCount: number, selectableRowCount = rowCount) {
 		this.rowCount = Math.max(0, rowCount);
 		this.selectableRowCount = Math.min(this.rowCount, Math.max(0, selectableRowCount));
 		this.visibleCount = Math.max(1, visibleCount);
 	}
 
+	/** Zero-based index of the selected row. */
 	public get selected(): number {
 		return this.selectedIndex;
 	}
 
+	/** Zero-based position of the selection among the selectable rows. */
 	public get selectedOrdinal(): number {
 		return this.selectedIndex;
 	}
 
+	/** Number of rows that selection navigation can reach. */
 	public get selectableCount(): number {
 		return this.selectableRowCount;
 	}
 
+	/** Zero-based first visible row. */
 	public get offset(): number {
 		return this.scrollOffset;
 	}
 
+	/** Number of rows shown, never more than the rows that exist. */
 	public get windowSize(): number {
 		return Math.min(this.visibleCount, this.rowCount);
 	}
@@ -379,32 +417,45 @@ export class ListNavigator {
 		return Math.min(this.rowCount, this.scrollOffset + this.windowSize);
 	}
 
+	/** Whether some rows do not fit in the window. */
 	public get hasOverflow(): boolean {
 		return this.rowCount > this.visibleCount;
 	}
 
+	/** Resize the window, scrolling as needed to keep the selection visible. */
 	public setVisibleCount(count: number): void {
 		this.visibleCount = Math.max(1, count);
 		this.ensureVisible();
 	}
 
+	/** Move the selection by `delta` rows; returns whether it changed. */
 	public moveBy(delta: number): boolean {
 		return this.moveTo(this.selectedIndex + delta);
 	}
 
+	/** Select `index`, clamped to the selectable rows; returns whether the selection changed. */
 	public moveTo(index: number): boolean {
-		if (this.selectableRowCount === 0) return false;
+		if (this.selectableRowCount === 0)
+			return false;
+
 		const next = Math.min(this.selectableRowCount - 1, Math.max(0, index));
-		if (next === this.selectedIndex) return false;
+		if (next === this.selectedIndex)
+			return false;
 		this.selectedIndex = next;
 		this.ensureVisible();
+
 		return true;
 	}
 
+	/** Move the selection one window up or down, keeping one row of overlap. */
 	public page(direction: -1 | 1): boolean {
 		return this.moveBy(direction * Math.max(1, this.visibleCount - 1));
 	}
 
+	/**
+	 * Scroll the selection into view. Selecting the last selectable row also
+	 * shows the trailing summary rows when they fit.
+	 */
 	private ensureVisible(): void {
 		const maxOffset = Math.max(0, this.rowCount - this.visibleCount);
 		if (this.selectedIndex < this.scrollOffset) {
@@ -430,10 +481,12 @@ export class PreviewScroller {
 	private visibleCount = 1;
 	private offsetValue = 0;
 
+	/** Zero-based first visible line. */
 	public get offset(): number {
 		return this.offsetValue;
 	}
 
+	/** Number of lines shown, never more than the lines that exist. */
 	public get windowSize(): number {
 		return Math.min(this.visibleCount, this.lineCount);
 	}
@@ -443,41 +496,52 @@ export class PreviewScroller {
 		return Math.min(this.lineCount, this.offsetValue + this.windowSize);
 	}
 
+	/** Whether some lines do not fit in the window. */
 	public get hasOverflow(): boolean {
 		return this.lineCount > this.visibleCount;
 	}
 
+	/** Largest offset that still fills the window. */
 	public get maxOffset(): number {
 		return Math.max(0, this.lineCount - this.visibleCount);
 	}
 
+	/** Declare this render's line and window counts, clamping the offset to them. */
 	public setExtent(lineCount: number, visibleCount: number): void {
 		this.lineCount = Math.max(0, lineCount);
 		this.visibleCount = Math.max(1, visibleCount);
 		this.offsetValue = Math.min(this.maxOffset, this.offsetValue);
 	}
 
+	/** Scroll by `delta` lines; returns whether the offset changed. */
 	public scrollBy(delta: number): boolean {
 		return this.scrollTo(this.offsetValue + delta);
 	}
 
+	/** Scroll to `offset`, clamped to the valid range; returns whether the offset changed. */
 	public scrollTo(offset: number): boolean {
 		const next = Math.min(this.maxOffset, Math.max(0, offset));
-		if (next === this.offsetValue) return false;
+		if (next === this.offsetValue)
+			return false;
 		this.offsetValue = next;
+
 		return true;
 	}
 
+	/** Scroll one window up or down, keeping one line of overlap. */
 	public page(direction: -1 | 1): boolean {
 		return this.scrollBy(direction * Math.max(1, this.visibleCount - 1));
 	}
 
 	/** Leave a visible line in place; otherwise scroll it near the top, below `context` lines. */
 	public reveal(line: number, context: number): boolean {
-		if (line >= this.offsetValue && line < this.offsetValue + this.visibleCount) return false;
+		if (line >= this.offsetValue && line < this.offsetValue + this.visibleCount)
+			return false;
+
 		return this.scrollTo(line - context);
 	}
 
+	/** Scroll back to the first line. */
 	public reset(): void {
 		this.offsetValue = 0;
 	}

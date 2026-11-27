@@ -34,6 +34,7 @@ export class SnapshotBuilder {
 	/** Published snapshots whose guard may still change. */
 	private readonly open = new Map<number, RequestSnapshot>();
 
+	/** Create a builder that hands every snapshot and update to `publisher`. */
 	public constructor(publisher: SnapshotPublisher) {
 		this.publisher = publisher;
 	}
@@ -48,11 +49,15 @@ export class SnapshotBuilder {
 	public settleGuard(id: number, guard: GuardResult): void {
 		const scheduled = this.scheduled.get(id);
 		if (scheduled !== undefined) {
-			if (!scheduled.released) scheduled.guard = guard;
+			if (!scheduled.released)
+				scheduled.guard = guard;
 			return;
 		}
+
 		const snapshot = this.open.get(id);
-		if (snapshot === undefined) return;
+		if (snapshot === undefined)
+			return;
+
 		const updated = { ...snapshot, guard };
 		this.open.set(id, updated);
 		this.publisher.publish(updated);
@@ -61,13 +66,15 @@ export class SnapshotBuilder {
 	/** Stop accepting guard updates for a capture: its guard is final. */
 	public release(id: number): void {
 		const scheduled = this.scheduled.get(id);
-		if (scheduled !== undefined) scheduled.released = true;
+		if (scheduled !== undefined)
+			scheduled.released = true;
 		this.open.delete(id);
 	}
 
 	/** Cancel scheduled diffs and drop open guards, as at session shutdown. */
 	public clear(): void {
-		for (const { handle } of this.scheduled.values()) clearImmediate(handle);
+		for (const { handle } of this.scheduled.values())
+			clearImmediate(handle);
 		this.scheduled.clear();
 		this.open.clear();
 	}
@@ -76,6 +83,7 @@ export class SnapshotBuilder {
 	private publishChanges(request: CapturedRequest): void {
 		const scheduled = this.scheduled.get(request.id);
 		this.scheduled.delete(request.id);
+
 		let snapshot: RequestSnapshot;
 		try {
 			snapshot = buildRequestSnapshot(request, scheduled?.guard ?? { status: "pending" });
@@ -84,7 +92,8 @@ export class SnapshotBuilder {
 			// would end the host process; an unexpected message shape skips the snapshot
 			return;
 		}
-		if (scheduled?.released !== true) this.open.set(snapshot.id, snapshot);
+		if (scheduled?.released !== true)
+			this.open.set(snapshot.id, snapshot);
 		this.publisher.publish(snapshot);
 	}
 }
@@ -99,6 +108,7 @@ export function buildRequestSnapshot(request: CapturedRequest, guard: GuardResul
 		system: diffSystemState(baseline, request.system === undefined ? [] : [request.system]),
 	};
 	const forcedPrompt = resolveForcedPrompt(request);
+
 	return {
 		id: request.id,
 		origin: request.origin,
@@ -123,6 +133,10 @@ function toConversationChange(edit: ConversationEdit): ConversationChange {
 				attribution: attributeMessage(edit.message),
 			};
 		case "deleted":
-			return { type: "deleted", entryId: edit.baseline.entryId, attribution: attributeMessage(edit.baseline.message) };
+			return {
+				type: "deleted",
+				entryId: edit.baseline.entryId,
+				attribution: attributeMessage(edit.baseline.message),
+			};
 	}
 }

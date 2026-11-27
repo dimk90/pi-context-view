@@ -13,18 +13,25 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import { probeFailure, type ProbeFailure, type ProbeFailureCause } from "./failure.ts";
-import { type PersistedIdentities, PROBE_IDENTITIES_CUSTOM_TYPE, type ProbeFilter } from "./filter.ts";
+import {
+	type PersistedIdentities,
+	PROBE_IDENTITIES_CUSTOM_TYPE,
+	type ProbeFilter,
+	type SyntheticMessageIdentity,
+} from "./filter.ts";
 import { createProbeToken, type ProbeToken, readProbeToken } from "./token.ts";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+const DEFAULT_INPUT_STAGE_MS = 1_000;
+const DEFAULT_RUN_STAGE_MS = 2_000;
 /** `AbortError` text of the JavaScript runtime that runs pi, for the probe's `turn_start` abort. */
 const SETUP_ABORT_ERROR_MESSAGES = new Set([
 	"This operation was aborted", // Node.js
 	"The operation was aborted.", // Bun
 ]);
 /** Reported once for a wrong claim; names no message, since raw content never reaches notifications. */
-const WRONG_CLAIM_WARNING = "Silent probe may have stopped another extension's message instead of its own; " +
-	"its empty prompt may reach the model.";
+const WRONG_CLAIM_WARNING = "Silent probe may have stopped another extension's message instead of its own. " +
+	"Its empty prompt may reach the model.";
 
 /**
  * Result of the one allowed silent-probe attempt. A settled run says nothing
@@ -33,6 +40,20 @@ const WRONG_CLAIM_WARNING = "Silent probe may have stopped another extension's m
 export type ProbeOutcome =
 	| { readonly status: "settled" }
 	| ProbeFailure;
+
+/**
+ * Time limits of one probe attempt. Pi reports no failed start, so the two
+ * stage limits stand in for it: a stage that takes too long fails the attempt
+ * as `no-run` instead of waiting for the whole timeout.
+ */
+export interface ProbeLimits {
+	/** Limit for the whole attempt, until its run settles; defaults to 5 s. */
+	readonly timeoutMs?: number;
+	/** Limit from the start to this extension's `input` handler claiming the prompt; defaults to 1 s. */
+	readonly inputStageMs?: number;
+	/** Limit from that claim to `before_agent_start`; defaults to 2 s. */
+	readonly runStageMs?: number;
+}
 
 /** A probe start request; concurrent callers share `token` and `completion`. */
 export interface ProbeAttempt {
@@ -54,8 +75,8 @@ export type RunClaim = "claimed" | "wrong-claim" | "foreign";
 
 /**
  * Lifecycle of the single probe attempt. Ownership outlives the attempt's own
- * completion, so a probe run arriving after a timeout or after an unattributed
- * run is still claimed, aborted, and sanitized. A second idle input with the
+ * completion, so a probe run arriving after a timeout, a passed stage limit, or
+ * an unattributed run is still claimed, aborted, and sanitized. A second idle input with the
  * token ends ownership without a claim: the attempt becomes `ambiguous`.
  */
 type ProbePhase = "idle" | "waiting" | "running" | "settled" | "ambiguous";
@@ -79,13 +100,16 @@ export class SilentProbe {
 	private resolveCompletion: ((outcome: ProbeOutcome) => void) | undefined;
 	private outcome: ProbeOutcome | undefined;
 	private timeout: NodeJS.Timeout | undefined;
+	/** Limit of the current stage before the run starts; cleared once a run is claimed. */
+	private stageTimeout: NodeJS.Timeout | undefined;
+	private runStageMs = DEFAULT_RUN_STAGE_MS;
 	private promptProgress: PromptProgress = "pending";
 	/** Whether an idle input with the token was claimed; a second one makes ownership ambiguous. */
 	private inputClaimed = false;
 	/** Whether a wrong claim was reported; runs started from the probe's handlers inherit the token too. */
 	private wrongClaimReported = false;
 	/** Identities this runtime recorded since its last persisted entry. */
-	private unpersistedCount = 0;
+	private unpersisted: SyntheticMessageIdentity[] = [];
 
 	/** Record probe identities in `filter`, which also holds those of earlier runtimes. */
 	public constructor(filter: ProbeFilter) {
@@ -98,10 +122,11 @@ export class SilentProbe {
 	}
 
 	/**
-	 * Begin the one allowed probe attempt with a failure timeout. Repeat calls
-	 * return the original attempt's completion with `started: false`.
+	 * Begin the one allowed probe attempt with its failure timeout and the limit
+	 * of its first stage. Repeat calls return the original attempt's completion
+	 * with `started: false`.
 	 */
-	public start(timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): ProbeAttempt {
+	public start(limits: ProbeLimits = {}): ProbeAttempt {
 		if (this.attempt !== undefined) {
 			return { ...this.attempt, started: false };
 		}
@@ -111,8 +136,11 @@ export class SilentProbe {
 		this.resolveCompletion = resolve;
 		this.timeout = setTimeout(() => {
 			this.resolve(probeFailure("timeout"));
-		}, timeoutMs);
+		}, limits.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);
+		this.runStageMs = limits.runStageMs ?? DEFAULT_RUN_STAGE_MS;
+		this.limitStage(limits.inputStageMs ?? DEFAULT_INPUT_STAGE_MS);
 		this.attempt = { started: true, token: createProbeToken(), completion };
+
 		return this.attempt;
 	}
 
@@ -134,13 +162,16 @@ export class SilentProbe {
 			&& input.source === "extension"
 			&& input.streamingBehavior === undefined
 			&& this.ownsToken(token);
-		if (!isIdleInputWithToken) return false;
+		if (!isIdleInputWithToken)
+			return false;
 		if (!this.inputClaimed) {
 			this.inputClaimed = true;
+			this.limitStage(this.runStageMs);
 			return true;
 		}
 		this.phase = "ambiguous";
 		this.fail("nested-send");
+
 		return false;
 	}
 
@@ -163,11 +194,15 @@ export class SilentProbe {
 				return "foreign";
 			}
 			this.phase = "running";
+			this.clearStageLimit();
 			return "claimed";
 		}
+
 		const hasClaimed = this.phase === "running" || this.phase === "settled";
-		if (!isUserRunWithToken || !hasClaimed || this.wrongClaimReported) return "foreign";
+		if (!isUserRunWithToken || !hasClaimed || this.wrongClaimReported)
+			return "foreign";
 		this.wrongClaimReported = true;
+
 		return "wrong-claim";
 	}
 
@@ -179,14 +214,18 @@ export class SilentProbe {
 	 * turn at `turn_start`, including the extra turns Pi runs for queued messages.
 	 */
 	public recordMessage(message: ContextEvent["messages"][number]): void {
-		if (!this.isCurrentRun) return;
+		if (!this.isCurrentRun)
+			return;
 		if (message.role === "user") {
-			if (this.promptProgress !== "pending") return;
+			if (this.promptProgress !== "pending")
+				return;
 			this.promptProgress = "started";
 		} else if (message.role !== "assistant") {
 			return;
 		}
-		if (this.filter.record({ role: message.role, timestamp: message.timestamp })) this.unpersistedCount++;
+		const identity = { role: message.role, timestamp: message.timestamp };
+		if (this.filter.record(identity))
+			this.unpersisted.push(identity);
 	}
 
 	/**
@@ -197,9 +236,13 @@ export class SilentProbe {
 	public sanitizeMessage(
 		message: ContextEvent["messages"][number],
 	): ContextEvent["messages"][number] | undefined {
-		if (!this.isCurrentRun) return undefined;
-		if (message.role === "user") return this.blankProbePrompt(message);
-		if (message.role === "assistant") return this.blankProbeAbort(message);
+		if (!this.isCurrentRun)
+			return undefined;
+		if (message.role === "user")
+			return this.blankProbePrompt(message);
+		if (message.role === "assistant")
+			return this.blankProbeAbort(message);
+
 		return undefined;
 	}
 
@@ -210,21 +253,26 @@ export class SilentProbe {
 	 * entry is matched by its stored message, which a replacement does not change.
 	 */
 	public createContextEdits(contextEntries: readonly ProjectedSessionEntry[]): ContextEditEntryDraft[] {
-		if (!this.isCurrentRun) return [];
+		if (!this.isCurrentRun)
+			return [];
+
 		const edits: ContextEditEntryDraft[] = [];
 		for (const { sourceEntry, messages } of contextEntries) {
 			if (messages.length > 0 && sourceEntry.type === "message" && this.filter.matches(sourceEntry.message)) {
 				edits.push({ type: "context_edit", targetId: sourceEntry.id, replacement: null });
 			}
 		}
+
 		return edits;
 	}
 
 	/** Resolve a running attempt from `agent_settled`. */
 	public settle(): boolean {
-		if (!this.isCurrentRun) return false;
+		if (!this.isCurrentRun)
+			return false;
 		this.phase = "settled";
 		this.resolve({ status: "settled" });
+
 		return true;
 	}
 
@@ -233,18 +281,21 @@ export class SilentProbe {
 	 * Ownership is untouched: only the attempt's own completion is resolved.
 	 */
 	public fail(cause: ProbeFailureCause, detail?: string): void {
-		if (this.attempt === undefined) return;
+		if (this.attempt === undefined)
+			return;
 		this.resolve(probeFailure(cause, detail));
 	}
 
 	/**
-	 * Write every known identity, restored ones included, once this runtime
-	 * recorded new ones since its last write. Records never contain content.
+	 * Write only the identities recorded since this runtime's last write, if
+	 * any: `session_start` merges every entry, and repeating known identities
+	 * would grow the session quadratically. Records never contain content.
 	 */
 	public persistIdentities(write: (data: PersistedIdentities) => void): void {
-		if (this.unpersistedCount === 0) return;
-		write({ messages: this.filter.syntheticMessages });
-		this.unpersistedCount = 0;
+		if (this.unpersisted.length === 0)
+			return;
+		write({ messages: this.unpersisted });
+		this.unpersisted = [];
 	}
 
 	/**
@@ -255,9 +306,12 @@ export class SilentProbe {
 	private blankProbePrompt(
 		message: Extract<ContextEvent["messages"][number], { role: "user" }>,
 	): ContextEvent["messages"][number] | undefined {
-		if (this.promptProgress !== "started") return undefined;
+		if (this.promptProgress !== "started")
+			return undefined;
 		this.promptProgress = "ended";
-		if (message.content.length === 0 || !this.filter.has(message)) return undefined;
+		if (message.content.length === 0 || !this.filter.has(message))
+			return undefined;
+
 		return { ...message, content: [] };
 	}
 
@@ -273,7 +327,9 @@ export class SilentProbe {
 		const isProbeAbort = (message.stopReason === "aborted" || message.stopReason === "error")
 			&& message.errorMessage !== undefined
 			&& SETUP_ABORT_ERROR_MESSAGES.has(message.errorMessage);
-		if (!isProbeAbort || !this.filter.has(message)) return undefined;
+		if (!isProbeAbort || !this.filter.has(message))
+			return undefined;
+
 		return { ...message, content: [], stopReason: "stop", errorMessage: undefined };
 	}
 
@@ -282,12 +338,35 @@ export class SilentProbe {
 		return token !== undefined && token === this.attempt?.token;
 	}
 
-	/** Settle the completion promise exactly once and clear the timeout. */
+	/**
+	 * Fail the attempt as `no-run` unless its current stage ends within
+	 * `limitMs`; replaces the limit of the previous stage. Ownership is
+	 * untouched, so a run that starts later is still claimed.
+	 */
+	private limitStage(limitMs: number): void {
+		this.clearStageLimit();
+		this.stageTimeout = setTimeout(() => {
+			this.resolve(probeFailure("no-run"));
+		}, limitMs);
+	}
+
+	/** Stop the current stage limit, if any. */
+	private clearStageLimit(): void {
+		if (this.stageTimeout !== undefined)
+			clearTimeout(this.stageTimeout);
+		this.stageTimeout = undefined;
+	}
+
+	/** Settle the completion promise exactly once and clear the timeout and the stage limit. */
 	private resolve(outcome: ProbeOutcome): void {
-		if (this.outcome !== undefined) return;
-		if (this.timeout !== undefined) clearTimeout(this.timeout);
+		if (this.outcome !== undefined)
+			return;
+		this.clearStageLimit();
+		if (this.timeout !== undefined)
+			clearTimeout(this.timeout);
 		this.timeout = undefined;
 		this.outcome = outcome;
+
 		const resolve = this.resolveCompletion;
 		this.resolveCompletion = undefined;
 		resolve?.(outcome);
@@ -305,7 +384,9 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 		// Reset text earlier input transforms added to our own synthetic prompt:
 		// the probe carries no instructions, and its run is identified by token.
 		// Claim an empty prompt too, so that a later nested send is recognized.
-		if (!probe.claimInput(event, readProbeToken()) || event.text === "") return undefined;
+		if (!probe.claimInput(event, readProbeToken()) || event.text === "")
+			return undefined;
+
 		return { action: "transform", text: "" } as const;
 	});
 
@@ -316,7 +397,8 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 	});
 
 	pi.on("turn_start", (_event, ctx) => {
-		if (probe.isCurrentRun) ctx.abort();
+		if (probe.isCurrentRun)
+			ctx.abort();
 	});
 
 	pi.on("message_start", (event) => {
@@ -329,14 +411,19 @@ export function registerSilentProbe(pi: ExtensionAPI, probe: SilentProbe): void 
 	});
 
 	pi.on("turn_end", (event) => {
-		if (!probe.isCurrentRun) return;
+		if (!probe.isCurrentRun)
+			return;
+
 		const entries = probe.createContextEdits(event.context.contextEntries);
+
 		return entries.length === 0 ? undefined : { entries: [...event.entries, ...entries] };
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
-		if (!probe.isCurrentRun) return;
-		if (ctx.hasUI) ctx.ui.setWorkingVisible(true);
+		if (!probe.isCurrentRun)
+			return;
+		if (ctx.hasUI)
+			ctx.ui.setWorkingVisible(true);
 		probe.settle();
 		persistIdentities();
 	});

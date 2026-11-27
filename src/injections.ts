@@ -108,6 +108,7 @@ export function buildInjectionsSnapshot(input: InjectionsInput): InjectionSnapsh
 		...measureMessages(input, baseline),
 		...measurePayloadChanges(findings),
 	];
+
 	return { ...buildSnapshot(items), hiddenTools: prompt.hiddenTools };
 }
 
@@ -151,6 +152,7 @@ function measureRequestPrompt(input: InjectionsInput, baseline: readonly Request
 		const session = forced === undefined ? native : measureNativePrompt(live);
 		return { items: withPromptDiffs(native.items, session.items), hiddenTools: native.hiddenTools };
 	}
+
 	const request = applySystemChanges(base, input.snapshot.changes.system);
 	const declarations = splitHiddenTools(request.declarations, hiddenTools);
 	const tools: ToolSlice[] = [
@@ -173,6 +175,7 @@ function measureRequestPrompt(input: InjectionsInput, baseline: readonly Request
 		? analyzeSystemPrompt(systemMessageText(request.state), options, tools, additions, request.prompt)
 		: undefined;
 	const items = edited === undefined ? measured : withForcedEdits(measured, edited);
+
 	return {
 		items: withPromptDiffs(items, measureSessionPrompt(input, base, hiddenTools)),
 		hiddenTools: declarations.hiddenNames,
@@ -197,12 +200,15 @@ function withForcedEdits(items: readonly InjectionItem[], edited: readonly Injec
 	const recordEdits = new Map<string, InjectionItem>();
 	for (const item of edited) {
 		if (item.id === SYSTEM_PROMPT_ITEM_ID) {
-			for (const part of item.children ?? []) if (part.change !== undefined) partEdits.set(part.id, part);
+			for (const part of item.children ?? [])
+				if (part.change !== undefined)
+					partEdits.set(part.id, part);
 		} else if ((item.kind === "context-file" || item.kind === "skills") && item.change !== undefined) {
 			// Generated instruction-file and skill sections become their own items
 			recordEdits.set(item.id, item);
 		}
 	}
+
 	return items.map((item) => item.id === SYSTEM_PROMPT_ITEM_ID
 		? withForcedPartEdits(item, partEdits)
 		: withSentForcedEdit(item, recordEdits.get(item.id)));
@@ -211,7 +217,9 @@ function withForcedEdits(items: readonly InjectionItem[], edited: readonly Injec
 /** System Prompt with its sent parts marked and the edited parts it lacks appended at 0 tokens. */
 function withForcedPartEdits(prompt: InjectionItem, edits: ReadonlyMap<string, InjectionItem>): InjectionItem {
 	const { children, sections } = prompt;
-	if (children === undefined || sections === undefined || edits.size === 0) return prompt;
+	if (children === undefined || sections === undefined || edits.size === 0)
+		return prompt;
+
 	const sent = children.map((child) => withSentForcedEdit(child, edits.get(child.id)));
 	const sentIds = new Set(children.map((child) => child.id));
 	// Deleting a part the forced prompt lacks anyway changes nothing
@@ -220,6 +228,7 @@ function withForcedPartEdits(prompt: InjectionItem, edits: ReadonlyMap<string, I
 			id: edit.id, kind: edit.kind, source: edit.source, label: edit.label,
 			chars: 0, tokens: 0, text: "", forcedEdit: { text: edit.text, sent: false },
 		}));
+
 	return {
 		...prompt,
 		children: [...sent, ...unsent],
@@ -237,8 +246,11 @@ function withForcedPartEdits(prompt: InjectionItem, edits: ReadonlyMap<string, I
 
 /** A sent item with the edit the forced prompt replaced, unless the forced prompt sent that very text. */
 function withSentForcedEdit(item: InjectionItem, edit: InjectionItem | undefined): InjectionItem {
-	if (edit === undefined) return item;
+	if (edit === undefined)
+		return item;
+
 	const text = edit.change === "deleted" ? "" : edit.text;
+
 	return text === item.text ? item : { ...item, forcedEdit: { text, sent: true } };
 }
 
@@ -254,6 +266,7 @@ function measureSessionPrompt(
 ): InjectionItem[] {
 	const session = applySystemChanges(base, []);
 	const declared = splitHiddenTools(session.declarations, hiddenTools).declared;
+
 	return analyzeSystemPrompt(
 		systemMessageText(session.state),
 		{ homeDir: process.env.HOME, customPrompt: input.options.customPrompt },
@@ -304,19 +317,24 @@ function measureMessages(input: InjectionsInput, baseline: readonly ProjectedMes
 		// An entry rarely holds more than one conversation message; take the first one not yet changed
 		const target = change.type === "added" ? undefined : baseline.find((candidate) =>
 			candidate.entryId === change.entryId && candidate.message.role !== "system" && !targets.has(candidate));
-		if (target === undefined || change.type === "added") unplaced.push(change);
-		else targets.set(target, change);
+		if (target === undefined || change.type === "added")
+			unplaced.push(change);
+		else
+			targets.set(target, change);
 	}
+
 	const messages: MeasuredMessage[] = [];
 	for (const entry of baseline) {
 		const change = targets.get(entry);
 		const userPrompt = prompts.get(entry.entryId);
-		if (change !== undefined) messages.push(changedMessagePart(change, entry.message, userPrompt));
+		if (change !== undefined)
+			messages.push(changedMessagePart(change, entry.message, userPrompt));
 		else if (entry.message.role === "custom") {
 			messages.push({ section: { ...messageSection(entry.message), message: { userPrompt } }, sent: true });
 		}
 	}
 	messages.push(...unplaced.map((change) => changedMessagePart(change, undefined, requestPrompt)));
+
 	return messages.length === 0 ? [] : [createMessagesItem(messages)];
 }
 
@@ -333,13 +351,18 @@ function userPromptNumbers(input: InjectionsInput): Map<string, number> {
 		branch.push(entry);
 		entry = entry.parentId === null ? undefined : byId.get(entry.parentId);
 	}
+
 	const numbers = new Map<string, number>();
 	let count = 0;
 	for (const entry of branch.reverse()) {
 		if (entry.type === "message" && entry.message.role === "user"
-			&& input.filterMessages([entry.message]).length > 0) count++;
-		if (count > 0) numbers.set(entry.id, count);
+			&& input.filterMessages([entry.message]).length > 0) {
+			count++;
+		}
+		if (count > 0)
+			numbers.set(entry.id, count);
 	}
+
 	return numbers;
 }
 
@@ -348,6 +371,7 @@ function createMessagesItem(messages: readonly MeasuredMessage[]): InjectionItem
 	const sections = messages.map((message) => message.section);
 	const text = messages.filter((message) => message.sent).map((message) => message.section.text).join("\n\n");
 	const diff = sumTokenDiffs(sections.map((section) => section.diff));
+
 	return {
 		id: "messages",
 		kind: "message",
@@ -377,14 +401,18 @@ function changedMessagePart(
 			const section = messageSection(change.message, true);
 			const diff = measureTokenDiff(undefined, section);
 			return {
-				section: { ...section, change: "added", requestOnly: true, message: { userPrompt }, ...diffField(diff) },
+				section: {
+					...section, change: "added", requestOnly: true, message: { userPrompt }, ...diffField(diff),
+				},
 				sent: true,
 			};
 		}
 		case "modified": {
 			const request = { ...messageSection(change.message, true), change: "modified" as const, requestOnly: true,
 				message: { userPrompt } };
-			if (original === undefined) return { section: request, sent: true };
+			if (original === undefined)
+				return { section: request, sent: true };
+
 			const session = messageSection(original);
 			const diff = measureTokenDiff(session, request);
 			return {
@@ -396,9 +424,12 @@ function changedMessagePart(
 		case "deleted": {
 			const deleted = { change: "deleted" as const, requestOnly: true, message: { userPrompt } };
 			if (original === undefined) {
-				return { section: { label: change.attribution.customType ?? "message", text: "", tokens: 0, ...deleted },
-					sent: false };
+				return {
+					section: { label: change.attribution.customType ?? "message", text: "", tokens: 0, ...deleted },
+					sent: false,
+				};
 			}
+
 			const session = messageSection(original);
 			const diff = measureTokenDiff(session, { text: "", tokens: 0 });
 			return { section: { ...session, tokens: 0, ...deleted, ...diffField(diff) }, sent: false };
@@ -409,6 +440,7 @@ function changedMessagePart(
 /** One message as a preview part: labeled by its customType or role, with its content-only preview. */
 function messageSection(message: RequestMessage, redacted = false): InjectionSection {
 	const { text, jsonSpan } = messagePreview(message, redacted);
+
 	return {
 		label: message.role === "custom" ? message.customType : message.role,
 		text,
@@ -430,12 +462,15 @@ function messageSection(message: RequestMessage, redacted = false): InjectionSec
  * request.
  */
 function measurePayloadChanges(findings: readonly GuardFinding[]): InjectionItem[] {
-	if (findings.length === 0) return [];
+	if (findings.length === 0)
+		return [];
+
 	const sections = findings.map((finding): InjectionSection => {
 		const text = finding.lines.filter((line) => line.type === "added").map((line) => line.text).join("\n");
 		const removed = finding.lines.filter((line) => line.type === "removed").map((line) => line.text).join("\n");
 		const base = removed.length === 0 ? undefined : { text: removed, tokens: textTokens(removed) };
 		const tokens = textTokens(text);
+
 		return {
 			label: finding.type === "payload-change" ? PAYLOAD_CHANGE_LABELS[finding.part] : finding.name,
 			text,
@@ -446,6 +481,7 @@ function measurePayloadChanges(findings: readonly GuardFinding[]): InjectionItem
 		};
 	});
 	const text = sections.map((section) => section.text).filter((part) => part.length > 0).join("\n");
+
 	return [{
 		id: "payload-changes",
 		kind: "payload-change",
@@ -480,8 +516,10 @@ function withPromptDiffs(items: readonly InjectionItem[], session: readonly Inje
 	const sessionById = new Map<string, InjectionItem>();
 	for (const item of session) {
 		sessionById.set(item.id, item);
-		for (const child of item.children ?? []) sessionById.set(child.id, child);
+		for (const child of item.children ?? [])
+			sessionById.set(child.id, child);
 	}
+
 	const context: DiffContext = {
 		sessionById,
 		sessionItems: session,
@@ -489,6 +527,7 @@ function withPromptDiffs(items: readonly InjectionItem[], session: readonly Inje
 		forced: items.some((item) => item.id === SYSTEM_PROMPT_ITEM_ID && item.change === "forced"),
 	};
 	const diffed = items.map((item) => withItemDiff(item, context, false));
+
 	return [...diffed, ...buildSystemPromptRows(diffed, session)];
 }
 
@@ -511,7 +550,9 @@ interface DiffContext {
  */
 function withItemDiff(item: InjectionItem, context: DiffContext, promptPart: boolean): InjectionItem {
 	// An unsent part stands for an edit, not text: its parent counts any session text it lacks
-	if (item.dropped === true || item.forcedEdit?.sent === false) return item;
+	if (item.dropped === true || item.forcedEdit?.sent === false)
+		return item;
+
 	const children = item.children ?? [];
 	if (children.length === 0) {
 		const base = itemBase(item, context, promptPart);
@@ -525,7 +566,9 @@ function withItemDiff(item: InjectionItem, context: DiffContext, promptPart: boo
 				sessionOriginal: context.sessionById.has(item.id) || base !== undefined,
 			} : {}),
 		};
-		if (!promptPart) return diffed;
+		if (!promptPart)
+			return diffed;
+
 		const editors = partEditors(diffed);
 		const textDiff = diffed.diff === undefined ? undefined : partTextDiff(item, base, request);
 		return {
@@ -535,6 +578,7 @@ function withItemDiff(item: InjectionItem, context: DiffContext, promptPart: boo
 			...(textDiff === undefined ? {} : { textDiff }),
 		};
 	}
+
 	const parts = item.id === SYSTEM_PROMPT_ITEM_ID;
 	const diffed = children.map((child) => withItemDiff(child, context, parts));
 	const sent = new Set(children.filter((child) => child.forcedEdit?.sent !== false).map((child) => child.id));
@@ -543,6 +587,7 @@ function withItemDiff(item: InjectionItem, context: DiffContext, promptPart: boo
 		...diffed.map((child) => child.diff),
 		...sessionOnly.map((child) => removedDiff(defaultSide(child, parts))),
 	]);
+
 	return {
 		...item,
 		...diffField(diff),
@@ -563,7 +608,9 @@ function withItemDiff(item: InjectionItem, context: DiffContext, promptPart: boo
  * split the diff, so one body would not match each row's share.
  */
 function partTextDiff(item: InjectionItem, base: DiffSide | undefined, request: DiffSide): TextDiff | undefined {
-	if ((item.injectedReferences?.length ?? 0) > 0) return undefined;
+	if ((item.injectedReferences?.length ?? 0) > 0)
+		return undefined;
+
 	return { base: base?.text ?? "", request: request.text };
 }
 
@@ -576,9 +623,13 @@ function partTextDiff(item: InjectionItem, base: DiffSide | undefined, request: 
  * as usual, and the undivided System Prompt carries only its `forced` change.
  */
 function isRequestOnly(item: InjectionItem, context: DiffContext): boolean {
-	if (item.change !== undefined && item.change !== "forced") return true;
-	if (item.kind === "tool" || item.id === SYSTEM_PROMPT_ITEM_ID) return false;
-	if (!context.forced && item.kind !== "context-file" && item.kind !== "skills") return false;
+	if (item.change !== undefined && item.change !== "forced")
+		return true;
+	if (item.kind === "tool" || item.id === SYSTEM_PROMPT_ITEM_ID)
+		return false;
+	if (!context.forced && item.kind !== "context-file" && item.kind !== "skills")
+		return false;
+
 	return context.sessionById.get(item.id)?.text !== item.text;
 }
 
@@ -589,9 +640,13 @@ function isRequestOnly(item: InjectionItem, context: DiffContext): boolean {
  * deletion compares with the session, so none of it is saved.
  */
 function hasSavedChange(item: InjectionItem, base: DiffSide | undefined, context: DiffContext): boolean {
-	if (item.change === "deleted") return false;
+	if (item.change === "deleted")
+		return false;
+
 	const session = context.sessionById.get(item.id);
-	if (session === undefined || session.dropped === true) return false;
+	if (session === undefined || session.dropped === true)
+		return false;
+
 	return base === undefined || base.text !== session.text;
 }
 
@@ -602,16 +657,22 @@ function hasSavedChange(item: InjectionItem, base: DiffSide | undefined, context
  * anything else. Undefined counts the whole item as added.
  */
 function itemBase(item: InjectionItem, context: DiffContext, promptPart: boolean): DiffSide | undefined {
-	if (item.id === SYSTEM_PROMPT_ITEM_ID) return defaultPromptSide(context);
+	if (item.id === SYSTEM_PROMPT_ITEM_ID)
+		return defaultPromptSide(context);
+
 	// A generated section changes into a prompt part when replaced or deleted
 	const recordId = GENERATED_RECORD_ITEMS[item.id];
 	const records = recordId === undefined ? undefined : context.sessionById.get(recordId);
-	if (promptPart && records !== undefined) return records;
+	if (promptPart && records !== undefined)
+		return records;
+
 	const session = context.sessionById.get(item.id);
 	if (promptPart && !isPiPromptPart(item.id)) {
-		if (item.change !== "deleted") return undefined;
+		if (item.change !== "deleted")
+			return undefined;
 		return session ?? { text: item.text, tokens: textTokens(item.text) };
 	}
+
 	return session === undefined ? undefined : defaultSide(session, promptPart);
 }
 
@@ -621,12 +682,19 @@ function itemBase(item: InjectionItem, context: DiffContext, promptPart: boolean
  * replacement dropped, and any other item whole.
  */
 function defaultSide(item: InjectionItem, promptPart: boolean): DiffSide | undefined {
-	if (item.dropped === true) return undefined;
-	if (!promptPart) return item;
-	if (!isPiPromptPart(item.id)) return undefined;
+	if (item.dropped === true)
+		return undefined;
+	if (!promptPart)
+		return item;
+	if (!isPiPromptPart(item.id))
+		return undefined;
+
 	const references = item.injectedReferences ?? [];
-	if (references.length === 0) return item;
+	if (references.length === 0)
+		return item;
+
 	const text = withoutReferences(item.text, references);
+
 	return { text, tokens: textTokens(text) };
 }
 
@@ -637,11 +705,14 @@ function defaultSide(item: InjectionItem, promptPart: boolean): DiffSide | undef
  */
 function defaultPromptSide(context: DiffContext): DiffSide | undefined {
 	const prompt = context.sessionById.get(SYSTEM_PROMPT_ITEM_ID);
-	if (prompt === undefined) return undefined;
+	if (prompt === undefined)
+		return undefined;
+
 	const parts = prompt.children?.map((part) => defaultSide(part, true)) ?? [prompt];
 	const records = context.sessionItems.filter((item) =>
 		(item.kind === "context-file" || item.kind === "skills") && !context.sentIds.has(item.id));
 	const sides = [...parts, ...records].filter((side): side is DiffSide => side !== undefined && side.text.length > 0);
+
 	return {
 		text: sides.map((side) => side.text).join("\n"),
 		tokens: sides.reduce((sum, side) => sum + side.tokens, 0),
@@ -656,6 +727,7 @@ function withoutReferences(text: string, references: readonly InjectedReference[
 		kept += text.slice(offset, reference.start);
 		offset = Math.max(offset, reference.end);
 	}
+
 	return kept + text.slice(offset);
 }
 

@@ -43,9 +43,11 @@ export function diffSystemState(
 	const changes: SystemChange[] = [];
 	const beforeContent = before === undefined ? "" : contentText(before.content);
 	const afterContent = after === undefined ? "" : contentText(after.content);
-	if (beforeContent !== afterContent) changes.push({ type: "content", text: afterContent });
+	if (beforeContent !== afterContent)
+		changes.push({ type: "content", text: afterContent });
 	changes.push(...diffSections(before?.sections ?? {}, after?.sections ?? {}));
 	changes.push(...diffTools(before?.toolsAdded ?? [], after?.toolsAdded ?? []));
+
 	return changes;
 }
 
@@ -81,6 +83,7 @@ export function diffConversation(
 		beforeIndex = match.before + 1;
 		afterIndex = match.after + 1;
 	}
+
 	return edits;
 }
 
@@ -99,8 +102,11 @@ export function messageKey(message: RequestMessage): string {
  * as functions, non-finite numbers, or class instances, falls back to the keys.
  */
 export function sameMessage(a: RequestMessage, b: RequestMessage): boolean {
-	if (a.role !== b.role || customTypeKey(a) !== customTypeKey(b)) return false;
+	if (a.role !== b.role || customTypeKey(a) !== customTypeKey(b))
+		return false;
+
 	const result = compareJson(modelFacingPart(a), modelFacingPart(b), 0, "any");
+
 	return result === "unknown" ? messageKey(a) === messageKey(b) : result === "equal";
 }
 
@@ -111,9 +117,12 @@ export function sameMessage(a: RequestMessage, b: RequestMessage): boolean {
  * back to `declarationsEqual()`.
  */
 export function sameDeclaration(a: Tool, b: Tool): boolean {
-	if (a === b) return true;
+	if (a === b)
+		return true;
+
 	// Pi compares declarations as plain JSON, so schema key order matters
 	const result = compareJson(declarationPart(a), declarationPart(b), 0, "same");
+
 	return result === "unknown" ? declarationsEqual(a, b) : result === "equal";
 }
 
@@ -133,9 +142,13 @@ export function trimMatchedEnds(
 	while (prefix < before.length && prefix < after.length && sameMessage(before[prefix].message, after[prefix])) {
 		prefix++;
 	}
+
 	let suffix = 0;
 	while (suffix < before.length - prefix && suffix < after.length - prefix
-		&& sameMessage(before[before.length - 1 - suffix].message, after[after.length - 1 - suffix])) suffix++;
+		&& sameMessage(before[before.length - 1 - suffix].message, after[after.length - 1 - suffix])) {
+		suffix++;
+	}
+
 	return {
 		prefix,
 		baseline: before.slice(prefix, before.length - suffix),
@@ -154,13 +167,15 @@ function diffSections(
 ): SystemChange[] {
 	const changes: SystemChange[] = [];
 	for (const [name, text] of Object.entries(after)) {
-		if (text !== null && before[name] !== text) changes.push({ type: "section", name, text });
+		if (text !== null && before[name] !== text)
+			changes.push({ type: "section", name, text });
 	}
 	for (const [name, text] of Object.entries(before)) {
 		if (text !== null && (after[name] === undefined || after[name] === null)) {
 			changes.push({ type: "section", name, text: null });
 		}
 	}
+
 	return changes;
 }
 
@@ -176,8 +191,10 @@ function diffTools(before: readonly Tool[], after: readonly Tool[]): SystemChang
 		}
 	}
 	for (const tool of before) {
-		if (!afterNames.has(tool.name)) changes.push({ type: "tool", name: tool.name, declaration: null });
+		if (!afterNames.has(tool.name))
+			changes.push({ type: "tool", name: tool.name, declaration: null });
 	}
+
 	return changes;
 }
 
@@ -237,6 +254,7 @@ function classifyGap(
 		pairs.set(gap.added[position], deleted);
 		searchFrom = position + 1;
 	}
+
 	const edits: ConversationEdit[] = unpairedDeletions.map((index) => ({ type: "deleted", baseline: before[index] }));
 	for (const added of gap.added) {
 		const paired = pairs.get(added);
@@ -244,6 +262,7 @@ function classifyGap(
 			? { type: "added", message: after[added] }
 			: { type: "modified", baseline: before[paired], message: after[added] });
 	}
+
 	return edits;
 }
 
@@ -259,6 +278,7 @@ function findMovedKeys(
 	const matchedBefore = new Set(matches.map((match) => match.before));
 	const matchedAfter = new Set(matches.map((match) => match.after));
 	const unmatchedBefore = new Set(beforeKeys.filter((_key, index) => !matchedBefore.has(index)));
+
 	return new Set(afterKeys.filter((key, index) => !matchedAfter.has(index) && unmatchedBefore.has(key)));
 }
 
@@ -279,6 +299,7 @@ class MessageKeys {
 			id = this.ids.size;
 			this.ids.set(key, id);
 		}
+
 		return id;
 	}
 }
@@ -318,7 +339,9 @@ function modelFacingPart(message: RequestMessage): unknown {
 /** JSON with object keys sorted at every level, so key order never affects equality. */
 export function canonicalJson(value: unknown): string {
 	return JSON.stringify(value, (_key, nested: unknown) => {
-		if (typeof nested !== "object" || nested === null || Array.isArray(nested)) return nested;
+		if (typeof nested !== "object" || nested === null || Array.isArray(nested))
+			return nested;
+
 		return Object.fromEntries(Object.entries(nested).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 	}) ?? "";
 }
@@ -345,20 +368,27 @@ type KeyOrder = "any" | "same";
  */
 function compareJson(a: unknown, b: unknown, depth: number, keyOrder: KeyOrder): JsonComparison {
 	if (typeof a === "string" || typeof a === "boolean") {
-		if (typeof b !== typeof a) return "unknown";
+		if (typeof b !== typeof a)
+			return "unknown";
 		return a === b ? "equal" : "different";
 	}
 	if (typeof a === "number") {
-		if (typeof b !== "number" || !Number.isFinite(a) || !Number.isFinite(b)) return "unknown";
+		if (typeof b !== "number" || !Number.isFinite(a) || !Number.isFinite(b))
+			return "unknown";
 		return a === b ? "equal" : "different";
 	}
-	if (a === null) return b === null ? "equal" : "unknown";
-	if (typeof a !== "object" || typeof b !== "object" || b === null || depth >= MAX_COMPARE_DEPTH) return "unknown";
+	if (a === null)
+		return b === null ? "equal" : "unknown";
+	if (typeof a !== "object" || typeof b !== "object" || b === null || depth >= MAX_COMPARE_DEPTH)
+		return "unknown";
 	if (Array.isArray(a) || Array.isArray(b)) {
 		return Array.isArray(a) && Array.isArray(b) ? compareJsonArrays(a, b, depth, keyOrder) : "unknown";
 	}
-	if (!isPlainObject(a) || !isPlainObject(b)) return "unknown";
+	if (!isPlainObject(a) || !isPlainObject(b))
+		return "unknown";
+
 	const compareObjects = keyOrder === "any" ? compareJsonObjects : compareOrderedJsonObjects;
+
 	return compareObjects(a as Record<string, unknown>, b as Record<string, unknown>, depth);
 }
 
@@ -369,11 +399,14 @@ function compareJsonArrays(
 	depth: number,
 	keyOrder: KeyOrder,
 ): JsonComparison {
-	if (a.length !== b.length) return "different";
+	if (a.length !== b.length)
+		return "different";
 	for (let index = 0; index < a.length; index++) {
 		const result = compareJson(a[index], b[index], depth + 1, keyOrder);
-		if (result !== "equal") return result;
+		if (result !== "equal")
+			return result;
 	}
+
 	return "equal";
 }
 
@@ -385,18 +418,24 @@ function compareJsonObjects(
 ): JsonComparison {
 	let unpaired = 0;
 	for (const key in a) {
-		if (a[key] === undefined) continue;
+		if (a[key] === undefined)
+			continue;
 		unpaired++;
+
 		const result = compareJson(a[key], b[key], depth + 1, "any");
-		if (result !== "equal") return result;
+		if (result !== "equal")
+			return result;
 	}
 	for (const key in b) {
 		const value = b[key];
-		if (value === undefined) continue;
+		if (value === undefined)
+			continue;
 		// JSON omits these, so an extra one would not make the keys differ
-		if (typeof value === "function" || typeof value === "symbol") return "unknown";
+		if (typeof value === "function" || typeof value === "symbol")
+			return "unknown";
 		unpaired--;
 	}
+
 	return unpaired === 0 ? "equal" : "different";
 }
 
@@ -409,12 +448,16 @@ function compareOrderedJsonObjects(
 	const aKeys = Object.keys(a).filter((key) => a[key] !== undefined);
 	const bKeys = Object.keys(b).filter((key) => b[key] !== undefined);
 	// JSON omits these, so the key lists alone cannot decide
-	if (aKeys.some((key) => isOmittedByJson(a[key])) || bKeys.some((key) => isOmittedByJson(b[key]))) return "unknown";
-	if (aKeys.length !== bKeys.length || aKeys.some((key, index) => key !== bKeys[index])) return "different";
+	if (aKeys.some((key) => isOmittedByJson(a[key])) || bKeys.some((key) => isOmittedByJson(b[key])))
+		return "unknown";
+	if (aKeys.length !== bKeys.length || aKeys.some((key, index) => key !== bKeys[index]))
+		return "different";
 	for (const key of aKeys) {
 		const result = compareJson(a[key], b[key], depth + 1, "same");
-		if (result !== "equal") return result;
+		if (result !== "equal")
+			return result;
 	}
+
 	return "equal";
 }
 
@@ -446,17 +489,25 @@ export interface AlignedPair {
  */
 export function alignSequences(before: readonly number[], after: readonly number[]): AlignedPair[] {
 	let prefix = 0;
-	while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++;
+	while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix])
+		prefix++;
+
 	let suffix = 0;
 	while (suffix < before.length - prefix && suffix < after.length - prefix
-		&& before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix++;
+		&& before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) {
+		suffix++;
+	}
 
 	const pairs: AlignedPair[] = range(0, prefix).map((index) => ({ before: index, after: index }));
-	const middle = myersMatches(before.slice(prefix, before.length - suffix), after.slice(prefix, after.length - suffix));
+	const middle = myersMatches(
+		before.slice(prefix, before.length - suffix),
+		after.slice(prefix, after.length - suffix),
+	);
 	pairs.push(...middle.map((pair) => ({ before: pair.before + prefix, after: pair.after + prefix })));
 	for (let offset = suffix; offset > 0; offset--) {
 		pairs.push({ before: before.length - offset, after: after.length - offset });
 	}
+
 	return pairs;
 }
 
@@ -464,7 +515,9 @@ export function alignSequences(before: readonly number[], after: readonly number
 function myersMatches(before: readonly number[], after: readonly number[]): AlignedPair[] {
 	const n = before.length;
 	const m = after.length;
-	if (n === 0 || m === 0) return [];
+	if (n === 0 || m === 0)
+		return [];
+
 	const offset = n + m;
 	// furthest[offset + k]: the furthest x reached on diagonal k = x - y
 	let furthest = new Int32Array(2 * offset + 2);
@@ -473,16 +526,20 @@ function myersMatches(before: readonly number[], after: readonly number[]): Alig
 		trace.push(furthest);
 		furthest = furthest.slice();
 		for (let k = -depth; k <= depth; k += 2) {
-			let x = followsInsertion(furthest, offset, k, depth) ? furthest[offset + k + 1] : furthest[offset + k - 1] + 1;
+			let x = followsInsertion(furthest, offset, k, depth)
+				? furthest[offset + k + 1]
+				: furthest[offset + k - 1] + 1;
 			let y = x - k;
 			while (x < n && y < m && before[x] === after[y]) {
 				x++;
 				y++;
 			}
 			furthest[offset + k] = x;
-			if (x >= n && y >= m) return backtrack(trace, offset, n, m);
+			if (x >= n && y >= m)
+				return backtrack(trace, offset, n, m);
 		}
 	}
+
 	return [];
 }
 
@@ -510,5 +567,6 @@ function backtrack(trace: readonly Int32Array[], offset: number, n: number, m: n
 		x = previousX;
 		y = previousY;
 	}
+
 	return pairs.reverse();
 }

@@ -16,9 +16,12 @@ export const PAYLOAD_DELETE_MARKER = "XYZZY_PAYLOAD_DELETE";
 export default function (pi: ExtensionAPI): void {
 	pi.on("before_provider_request", (event) => {
 		const payload = event.payload as { messages?: unknown };
-		if (!Array.isArray(payload.messages)) return undefined;
+		if (!Array.isArray(payload.messages))
+			return undefined;
+
 		const messages = payload.messages.filter((message: { role?: unknown }) => message.role !== "user"
 			|| !JSON.stringify(message).includes(PAYLOAD_DELETE_MARKER));
+
 		return messages.length === payload.messages.length ? undefined : { ...payload, messages };
 	});
 }

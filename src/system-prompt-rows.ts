@@ -40,20 +40,24 @@ export function buildSystemPromptRows(
 	const unattributed = createRowDraft(AGGREGATE_SOURCE);
 	const sessionById = new Map(session.map((item) => [item.id, item]));
 	for (const item of items) {
-		if (item.id === SYSTEM_PROMPT_ITEM_ID) splitPromptDiff(item, owners, unattributed, sessionById.get(item.id));
+		if (item.id === SYSTEM_PROMPT_ITEM_ID)
+			splitPromptDiff(item, owners, unattributed, sessionById.get(item.id));
 		else if (item.source.native && (item.kind === "context-file" || item.kind === "skills")) {
 			collectUnattributedDiffs(item, unattributed, sessionById.get(item.id));
 		}
 	}
+
 	const requestLines = extensionLines(items);
 	const sessionLines = extensionLines(session);
 	const rows = [...owners.values()].map((owner) => {
 		const id = owner.source.id;
 		// The session keeps the lines it has, whatever this request changed
 		owner.saved = sessionLines.has(id);
+
 		return createRow(owner, requestLines.get(id) !== sessionLines.get(id));
 	});
 	rows.push(createRow(unattributed, unattributed.sections.some((section) => section.requestOnly === true)));
+
 	return rows.filter((row) => row.diff !== undefined);
 }
 
@@ -64,9 +68,12 @@ export function buildSystemPromptRows(
  * A request-only part's editor is always unknown. Undefined without a diff.
  */
 export function partEditors(part: InjectionItem): ChangeEditor[] | undefined {
-	if (part.diff === undefined) return undefined;
+	if (part.diff === undefined)
+		return undefined;
 	// References name contributed lines, never who edited them in this request
-	if (part.requestOnly === true) return [{ type: "unknown" }];
+	if (part.requestOnly === true)
+		return [{ type: "unknown" }];
+
 	const shares = ownerShares(part, part.diff.added);
 	const editors: ChangeEditor[] = shares.map(({ source, guess }) => ({
 		type: "extension",
@@ -74,7 +81,9 @@ export function partEditors(part: InjectionItem): ChangeEditor[] | undefined {
 		...(guess ? { attribution: "guess" as const } : {}),
 	}));
 	const known = shares.reduce((sum, share) => sum + share.added, 0);
-	if (known < part.diff.added || part.diff.removed > 0) editors.push({ type: "unknown" });
+	if (known < part.diff.added || part.diff.removed > 0)
+		editors.push({ type: "unknown" });
+
 	return editors;
 }
 
@@ -105,12 +114,16 @@ function splitPromptDiff(
 ): void {
 	const parts = prompt.children ?? [];
 	if (parts.length === 0) {
-		if (prompt.diff !== undefined) addUnattributed(unattributed, prompt, prompt.diff, prompt.change === "forced");
+		if (prompt.diff !== undefined)
+			addUnattributed(unattributed, prompt, prompt.diff, prompt.change === "forced");
 		return;
 	}
+
 	const sessionParts = new Map(session?.children?.map((part) => [part.id, part]));
 	for (const part of parts) {
-		if (part.diff === undefined) continue;
+		if (part.diff === undefined)
+			continue;
+
 		let added = part.diff.added;
 		for (const share of ownerShares(part, part.diff.added)) {
 			let owner = owners.get(share.source.id);
@@ -128,6 +141,7 @@ function splitPromptDiff(
 			});
 			added -= share.added;
 		}
+
 		const rest = { added, removed: part.diff.removed };
 		if (rest.added > 0 || rest.removed > 0) {
 			addUnattributed(unattributed, part, rest, false, hasSavedUnattributed(part, sessionParts.get(part.id)));
@@ -145,14 +159,17 @@ function collectUnattributedDiffs(
 	unattributed: RowDraft,
 	session: InjectionItem | undefined,
 ): void {
-	if (item.diff === undefined) return;
+	if (item.diff === undefined)
+		return;
+
 	const children = item.children ?? [];
 	if (children.length === 0) {
 		addUnattributed(unattributed, item, item.diff, false);
 		return;
 	}
 	for (const child of children) {
-		if (child.diff !== undefined) addUnattributed(unattributed, child, child.diff, false);
+		if (child.diff !== undefined)
+			addUnattributed(unattributed, child, child.diff, false);
 	}
 	collectResidual(item, children, unattributed, session);
 }
@@ -173,7 +190,9 @@ function collectResidual(
 		added: (parent.diff?.added ?? 0) - (shown?.added ?? 0),
 		removed: (parent.diff?.removed ?? 0) - (shown?.removed ?? 0),
 	};
-	if (residual.added <= 0 && residual.removed <= 0) return;
+	if (residual.added <= 0 && residual.removed <= 0)
+		return;
+
 	const sent = new Set(children.map((child) => child.id));
 	const missing = session?.children?.filter((child) => !sent.has(child.id)) ?? [];
 	const reference = missing.length === 1 ? missing[0] : {
@@ -191,10 +210,15 @@ function collectResidual(
  * owners go to their own rows, not to the unknown request-only edits beside them.
  */
 function hasSavedUnattributed(part: InjectionItem, session: InjectionItem | undefined): boolean {
-	if (part.requestOnly !== true) return true;
-	if (part.savedChange !== true || session === undefined) return false;
+	if (part.requestOnly !== true)
+		return true;
+	if (part.savedChange !== true || session === undefined)
+		return false;
+
 	const references = session.injectedReferences ?? [];
-	if (references.length > 0) return references.some((reference) => isUnattributedSource(reference.source));
+	if (references.length > 0)
+		return references.some((reference) => isUnattributedSource(reference.source));
+
 	return !isPiPromptPart(part.id);
 }
 
@@ -254,6 +278,7 @@ function ownerShares(part: InjectionItem, added: number): OwnerShare[] {
 	for (const owned of Map.groupBy(references, (reference) => reference.source.id).values()) {
 		const text = owned.map((reference) => part.text.slice(reference.start, reference.end)).join("");
 		chars += text.length;
+
 		const tokens = Math.min(added, charTokens(chars)) - allocated;
 		allocated += tokens;
 		if (tokens > 0) {
@@ -261,6 +286,7 @@ function ownerShares(part: InjectionItem, added: number): OwnerShare[] {
 			shares.push({ source: owned[0].source, added: tokens, text, guess });
 		}
 	}
+
 	return shares;
 }
 
@@ -273,13 +299,17 @@ function extensionLines(items: readonly InjectionItem[]): Map<string, string> {
 	const lines = new Map<string, string>();
 	const prompt = items.find((item) => item.id === SYSTEM_PROMPT_ITEM_ID);
 	for (const part of prompt?.children ?? []) {
-		if (part.dropped === true || part.change === "deleted") continue;
+		if (part.dropped === true || part.change === "deleted")
+			continue;
 		for (const reference of part.injectedReferences ?? []) {
-			if (isUnattributedSource(reference.source)) continue;
+			if (isUnattributedSource(reference.source))
+				continue;
+
 			const line = `${part.id}\n${part.text.slice(reference.start, reference.end)}\n`;
 			lines.set(reference.source.id, (lines.get(reference.source.id) ?? "") + line);
 		}
 	}
+
 	return lines;
 }
 
@@ -294,6 +324,7 @@ function isUnattributedSource(source: InjectionSource): boolean {
 /** The diff-only row of one draft: no estimate, the sum of its parts' diffs. */
 function createRow(draft: RowDraft, requestOnly: boolean): InjectionItem {
 	const diff = sumTokenDiffs(draft.sections.map((section) => section.diff));
+
 	return {
 		id: `system-prompt:${draft.source.id}`,
 		kind: "prompt-addition",

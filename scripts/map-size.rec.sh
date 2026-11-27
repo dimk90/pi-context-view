@@ -23,15 +23,17 @@ if [[ $# -ne 0 ]]; then
 fi
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.6.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.7.1) && wait "$!" || exit 1
 
 
 ## Constants
 
 
 # Match the session, model, and framing of map-sizes.rec.sh without a prompt
-PI_COMMAND='pi -e . --session 01a07844-4448-77ed-805f-b2d4af9cd00a'
-PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
+PI_COMMAND='pi -e . --session scripts/data/demo-session.jsonl'
+# Load the session's extension tools: --no-extensions skips the global ones
+PI_COMMAND+=' -e npm:webfox@4.12.0 -e npm:@eko24ive/pi-ask@1.2.0'
+PI_COMMAND+=' --model openai/gpt-6.2-sol --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
 PI_COMMAND+=' --offline'
@@ -96,7 +98,7 @@ SetOutput "$PANEL_DIR/$MAP_SIZE.gif"
 # The composite's three geometries fit unclamped at this terminal and font size
 SetCols 90
 SetRows 34
-SetFontSize 24
+SetFontSize 32
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'
 
@@ -124,9 +126,9 @@ Run "$PI_COMMAND"
 Wait '• Release v0\.2\.0'
 
 Run '/context'
-Wait '^Context Usage'
+Wait '  Context Usage'
 Key 'z'
-Wait '^Context Usage · Zoom '
+Wait '  Context Usage · Zoom '
 
 Show
 Sleep 1

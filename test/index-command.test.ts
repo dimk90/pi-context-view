@@ -8,6 +8,7 @@ import registerExtension from "../src/index.ts";
 import { SnapshotStore } from "../src/snapshot.ts";
 import { createIsolatedConfigStore } from "./harness/settings.ts";
 
+/** Handler Pi calls for a registered slash command. */
 type CommandHandler = RegisteredCommand["handler"];
 
 /** Extension wired to a fake Pi: the `/context` handler and a way to emit lifecycle events. */
@@ -39,10 +40,12 @@ function registerWithFakePi(): RegisteredExtension {
 
 	registerExtension(pi, new SnapshotStore(), createIsolatedConfigStore());
 	assert.ok(commandHandler, "the extension registers /context");
+
 	return {
 		runCommand: commandHandler,
 		emit: (event) => {
-			for (const handler of handlers.get(event.type) ?? []) handler(event, {});
+			for (const handler of handlers.get(event.type) ?? [])
+				handler(event, {});
 		},
 		sentUserMessages: () => sent,
 	};
@@ -70,6 +73,7 @@ function createTuiContext(onWaitForIdle: () => void = () => undefined): {
 		getSystemPrompt: () => "base prompt",
 		getSystemPromptOptions: () => ({ cwd: "/tmp" }),
 	} as unknown as ExtensionCommandContext;
+
 	return { context, notified, opened: () => viewOpened };
 }
 
@@ -79,6 +83,7 @@ for (const view of ["usage", "injections"] satisfies ContextView[]) {
 	test(`/context ${view} refuses at once while compaction is active`, async () => {
 		const extension = registerWithFakePi();
 		extension.emit({ type: "session_before_compact", signal: new AbortController().signal });
+
 		let waitedForIdle = false;
 		const { context, notified, opened } = createTuiContext(() => {
 			waitedForIdle = true;

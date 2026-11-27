@@ -127,6 +127,7 @@ test("buildSnapshot owns injected references on sections and standalone children
 	reference.tool = "changed";
 	source.label = "changed";
 	references.length = 0;
+
 	const base = snapshot.groups[0]?.items[0];
 	for (const owned of [base?.sections?.[0]?.injectedReferences, base?.children?.[0]?.injectedReferences]) {
 		assert.equal(owned?.length, 1);

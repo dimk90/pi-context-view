@@ -164,6 +164,11 @@ reject mismatches.
     redefinition, or the initial tools without one. Later additions appear
     inline at their system message as a `tool_search_call` and
     `tool_search_output` pair.
+  - Neither (`supportsMidConvoSystemMessages` alone, such as Copilot
+    `gpt-5.3-codex` and `mai-code-*` since Pi 1.7.0): system messages stay in
+    place, but the request-level list holds the current tool set and no
+    inline items or removal notices exist, as without mid-conversation system
+    messages.
 - OpenAI Completions with `supportsMidConvoSystemMessages` and
   `supportsMidConvoToolAdditions` can declare later tools in a system
   message's `tools` list; these additions join the same channel.
@@ -183,7 +188,10 @@ description lines.
 ### Message Channel
 
 `src/capture/payload.ts` extracts ordered text units: system, user, assistant,
-tool call, and tool result. Text blocks merge within one message part, not
+tool call, and tool result. Completions `system` and `developer` messages are
+both system units. Since Pi 1.6.0, Pi sends `developer` only to reasoning
+models with `compat.supportsDeveloperRole`, by default only OpenAI's own API,
+and `system` to every other host. Text blocks merge within one message part, not
 across message boundaries. Tool calls keep their name and canonical JSON
 arguments, or raw grammar input. Tool IDs, unsent metadata, images, reasoning
 blocks, OpenAI Responses `configuration_update` items, and inline declaration
@@ -239,7 +247,9 @@ exported, so uncertain differences are never treated as proven Pi adjustments.
   items. Grammar inputs require `supportsOpenAIGrammarTools` and a captured
   grammar declaration with one required string property; that property is sent
   as raw input, not JSON arguments. Declarations come from the captured
-  request, not from baseline tool history. With `additional_tools`
+  request, not from baseline tool history. When system messages are kept,
+  every declaration counts, also a removed tool's, even without inline tool
+  declarations: Pi sends a removed grammar tool's calls as grammar calls. With `additional_tools`
   declarations, Responses sends an incremental-update notice as its own
   system message before every such item after the first, restating the tools
   still unavailable, and appends the removal notice to its system message;
@@ -318,8 +328,8 @@ adapters. Other adapters were checked in the source only.
   resolves, the first `provider_stream_event` often reaches handlers first.
   `after_provider_response` came before both, and assistant `message_end` after
   both. Without a `provider_stream_event` handler, the order was
-  `after_provider_response`, assistant `message_start`, assistant `message_end`. A failure before streaming (HTTP 500) had only assistant
-  `message_start` and `message_end`, both with the identity, and no
+  `after_provider_response`, assistant `message_start`, assistant `message_end`. A failure before streaming (HTTP 500) had the same order, with
+  the identity on both assistant events. Before Pi 1.6.1, it had no
   `after_provider_response`. In the source, Bedrock and Pi Messages emit
   `provider_stream_event` before they push the start.
 - **Routed models.** Under a virtual selection, `ctx.model` in

@@ -24,14 +24,18 @@ function user(content: string, timestamp = 1): Extract<RequestMessage, { role: "
 
 /** Find the composition's only messages row. */
 function messages(input: InjectionsInput) {
-	return buildInjectionsSnapshot(input).groups.flatMap((group) => group.items).find((item) => item.kind === "message");
+	return buildInjectionsSnapshot(input).groups
+		.flatMap((group) => group.items)
+		.find((item) => item.kind === "message");
 }
 
 test("message prompt numbers survive compaction and saved context omissions", () => {
 	const session = SessionManager.inMemory("/tmp");
 	session.appendCustomMessageEntry("before", "before any prompt", false);
+
 	const first = session.appendMessage(user("first"));
 	session.appendCustomMessageEntry("first-note", "first note", false);
+
 	const second = session.appendMessage(user("second", 2));
 	session.appendCustomMessageEntry("second-note", "second note", false);
 	assert.deepEqual(messages(input(session))?.sections?.map((part) => [part.label, part.message?.userPrompt]), [
@@ -41,9 +45,11 @@ test("message prompt numbers survive compaction and saved context omissions", ()
 	assert.equal(messages(input(session))?.sections?.at(-1)?.message?.userPrompt, 2,
 		"omitting a genuine prompt from context does not renumber the branch");
 	session.appendCompaction("summary", second, 1_000);
+
 	const additions: ConversationChange[] = [{ type: "added", message: user("request only", 3), attribution: {} }];
 	const row = messages(input(session, additions));
-	assert.deepEqual(row?.sections?.map((part) => [part.label, part.message?.userPrompt]), [["second-note", 2], ["user", 2]]);
+	assert.deepEqual(row?.sections?.map((part) => [part.label, part.message?.userPrompt]),
+		[["second-note", 2], ["user", 2]]);
 	assert.equal(row?.label, "messages (2)");
 });
 
@@ -54,14 +60,17 @@ test("numbers follow the captured branch and leaf, excluding probe prompts", () 
 	session.appendMessage(user("abandoned third", 3));
 	session.branch(first);
 	session.appendMessage(user("probe", 99));
+
 	const second = session.appendMessage(user("real second", 4));
 	session.appendCustomMessageEntry("note", "after second", false);
+
 	const captured = input(session, [
 		{ type: "deleted", entryId: first, attribution: {} },
 		{ type: "modified", entryId: second, message: user("edited", 4), attribution: {} },
 		{ type: "added", message: user("request-only user", 5), attribution: {} },
 	]);
 	session.appendMessage(user("later third", 6));
+
 	const row = messages({ ...captured, entries: session.getEntries(),
 		filterMessages: (messages) => messages.filter((message) => message.timestamp !== 99) });
 	assert.deepEqual(row?.sections?.map((part) => [part.label, part.message?.userPrompt]), [
@@ -76,14 +85,19 @@ test("a probe before the first genuine prompt and an empty branch have no prompt
 	const conversation: ConversationChange[] = [{ type: "added", message: user("addition"), attribution: {} }];
 	assert.equal(messages(input(session, conversation))?.sections?.[0]?.message?.userPrompt, undefined);
 	session.appendMessage(user("probe", 99));
+
 	const captured = input(session, conversation);
-	const row = messages({ ...captured, filterMessages: (messages) => messages.filter((message) => message.timestamp !== 99) });
+	const row = messages({
+		...captured,
+		filterMessages: (messages) => messages.filter((message) => message.timestamp !== 99),
+	});
 	assert.equal(row?.sections?.[0]?.message?.userPrompt, undefined);
 });
 
 test("modified assistant parts retain only content on both sides, without signatures", () => {
 	const session = SessionManager.inMemory("/tmp");
 	session.appendMessage(user("prompt"));
+
 	const original: RequestMessage = {
 		role: "assistant", content: [
 			{ type: "text", text: "old answer", textSignature: "OPAQUE_TEXT" },
@@ -98,6 +112,7 @@ test("modified assistant parts retain only content on both sides, without signat
 	const request: RequestMessage = { ...original, content: [{ type: "text", text: "new answer" }] };
 	const row = messages(input(session, [{ type: "modified", entryId, message: request, attribution: {} }]));
 	assert.equal(row?.sections?.length, 1);
+
 	const part = row?.sections?.[0];
 	assert.equal(part?.message?.userPrompt, 1);
 	assert.match(part?.message?.original?.text ?? "", /old answer/);

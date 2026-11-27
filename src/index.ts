@@ -11,14 +11,15 @@
  */
 import { type ExtensionAPI, type ExtensionCommandContext, VERSION } from "@earendil-works/pi-coding-agent";
 
-import { type ConfigLoadResult, ConfigStore, createDefaultConfigFile } from "./config.ts";
+import { type ConfigLoadResult, ConfigStore, writeConfigDefaults } from "./config.ts";
 import {
 	CONTEXT_COMMAND_DESCRIPTION,
 	getContextArgumentCompletions,
 	parseContextCommand,
 	reportCommandMessage,
 	reportCompactionInProgress,
-	reportConfigCreation,
+	reportConfigDefaults,
+	reportIconStyleSave,
 	reportUnsupportedPi,
 	reportViewUnavailable,
 	type RequestSnapshotResult,
@@ -79,7 +80,9 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				notices: loadedConfig.warnings,
 			});
 		}
+
 		const snapshot = latest.snapshot;
+
 		return showInjectionsView(ctx, {
 			snapshot: buildInjectionsSnapshot({
 				snapshot,
@@ -122,7 +125,8 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			activeToolNames: pi.getActiveTools(),
 			promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
 		});
-		return showUsageView(ctx, {
+
+		const opened = await showUsageView(ctx, {
 			usage: computeUsage({
 				snapshot: current,
 				messages,
@@ -137,7 +141,14 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 			notices: loadedConfig.warnings,
 			categoryColors: loadedConfig.config.categoryColors,
 			mapSize: loadedConfig.config.mapSize,
+			iconStyles: loadedConfig.config.iconStyles,
+			iconStyleName: loadedConfig.config.iconStyleName,
+			onIconStyleChange: (name) => configStore.selectIconStyle(name),
 		});
+		// One write per view, however many styles the user cycled through
+		reportIconStyleSave(ctx, configStore.flush());
+
+		return opened;
 	}
 
 	pi.registerCommand("context", {
@@ -149,14 +160,15 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportUnsupportedPi(ctx, VERSION);
 				return;
 			}
+
 			const command = parseContextCommand(args);
 			if (command.type === "invalid") {
 				reportCommandMessage(ctx, command.message, "error");
 				return;
 			}
-			// Creating the file needs no UI, so it stays available in every run mode
+			// Writing the defaults needs no UI, so it stays available in every run mode
 			if (command.type === "config") {
-				reportConfigCreation(ctx, createDefaultConfigFile());
+				reportConfigDefaults(ctx, writeConfigDefaults());
 				return;
 			}
 			// Pi's mode says nothing about hosts that render custom components outside
@@ -169,6 +181,7 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportCompactionInProgress(ctx, command.view);
 				return;
 			}
+
 			// Loaded only when a view opens: the factory also runs where no view can
 			const loadedConfig = configStore.load();
 			const latest = await resolveRequestSnapshot(snapshots, trigger, ctx, loadedConfig.config.autoProbing);
@@ -177,16 +190,19 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 				reportCompactionInProgress(ctx, command.view);
 				return;
 			}
+
 			const opened = command.view === "injections"
 				? await openInjections(ctx, latest, loadedConfig)
 				: await openUsage(ctx, latest, loadedConfig);
 			// Pi's RPC mode has a UI but returns from `custom()` without calling the factory
-			if (!opened) reportViewUnavailable(ctx, command.view);
+			if (!opened)
+				reportViewUnavailable(ctx, command.view);
 		},
 	});
 
 	// Older Pi lacks events the capture and the probe rely on, so observe nothing there
-	if (!supported) return;
+	if (!supported)
+		return;
 
 	// Probe layer first: ProbeFilter's context_with_system handler must run before capture's
 	registerProbeFilter(pi, probeFilter);
@@ -195,6 +211,8 @@ export default function (pi: ExtensionAPI, snapshots = new SnapshotStore(), conf
 	registerCompactionTracking(pi, compaction);
 
 	pi.on("session_shutdown", () => {
+		// A view still open at shutdown never reaches its own save
+		configStore.flush();
 		snapshots.clear();
 	});
 }

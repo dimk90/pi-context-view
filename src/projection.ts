@@ -63,8 +63,11 @@ export function readProjection(
 export function applyRequestSnapshot(input: SnapshotApplicationInput): AppliedRequest {
 	const current = readProjection(input.entries, input.leafId, input.filterMessages);
 	const branchMessages = current.map(({ message }) => message);
-	if (input.snapshot === undefined) return { messages: branchMessages, branchMessages, systemChanges: [] };
+	if (input.snapshot === undefined)
+		return { messages: branchMessages, branchMessages, systemChanges: [] };
+
 	const messages = applyConversationChanges(current, input.snapshot.changes.conversation);
+
 	return { messages, branchMessages, ...freshSystemState(input.snapshot, input.entries, messages) };
 }
 
@@ -81,18 +84,25 @@ function applyConversationChanges(
 			additions.push(change.message);
 			continue;
 		}
+
 		// An entry rarely holds more than one conversation message; take the first one not yet changed
 		const target = current.find((candidate) => candidate.entryId === change.entryId
 			&& candidate.message.role !== "system" && !replaced.has(candidate));
 		// Compaction or branch navigation removed the entry since capture
-		if (target === undefined) continue;
+		if (target === undefined)
+			continue;
 		replaced.set(target, change.type === "modified" ? change.message : undefined);
 	}
+
 	const applied = current.flatMap((projected) => {
-		if (!replaced.has(projected)) return [projected.message];
+		if (!replaced.has(projected))
+			return [projected.message];
+
 		const replacement = replaced.get(projected);
+
 		return replacement === undefined ? [] : [replacement];
 	});
+
 	return [...applied, ...additions];
 }
 
@@ -103,20 +113,28 @@ function freshSystemState(
 	messages: readonly RequestMessage[],
 ): Omit<AppliedRequest, "messages" | "branchMessages"> {
 	const { changes: { system }, forcedPrompt } = snapshot;
-	if (system.length === 0 && forcedPrompt === undefined) return { systemChanges: [] };
+	if (system.length === 0 && forcedPrompt === undefined)
+		return { systemChanges: [] };
+
 	const baseline = getCurrentSystemMessage(buildSessionProjection(entries, snapshot.leafId).messages);
-	if (!sameSystemState(baseline, getCurrentSystemMessage(messages))) return { systemChanges: [] };
+	if (!sameSystemState(baseline, getCurrentSystemMessage(messages)))
+		return { systemChanges: [] };
+
 	return { systemChanges: system, forcedPrompt };
 }
 
 /** Whether two replayed system states have the same content, sections in order, and declarations. */
 function sameSystemState(a: SystemMessage | undefined, b: SystemMessage | undefined): boolean {
-	if (a === undefined || b === undefined) return a === b;
-	if (JSON.stringify(a.content) !== JSON.stringify(b.content)) return false;
+	if (a === undefined || b === undefined)
+		return a === b;
+	if (JSON.stringify(a.content) !== JSON.stringify(b.content))
+		return false;
 	if (JSON.stringify(Object.entries(a.sections ?? {})) !== JSON.stringify(Object.entries(b.sections ?? {}))) {
 		return false;
 	}
+
 	const aTools = a.toolsAdded ?? [];
 	const bTools = b.toolsAdded ?? [];
+
 	return aTools.length === bTools.length && aTools.every((tool, index) => declarationsEqual(tool, bTools[index]));
 }

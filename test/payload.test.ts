@@ -26,6 +26,7 @@ function units(api: string, payload: unknown): readonly MessageUnit[] {
 	assert.equal(parsed.status, "parsed", JSON.stringify(parsed));
 	assert.ok(parsed.status === "parsed");
 	assert.doesNotMatch(JSON.stringify(parsed.units), /PRIVATE_IMAGE_BYTES/);
+
 	return parsed.units;
 }
 
@@ -34,6 +35,7 @@ function declarations(api: string, payload: unknown) {
 	const parsed = parsePayloadTools(api, payload);
 	assert.equal(parsed.status, "parsed");
 	assert.ok(parsed.status === "parsed");
+
 	return parsed.declarations;
 }
 
@@ -47,6 +49,7 @@ test("copyPayload owns nested arrays and objects, shares text, and preserves __p
 	payload.messages[0].content = "changed";
 	payload.tools.push(completionsTool(WRITE));
 	assert.deepEqual(copy.payload, original);
+
 	const special: unknown = JSON.parse('{"__proto__":{"name":"data, not a prototype"}}');
 	assert.deepEqual(copyPayload(special), { supported: true, payload: special });
 });
@@ -80,6 +83,7 @@ test("parser selection comes from API even for ambiguous or mismatched payloads"
 	assert.equal(parsePayloadTools("pi-virtual", ambiguous).status, "unsupported");
 	assert.equal(parsePayloadTools("google-generative-ai", ambiguous).status, "unsupported");
 	assert.equal(parsePayloadTools("openai-responses", ambiguous).status, "unsupported");
+
 	const responses = { input: [], tools: [{ type: "function", ...READ }] };
 	assert.deepEqual(declarations("openai-responses", responses), [READ]);
 	assert.equal(parsePayloadTools("anthropic-messages", responses).status, "unsupported");
@@ -91,7 +95,8 @@ test("Completions extracts function and grammar tools, including inline system a
 		messages: [{ role: "user", content: "hi" }, { role: "system", tools: [completionsTool(WRITE)] }],
 		tools: [completionsTool(), { type: "custom", custom: { name: "codemode", description: "Run JS." } }],
 	};
-	assert.deepEqual(declarations("openai-completions", payload), [READ, { name: "codemode", description: "Run JS." }, WRITE]);
+	assert.deepEqual(declarations("openai-completions", payload),
+		[READ, { name: "codemode", description: "Run JS." }, WRITE]);
 });
 
 for (const inlineType of ["additional_tools", "tool_search_output"]) {
@@ -113,7 +118,10 @@ test("Responses removes tools that a system message announces as no longer avail
 	});
 	const payload = {
 		input: [
-			{ type: "additional_tools", role: "developer", tools: [{ type: "function", ...READ }, { type: "function", ...WRITE }] },
+			{
+				type: "additional_tools", role: "developer",
+				tools: [{ type: "function", ...READ }, { type: "function", ...WRITE }],
+			},
 			removal("developer", ["read", "write"]),
 			{ type: "additional_tools", role: "developer", tools: [{ type: "function", ...WRITE }] },
 			removal("user", ["write"]),
@@ -130,7 +138,10 @@ test("Anthropic replays inline addition, removal and same-name redefinition, ign
 			{ type: "tool_addition", tool: { type: "tool_definition", definition: WRITE } },
 			{ type: "tool_addition", tool: { type: "tool_definition", definition: { ...READ, description: "new" } } },
 			{ type: "tool_removal", tool: { type: "tool_reference", name: "write" } },
-			{ type: "tool_addition", tool: { type: "tool_definition", definition: { name: DEFERRED_PLACEHOLDER_NAME } } },
+			{
+				type: "tool_addition",
+				tool: { type: "tool_definition", definition: { name: DEFERRED_PLACEHOLDER_NAME } },
+			},
 		] }],
 	};
 	assert.deepEqual(declarations("anthropic-messages", payload), [{ ...READ, description: "new" }]);
@@ -139,14 +150,17 @@ test("Anthropic replays inline addition, removal and same-name redefinition, ign
 test("malformed declarations and inline changes cannot produce a complete tool channel", () => {
 	const cases: Array<[string, unknown]> = [
 		["openai-completions", { messages: [], tools: [{ type: "function", function: {} }] }],
-		["openai-completions", { messages: [], tools: [completionsTool({ name: "read", description: 42 as unknown as string })] }],
+		["openai-completions", {
+			messages: [], tools: [completionsTool({ name: "read", description: 42 as unknown as string })],
+		}],
 		["openai-responses", { input: [], tools: [{ type: "unknown" }] }],
 		["openai-responses", { input: [{ type: "additional_tools", tools: "bad" }] }],
 		["anthropic-messages", { messages: [], tools: null }],
 		...[{ type: "tool_addition", tool: {} }, { type: "tool_removal", tool: {} }].map((block): [string, unknown] =>
 			["anthropic-messages", { messages: [{ role: "system", content: [block] }] }]),
 	];
-	for (const [api, payload] of cases) assert.equal(parsePayloadTools(api, payload).status, "unsupported");
+	for (const [api, payload] of cases)
+		assert.equal(parsePayloadTools(api, payload).status, "unsupported");
 });
 
 test("tool comparison reports additions, changed descriptions, and removed declarations", () => {
@@ -160,7 +174,10 @@ test("tool comparison reports additions, changed descriptions, and removed decla
 		ignoreNameCase: false,
 	});
 	assert.deepEqual(result, [
-		{ type: "payload-tool-change", change: "deleted", name: "write", lines: [{ type: "removed", text: "Write a file." }] },
+		{
+			type: "payload-tool-change", change: "deleted", name: "write",
+			lines: [{ type: "removed", text: "Write a file." }],
+		},
 		{ type: "payload-tool-change", change: "deleted", name: "bare_removed", lines: [] },
 		{
 			type: "payload-tool-change", change: "modified", name: "read",
@@ -191,7 +208,10 @@ test("Completions message units: roles, text parts, tool calls and results; not 
 	const payload = {
 		messages: [
 			{ role: "developer", content: [{ type: "text", text: "prompt", cache_control: { type: "ephemeral" } }] },
-			{ role: "user", content: [{ type: "text", text: "look" }, { type: "image_url", image_url: { url: IMAGE_DATA } }] },
+			{
+				role: "user",
+				content: [{ type: "text", text: "look" }, { type: "image_url", image_url: { url: IMAGE_DATA } }],
+			},
 			{
 				role: "assistant", content: null, reasoning_content: "hidden reasoning",
 				tool_calls: [
@@ -223,7 +243,10 @@ test("Responses message units: items in order; reasoning and inline tool items a
 	const payload = {
 		input: [
 			{ role: "developer", content: "prompt" },
-			{ role: "user", content: [{ type: "input_text", text: "look" }, { type: "input_image", image_url: IMAGE_DATA }] },
+			{
+				role: "user",
+				content: [{ type: "input_text", text: "look" }, { type: "input_image", image_url: IMAGE_DATA }],
+			},
 			{ type: "reasoning", id: "rs_1", encrypted_content: "opaque" },
 			{ type: "message", role: "assistant", content: [{ type: "output_text", text: "one", annotations: [] }] },
 			{ type: "message", role: "assistant", content: [{ type: "output_text", text: "two", annotations: [] }] },
@@ -249,7 +272,9 @@ test("Responses message units: items in order; reasoning and inline tool items a
 });
 
 test("Responses configuration_update items before a reply and at the end add no units", () => {
-	const reply = { type: "message", role: "assistant", content: [{ type: "output_text", text: "one", annotations: [] }] };
+	const reply = {
+		type: "message", role: "assistant", content: [{ type: "output_text", text: "one", annotations: [] }],
+	};
 	const update = (effort: string) => ({ type: "configuration_update", reasoning: { effort } });
 	const user = (text: string) => ({ role: "user", content: [{ type: "input_text", text }] });
 	const plain = [user("first"), reply, user("second")];
@@ -263,7 +288,8 @@ test("Anthropic empty system messages with output_config before a reply and at t
 	const user = (text: string) => ({ role: "user", content: text });
 	const plain = [user("first"), reply, user("second")];
 	const updated = [user("first"), update("low"), reply, user("second"), update("high")];
-	assert.deepEqual(units("anthropic-messages", { messages: updated }), units("anthropic-messages", { messages: plain }));
+	assert.deepEqual(units("anthropic-messages", { messages: updated }),
+		units("anthropic-messages", { messages: plain }));
 });
 
 test("Anthropic message units: OAuth identity, held system text, merged blocks, and skipped thinking", () => {
@@ -334,7 +360,9 @@ const CONVERTER_CASES: Readonly<Record<string, ConverterCases>> = {
 			tool_calls: [{ id: "a", type: "function", function: { name: "read", arguments: '{"path":"x"}' } }],
 		}] },
 		systemBlocks: { messages: [{ role: "system", content: [{ type: "text", text: "you are pi" }] }] },
-		unknownRole: { messages: [{ role: "toolResult", tool_call_id: "a", content: [{ type: "text", text: "result" }] }] },
+		unknownRole: {
+			messages: [{ role: "toolResult", tool_call_id: "a", content: [{ type: "text", text: "result" }] }],
+		},
 	},
 	"openai-responses": {
 		textBlocks: { input: [{ role: "user", content: [
@@ -388,7 +416,9 @@ test("unknown message parts, items, and blocks leave the message channel unsuppo
 		["openai-responses", { input: [{ role: "assistant", content: [{ type: "refusal", refusal: "no" }] }] }],
 		["openai-responses", { input: [{ role: "critic", content: "x" }] }],
 		["anthropic-messages", { messages: [{ role: "user", content: [{ type: "document", source: {} }] }] }],
-		["anthropic-messages", { messages: [{ role: "assistant", content: [{ type: "server_tool_use", name: "x" }] }] }],
+		["anthropic-messages", {
+			messages: [{ role: "assistant", content: [{ type: "server_tool_use", name: "x" }] }],
+		}],
 		["anthropic-messages", { system: [{ type: "image" }], messages: [] }],
 	];
 	for (const [api, payload] of cases) {

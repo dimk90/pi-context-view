@@ -9,7 +9,7 @@ import {
 	parseContextCommand,
 	reportCommandMessage,
 	reportCompactionInProgress,
-	reportConfigCreation,
+	reportConfigDefaults,
 	reportUnsupportedPi,
 	reportViewUnavailable,
 	resolveRequestSnapshot,
@@ -34,6 +34,7 @@ function createNotifyingContext(): {
 		hasUI: true,
 		ui: { notify: (message: string, type: string) => notified.push({ message, type }) },
 	} as unknown as ExtensionCommandContext;
+
 	return { context, notified };
 }
 
@@ -114,24 +115,26 @@ test("reportUnsupportedPi names the required and the running Pi version", () => 
 	reportUnsupportedPi(context, "1.2.0");
 
 	assert.deepEqual(notified, [{
-		message: `/context requires Pi ${MIN_PI_VERSION} or newer; this is Pi 1.2.0. Nothing was captured.`,
+		message: `/context requires Pi ${MIN_PI_VERSION} or newer. This is Pi 1.2.0. Nothing was captured.`,
 		type: "error",
 	}]);
 });
 
-test("reportConfigCreation reports every create outcome with its own severity", () => {
+test("reportConfigDefaults reports every write outcome with its own severity", () => {
 	const { context, notified } = createNotifyingContext();
 	const filePath = "/agent/extensions/pi-context-view.json";
 
-	reportConfigCreation(context, { type: "created", filePath });
-	reportConfigCreation(context, { type: "exists", filePath });
+	reportConfigDefaults(context, { type: "created", filePath });
+	reportConfigDefaults(context, { type: "completed", filePath });
+	reportConfigDefaults(context, { type: "unchanged", filePath });
 	// OS error text is untrusted, so it must reach the terminal sanitized
-	reportConfigCreation(context, { type: "failed", filePath, reason: "EACCES: \u001b[31mdenied\u0007" });
+	reportConfigDefaults(context, { type: "failed", filePath, reason: "EACCES: \u001b[31mdenied\u0007" });
 
 	assert.deepEqual(notified, [
 		{ message: `Created default configuration: ${filePath}`, type: "info" },
-		{ message: `Configuration already exists; left unchanged: ${filePath}`, type: "warning" },
-		{ message: `Cannot create configuration at ${filePath}: EACCES: denied`, type: "error" },
+		{ message: `Configuration already exists. Added missing defaults: ${filePath}`, type: "info" },
+		{ message: `Configuration already has every setting. Left unchanged: ${filePath}`, type: "info" },
+		{ message: `Cannot write default configuration to ${filePath}: EACCES: denied`, type: "error" },
 	]);
 });
 
@@ -195,9 +198,10 @@ test("resolveRequestSnapshot skips the probe when compaction starts while waitin
 	assert.equal(sentUserMessages, 0);
 	assert.equal(result.type, "missing");
 
-	const unusedAttempt = probe.start(1_000);
+	const unusedAttempt = probe.start({ timeoutMs: 1_000 });
 	assert.equal(unusedAttempt.started, true, "skipping compaction must not consume the runtime's probe attempt");
 	probe.fail("shutdown");
+
 	const outcome = await unusedAttempt.completion;
 	assert.equal(outcome.status === "failed" ? outcome.cause : undefined, "shutdown");
 });
@@ -220,6 +224,7 @@ test("resolveRequestSnapshot returns the latest snapshot without probing", async
 	store.publish(requestSnapshot(1, "synthetic-probe"));
 	const probe = await resolveRequestSnapshot(store, trigger, context, true);
 	store.publish(requestSnapshot(2, "real-turn"));
+
 	const real = await resolveRequestSnapshot(store, trigger, context, true);
 
 	assert.equal(probe.type === "snapshot" ? probe.snapshot.origin : undefined, "synthetic-probe");
@@ -228,7 +233,9 @@ test("resolveRequestSnapshot returns the latest snapshot without probing", async
 
 test("resolveRequestSnapshot takes a snapshot a running turn published before idle, without probing", async () => {
 	const store = new SnapshotStore();
-	const trigger = { request: async () => assert.fail("the running turn supplies the snapshot") } as unknown as ProbeTrigger;
+	const trigger = {
+		request: async () => assert.fail("the running turn supplies the snapshot"),
+	} as unknown as ProbeTrigger;
 	const context = {
 		waitForIdle: async () => store.publish(requestSnapshot(1, "real-turn")),
 	} as unknown as ExtensionCommandContext;

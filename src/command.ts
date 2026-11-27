@@ -5,7 +5,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
-import type { ConfigCreationResult } from "./config.ts";
+import type { ConfigDefaultsResult, ConfigSaveResult } from "./config.ts";
 import { MIN_PI_VERSION } from "./pi-version.ts";
 import type { ProbeTrigger } from "./probe/trigger.ts";
 import type { RequestSnapshot, SnapshotReader } from "./snapshot.ts";
@@ -24,7 +24,7 @@ const DEFAULT_VIEW: ContextView = "usage";
 const ARGUMENT_OPTIONS = [
 	{ value: "usage", label: "usage", description: "Show estimated context usage" },
 	{ value: "injections", label: "injections", description: "Explore the latest request's injections" },
-	{ value: "config", label: "config", description: "Create config file populated with defaults" },
+	{ value: "config", label: "config", description: "Create config file or add missing defaults" },
 ] satisfies AutocompleteItem[];
 
 /** The focused view a `/context` invocation requests. */
@@ -61,6 +61,7 @@ export function parseContextCommand(argumentsText: string): ContextCommand {
 	if (words.length === 1 && words[0] === "config") {
 		return { type: "config" };
 	}
+
 	return { type: "invalid", message: COMMAND_USAGE };
 }
 
@@ -68,6 +69,7 @@ export function parseContextCommand(argumentsText: string): ContextCommand {
 export function getContextArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
 	const normalizedPrefix = argumentPrefix.trimStart().toLowerCase();
 	const matches = ARGUMENT_OPTIONS.filter((option) => option.value.startsWith(normalizedPrefix));
+
 	return matches.length > 0 ? matches.map((option) => ({ ...option })) : null;
 }
 
@@ -85,15 +87,20 @@ export async function resolveRequestSnapshot(
 	autoProbing: boolean,
 ): Promise<RequestSnapshotResult> {
 	const existing = snapshots.latest();
-	if (existing !== undefined) return { type: "snapshot", snapshot: existing };
+	if (existing !== undefined)
+		return { type: "snapshot", snapshot: existing };
 	await context.waitForIdle();
-	const afterIdle = snapshots.latest();
-	if (afterIdle !== undefined) return { type: "snapshot", snapshot: afterIdle };
 
-	if (!autoProbing) return { type: "unprobed" };
+	const afterIdle = snapshots.latest();
+	if (afterIdle !== undefined)
+		return { type: "snapshot", snapshot: afterIdle };
+
+	if (!autoProbing)
+		return { type: "unprobed" };
 
 	await trigger.request(context);
 	const probed = snapshots.latest();
+
 	return probed === undefined ? { type: "missing" } : { type: "snapshot", snapshot: probed };
 }
 
@@ -131,22 +138,34 @@ export function reportCompactionInProgress(context: ExtensionCommandContext, vie
 /** Refuse any `/context` form on a Pi version whose lifecycle this extension does not capture. */
 export function reportUnsupportedPi(context: ExtensionCommandContext, version: string): void {
 	reportCommandMessage(context,
-		`/context requires Pi ${MIN_PI_VERSION} or newer; this is Pi ${version}. Nothing was captured.`,
+		`/context requires Pi ${MIN_PI_VERSION} or newer. This is Pi ${version}. Nothing was captured.`,
 		"error",
 	);
 }
 
-/** Report the outcome of the explicit create-only configuration command. */
-export function reportConfigCreation(context: ExtensionCommandContext, result: ConfigCreationResult): void {
+/** Report the outcome of the explicit command that writes the configuration defaults. */
+export function reportConfigDefaults(context: ExtensionCommandContext, result: ConfigDefaultsResult): void {
 	switch (result.type) {
 		case "created":
 			reportCommandMessage(context, `Created default configuration: ${result.filePath}`, "info");
 			break;
-		case "exists":
-			reportCommandMessage(context, `Configuration already exists; left unchanged: ${result.filePath}`, "warning");
+		case "completed":
+			reportCommandMessage(context,
+				`Configuration already exists. Added missing defaults: ${result.filePath}`,
+				"info",
+			);
+			break;
+		case "unchanged":
+			reportCommandMessage(context,
+				`Configuration already has every setting. Left unchanged: ${result.filePath}`,
+				"info",
+			);
 			break;
 		case "failed":
-			reportCommandMessage(context, `Cannot create configuration at ${result.filePath}: ${result.reason}`, "error");
+			reportCommandMessage(context,
+				`Cannot write default configuration to ${result.filePath}: ${result.reason}`,
+				"error",
+			);
 			break;
 		default: {
 			// Compile-time proof that every result variant is reported
@@ -154,6 +173,17 @@ export function reportConfigCreation(context: ExtensionCommandContext, result: C
 			return _exhaustive;
 		}
 	}
+}
+
+/**
+ * Report an icon style the Usage view could not save. A saved style and a
+ * view that changed none need no message: the map already shows the outcome.
+ */
+export function reportIconStyleSave(context: ExtensionCommandContext, result: ConfigSaveResult | undefined): void {
+	if (result?.type !== "failed")
+		return;
+
+	reportCommandMessage(context, `Cannot save the icon style to ${result.filePath}: ${result.reason}`, "warning");
 }
 
 /** Shorten over-long text with an ellipsis marker. */

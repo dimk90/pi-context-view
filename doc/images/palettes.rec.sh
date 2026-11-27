@@ -13,15 +13,17 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 cd "$REPO_ROOT" || exit 1
 
 # shellcheck disable=SC1090
-source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.6.0) && wait "$!" || exit 1
+source <(curl -fsSL https://dimk90.github.io/s-vhs/v0.7.1) && wait "$!" || exit 1
 
 
 ## Constants
 
 
-# The demo replays one recorded session, so its id and model are pinned
-PI_COMMAND='pi -e . --session 01a07844-4448-77ed-805f-b2d4af9cd00a'
-PI_COMMAND+=' --model openai-codex/gpt-5.6-sol --no-extensions'
+# The demo replays the committed session file, so the session and model are pinned
+PI_COMMAND='pi -e . --session scripts/data/demo-session.jsonl'
+# Load the session's extension tools: --no-extensions skips the global ones
+PI_COMMAND+=' -e npm:webfox@4.12.0 -e npm:@eko24ive/pi-ask@1.2.0'
+PI_COMMAND+=' --model openai/gpt-6.2-sol --no-extensions'
 PI_COMMAND+=' --thinking xhigh'
 PI_COMMAND+=' --tui-mode regular'
 PI_COMMAND+=' --offline'
@@ -109,8 +111,8 @@ SetOutput "$SCRIPT_DIR/palettes.gif"
 
 # Sized for pi.dev: 1546 x 967 px with this font, matching the 1.6 aspect ratio suitable for pi.dev.
 # Rows stay at the palette panels' 25, which holds the whole usage view.
-SetCols 89
-SetRows 25
+SetCols 80
+SetRows 26
 SetFontSize 36
 SetFontFamily 'Iosevka Term'
 SetTheme 'asciinema'

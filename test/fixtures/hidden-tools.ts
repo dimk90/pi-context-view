@@ -1,7 +1,8 @@
 /**
  * Test fixture: use Pi's real codemode tool in `only` mode without changing
- * settings; `demo-injections.sh --codemode-only` loads the built-in instead. Other active tools stay callable through scripts, but their
- * declarations are hidden from the model in either extension load order.
+ * settings; `demo-injections.sh --codemode-only` loads the built-in instead.
+ * Other active tools stay callable through scripts, but their declarations are
+ * hidden from the model in either extension load order.
  */
 import { createCodemodeExtension, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

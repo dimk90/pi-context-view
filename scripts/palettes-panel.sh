@@ -26,8 +26,8 @@ readonly _PALETTES_CAPTIONS=('default' 'terrain' 'rainbow')
 # agg's asciinema theme, the one the panels are rendered with
 readonly _PALETTES_BACKGROUND='#121314'
 readonly _PALETTES_FOREGROUND='#cccccc'
-readonly _PALETTES_CAPTION_FONT='Iosevka-Term-Medium-Extended'
-readonly _PALETTES_CAPTION_SIZE=48
+readonly _PALETTES_CAPTION_FAMILY='Iosevka Term'
+readonly _PALETTES_CAPTION_SIZE=58
 readonly _PALETTES_GAP=24
 
 
@@ -73,8 +73,8 @@ _palettes_check_dependencies() {
     #
     command -v magick >/dev/null || { printf 'palettes: ImageMagick (magick) is not installed\n' >&2; return 1; }
     [[ -x $_PALETTES_RECORDER ]] || { printf 'palettes: %s is not executable\n' "$_PALETTES_RECORDER" >&2; return 1; }
-    magick -list font | grep -q "Font: $_PALETTES_CAPTION_FONT\$" || {
-        printf 'palettes: font %s is not available to ImageMagick\n' "$_PALETTES_CAPTION_FONT" >&2
+    magick -list font | grep -q "family: $_PALETTES_CAPTION_FAMILY\$" || {
+        printf 'palettes: font family %s is not available to ImageMagick\n' "$_PALETTES_CAPTION_FAMILY" >&2
         return 1
     }
     return 0
@@ -120,7 +120,7 @@ _palettes_composite() {
             '('
             -background "$_PALETTES_BACKGROUND"
             -fill "$_PALETTES_FOREGROUND"
-            -font "$_PALETTES_CAPTION_FONT"
+            -family "$_PALETTES_CAPTION_FAMILY"
             -pointsize "$_PALETTES_CAPTION_SIZE"
             "$_PALETTES_PANEL_DIR/${_PALETTES_NAMES[index]}.gif[0]"
             "label:${_PALETTES_CAPTIONS[index]}"

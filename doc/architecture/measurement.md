@@ -108,8 +108,9 @@ label. Its prompt references use the same unknown source.
 A tool item counts only its definition: name, description, and parameter
 schema. Pi renders the tool's snippet and guideline bullets into its prompt,
 so System Prompt counts them with the rest of its text. The tool keeps each
-matched bullet in a Tools or Rules section marked as counted in System
-Prompt. Such a section has zero tokens and contributes no counted text,
+matched bullet in a section marked as counted in System Prompt. The section
+is labeled `System Prompt › Tools` or `System Prompt › Rules`, after the part
+that counts it. Such a section has zero tokens and contributes no counted text,
 characters, or token shares. A bullet pi did not render as written gets no
 section.
 
@@ -135,7 +136,8 @@ keep those parts in the model and mark them as dropped. They must contain no
 pi-authored text. Their text holds only the extension lines that pi would
 otherwise have rendered, with references like rendered lines.
 
-Each tool also keeps its dropped snippet and guideline sections. Every dropped
+Each tool also keeps its dropped snippet and guideline sections, labeled the
+same way. Every dropped
 part or section has zero tokens and contributes no counted text, characters,
 or token shares. Do not count text pi never sent.
 

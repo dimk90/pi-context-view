@@ -16,6 +16,7 @@ export const PAYLOAD_LOG_VARIABLE = "CONTEXT_VIEW_PAYLOAD_LOG";
 export default function (pi: ExtensionAPI): void {
 	pi.on("before_provider_request", (event) => {
 		const path = process.env[PAYLOAD_LOG_VARIABLE];
-		if (path) appendFileSync(path, `${JSON.stringify(event.payload)}\n`);
+		if (path)
+			appendFileSync(path, `${JSON.stringify(event.payload)}\n`);
 	});
 }

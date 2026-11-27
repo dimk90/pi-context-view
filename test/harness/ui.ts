@@ -9,7 +9,10 @@ import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent"
 export type ViewFactory = Parameters<ExtensionUIContext["custom"]>[0];
 
 /** Leaves text unstyled, so rendered views read as plain lines. */
-export const PLAIN_THEME = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as unknown as Theme;
+export const PLAIN_THEME = {
+	fg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+} as unknown as Theme;
 
 /** Build a view's component the way Pi's TUI does: 60 terminal rows, the plain theme, a no-op `done`. */
 export function createView(factory: ViewFactory): ReturnType<ViewFactory> {

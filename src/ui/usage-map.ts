@@ -27,6 +27,7 @@ export interface UsageMap {
 	readonly cells: readonly UsageMapCell[];
 }
 
+/** One category's fractional cell range in the occupied part of the map. */
 interface MapSegment {
 	readonly categoryId: string;
 	readonly start: number;
@@ -39,11 +40,13 @@ interface MapSegment {
  */
 export function calculateFitMapScale(usage: ContextUsageSnapshot): number | undefined {
 	const contextWindow = usage.reported?.contextWindow;
-	if (contextWindow === undefined || !Number.isFinite(contextWindow) || contextWindow <= 0) return undefined;
+	if (contextWindow === undefined || !Number.isFinite(contextWindow) || contextWindow <= 0)
+		return undefined;
 
 	const estimatedTotal = usage.categories.reduce((sum, category) => sum + category.tokens, 0);
 	const withHeadroom = Math.max(0, estimatedTotal) * FIT_SCALE_PERCENT / PERCENT_DENOMINATOR;
 	const rounded = roundUpToSignificantDigits(withHeadroom, FIT_SCALE_SIGNIFICANT_DIGITS);
+
 	return Math.min(contextWindow, Math.max(MINIMUM_FIT_SCALE_TOKENS, rounded));
 }
 
@@ -65,10 +68,13 @@ export function buildUsageMap(
 		contextWindow <= 0 ||
 		columns <= 0 ||
 		rows <= 0
-	) return undefined;
+	)
+		return undefined;
 
 	const requestedScale = scaleTokens ?? contextWindow;
-	if (!Number.isFinite(requestedScale) || requestedScale <= 0) return undefined;
+	if (!Number.isFinite(requestedScale) || requestedScale <= 0)
+		return undefined;
+
 	const mapScale = Math.min(contextWindow, requestedScale);
 	const cellCount = Math.floor(columns) * Math.floor(rows);
 	const estimatedTotal = usage.categories.reduce((sum, category) => sum + category.tokens, 0);
@@ -85,6 +91,7 @@ export function buildUsageMap(
 		{ length: cellCount },
 		(_, index) => createCell(index, occupiedCells, bufferStart, segments),
 	);
+
 	return {
 		columns: Math.floor(columns),
 		rows: Math.floor(rows),
@@ -99,7 +106,9 @@ function createSegments(
 	estimatedTotal: number,
 	occupiedCells: number,
 ): MapSegment[] {
-	if (estimatedTotal <= 0 || occupiedCells <= 0) return [];
+	if (estimatedTotal <= 0 || occupiedCells <= 0)
+		return [];
+
 	const segments: MapSegment[] = [];
 	let cursor = 0;
 	for (const category of usage.categories) {
@@ -107,6 +116,7 @@ function createSegments(
 		segments.push({ categoryId: category.id, start: cursor, end: cursor + size });
 		cursor += size;
 	}
+
 	return segments;
 }
 
@@ -132,6 +142,7 @@ function createCell(
 			categoryOverlap = currentOverlap;
 		}
 	}
+
 	return {
 		categoryId,
 		fill: categoryOverlap >= 0.7 ? "full" : "partial",
@@ -145,13 +156,18 @@ function overlap(aStart: number, aEnd: number, bStart: number, bEnd: number): nu
 
 /** Round a positive value upward at the requested significant-digit boundary. */
 function roundUpToSignificantDigits(value: number, significantDigits: number): number {
-	if (!Number.isFinite(value) || value <= 0) return 0;
+	if (!Number.isFinite(value) || value <= 0)
+		return 0;
+
 	const boundary = 10 ** (Math.floor(Math.log10(value)) - significantDigits + 1);
+
 	return Math.ceil(value / boundary) * boundary;
 }
 
 /** Restrict a finite value to an inclusive range. */
 function clamp(value: number, minimum: number, maximum: number): number {
-	if (!Number.isFinite(value)) return minimum;
+	if (!Number.isFinite(value))
+		return minimum;
+
 	return Math.min(maximum, Math.max(minimum, value));
 }

@@ -22,7 +22,8 @@ export class CompactionState {
 		}
 		this.currentSignal = signal;
 		signal.addEventListener("abort", () => {
-			if (this.currentSignal === signal) this.currentSignal = undefined;
+			if (this.currentSignal === signal)
+				this.currentSignal = undefined;
 		}, { once: true });
 	}
 

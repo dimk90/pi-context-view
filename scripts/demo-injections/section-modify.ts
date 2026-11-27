@@ -22,7 +22,9 @@ export default function (pi: ExtensionAPI): void {
 	});
 	pi.on("context_with_system", (event) => {
 		const original = getCurrentSystemMessage(event.messages)?.sections?.[SECTION_MODIFY_NAME];
-		if (!original) return undefined;
+		if (!original)
+			return undefined;
+
 		return {
 			messages: [...event.messages, {
 				role: "system",

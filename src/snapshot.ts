@@ -169,6 +169,7 @@ export class SnapshotStore implements SnapshotReader {
 	/** Observe every publication, even when a newer snapshot is already kept. */
 	public subscribe(listener: (snapshot: RequestSnapshot) => void): () => void {
 		this.listeners.add(listener);
+
 		return () => {
 			this.listeners.delete(listener);
 		};
@@ -176,9 +177,11 @@ export class SnapshotStore implements SnapshotReader {
 
 	/** Keep a snapshot unless the kept one is newer, then notify subscribers. */
 	public publish(snapshot: RequestSnapshot): void {
-		if (this.kept === undefined || this.kept.id <= snapshot.id) this.kept = snapshot;
+		if (this.kept === undefined || this.kept.id <= snapshot.id)
+			this.kept = snapshot;
 		// Copy: a listener may unsubscribe while being notified
-		for (const listener of [...this.listeners]) listener(snapshot);
+		for (const listener of [...this.listeners])
+			listener(snapshot);
 	}
 
 	/** Drop the kept snapshot at session shutdown; subscriptions stay. */

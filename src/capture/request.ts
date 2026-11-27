@@ -120,6 +120,7 @@ export interface CaptureInput {
  */
 export function captureRequest(input: CaptureInput): CapturedRequest {
 	const baseline = readBaseline(input.sessionManager, input.probe);
+
 	return {
 		id: input.id,
 		origin: input.origin,
@@ -146,6 +147,7 @@ export function copyRequest(baseline: readonly BaselineMessage[], messages: read
 	const request = structuredClone(unmatched.request);
 	const copyTool = createToolCopier(baseline);
 	const system = getCurrentSystemMessage(messages);
+
 	return {
 		...(system === undefined ? {} : { system: copySystemState(system, copyTool) }),
 		systemTexts: copySystemTexts(messages),
@@ -166,6 +168,7 @@ export function readBaseline(
 	const projection = sessionManager.buildSessionProjection();
 	const messages = projection.entries.flatMap(({ sourceEntry, messages: entryMessages }) =>
 		probe.filterMessages(entryMessages).map((message) => ({ entryId: sourceEntry.id, message })));
+
 	return { leafId: sessionManager.getLeafId(), messages };
 }
 
@@ -174,9 +177,12 @@ export function readBaseline(
  * snapshot builder and the payload guard both read it, in either order.
  */
 export function resolveForcedPrompt(capture: ForcedPromptInput): string | undefined {
-	if (FORCED_PROMPTS.has(capture)) return FORCED_PROMPTS.get(capture);
+	if (FORCED_PROMPTS.has(capture))
+		return FORCED_PROMPTS.get(capture);
+
 	const forced = detectForcedPrompt(capture.effectivePrompt, capture.baseline.messages);
 	FORCED_PROMPTS.set(capture, forced);
+
 	return forced;
 }
 
@@ -202,6 +208,7 @@ function createToolCopier(baseline: readonly BaselineMessage[]): (tool: Tool) =>
 	const baselineTools = new Map(getDeclaredTools(baseline.map(({ message }) => message))
 		.map((tool) => [tool.name, tool]));
 	const copies = new Map<Tool, Tool>();
+
 	return (tool) => {
 		let copy = copies.get(tool);
 		if (copy === undefined) {
@@ -210,6 +217,7 @@ function createToolCopier(baseline: readonly BaselineMessage[]): (tool: Tool) =>
 			copy = previous !== undefined && sameDeclaration(previous, tool) ? previous : structuredClone(tool);
 			copies.set(tool, copy);
 		}
+
 		return copy;
 	};
 }
@@ -235,6 +243,7 @@ function copySystemTexts(messages: readonly RequestMessage[]): SystemText[] {
 			position++;
 			continue;
 		}
+
 		const toolNames = copyToolNames(message);
 		texts.push({
 			position,
@@ -243,6 +252,7 @@ function copySystemTexts(messages: readonly RequestMessage[]): SystemText[] {
 			...(toolNames === undefined ? {} : { toolNames }),
 		});
 	}
+
 	return texts;
 }
 
@@ -250,6 +260,7 @@ function copySystemTexts(messages: readonly RequestMessage[]): SystemText[] {
 function copyToolNames(message: SystemMessage): SystemToolNames | undefined {
 	const added = (message.toolsAdded ?? []).map(({ name }) => name);
 	const removed = (message.toolsRemoved ?? []).map(({ name }) => name);
+
 	return added.length === 0 && removed.length === 0 ? undefined : { added, removed };
 }
 

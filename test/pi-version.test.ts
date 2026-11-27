@@ -14,11 +14,13 @@ test("isSupportedPiVersion accepts the minimum and newer releases", () => {
 });
 
 test("isSupportedPiVersion refuses releases before the minimum", () => {
-	for (const version of ["1.2.1", "1.2.0", "1.1.1", "1.1.0", "1.0.4", "1.0.0", "0.99.2", "0.87.0", "0.86.1", "0.9.10"]) {
+	const versions = ["1.2.1", "1.2.0", "1.1.1", "1.1.0", "1.0.4", "1.0.0", "0.99.2", "0.87.0", "0.86.1", "0.9.10"];
+	for (const version of versions) {
 		assert.equal(isSupportedPiVersion(version), false, version);
 	}
 });
 
 test("isSupportedPiVersion does not refuse a version it cannot parse", () => {
-	for (const version of ["", "dev", "1.0"]) assert.equal(isSupportedPiVersion(version), true, version);
+	for (const version of ["", "dev", "1.0"])
+		assert.equal(isSupportedPiVersion(version), true, version);
 });

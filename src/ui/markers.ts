@@ -8,14 +8,15 @@ import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { ForcedEdit, RequestChange, TokenDiff } from "../model.ts";
-import { BODY_INDENT, fitLine } from "./layout.ts";
+import { fitLine } from "./layout.ts";
 
 /** Dim separator introducing a state marker after the estimate it explains. */
 const MARKER_SEPARATOR = " · ";
 
 /** Markers a frame can show, in the fixed order their legend bullets render. */
 const MARKER_ORDER = [
-	"highlighted", "guess", "dropped", "counted-in-system-prompt", "moved", "forced", "forced-edit", "diff", "request-only",
+	"highlighted", "guess", "dropped", "counted-in-system-prompt", "moved",
+	"forced", "forced-edit", "diff", "request-only",
 ] as const;
 
 /** One marked state a description bullet explains; `diff` stands for `+N`/`-N` token diffs. */
@@ -50,9 +51,9 @@ const DIFF_EXPLANATIONS: Record<DiffBase | "list", string> = {
 	"captured-request": " Tokens added or removed, compared with the captured request.",
 };
 
-/** Bullet marker and hanging indent of a legend entry, both two columns wide. */
+/** Bullet marker and hanging indent of a legend entry, both two columns wide and aligned with the title. */
 const BULLET_MARKER = "- ";
-const BULLET_INDENT = `${BODY_INDENT}  `;
+const BULLET_INDENT = "  ";
 
 /** A legend sentence: dim text, with runs that name a colored mark shown in that mark's color. */
 type LegendText = string | ReadonlyArray<string | { readonly text: string; readonly color: ThemeColor }>;
@@ -85,7 +86,7 @@ const MARKER_LEGENDS: Record<Exclude<ContextMarker, "diff">, MarkerLegend> = {
 	"counted-in-system-prompt": {
 		keyword: "Counted in System Prompt",
 		color: "muted",
-		explanation: " parts are already counted in the System Prompt part with the same name.",
+		explanation: " parts are already counted in the System Prompt part they name.",
 	},
 	moved: {
 		keyword: "Moved",
@@ -165,8 +166,11 @@ export function formatDiffRemoved(tokens: number): string {
  */
 export function diffMarker(theme: Theme, diff: TokenDiff | undefined): string {
 	const sides: string[] = [];
-	if (diff !== undefined && diff.added > 0) sides.push(theme.fg("toolDiffAdded", formatDiffAdded(diff.added)));
-	if (diff !== undefined && diff.removed > 0) sides.push(theme.fg("toolDiffRemoved", formatDiffRemoved(diff.removed)));
+	if (diff !== undefined && diff.added > 0)
+		sides.push(theme.fg("toolDiffAdded", formatDiffAdded(diff.added)));
+	if (diff !== undefined && diff.removed > 0)
+		sides.push(theme.fg("toolDiffRemoved", formatDiffRemoved(diff.removed)));
+
 	return sides.length === 0 ? "" : `${theme.fg("dim", MARKER_SEPARATOR)}${sides.join(" ")}`;
 }
 
@@ -182,22 +186,34 @@ export function forcedMarker(theme: Theme): string {
  */
 export function stateMarkers(theme: Theme, part: MarkedState): string {
 	let markers = part.dropped === true ? droppedMarker(theme) : part.moved === true ? movedMarker(theme) : "";
-	if (part.countedInSystemPrompt === true) markers += stateMarker(theme, MARKER_LEGENDS["counted-in-system-prompt"]);
-	if (part.change === "forced" || part.forcedEdit !== undefined) markers += forcedMarker(theme);
-	if (part.requestOnly === true) markers += stateMarker(theme, MARKER_LEGENDS["request-only"]);
+	if (part.countedInSystemPrompt === true)
+		markers += stateMarker(theme, MARKER_LEGENDS["counted-in-system-prompt"]);
+	if (part.change === "forced" || part.forcedEdit !== undefined)
+		markers += forcedMarker(theme);
+	if (part.requestOnly === true)
+		markers += stateMarker(theme, MARKER_LEGENDS["request-only"]);
+
 	return markers;
 }
 
 /** Markers one part carries, including its token diff, for the legend of the frame showing it. */
 export function partMarkers(part: MarkedState & { readonly diff?: TokenDiff }): ContextMarker[] {
 	const markers: ContextMarker[] = [];
-	if (part.dropped === true) markers.push("dropped");
-	if (part.countedInSystemPrompt === true) markers.push("counted-in-system-prompt");
-	if (part.moved === true) markers.push("moved");
-	if (part.change === "forced") markers.push("forced");
-	if (part.forcedEdit !== undefined) markers.push("forced-edit");
-	if (part.diff !== undefined && (part.diff.added > 0 || part.diff.removed > 0)) markers.push("diff");
-	if (part.requestOnly === true) markers.push("request-only");
+	if (part.dropped === true)
+		markers.push("dropped");
+	if (part.countedInSystemPrompt === true)
+		markers.push("counted-in-system-prompt");
+	if (part.moved === true)
+		markers.push("moved");
+	if (part.change === "forced")
+		markers.push("forced");
+	if (part.forcedEdit !== undefined)
+		markers.push("forced-edit");
+	if (part.diff !== undefined && (part.diff.added > 0 || part.diff.removed > 0))
+		markers.push("diff");
+	if (part.requestOnly === true)
+		markers.push("request-only");
+
 	return markers;
 }
 
@@ -220,12 +236,15 @@ export function markerLegendLines(
 	diffBase?: DiffBase,
 ): string[] {
 	const shown = new Set(markers);
+
 	return MARKER_ORDER.filter((marker) => shown.has(marker)).flatMap((marker) => {
 		if (marker === "diff") {
 			const keyword = `${theme.fg("toolDiffAdded", "+N")} ${theme.fg("toolDiffRemoved", "-N")}`;
 			return bulletLines(theme, keyword, DIFF_EXPLANATIONS[diffBase ?? "list"], width);
 		}
+
 		const legend = MARKER_LEGENDS[marker];
+
 		return bulletLines(theme, theme.fg(legend.color, legend.keyword), legend.explanation, width);
 	});
 }
@@ -237,6 +256,7 @@ export function markerLegendLines(
 export function markerStatusField(theme: Theme, marker: StatusMarker): string {
 	const status = MARKER_STATUS[marker];
 	const { color, keyword } = MARKER_LEGENDS[status.legend];
+
 	return `${theme.fg(color, keyword)}${theme.fg("dim", `: ${status.text}`)}`;
 }
 
@@ -256,6 +276,7 @@ function bulletLines(theme: Theme, keyword: string, explanation: LegendText, wid
 	const sentence = runs.map((run) => typeof run === "string" ? theme.fg("dim", run) : theme.fg(run.color, run.text));
 	const text = `${keyword}${sentence.join("")}`;
 	const wrapped = wrapTextWithAnsi(text, Math.max(1, width - BULLET_INDENT.length));
-	const lead = `${BODY_INDENT}${theme.fg("dim", BULLET_MARKER)}`;
+	const lead = theme.fg("dim", BULLET_MARKER);
+
 	return wrapped.map((line, index) => fitLine(`${index === 0 ? lead : BULLET_INDENT}${line}`, width));
 }
