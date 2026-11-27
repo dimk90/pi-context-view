@@ -1,6 +1,9 @@
 # Changelog
 
-## [0.9.0] - Unreleased
+## [0.9.0] - 27.11.2026
+
+Adds selectable usage map icon styles and a cleaner, more aligned look for both views,
+plus faster probe fallback and more accurate thinking counts.
 
 ### New
 * `[usage]` Add `iconStyle` and `iconStyles` to pick or define the usage map glyphs.
@@ -18,6 +21,10 @@
 * `[probe]` Store only new probe identities per session entry, not every known one.
 * `[usage]` Count only visible thinking for OpenAI Completions, not its generated reasoning.
 * `[usage]` Indent System Prompt content one level under its header, like other views.
+
+---
+
+<img alt="v0.9.0 icons demo" width="800" src="https://media.githubusercontent.com/media/dimk90/pi-context-view/a553932768bba22995a70a6c2f9fa4f4f50d8dee/doc/images/icon-styles.gif" />
 
 
 ## [0.8.4] - 10.11.2026
