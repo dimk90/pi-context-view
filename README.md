@@ -81,7 +81,7 @@ for each parameter's meaning and default value.
 Press `i` in `Context Usage` to switch between the pre-defined icon styles.
 You can also add your own icons with [`iconStyles`](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md#icon-styles) in the config.
 
-![Icon styles demo](https://media.githubusercontent.com/media/dimk90/pi-context-view/a553932768bba22995a70a6c2f9fa4f4f50d8dee/doc/images/icon-styles.png)  
+![Icon styles demo](https://media.githubusercontent.com/media/dimk90/pi-context-view/a553932768bba22995a70a6c2f9fa4f4f50d8dee/doc/images/icon-styles.gif)  
 
 
 ### Category Colors
