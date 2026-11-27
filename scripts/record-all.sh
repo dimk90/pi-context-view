@@ -21,6 +21,7 @@ readonly _RECORD_REPO_ROOT
 readonly _RECORD_TARGETS=(
     'doc/images/context-usage.rec.sh'
     'doc/images/context-injections.rec.sh'
+    'doc/images/filtering.rec.sh'
     'doc/images/zoom.rec.sh'
     'doc/images/palettes.rec.sh'
     'doc/images/map-sizes.rec.sh'

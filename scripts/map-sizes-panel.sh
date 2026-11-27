@@ -24,7 +24,7 @@ readonly _MAP_SIZES_COLS=('' 8 22)
 readonly _MAP_SIZES_BACKGROUND='#121314'
 readonly _MAP_SIZES_FOREGROUND='#cccccc'
 readonly _MAP_SIZES_CAPTION_FAMILY='Iosevka Term'
-readonly _MAP_SIZES_CAPTION_SIZE=48
+readonly _MAP_SIZES_CAPTION_SIZE=58
 readonly _MAP_SIZES_GAP=24
 
 

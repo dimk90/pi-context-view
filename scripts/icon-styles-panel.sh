@@ -21,8 +21,7 @@ readonly _ICON_STYLES_RECORDER="$_ICON_STYLES_SCRIPT_DIR/icon-style.rec.sh"
 readonly _ICON_STYLES_OUTPUT="$_ICON_STYLES_REPO_ROOT/doc/images/icon-styles.png"
 
 # The default style first, then the rest of the pre-defined ones
-readonly _ICON_STYLES_NAMES=('Square' 'Circle' 'CC' 'Nerd')
-readonly _ICON_STYLES_CAPTIONS=('Square' 'Circle' 'CC' 'Nerd')
+readonly _ICON_STYLES_NAMES=('Circle' 'CC' 'Nerd')
 
 # agg's asciinema theme, the one the panels are rendered with
 readonly _ICON_STYLES_BACKGROUND='#121314'
@@ -129,7 +128,7 @@ _icon_styles_composite() {
             -family "$_ICON_STYLES_CAPTION_FAMILY"
             -pointsize "$_ICON_STYLES_CAPTION_SIZE"
             "$_ICON_STYLES_PANEL_DIR/${_ICON_STYLES_NAMES[index]}.gif[0]"
-            "label:${_ICON_STYLES_CAPTIONS[index]}"
+            "label:${_ICON_STYLES_NAMES[index]}"
             -gravity center
             -append
             ')'
