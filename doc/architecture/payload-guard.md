@@ -164,6 +164,11 @@ reject mismatches.
     redefinition, or the initial tools without one. Later additions appear
     inline at their system message as a `tool_search_call` and
     `tool_search_output` pair.
+  - Neither (`supportsMidConvoSystemMessages` alone, such as Copilot
+    `gpt-5.3-codex` and `mai-code-*` since Pi 1.7.0): system messages stay in
+    place, but the request-level list holds the current tool set and no
+    inline items or removal notices exist, as without mid-conversation system
+    messages.
 - OpenAI Completions with `supportsMidConvoSystemMessages` and
   `supportsMidConvoToolAdditions` can declare later tools in a system
   message's `tools` list; these additions join the same channel.
@@ -242,7 +247,9 @@ exported, so uncertain differences are never treated as proven Pi adjustments.
   items. Grammar inputs require `supportsOpenAIGrammarTools` and a captured
   grammar declaration with one required string property; that property is sent
   as raw input, not JSON arguments. Declarations come from the captured
-  request, not from baseline tool history. With `additional_tools`
+  request, not from baseline tool history. When system messages are kept,
+  every declaration counts, also a removed tool's, even without inline tool
+  declarations: Pi sends a removed grammar tool's calls as grammar calls. With `additional_tools`
   declarations, Responses sends an incremental-update notice as its own
   system message before every such item after the first, restating the tools
   still unavailable, and appends the removal notice to its system message;

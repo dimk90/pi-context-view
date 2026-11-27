@@ -221,14 +221,38 @@ test("MCP direct tools are recorded declarations, not payload changes", async (t
 	assert.match(JSON.stringify(runtime.provider.requests[0]?.body), /mcp__fixture__echo/);
 });
 
-for (const compat of [{ supportsAdditionalTools: true }, { supportsToolSearch: true }]) {
-	test(`Responses ${Object.keys(compat)[0]} inline additions, then removals and redefinitions`, async (t) => {
+// Without supportsAdditionalTools or supportsToolSearch, the request-level list is the current tool set
+for (const compat of [{ supportsAdditionalTools: true }, { supportsToolSearch: true }, {}]) {
+	test(`Responses tool changes with kept system messages ${JSON.stringify(compat)}`, async (t) => {
 		const runtime = await createRuntime(t, {
 			api: "openai-responses", compat: { supportsMidConvoSystemMessages: true, ...compat },
 		});
 		await exerciseToolChanges(runtime);
 	});
 }
+
+test("Responses with kept system messages only: calls of a removed grammar tool stay grammar calls", async (t) => {
+	const runtime = await createRuntime(t, {
+		api: "openai-responses",
+		compat: { supportsMidConvoSystemMessages: true, supportsOpenAIGrammarTools: true },
+		before: [createCodemodeExtension()],
+		settings: { codemode: { mode: "on" }, defaultTools: ["read", "write", "codemode"] },
+	});
+	await runtime.session.prompt("first prompt");
+	seedHistory(runtime.session, runtime.session.model);
+	runtime.session.setActiveToolsByName(["read", "write"]);
+	await runtime.session.prompt("second prompt");
+
+	const body = runtime.provider.requests.at(-1)?.body;
+	const requestTools = (body?.tools as Array<{ readonly name?: string }> | undefined)?.map((tool) => tool.name);
+	assert.deepEqual(requestTools, ["read", "write"], "the request-level list is the current tool set");
+	assert.ok(JSON.stringify(body).includes("\"input\":\"return 1;\""), "the codemode call is a grammar call");
+
+	const snapshots = await runtime.snapshots();
+	assert.equal(snapshots.length, 2);
+	assert.deepEqual(snapshots[1].changes, { conversation: [], system: [] });
+	assert.deepEqual(findings(snapshots[1]), []);
+});
 
 test("Completions system-message tool additions, then removals and redefinitions", async (t) => {
 	const runtime = await createRuntime(t, {

@@ -199,6 +199,7 @@ test("Responses additional tools add Pi's incremental and removal notices only w
 
 	const compats = [
 		{ supportsAdditionalTools: true },
+		{ supportsMidConvoSystemMessages: true },
 		{ supportsMidConvoSystemMessages: true, supportsToolSearch: true },
 	];
 	for (const compat of compats) {

@@ -1,21 +1,20 @@
 
 # Backlog
 
-- [x] **Update to Pi 1.6.1**:
-  - Bump the four Pi development pins to `1.6.1` and run `pnpm install`.
-  - Pi 1.6.1 fires `after_provider_response` for HTTP 4xx/5xx responses and for each retried attempt on OpenAI, Azure OpenAI, Anthropic, and Google models ([#12376](https://github.com/earendil-works/pi/issues/12376)).
-  - Fix `test/dispatch-runtime.test.ts` ("assistant events carry the dispatch identity, also for a failure"): the HTTP 500 case now expects `after_provider_response` before the assistant events.
-  - Update `doc/architecture/payload-guard.md` (Event order) and `doc/architecture/pi-requests.md` (response side), which say error responses skip `after_provider_response`.
-  - Run `pnpm check`.
+- [x] **Check Responses tool changes without inline declarations**:
+  - Since Pi 1.7.0, Copilot `gpt-5.3-codex` and `mai-code-*` (`openai-responses`) have `supportsMidConvoSystemMessages` without `supportsAdditionalTools` or `supportsToolSearch`.
+  - Pi keeps their system messages in place, but sends the current tool set in the request-level list and adds no removal notice (`resolveTranscriptTools()` with `"none"`).
+  - `renderExpectedUnits()` in `src/capture/adjustments.ts` uses `grammarInputs.declared` whenever system messages are kept. Check whether this case needs `grammarInputs.current`, as `gpt-5.3-codex` has `supportsOpenAIGrammarTools`.
+  - Add a test that activates, removes, and redefines tools on such a model: both diffs stay empty. Update the "Inline tool changes" row in `doc/architecture/validation.md` and the Tool-Declaration Channel in `doc/architecture/payload-guard.md`.
 
-- [x] **Stop repeating probe identities in the session**:
-  - Each `pi-context-view:probe-identities` entry stores every known identity, restored ones included (`SilentProbe.persistIdentities()`), so the session file grows quadratically with probe count.
-  - Seen in a long session: 369 entries took 6.2 MB of 9.7 MB, and the last one alone held all 752 identities.
-  - Write only the identities recorded since the last write. `session_start` already merges every entry, so old sessions keep working.
-  - Update `doc/architecture/probe.md` and the persistence tests.
+- [ ] **Update Copilot Completions reasoning in `doc/THINKING.md`**:
+  - Since Pi 1.7.0, Copilot `openai-completions` models replay the latest `reasoning_opaque` value ([#12418](https://github.com/earendil-works/pi/issues/12418)). Their `thinkingSignature` is a JSON envelope (`{ field, reasoning_opaque }`), not a field name.
+  - `doc/THINKING.md` says hidden reasoning is never sent back for Completions and that the signature holds a field name. Fix both statements.
+  - Decide whether to keep these messages visible-only until the opaque cost is measured, as for OpenRouter `reasoning_details`.
 
 - [ ] Fix more than 100% context windows:
   - Discuss what to do.
+  - Since Pi 1.7.0, Pi's own estimate no longer counts `!!` output ([#12513](https://github.com/earendil-works/pi/issues/12513)). Usage already excluded it. Check whether the overflow still happens.
 
 - [ ] **Collapse/Expand groups in Injection view**:
   - Show max 4 items.
